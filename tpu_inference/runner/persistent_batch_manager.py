@@ -25,16 +25,25 @@ logger = init_logger(__name__)
 
 class PersistentBatchManager:
 
-    def __init__(self, requests: Dict[str, CachedRequestState],
-                 input_batch: InputBatch, encoder_cache: Dict[str,
-                                                              'jax.Array'],
-                 uses_mrope: bool, model_config, is_last_rank: bool):
+    def __init__(self,
+                 requests: Dict[str, CachedRequestState],
+                 input_batch: InputBatch,
+                 encoder_cache: Dict[str, 'jax.Array'],
+                 uses_mrope: bool,
+                 model_config,
+                 is_last_rank: bool,
+                 chunk_prefill_size: int | None = None):
         self.requests = requests
         self.input_batch = input_batch
         self.encoder_cache = encoder_cache
         self.uses_mrope = uses_mrope
         self.model_config = model_config
         self.is_last_rank = is_last_rank
+        # When set to K, _reorder_batch produces the 3-way distribution
+        # [D, D+P, T] where P is the count of requests with exactly K
+        # scheduled tokens (uniform PREFILL bucket). When None, falls back
+        # to today's [D, D, T] (everything non-decode goes to MIXED).
+        self.chunk_prefill_size = chunk_prefill_size
 
     def _reorder_batch(self, scheduler_output: "VllmSchedulerOutput") -> int:
         """ Reorder the sheduled requests to RPA kernel friendly distribution

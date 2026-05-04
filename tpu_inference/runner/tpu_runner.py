@@ -49,6 +49,7 @@ from vllm.v1.worker.lora_model_runner_mixin import LoRAModelRunnerMixin
 
 import tpu_inference.envs as envs
 from tpu_inference import utils as common_utils
+from tpu_inference.layers.common import attention_interface
 from tpu_inference.layers.common.attention_metadata import AttentionMetadata
 from tpu_inference.layers.common.sharding import (MESH_AXIS_NAMES,
                                                   MESH_AXIS_NAMES_2D,
@@ -295,9 +296,19 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
             self.structured_decoding_manager = StructuredDecodingManager(self)
         self.kv_cache_manager = KVCacheManager(self)
         self.mm_manager = MultiModalManager(self)
+        # K for the static-q-len PREFILL kernel flavor. Sourced from vLLM's
+        # chunked-prefill knob: the scheduler caps each chunk at this value,
+        # so most chunks land at exactly K — those go through PREFILL,
+        # remainders fall to MIXED. 0/disabled => keep today's [D, D, T]
+        # bucketing and skip the PREFILL pass.
+        cp_threshold = self.scheduler_config.long_prefill_token_threshold
+        self.chunk_prefill_size = cp_threshold if cp_threshold > 0 else None
+        attention_interface.set_chunk_prefill_size(self.chunk_prefill_size)
+
         self.persistent_batch_manager = PersistentBatchManager(
             self.requests, self.input_batch, self.encoder_cache,
-            self.uses_mrope, self.model_config, self.is_last_rank)
+            self.uses_mrope, self.model_config, self.is_last_rank,
+            chunk_prefill_size=self.chunk_prefill_size)
         self.lora_utils = LoraUtils(self)
 
         cache_dtype = self.cache_config.cache_dtype
