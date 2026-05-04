@@ -2,4 +2,4 @@ usage: inspect_result_cli.py [-h] [--source {local,spanner}]
                              [--db-path DB_PATH] [--project PROJECT]
                              [--instance INSTANCE] [--database DATABASE]
                              COMMAND ...
-inspect_result_cli.py: error: argument COMMAND: invalid choice: '/tmp/kernel_tuner_run_2026_05_03_19_21_10' (choose from list_case_sets, list_runs, count_buckets, list_bucket_status, query_run_status, query_min_latency)
+inspect_result_cli.py: error: unrecognized arguments: --db_path=/tmp/kernel_tuner_run_2026_05_03_19_21_10
