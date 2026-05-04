@@ -71,6 +71,13 @@ TAG="${RESULT_TAG:-$TS}"
 # combo's output into its hashed combo dir (tmp/bench_<case>_<sweep>/<id>).
 : "${RESULT_DIR:=tmp/bench_${CASE_NAME}_${TAG}}"
 mkdir -p "$RESULT_DIR"
+# Normalize to absolute. Downstream we generate sonnet_4x.txt inside
+# $RESULT_DIR and pass it to vllm bench (which `cd`s to $VLLM_DIR), so
+# the path must survive a working-directory change.
+case "$RESULT_DIR" in
+    /*) ;;
+    *)  RESULT_DIR="$PWD/$RESULT_DIR" ;;
+esac
 
 VLLM_LOG="$RESULT_DIR/vllm.log"
 BM_LOG="$RESULT_DIR/bench.log"
@@ -103,9 +110,15 @@ echo "Results: $RESULT_DIR"
 if [ "$DATASET" = "sonnet" ]; then
     [ -f "$VLLM_DIR/benchmarks/sonnet.txt" ] \
         || { echo "ERROR: $VLLM_DIR/benchmarks/sonnet.txt not found; set VLLM_DIR." >&2; exit 1; }
-    : > "$VLLM_DIR/benchmarks/sonnet_4x.txt"
+    # Generate sonnet_4x.txt inside the per-run RESULT_DIR rather than
+    # mutating $VLLM_DIR/benchmarks/. Two reasons:
+    #   1. We don't own $VLLM_DIR; mutating it is bad hygiene.
+    #   2. Concurrent runs (parallel sweeps) would race on the shared file
+    #      and silently corrupt each other.
+    SONNET_4X="$RESULT_DIR/sonnet_4x.txt"
+    : > "$SONNET_4X"
     for _ in 1 2 3 4; do
-        cat "$VLLM_DIR/benchmarks/sonnet.txt" >> "$VLLM_DIR/benchmarks/sonnet_4x.txt"
+        cat "$VLLM_DIR/benchmarks/sonnet.txt" >> "$SONNET_4X"
     done
 fi
 
@@ -184,7 +197,7 @@ BM_ARGS=(
 case "$DATASET" in
     sonnet)
         BM_ARGS+=(
-            --dataset-path "$VLLM_DIR/benchmarks/sonnet_4x.txt"
+            --dataset-path "$SONNET_4X"
             --sonnet-input-len  "$INPUT_LEN"
             --sonnet-output-len "$OUTPUT_LEN"
         ) ;;
