@@ -148,8 +148,15 @@ clean_up() {
     if [ -z "${VLLM_PID:-}" ]; then
         return 0
     fi
-    # TERM the whole process group (parent + children + grandchildren).
+    # Belt-and-suspenders: TERM the whole process group AND the leader by
+    # PID. In the happy path (`set -m` took effect), the group signal does
+    # the work and the per-PID signal is a no-op (parent already dead). In
+    # the silent-no-op path (set -m didn't take, e.g. some container
+    # runtimes), the group signal is ESRCH and the per-PID signal is what
+    # actually kills the parent — degrading cleanly to pre-process-group
+    # behavior (workers may orphan, but parent reliably dies).
     kill -- -"$VLLM_PID" 2>/dev/null || true
+    kill    "$VLLM_PID" 2>/dev/null || true
     # Wait up to 5 s for the tree to wind down. The parent's `wait()`
     # for its workers means leader-exit lags worker-exit, so this
     # really is "tree quiesces" not "leader gone".
@@ -157,9 +164,9 @@ clean_up() {
         kill -0 "$VLLM_PID" 2>/dev/null || break
         sleep 1
     done
-    # KILL the group regardless — catches any worker that ignored TERM,
-    # even if the leader is already gone.
+    # KILL — same belt-and-suspenders pair.
     kill -9 -- -"$VLLM_PID" 2>/dev/null || true
+    kill -9    "$VLLM_PID" 2>/dev/null || true
 }
 trap clean_up EXIT
 
