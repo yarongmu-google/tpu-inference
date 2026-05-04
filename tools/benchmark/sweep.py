@@ -266,6 +266,11 @@ def is_completed(rdir: str | os.PathLike) -> bool:
 
 DEFAULT_SCRIPT = "tools/benchmark/run_benchmark.sh"
 
+# Per-combo wall-clock cap. Generous (one combo on Llama 3 8B takes a few
+# minutes; the cap is meant to stop a hung process from blocking a sweep,
+# not to enforce a perf goal). Override per-spec via "timeout_seconds".
+DEFAULT_TIMEOUT_SECONDS = 3600
+
 
 class RunStatus(enum.Enum):
     SKIPPED_RESUMED = "skipped_resumed"   # metrics.txt already existed
@@ -319,9 +324,18 @@ def run_one(
     env = {**base_environ, **combo, "RESULT_DIR": str(rdir)}
 
     cmd = [str(script_path), str(case_file)]
+    timeout = int(spec.get("timeout_seconds") or DEFAULT_TIMEOUT_SECONDS)
     started = timer()
     try:
-        proc = run_subprocess(cmd, env=env, check=False)
+        proc = run_subprocess(cmd, env=env, check=False, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return RunResult(
+            status=RunStatus.FAILED,
+            combo_id=cid,
+            result_dir=rdir,
+            duration_seconds=timer() - started,
+            error=f"combo timed out after {timeout}s",
+        )
     except Exception as err:  # subprocess setup failure (rare)
         return RunResult(
             status=RunStatus.FAILED,

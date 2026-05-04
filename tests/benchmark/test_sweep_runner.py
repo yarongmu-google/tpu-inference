@@ -133,6 +133,36 @@ class TestRunOne(unittest.TestCase):
         self.assertIn("ENOENT", result.error)
         self.assertIsNone(result.return_code)
 
+    def test_failed_when_subprocess_times_out(self):
+        def hang(cmd, env=None, check=False, timeout=None, **kw):
+            raise subprocess.TimeoutExpired(cmd, timeout)
+
+        result = sweep.run_one(
+            self.spec, self.combo,
+            base_dir=self.base,
+            run_subprocess=hang,
+            environ=self.fake_environ,
+        )
+        self.assertEqual(result.status, sweep.RunStatus.FAILED)
+        self.assertIn("timed out", result.error)
+        # Default timeout from DEFAULT_TIMEOUT_SECONDS.
+        self.assertIn(str(sweep.DEFAULT_TIMEOUT_SECONDS), result.error)
+
+    def test_timeout_overridable_via_spec(self):
+        captured = {}
+
+        def fake_run(cmd, env=None, check=False, timeout=None, **kw):
+            captured["timeout"] = timeout
+            (Path(env["RESULT_DIR"]) / "metrics.txt").write_text(
+                "RequestThroughput=1.0\n")
+            return FakeProc(returncode=0)
+
+        spec = _make_spec()
+        spec["timeout_seconds"] = 7
+        sweep.run_one(spec, self.combo, base_dir=self.base,
+                      run_subprocess=fake_run, environ=self.fake_environ)
+        self.assertEqual(captured["timeout"], 7)
+
     def test_failed_when_metrics_missing_after_zero_exit(self):
         def fake_run(cmd, env=None, check=False, **kw):
             # Don't write metrics.txt. Pretend success.
