@@ -401,17 +401,31 @@ class RpaV3KernelTuner(KernelTunerBase):
                        tunable_params: TunableParams) -> dict:
         block_tuple = (tunable_params.bq_sz, tunable_params.bkv_sz,
                        tunable_params.bq_csz, tunable_params.bkv_csz)
+        # ragged_paged_attention always emits decode + mixed pallas_calls
+        # (and prefill if chunk_prefill_size is set). Each must fit in VMEM
+        # at compile time, even when its distribution range is empty at
+        # runtime. The kernel's default m_block_sizes for this model
+        # (bq_sz=512, bkv_sz=2048 on v7) exceeds 64MB VMEM. Pass tiny
+        # block sizes for the no-op buckets so they compile cheaply; the
+        # runtime cost is ~tens of us of empty-launch overhead per call.
+        ps = tuning_key.page_size
+        d_minimal = (1, ps, 1, ps)        # decode requires bq_sz=bq_csz=1
+        pm_minimal = (16, ps, 16, ps)     # smallest legal block for p/m
         kwargs = {
             "sliding_window": tuning_key.sliding_window,
             "vmem_limit_bytes": VMEM_LIMIT_BYTES,
         }
         if tuning_key.case == CASE_DECODE:
             kwargs["d_block_sizes"] = block_tuple
+            kwargs["m_block_sizes"] = pm_minimal
         elif tuning_key.case == CASE_PREFILL:
             kwargs["p_block_sizes"] = block_tuple
             kwargs["chunk_prefill_size"] = tuning_key.chunk_prefill_size
+            kwargs["d_block_sizes"] = d_minimal
+            kwargs["m_block_sizes"] = pm_minimal
         else:
             kwargs["m_block_sizes"] = block_tuple
+            kwargs["d_block_sizes"] = d_minimal
         return kwargs
 
     def run(self,
