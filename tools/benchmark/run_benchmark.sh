@@ -265,7 +265,12 @@ echo "===="
 # — the -m form requires the repo root to be on sys.path / CWD, which
 # isn't guaranteed when sweep.py launches us as a subprocess from an
 # arbitrary working directory.
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# `pwd -P` resolves symlinks in the CWD path so a dir-symlink (e.g.
+# `current` → versioned dir) doesn't strand us next to a non-existent
+# parse_bench_log.py. Doesn't handle the file-symlink case
+# (/usr/local/bin/run_benchmark.sh → /repo/.../run_benchmark.sh) —
+# that'd need `readlink -f "$0"`, GNU-only; out of scope.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 python3 "$SCRIPT_DIR/parse_bench_log.py" "$BM_LOG" > "$METRICS_FILE"
 
 echo "Saved metrics to $METRICS_FILE"
