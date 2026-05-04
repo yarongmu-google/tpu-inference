@@ -74,6 +74,20 @@ def collect_results(sweep_dir: str | os.PathLike) -> list[dict[str, Any]]:
 
     A combo with no metrics.txt is skipped (treated as not yet completed).
     Missing meta.txt is tolerated (its dict is empty).
+
+    Note the deliberate asymmetry vs sweep.is_completed: this function
+    includes combos whose metrics.txt is present but blank (RequestThroughput
+    empty), so failed runs show up in compare's table — that's where you'd
+    want to see them. sweep.is_completed is the stricter check that drives
+    skip-resumability; it requires non-empty RequestThroughput so a sweep
+    re-runs combos that died mid-write.
+
+    Race window: this function reads metrics.txt files while a sweep may
+    still be writing them. run_benchmark.sh redirects via `>` (atomic-ish
+    on most filesystems for small files); the worst case is one combo's
+    row showing blanks in the table because we caught its metrics.txt
+    mid-write. Compare is intended to run *after* a sweep finishes, not
+    concurrently.
     """
     sdir = Path(sweep_dir)
     out: list[dict[str, Any]] = []
@@ -192,7 +206,13 @@ def format_markdown_table(
     results: list[dict[str, Any]],
     columns: list[tuple[str, str]],
 ) -> str:
-    """Render `results` as a left-aligned Markdown table with the columns."""
+    """Render `results` as a left-aligned Markdown table with the columns.
+
+    Uses ``:---`` separators (rather than bare ``---``) so renderers
+    that distinguish default vs. explicit alignment (Pandoc, VS Code
+    preview) keep cells left-aligned to match the ljust padding the
+    function applies to data cells.
+    """
     if not results:
         return "(no results)"
 
@@ -210,7 +230,9 @@ def format_markdown_table(
         return "| " + " | ".join(row[i].ljust(widths[i])
                                  for i in range(len(row))) + " |"
 
-    sep = "|" + "|".join("-" * (w + 2) for w in widths) + "|"
+    # `:---` (with the colon on the left) is the explicit left-alignment
+    # spec in GFM. Width is (w + 2) total, so we want ":" + "-" * (w + 1).
+    sep = "|" + "|".join(":" + "-" * (w + 1) for w in widths) + "|"
     return "\n".join([render(headers), sep, *(render(r) for r in rows)])
 
 

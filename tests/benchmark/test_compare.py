@@ -329,7 +329,9 @@ class TestFormatMarkdownTable(unittest.TestCase):
         self.assertEqual(len(lines), 3)
         self.assertIn("id", lines[0])
         self.assertIn("req/s", lines[0])
-        self.assertIn("---", lines[1])
+        # Separator uses ':---' (explicit left-align) rather than bare '---',
+        # so renderers like Pandoc/VS Code respect the alignment claim.
+        self.assertIn(":---", lines[1])
         self.assertIn("abc", lines[2])
         self.assertIn("1.2", lines[2])
         self.assertIn("128", lines[2])
