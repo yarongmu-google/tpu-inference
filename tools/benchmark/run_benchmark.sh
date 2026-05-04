@@ -60,7 +60,10 @@ set -a
 source "$CASE_FILE"
 set +a
 
-NUM_PROMPTS="${NUM_PROMPTS:-1000}"
+# NUM_PROMPTS comes from the case file (every case file sets it via :=).
+# DOWNLOAD_DIR and VLLM_DIR are deployment config, not workload, so their
+# defaults live here rather than in case files. Both use :- (substitute
+# only — never assign), the script-side companion to the case-side := form.
 DOWNLOAD_DIR="${DOWNLOAD_DIR:-$HOME/hf-cache}"
 VLLM_DIR="${VLLM_DIR:-../vllm}"
 
