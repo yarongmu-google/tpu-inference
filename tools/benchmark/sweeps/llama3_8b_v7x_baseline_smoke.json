@@ -7,7 +7,7 @@
     "stays [D, D, T] and the kernel skips its PREFILL pass — exactly the",
     "main-branch behavior."
   ],
-  "case_file": "tools/benchmark/cases/llama3_8b_v7x_prefill_heavy.env",
+  "case_file": "../cases/llama3_8b_v7x_prefill_heavy.env",
   "sweep_name": "baseline_smoke",
 
   "sweep_axes": {

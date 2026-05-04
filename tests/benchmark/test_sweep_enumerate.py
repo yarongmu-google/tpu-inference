@@ -43,7 +43,10 @@ class TestLoadSpec(unittest.TestCase):
         path = _write_json({"case_file": "x", "sweep_name": "y"})
         try:
             spec = sweep.load_spec(path)
-            self.assertEqual(spec["case_file"], "x")
+            # case_file got resolved to absolute against the spec dir.
+            # Check the basename, since the temp dir varies per run.
+            self.assertEqual(Path(spec["case_file"]).name, "x")
+            self.assertTrue(Path(spec["case_file"]).is_absolute())
             self.assertEqual(spec["sweep_name"], "y")
         finally:
             os.unlink(path)
@@ -111,6 +114,37 @@ class TestLoadSpec(unittest.TestCase):
         with self.assertRaisesRegex(sweep.SpecError,
                                     "could not read spec file"):
             sweep.load_spec("/nonexistent/path/to/spec.json")
+
+    def test_relative_case_file_resolved_against_spec_dir(self):
+        # case_file is interpreted relative to the spec file's
+        # directory, not the caller's CWD. Caller can `cd` anywhere.
+        with tempfile.TemporaryDirectory() as d:
+            spec_dir = Path(d) / "sweeps"
+            cases_dir = Path(d) / "cases"
+            spec_dir.mkdir()
+            cases_dir.mkdir()
+            (cases_dir / "x.env").write_text(": \"${MODEL:=fake}\"\n")
+            spec_path = spec_dir / "s.json"
+            spec_path.write_text(json.dumps({
+                "case_file": "../cases/x.env",
+                "sweep_name": "t",
+            }))
+            spec = sweep.load_spec(str(spec_path))
+            self.assertTrue(Path(spec["case_file"]).is_absolute())
+            self.assertTrue(Path(spec["case_file"]).is_file())
+            self.assertEqual(Path(spec["case_file"]).name, "x.env")
+
+    def test_absolute_case_file_passes_through(self):
+        with tempfile.TemporaryDirectory() as d:
+            cases = Path(d) / "x.env"
+            cases.write_text(": \"${MODEL:=fake}\"\n")
+            spec_path = Path(d) / "s.json"
+            spec_path.write_text(json.dumps({
+                "case_file": str(cases),
+                "sweep_name": "t",
+            }))
+            spec = sweep.load_spec(str(spec_path))
+            self.assertEqual(spec["case_file"], str(cases))
 
 
 class TestValidateSpec(unittest.TestCase):

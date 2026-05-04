@@ -6,7 +6,7 @@
     "Coupled axes pin (K, BLOCK_SIZE, RPA_P_BLOCK_SIZES) triples taken",
     "from the 2026-05-03 tuning table (page_size=128 column)."
   ],
-  "case_file": "tools/benchmark/cases/llama3_8b_v7x_prefill_heavy.env",
+  "case_file": "../cases/llama3_8b_v7x_prefill_heavy.env",
   "sweep_name": "optimized_smoke",
 
   "sweep_axes": {

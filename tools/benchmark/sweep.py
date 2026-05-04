@@ -21,15 +21,25 @@ vLLM.
 
 Spec shape:
     {
-      "case_file":   "<path to .env>",
-      "sweep_name":  "<short label>",
-      "sweep_axes":  {"VAR_A": [a1, a2], "VAR_B": [b1]},      // cartesian
-      "coupled_axes":[{"VAR_X": x1, "VAR_Y": y1}, ...],        // each entry = one combo
-      "fixed":       {"VAR_C": "c"}                            // applied to every combo
+      "case_file":       "<path to .env>",
+      "sweep_name":      "<short label>",
+      "sweep_axes":      {"VAR_A": [a1, a2], "VAR_B": [b1]},     // cartesian
+      "coupled_axes":    [{"VAR_X": x1, "VAR_Y": y1}, ...],       // each entry = one combo
+      "fixed":           {"VAR_C": "c"},                          // applied to every combo
+      "timeout_seconds": 3600                                     // optional, per-combo cap
     }
 
 Keys must be **disjoint** across `sweep_axes`, `coupled_axes` (entry
 keyset), and `fixed`. Coupled entries must all share the same key set.
+
+`case_file` may be absolute or relative; relative paths are resolved
+against the spec file's directory (so a spec is self-contained as long
+as the case file is reachable via the encoded relative path).
+
+Convention: any top-level key beginning with an underscore (e.g.
+"_comment") is reserved for human-readable annotations and ignored by
+the validator. Use this for inline JSON 'comments' since JSON has no
+syntactic comment form.
 """
 
 import argparse
@@ -70,6 +80,12 @@ def load_spec(path: str | os.PathLike) -> dict[str, Any]:
     if not isinstance(spec, dict):
         raise SpecError("top-level spec must be a JSON object")
     _validate_spec(spec)
+    # Resolve a relative case_file against the spec file's directory so
+    # specs are self-contained and the runner doesn't depend on the
+    # caller's CWD. Absolute paths pass through unchanged.
+    cf = Path(spec["case_file"])
+    if not cf.is_absolute():
+        spec["case_file"] = str((Path(path).resolve().parent / cf).resolve())
     return spec
 
 
