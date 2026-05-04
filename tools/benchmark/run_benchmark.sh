@@ -44,7 +44,10 @@ EOF
 CASE_FILE="$1"; shift
 
 RESULT_TAG=""
-REQUEST_RATE="inf"
+# REQUEST_RATE may be set in the env (so sweep.py can drive it as a sweep
+# axis like any other knob). --rate on the command line still overrides;
+# default 'inf' (max throughput, no rate limit).
+: "${REQUEST_RATE:=inf}"
 while [ $# -gt 0 ]; do
     case "$1" in
         --result-tag) RESULT_TAG="$2"; shift 2 ;;
