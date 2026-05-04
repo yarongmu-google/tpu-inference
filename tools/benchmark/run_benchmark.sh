@@ -183,16 +183,8 @@ echo "==== Summary ===="
 grep -E "Request throughput|Output token throughput|Total Token throughput|Mean.*\(ms\):|Median.*\(ms\):|P99.*\(ms\):" "$BM_LOG" || true
 echo "===="
 
-extract() { grep "$1 (ms):" "$BM_LOG" | awk -v lbl="$2" '$0 ~ lbl {print $NF}'; }
-{
-    for sec in TTFT TPOT ITL E2EL; do
-        for stat in Mean Median P99; do
-            echo "${stat}${sec}=$(extract "$sec" "$stat")"
-        done
-    done
-    echo "RequestThroughput=$(grep 'Request throughput (req/s):' "$BM_LOG" | awk '{print $NF}')"
-    echo "OutputTokenThroughput=$(grep 'Output token throughput (tok/s):' "$BM_LOG" | awk '{print $NF}')"
-    echo "TotalTokenThroughput=$(grep 'Total Token throughput (tok/s):'  "$BM_LOG" | awk '{print $NF}')"
-} > "$METRICS_FILE"
+# Metric extraction lives in Python (tools/benchmark/parse_bench_log.py)
+# so it gets unit-tested independently of this shell driver.
+python3 -m tools.benchmark.parse_bench_log "$BM_LOG" > "$METRICS_FILE"
 
 echo "Saved metrics to $METRICS_FILE"
