@@ -295,6 +295,15 @@ class TestPaths(unittest.TestCase):
     def test_case_name_other_ext(self):
         self.assertEqual(sweep.case_name_from_path("foo.json"), "foo.json")
 
+    def test_case_name_multi_suffix(self):
+        # Conservative: strip exactly one trailing .env. Backup-style
+        # 'foo.env.bak' is NOT touched. 'foo.env.env' has its last
+        # .env stripped to 'foo.env'.
+        self.assertEqual(sweep.case_name_from_path("foo.env.bak"),
+                         "foo.env.bak")
+        self.assertEqual(sweep.case_name_from_path("foo.env.env"),
+                         "foo.env")
+
     def test_result_dir_shape(self):
         p = sweep.result_dir("/tmp/x", "casename", "sweepname", "abc123")
         self.assertEqual(p, Path("/tmp/x/bench_casename_sweepname/abc123"))

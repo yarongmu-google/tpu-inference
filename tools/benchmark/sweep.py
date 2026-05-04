@@ -149,6 +149,12 @@ def enumerate_combos(spec: dict[str, Any]) -> list[dict[str, str]]:
       - cartesian product in the standard itertools.product order
       - coupled_axes entries in their list order
 
+    Per-combo merge precedence: cartesian < coupled < fixed (later wins).
+    With the disjoint-keys rule that _validate_spec enforces, this
+    precedence isn't observable in well-formed specs — but the order
+    is documented so future-you knows the intended behavior if the
+    validator ever loosens.
+
     All values are stringified (vllm flags want strings).
     """
     # By this point _validate_spec has run; values are well-typed.
@@ -184,13 +190,22 @@ def combo_id(env: dict[str, str]) -> str:
     Stable across spec reorderings: the same set of (key, value) pairs
     always hashes to the same ID. That gives us free resumability — if a
     combo's metrics.txt already exists, we skip it on re-run.
+
+    12 hex = 48 bits. Birthday-collision probability stays < 1% up to
+    roughly 2 million combos and < 50% up to ~17 million; safe for any
+    realistic sweep size we'd run.
     """
     canonical = json.dumps(env, sort_keys=True, separators=(",", ":"))
     return hashlib.sha1(canonical.encode("utf-8")).hexdigest()[:12]
 
 
 def case_name_from_path(case_file: str | os.PathLike) -> str:
-    """Strip dir + .env suffix. e.g. cases/foo.env -> foo."""
+    """Strip dir + a single trailing .env suffix.
+
+    Conservative on multi-suffix names: ``foo.env.bak`` -> ``foo.env.bak``
+    (no .env suffix at the very end). ``foo.env.env`` -> ``foo.env`` (only
+    the last suffix is stripped). Plain non-.env names pass through.
+    """
     base = os.path.basename(str(case_file))
     if base.endswith(".env"):
         return base[:-len(".env")]
