@@ -20,6 +20,7 @@ to show the winner per unique value of a meta-field axis (e.g., per K).
 """
 
 import argparse
+import math
 import os
 import sys
 from pathlib import Path
@@ -98,12 +99,25 @@ def collect_results(sweep_dir: str | os.PathLike) -> list[dict[str, Any]]:
 
 
 def _to_float(s: Any) -> float | None:
+    """Parse a string-like value as a finite float, else None.
+
+    Treats NaN and ±inf as 'not a usable number':
+      - NaN comparisons return False for <, >, ==, breaking the
+        strict-weak-ordering contract sorted() requires; with a NaN
+        key, sort order is unspecified and may differ between calls.
+      - inf is well-ordered, but a metric value of inf is more likely
+        a bug (division by zero in the bench) than a real datapoint;
+        treating it as missing is safer than letting it sort to top.
+    """
     if s is None or s == "":
         return None
     try:
-        return float(s)
+        v = float(s)
     except (ValueError, TypeError):
         return None
+    if not math.isfinite(v):
+        return None
+    return v
 
 
 def rank_by(

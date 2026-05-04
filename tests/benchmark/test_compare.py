@@ -158,6 +158,18 @@ class TestToFloat(unittest.TestCase):
         # `float([1, 2])` raises TypeError -> caught -> None.
         self.assertIsNone(compare._to_float([1, 2]))
 
+    def test_nan_returns_none(self):
+        # NaN breaks sorted()'s ordering contract; treat as missing.
+        self.assertIsNone(compare._to_float("nan"))
+        self.assertIsNone(compare._to_float("NaN"))
+
+    def test_inf_returns_none(self):
+        # ±inf is well-ordered but more likely a bench bug than a real
+        # datapoint. Reject so it doesn't silently sort to top.
+        self.assertIsNone(compare._to_float("inf"))
+        self.assertIsNone(compare._to_float("-inf"))
+        self.assertIsNone(compare._to_float("Infinity"))
+
 
 class TestRankBy(unittest.TestCase):
 
@@ -194,6 +206,14 @@ class TestRankBy(unittest.TestCase):
         ]
         out = compare.rank_by(results, "RequestThroughput")
         self.assertEqual([r["combo_id"] for r in out], ["b", "a"])
+
+    def test_nan_value_sorts_as_missing(self):
+        # Regression: a NaN value used to destabilize sort because all
+        # NaN comparisons return False. Now treated as missing -> last.
+        results = [self._r("a", "nan"), self._r("b", "1.0"),
+                   self._r("c", "2.0")]
+        out = compare.rank_by(results, "RequestThroughput")
+        self.assertEqual([r["combo_id"] for r in out], ["c", "b", "a"])
 
 
 class TestBestPerAxis(unittest.TestCase):
