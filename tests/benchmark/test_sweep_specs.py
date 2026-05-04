@@ -54,8 +54,11 @@ class TestSmokeSpecs(unittest.TestCase):
         self.assertEqual(len(combos), 2,
                          "optimized_smoke spec should produce 2 combos "
                          "(1 MAX_NUM_BATCHED_TOKENS × 2 coupled K values)")
-        ks = sorted(c["LONG_PREFILL_TOKEN_THRESHOLD"] for c in combos)
-        self.assertEqual(ks, ["2048", "512"])
+        # Sort numerically — string values come out of enumerate_combos
+        # but ascending integer order is what a reader expects.
+        ks = sorted((c["LONG_PREFILL_TOKEN_THRESHOLD"] for c in combos),
+                    key=int)
+        self.assertEqual(ks, ["512", "2048"])
         # Coupled (K, RPA_P_BLOCK_SIZES) pairing — the K=512 combo
         # gets its specific block sizes, K=2048 gets its own.
         by_k = {c["LONG_PREFILL_TOKEN_THRESHOLD"]: c for c in combos}
