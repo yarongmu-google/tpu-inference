@@ -463,6 +463,10 @@ def git_commit_paths(
     `run_subprocess` is injected for tests.
     """
     if not paths:
+        # Defensive: empty list is a programming bug (caller should have
+        # filtered). Print a specific reason so it doesn't blend into
+        # the auto-commit callback's generic WARN.
+        print("git_commit_paths: no paths to commit", flush=True)
         return False
     try:
         run_subprocess(["git", "add", "--", *(str(p) for p in paths)],
@@ -473,6 +477,8 @@ def git_commit_paths(
         diff = run_subprocess(["git", "diff", "--cached", "--quiet"],
                               check=False)
         if diff.returncode == 0:
+            print(f"git_commit_paths: nothing staged for "
+                  f"{[str(p) for p in paths]}", flush=True)
             return False
         run_subprocess(["git", "commit", "-m", message], check=True)
         if push:
@@ -484,13 +490,17 @@ def git_commit_paths(
                     # surprising / config-dependent semantics (push.default
                     # decides), so refuse to guess. Caller can pass an
                     # explicit branch= if they really mean it.
+                    print("git_commit_paths: detached HEAD; commit landed "
+                          "but refusing to push (pass branch=… to override)",
+                          flush=True)
                     return False
             else:
                 target_branch = branch
             run_subprocess(["git", "push", remote, target_branch],
                            check=True)
         return True
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as e:
+        print(f"git_commit_paths: subprocess failed: {e}", flush=True)
         return False
 
 

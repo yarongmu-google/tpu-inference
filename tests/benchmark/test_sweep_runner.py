@@ -331,9 +331,12 @@ class TestGitCommitPaths(unittest.TestCase):
 
     def test_returns_false_for_empty_paths(self):
         sentinel = MagicMock(side_effect=AssertionError("should not call"))
-        self.assertFalse(sweep.git_commit_paths([], "msg",
-                                                run_subprocess=sentinel))
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            self.assertFalse(sweep.git_commit_paths([], "msg",
+                                                    run_subprocess=sentinel))
         sentinel.assert_not_called()
+        self.assertIn("no paths to commit", buf.getvalue())
 
     def test_nothing_staged_returns_false_no_commit(self):
         # add OK; diff returns 0 (nothing staged) -> no commit, no push.
@@ -341,10 +344,13 @@ class TestGitCommitPaths(unittest.TestCase):
             FakeProc(returncode=0),               # git add
             FakeProc(returncode=0),               # git diff (0 = nothing staged)
         ])
-        self.assertFalse(sweep.git_commit_paths(["x"], "msg",
-                                                run_subprocess=fake))
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            self.assertFalse(sweep.git_commit_paths(["x"], "msg",
+                                                    run_subprocess=fake))
         # Must have called add, diff, and stopped.
         self.assertEqual(len(fake.call_args_list), 2)
+        self.assertIn("nothing staged", buf.getvalue())
 
     def test_commits_and_pushes_when_changes_present(self):
         fake = MagicMock(side_effect=[
@@ -393,8 +399,11 @@ class TestGitCommitPaths(unittest.TestCase):
     def test_returns_false_on_subprocess_error(self):
         def fail_run(*a, **kw):
             raise subprocess.CalledProcessError(1, "git")
-        self.assertFalse(sweep.git_commit_paths(["x"], "msg",
-                                                run_subprocess=fail_run))
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            self.assertFalse(sweep.git_commit_paths(["x"], "msg",
+                                                    run_subprocess=fail_run))
+        self.assertIn("subprocess failed", buf.getvalue())
 
     def test_commit_succeeds_but_push_fails(self):
         # The most-likely real-world failure: auth expired, branch
@@ -408,8 +417,11 @@ class TestGitCommitPaths(unittest.TestCase):
             FakeProc(returncode=0, stdout="rpa3\n"),    # rev-parse
             subprocess.CalledProcessError(1, "git push"),  # push raises
         ])
-        ok = sweep.git_commit_paths(["x"], "msg", run_subprocess=fake)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            ok = sweep.git_commit_paths(["x"], "msg", run_subprocess=fake)
         self.assertFalse(ok)
+        self.assertIn("subprocess failed", buf.getvalue())
 
     def test_detached_head_refuses_push(self):
         # rev-parse returns the literal 'HEAD' on detached checkout.
@@ -420,11 +432,16 @@ class TestGitCommitPaths(unittest.TestCase):
             FakeProc(returncode=0),                       # commit
             FakeProc(returncode=0, stdout="HEAD\n"),      # rev-parse
         ])
-        ok = sweep.git_commit_paths(["x"], "msg", run_subprocess=fake)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            ok = sweep.git_commit_paths(["x"], "msg", run_subprocess=fake)
         self.assertFalse(ok)
         # Critically: no `git push` call was made.
         cmds = [call.args[0][:2] for call in fake.call_args_list]
         self.assertNotIn(["git", "push"], cmds)
+        # Specific reason is printed so the user doesn't have to chase
+        # the cause from a generic 'auto-commit failed' WARN.
+        self.assertIn("detached HEAD", buf.getvalue())
 
     def test_explicit_branch_overrides_detached_head(self):
         # If the caller passes branch=… explicitly, we trust them.
