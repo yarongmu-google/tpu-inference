@@ -260,7 +260,12 @@ grep -E "Request throughput|Output token throughput|Total Token throughput|Mean.
 echo "===="
 
 # Metric extraction lives in Python (tools/benchmark/parse_bench_log.py)
-# so it gets unit-tested independently of this shell driver.
-python3 -m tools.benchmark.parse_bench_log "$BM_LOG" > "$METRICS_FILE"
+# so it gets unit-tested independently of this shell driver. Invoke
+# by absolute path rather than `python3 -m tools.benchmark.parse_bench_log`
+# — the -m form requires the repo root to be on sys.path / CWD, which
+# isn't guaranteed when sweep.py launches us as a subprocess from an
+# arbitrary working directory.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+python3 "$SCRIPT_DIR/parse_bench_log.py" "$BM_LOG" > "$METRICS_FILE"
 
 echo "Saved metrics to $METRICS_FILE"
