@@ -54,13 +54,34 @@ class SpecError(ValueError):
 
 
 def load_spec(path: str | os.PathLike) -> dict[str, Any]:
-    """Read + validate a sweep spec from JSON. Raises SpecError on bad shape."""
-    with open(path) as f:
-        spec = json.load(f)
+    """Read + validate a sweep spec from JSON.
+
+    Raises SpecError on any problem — both JSON parse errors and shape
+    errors. Caller has a single exception type to handle.
+    """
+    try:
+        with open(path) as f:
+            spec = json.load(f)
+    except json.JSONDecodeError as e:
+        raise SpecError(f"invalid JSON in {path}: {e}") from e
     if not isinstance(spec, dict):
         raise SpecError("top-level spec must be a JSON object")
     _validate_spec(spec)
     return spec
+
+
+def _normalize_optional(spec: dict[str, Any], key: str, default: Any) -> Any:
+    """Return spec[key] unless missing or JSON null, else `default`.
+
+    Crucially: a falsy-but-wrong-type value (e.g. sweep_axes=[]) falls
+    through unchanged so the downstream isinstance check catches it.
+    Earlier `spec.get(key) or default` masked these — `[]` is falsy so
+    `or {}` substituted a dict, and the type error went undetected.
+    """
+    val = spec.get(key, default)
+    if val is None:
+        return default
+    return val
 
 
 def _validate_spec(spec: dict[str, Any]) -> None:
@@ -68,10 +89,14 @@ def _validate_spec(spec: dict[str, Any]) -> None:
     missing = required - spec.keys()
     if missing:
         raise SpecError(f"missing required keys: {sorted(missing)}")
+    for k in required:
+        v = spec[k]
+        if not isinstance(v, str) or not v:
+            raise SpecError(f"{k} must be a non-empty string (got {v!r})")
 
-    sweep_axes = spec.get("sweep_axes") or {}
-    coupled_axes = spec.get("coupled_axes") or []
-    fixed = spec.get("fixed") or {}
+    sweep_axes = _normalize_optional(spec, "sweep_axes", {})
+    coupled_axes = _normalize_optional(spec, "coupled_axes", [])
+    fixed = _normalize_optional(spec, "fixed", {})
 
     if not isinstance(sweep_axes, dict):
         raise SpecError("sweep_axes must be a JSON object")
@@ -126,9 +151,11 @@ def enumerate_combos(spec: dict[str, Any]) -> list[dict[str, str]]:
 
     All values are stringified (vllm flags want strings).
     """
-    sweep_axes = spec.get("sweep_axes") or {}
-    coupled_axes = spec.get("coupled_axes") or []
-    fixed = spec.get("fixed") or {}
+    # By this point _validate_spec has run; values are well-typed.
+    # Use _normalize_optional to handle missing/None uniformly.
+    sweep_axes = _normalize_optional(spec, "sweep_axes", {})
+    coupled_axes = _normalize_optional(spec, "coupled_axes", [])
+    fixed = _normalize_optional(spec, "fixed", {})
 
     sweep_keys = list(sweep_axes.keys())
     sweep_values = [sweep_axes[k] for k in sweep_keys]

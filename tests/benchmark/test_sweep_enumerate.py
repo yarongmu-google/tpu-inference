@@ -79,10 +79,29 @@ class TestLoadSpec(unittest.TestCase):
         finally:
             os.unlink(path)
 
-    def test_bad_json(self):
+    def test_required_must_be_non_empty_string(self):
+        # null
+        for bad in (None, "", 42, ["a"]):
+            path = _write_json({"case_file": bad, "sweep_name": "s"})
+            try:
+                with self.assertRaisesRegex(sweep.SpecError,
+                                            "case_file must be a non-empty string"):
+                    sweep.load_spec(path)
+            finally:
+                os.unlink(path)
+            path = _write_json({"case_file": "c", "sweep_name": bad})
+            try:
+                with self.assertRaisesRegex(sweep.SpecError,
+                                            "sweep_name must be a non-empty string"):
+                    sweep.load_spec(path)
+            finally:
+                os.unlink(path)
+
+    def test_bad_json_wraps_into_spec_error(self):
+        # load_spec promises a single exception type to its caller.
         path = _write_json("not json at all")
         try:
-            with self.assertRaises(json.JSONDecodeError):
+            with self.assertRaisesRegex(sweep.SpecError, "invalid JSON"):
                 sweep.load_spec(path)
         finally:
             os.unlink(path)
@@ -139,8 +158,18 @@ class TestValidateSpec(unittest.TestCase):
     def test_empty_optional_sections_ok(self):
         # All three optional sections empty -> still valid.
         self._v(sweep_axes={}, coupled_axes=[], fixed={})
-        # None for optionals -> get coerced to {} / [] via `or`.
+        # None for optionals -> normalized as "missing" (still valid).
         self._v(sweep_axes=None, coupled_axes=None, fixed=None)
+
+    def test_falsy_wrong_type_optionals_rejected(self):
+        # Earlier `or default` masked these — `[]` is falsy so `or {}`
+        # silently substituted a dict and the type error went undetected.
+        with self.assertRaisesRegex(sweep.SpecError, "sweep_axes must"):
+            self._v(sweep_axes=[])
+        with self.assertRaisesRegex(sweep.SpecError, "coupled_axes must"):
+            self._v(coupled_axes={})
+        with self.assertRaisesRegex(sweep.SpecError, "fixed must"):
+            self._v(fixed=[])
 
 
 class TestEnumerateCombos(unittest.TestCase):
