@@ -461,9 +461,29 @@ class RpaV3KernelTuner(KernelTunerBase):
                         f"{smem_estimate=} > {SMEM_LIMIT_BYTES=}")
             return TuningStatus.SKIPPED, float("inf"), float("inf")
 
+        # ragged_paged_attention donates (queries, keys, values, kv_cache).
+        # kv_cache is also returned with matching shape — JAX aliases it to
+        # the return, so we chain it iter-to-iter (same trick as the old
+        # tuner). queries/keys/values are not returned with matching shape,
+        # so their donated buffers are freed after one call; we pre-clone
+        # `iters` fresh copies outside the timer (HBM->HBM, stays on TPU)
+        # and feed one per iter, so the timed loop contains only the kernel
+        # call — no clone overhead in the measurement.
+        try:
+            prepped_qkv = [(
+                jnp.array(inputs["q"]),
+                jnp.array(inputs["k"]),
+                jnp.array(inputs["v"]),
+            ) for _ in range(iters)]
+            jax.block_until_ready(prepped_qkv)
+        except Exception as err:
+            logger.info(f"[Debug] Clone failed: {err=}")
+            return TuningStatus.UNKNOWN_ERROR, float("inf"), float("inf")
+
         try:
             start_ns = time.perf_counter_ns()
-            for _ in range(iters):
+            for q_d, k_d, v_d in prepped_qkv:
+                args[0], args[1], args[2] = q_d, k_d, v_d
                 _, args[3] = jax.block_until_ready(
                     ragged_paged_attention(*args, **kwargs))
             end_ns = time.perf_counter_ns()
