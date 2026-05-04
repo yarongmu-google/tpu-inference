@@ -138,24 +138,38 @@ if [ -n "${BLOCK_SIZE:-}" ]; then
     SERVE_ARGS+=(--block-size "$BLOCK_SIZE")
 fi
 
-# Tear down only OUR vllm — never `pkill -f vllm`, that nukes any
-# concurrent runs (including future parallel sweeps). TERM first, give
-# the server up to 5 s to wind down gracefully, then KILL.
+# Tear down ONLY our vllm — never `pkill -f vllm`, that nukes neighbors.
+# We launch in its own process group (via `set -m`) so a single
+# negative-PID signal hits the whole tree: the vllm CLI parent, the
+# engine subprocess, and the per-worker subprocesses. Otherwise the
+# SIGKILL fallback kills the parent only, and the workers get reparented
+# to init holding TPU resources — fatal for the next combo in a sweep.
 clean_up() {
-    if [ -n "${VLLM_PID:-}" ] && kill -0 "$VLLM_PID" 2>/dev/null; then
-        kill "$VLLM_PID" 2>/dev/null || true
-        for _ in 1 2 3 4 5; do
-            kill -0 "$VLLM_PID" 2>/dev/null || break
-            sleep 1
-        done
-        kill -9 "$VLLM_PID" 2>/dev/null || true
+    if [ -z "${VLLM_PID:-}" ]; then
+        return 0
     fi
+    # TERM the whole process group (parent + children + grandchildren).
+    kill -- -"$VLLM_PID" 2>/dev/null || true
+    # Wait up to 5 s for the leader to exit gracefully.
+    for _ in 1 2 3 4 5; do
+        kill -0 "$VLLM_PID" 2>/dev/null || break
+        sleep 1
+    done
+    # KILL the group regardless — catches any worker that ignored TERM,
+    # even if the leader is already gone.
+    kill -9 -- -"$VLLM_PID" 2>/dev/null || true
 }
 trap clean_up EXIT
 
 echo "Starting vllm server (log: $VLLM_LOG) ..."
+# `set -m` (job control) puts the next backgrounded command into its
+# own process group; `$!` is then both PID and PGID of the new group.
+# Re-disabled immediately so the rest of the script's behavior is
+# unchanged.
+set -m
 VLLM_USE_V1=1 vllm serve "$MODEL" "${SERVE_ARGS[@]}" > "$VLLM_LOG" 2>&1 &
 VLLM_PID=$!
+set +m
 
 # Readiness probe: scrape vllm's log for the FastAPI startup-complete
 # string. NOT a /health HTTP poll — that would be more robust but
