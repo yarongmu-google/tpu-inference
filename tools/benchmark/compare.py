@@ -216,7 +216,11 @@ def format_markdown_table(
     if not results:
         return "(no results)"
 
-    headers = [label for _, label in columns]
+    # Escape pipes in headers as well as data — _columns_from_arg can
+    # derive labels from user-supplied --columns input (e.g. a key with
+    # a literal '|' in it), so trusting the label is wrong even though
+    # DEFAULT_COLUMNS and current callers happen to be pipe-free.
+    headers = [label.replace("|", r"\|") for _, label in columns]
     rows: list[list[str]] = []
     for r in results:
         rows.append([_extract_field(r, key) for key, _ in columns])

@@ -336,6 +336,25 @@ class TestFormatMarkdownTable(unittest.TestCase):
         self.assertIn("1.2", lines[2])
         self.assertIn("128", lines[2])
 
+    def test_pipe_in_header_label_is_escaped(self):
+        # Symmetric defense: a user-supplied --columns label with a
+        # pipe ('metrics.foo|bar' -> derived label 'foo|bar') would
+        # otherwise break the table just like an unescaped data cell.
+        results = [{"combo_id": "abc", "result_dir": Path("/"),
+                    "metrics": {}, "meta": {}}]
+        cols = [("combo_id", "id|here")]
+        out = compare.format_markdown_table(results, cols)
+        # Header line contains the escaped form.
+        header = out.splitlines()[0]
+        self.assertIn(r"id\|here", header)
+        # No unescaped pipe inside the header cell — every interior
+        # pipe must be preceded by a backslash.
+        interior = header.strip().lstrip("|").rstrip("|")
+        for i, ch in enumerate(interior):
+            if ch == "|":
+                self.assertEqual(interior[i - 1], "\\",
+                                 f"unescaped pipe in header cell: {interior!r}")
+
     def test_columns_widen_to_longest(self):
         # Long value forces column width to expand.
         results = [{
