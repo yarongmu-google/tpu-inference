@@ -219,10 +219,12 @@ class TestRunOne(unittest.TestCase):
         # Cmd is [script, case_file].
         self.assertEqual(captured["cmd"][1], "cases/foo.env")
 
-    def test_result_dir_with_spaces_in_path(self):
-        # Defensive: confirm RESULT_DIR survives a path containing
-        # spaces (sweep.py passes a Path; run_benchmark.sh quotes its
-        # uses of $RESULT_DIR throughout).
+    def test_run_one_path_handling_tolerates_spaces(self):
+        # Scope: this asserts that *sweep.py's* path-handling tolerates
+        # spaces — Path → str conversions, RESULT_DIR env passthrough,
+        # mkdir on the result dir. It does NOT exercise run_benchmark.sh's
+        # shell-side quoting (the subprocess is stubbed). Shell-side
+        # quoting is validated by reading run_benchmark.sh, not here.
         captured = {}
 
         def fake_run(cmd, env=None, check=False, timeout=None, **kw):
