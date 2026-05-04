@@ -67,7 +67,9 @@ VLLM_DIR="${VLLM_DIR:-../vllm}"
 CASE_NAME="$(basename "$CASE_FILE" .env)"
 TS="$(date +%Y%m%d_%H%M%S)"
 TAG="${RESULT_TAG:-$TS}"
-RESULT_DIR="tmp/bench_${CASE_NAME}_${TAG}"
+# RESULT_DIR is overridable from the env so sweep.py can direct each
+# combo's output into its hashed combo dir (tmp/bench_<case>_<sweep>/<id>).
+: "${RESULT_DIR:=tmp/bench_${CASE_NAME}_${TAG}}"
 mkdir -p "$RESULT_DIR"
 
 VLLM_LOG="$RESULT_DIR/vllm.log"
