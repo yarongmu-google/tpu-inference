@@ -56,12 +56,15 @@ class SpecError(ValueError):
 def load_spec(path: str | os.PathLike) -> dict[str, Any]:
     """Read + validate a sweep spec from JSON.
 
-    Raises SpecError on any problem — both JSON parse errors and shape
-    errors. Caller has a single exception type to handle.
+    Raises SpecError on any problem: file-read failure (missing path,
+    permissions), JSON parse failure, or shape/type validation failure.
+    Caller has a single exception type to handle.
     """
     try:
         with open(path) as f:
             spec = json.load(f)
+    except OSError as e:
+        raise SpecError(f"could not read spec file {path}: {e}") from e
     except json.JSONDecodeError as e:
         raise SpecError(f"invalid JSON in {path}: {e}") from e
     if not isinstance(spec, dict):

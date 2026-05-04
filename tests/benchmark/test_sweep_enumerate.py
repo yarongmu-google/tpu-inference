@@ -106,6 +106,12 @@ class TestLoadSpec(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_missing_file_wraps_into_spec_error(self):
+        # OSError (FileNotFoundError) on open() is also wrapped.
+        with self.assertRaisesRegex(sweep.SpecError,
+                                    "could not read spec file"):
+            sweep.load_spec("/nonexistent/path/to/spec.json")
+
 
 class TestValidateSpec(unittest.TestCase):
 
