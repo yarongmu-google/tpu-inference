@@ -174,32 +174,41 @@ class RpaV3KernelTuner(KernelTunerBase):
                          storage_manager=storage_manager,
                          job_bucket_size=100,
                          kernel_tuner_name="rpa_v3_kernel_tuner")
+        # ---- Llama 3 8B preset (first tuning target) ----
+        # Override these fields on a tuner instance for other models.
+        # Llama 3 8B: num_q_heads=32, num_kv_heads=8 (GQA 4:1), head_dim=128,
+        # no sliding window, native context 8192.
+
         # Workload shape.
         self.max_num_tokens = 2048
-        self.max_model_len = 2048
-        self.max_num_seqs = 64
+        self.max_model_len = 8192
+        self.max_num_seqs = 32
+        # Sized for max_model_len/page_size pages_per_seq × max_num_seqs.
         self.total_num_pages = 4096
 
-        # Model shape sweep. Override on a tuner instance to constrain.
-        self.page_size = [16, 32, 64, 128]
+        # Model shape.
+        self.page_size = [64, 128]
         self.q_dtype = jnp.bfloat16
-        self.kv_dtype = [jnp.bfloat16, jnp.float8_e4m3fn]
-        self.num_q_heads = [8, 32]
-        self.num_kv_heads = [4, 8]
-        self.head_dim = [128, 256]
+        # Switch to [jnp.float8_e4m3fn] if serving with quantized KV cache.
+        self.kv_dtype = [jnp.bfloat16]
+        self.num_q_heads = [32]
+        self.num_kv_heads = [8]
+        self.head_dim = [128]
         self.sliding_window = [None]
 
-        # Cases to tune. Set to a subset (e.g. [CASE_PREFILL]) to focus a run.
-        self.cases = [CASE_DECODE, CASE_PREFILL, CASE_MIXED]
+        # Cases to tune. Start with PREFILL only; widen later.
+        self.cases = [CASE_PREFILL]
 
-        # Tunable param sweep ranges.
-        self.bq_sz_lst = [16, 32, 64, 128, 256]
-        self.bkv_sz_lst = [256, 512, 1024, 2048, 4096]
-        self.bq_csz_lst = [16, 32, 64, 128]
+        # Tunable block-size sweep, anchored at the kernel's v7 default for
+        # this model (bq_sz=512, bkv_sz=2048, bq_csz=256, bkv_csz=512 — see
+        # get_default_block_sizes in kernel.py).
+        self.bq_sz_lst = [32, 64, 128, 256, 512]
+        self.bkv_sz_lst = [512, 1024, 2048, 4096]
+        self.bq_csz_lst = [32, 64, 128, 256]
         self.bkv_csz_lst = [128, 256, 512, 1024]
 
         # Chunk prefill sizes to sweep (PREFILL only).
-        self.chunk_prefill_size_lst = [64, 128, 256, 512, 1024, 2048]
+        self.chunk_prefill_size_lst = [128, 256, 512, 1024, 2048]
 
     def _block_sizes_valid(self, case, page_size, bq_sz, bkv_sz, bq_csz,
                            bkv_csz, K):
