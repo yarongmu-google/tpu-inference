@@ -22,8 +22,6 @@ from tools.kernel.tuner.v1.example_kernel_tuner import ExampleKernelTuner
 from tools.kernel.tuner.v1.rpa_v3_kernel_tuner import RpaV3KernelTuner
 from tools.kernel.tuner.v1.storage_management.local_db_manager import \
     LocalDbManager
-from tools.kernel.tuner.v1.storage_management.spanner_database_manager import \
-    SpannerStorageManager
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -111,6 +109,9 @@ def main(argv):
     if _RUN_LOCALLY.value:
         storage_manager = LocalDbManager()
     else:
+        # Lazy import: google-cloud-spanner is only needed for cloud runs.
+        from tools.kernel.tuner.v1.storage_management.spanner_database_manager import \
+            SpannerStorageManager
         storage_manager = SpannerStorageManager()
 
     # Initialize kernel tuner
