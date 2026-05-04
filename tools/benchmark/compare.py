@@ -233,8 +233,18 @@ def _columns_from_arg(arg: str | None) -> list[tuple[str, str]]:
 def _sort_axis_keys(
     keys: list[str],
 ) -> list[str]:
-    """Sort axis values: numeric ones first (ascending), then string-sorted rest."""
-    return sorted(keys, key=lambda x: (_to_float(x) is None, _to_float(x) or 0, x))
+    """Sort axis values: numeric ones first (ascending), then string-sorted rest.
+
+    Avoids the `or 0` falsy-mask pattern: `_to_float("-0.0")` returns
+    `-0.0` which is falsy in Python, so `(... or 0)` would map negative
+    zero to positive zero — harmless for ordering but inconsistent with
+    the spec/runner code paths where we replaced this idiom. Use an
+    explicit conditional expression instead.
+    """
+    def axis_key(x: str) -> tuple[bool, float, str]:
+        n = _to_float(x)
+        return (n is None, n if n is not None else 0.0, x)
+    return sorted(keys, key=axis_key)
 
 
 def _build_parser() -> argparse.ArgumentParser:

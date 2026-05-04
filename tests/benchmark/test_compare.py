@@ -386,6 +386,23 @@ class TestSortAxisKeys(unittest.TestCase):
             compare._sort_axis_keys(["zoo", "128", "abc", "1024"]),
             ["128", "1024", "abc", "zoo"])
 
+    def test_negatives_and_zero(self):
+        # Pin behavior across the negative-zero-positive boundary.
+        # Numeric values sort ascending: -5, 0, 10.
+        self.assertEqual(compare._sort_axis_keys(["10", "0", "-5"]),
+                         ["-5", "0", "10"])
+
+    def test_negative_zero_does_not_crash(self):
+        # The earlier `(... or 0)` mask quietly mapped -0.0 to 0; this
+        # assertion just pins that the new conditional doesn't crash
+        # on -0.0 and produces SOME deterministic ordering. Exact
+        # position of '-0.0' vs '0' is implementation detail (Python
+        # has -0.0 == 0.0; tuple-tiebreak via the string form depends
+        # on lexicographic order of '-' vs '0').
+        out = compare._sort_axis_keys(["1", "0", "-0.0"])
+        self.assertEqual(set(out), {"1", "0", "-0.0"})
+        self.assertEqual(out[-1], "1")  # '1' > 0 sorts last regardless
+
 
 class TestMainCli(unittest.TestCase):
 
