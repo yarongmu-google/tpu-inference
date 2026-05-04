@@ -210,10 +210,15 @@ case "$DATASET" in
         echo "ERROR: unsupported dataset '$DATASET'" >&2; exit 1 ;;
 esac
 
-echo "Running benchmark (log: $BM_LOG) ..."
-if ! ( cd "$VLLM_DIR" && vllm bench serve "${BM_ARGS[@]}" ) > "$BM_LOG" 2>&1; then
-    echo "ERROR: bench failed. tail of $BM_LOG:" >&2
-    tail -40 "$BM_LOG" >&2
+BM_ERR_LOG="$BM_LOG.stderr"
+echo "Running benchmark (stdout: $BM_LOG, stderr: $BM_ERR_LOG) ..."
+# Keep stdout (metric tables) and stderr (warnings, tracebacks) in
+# separate files. parse_bench_log only consumes $BM_LOG so warnings
+# never end up in metrics.txt.
+if ! ( cd "$VLLM_DIR" && vllm bench serve "${BM_ARGS[@]}" ) \
+        > "$BM_LOG" 2> "$BM_ERR_LOG"; then
+    echo "ERROR: bench failed. tail of $BM_ERR_LOG:" >&2
+    tail -40 "$BM_ERR_LOG" >&2
     exit 1
 fi
 
