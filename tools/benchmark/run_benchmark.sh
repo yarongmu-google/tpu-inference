@@ -88,6 +88,7 @@ METRICS_FILE="$RESULT_DIR/metrics.txt"
     echo "output_len=$OUTPUT_LEN"
     echo "num_prompts=$NUM_PROMPTS"
     echo "request_rate=$REQUEST_RATE"
+    echo "block_size=${BLOCK_SIZE:-default}"
     echo "long_prefill_token_threshold=${LONG_PREFILL_TOKEN_THRESHOLD:-default}"
     echo "rpa_p_block_sizes=${RPA_P_BLOCK_SIZES:-unset}"
     echo "git_commit=$(git rev-parse HEAD 2>/dev/null || echo unknown)"
@@ -117,6 +118,9 @@ SERVE_ARGS=(
 )
 if [ -n "${LONG_PREFILL_TOKEN_THRESHOLD:-}" ]; then
     SERVE_ARGS+=(--long-prefill-token-threshold "$LONG_PREFILL_TOKEN_THRESHOLD")
+fi
+if [ -n "${BLOCK_SIZE:-}" ]; then
+    SERVE_ARGS+=(--block-size "$BLOCK_SIZE")
 fi
 
 clean_up() {
