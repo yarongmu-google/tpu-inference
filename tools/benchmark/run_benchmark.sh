@@ -150,7 +150,9 @@ clean_up() {
     fi
     # TERM the whole process group (parent + children + grandchildren).
     kill -- -"$VLLM_PID" 2>/dev/null || true
-    # Wait up to 5 s for the leader to exit gracefully.
+    # Wait up to 5 s for the tree to wind down. The parent's `wait()`
+    # for its workers means leader-exit lags worker-exit, so this
+    # really is "tree quiesces" not "leader gone".
     for _ in 1 2 3 4 5; do
         kill -0 "$VLLM_PID" 2>/dev/null || break
         sleep 1
@@ -164,12 +166,16 @@ trap clean_up EXIT
 echo "Starting vllm server (log: $VLLM_LOG) ..."
 # `set -m` (job control) puts the next backgrounded command into its
 # own process group; `$!` is then both PID and PGID of the new group.
-# Re-disabled immediately so the rest of the script's behavior is
-# unchanged.
-set -m
+# In constrained environments (some container runtimes without /dev/tty)
+# `set -m` may emit stderr noise or be silently no-op. The 2>/dev/null
+# suppresses the noise; the silent-no-op path degrades cleanup back to
+# the pre-process-group behavior (orphan workers possible) — same as
+# what we had before, no regression. Re-disabled immediately so the
+# rest of the script's behavior is unchanged.
+set -m 2>/dev/null || true
 VLLM_USE_V1=1 vllm serve "$MODEL" "${SERVE_ARGS[@]}" > "$VLLM_LOG" 2>&1 &
 VLLM_PID=$!
-set +m
+set +m 2>/dev/null || true
 
 # Readiness probe: scrape vllm's log for the FastAPI startup-complete
 # string. NOT a /health HTTP poll — that would be more robust but
