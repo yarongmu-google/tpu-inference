@@ -125,9 +125,18 @@ if [ -n "${BLOCK_SIZE:-}" ]; then
     SERVE_ARGS+=(--block-size "$BLOCK_SIZE")
 fi
 
+# Tear down only OUR vllm — never `pkill -f vllm`, that nukes any
+# concurrent runs (including future parallel sweeps). TERM first, give
+# the server up to 5 s to wind down gracefully, then KILL.
 clean_up() {
-    pkill -f "vllm serve"        2>/dev/null || true
-    pkill -f "vllm.entrypoints"  2>/dev/null || true
+    if [ -n "${VLLM_PID:-}" ] && kill -0 "$VLLM_PID" 2>/dev/null; then
+        kill "$VLLM_PID" 2>/dev/null || true
+        for _ in 1 2 3 4 5; do
+            kill -0 "$VLLM_PID" 2>/dev/null || break
+            sleep 1
+        done
+        kill -9 "$VLLM_PID" 2>/dev/null || true
+    fi
 }
 trap clean_up EXIT
 
@@ -135,19 +144,33 @@ echo "Starting vllm server (log: $VLLM_LOG) ..."
 VLLM_USE_V1=1 vllm serve "$MODEL" "${SERVE_ARGS[@]}" > "$VLLM_LOG" 2>&1 &
 VLLM_PID=$!
 
+# Readiness probe: scrape vllm's log for the FastAPI startup-complete
+# string. NOT a /health HTTP poll — that would be more robust but
+# requires port plumbing and a curl dependency. If vllm changes this
+# log message in a future version, this loop silently times out;
+# upgrade to a /health probe is the natural follow-up.
+SERVER_READY_MARKER="Application startup complete"
 echo "Waiting up to 20 min for server startup ..."
+SERVER_READY=0
 for i in $(seq 1 120); do
     if ! kill -0 "$VLLM_PID" 2>/dev/null; then
         echo "ERROR: vllm exited early. tail of $VLLM_LOG:" >&2
         tail -40 "$VLLM_LOG" >&2
         exit 1
     fi
-    if grep -Fq "Application startup complete" "$VLLM_LOG"; then
-        echo "  ready after ${i}0s"
+    if grep -Fq "$SERVER_READY_MARKER" "$VLLM_LOG"; then
+        echo "  ready after $((i * 10))s"
+        SERVER_READY=1
         break
     fi
     sleep 10
 done
+if [ "$SERVER_READY" -ne 1 ]; then
+    echo "ERROR: vllm did not become ready within 20 min" \
+         "(no '$SERVER_READY_MARKER' in $VLLM_LOG)" >&2
+    tail -40 "$VLLM_LOG" >&2
+    exit 1
+fi
 
 BM_ARGS=(
     --backend vllm
