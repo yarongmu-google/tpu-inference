@@ -177,6 +177,17 @@ class TestValidateSpec(unittest.TestCase):
         with self.assertRaisesRegex(sweep.SpecError, "fixed must"):
             self._v(fixed=[])
 
+    def test_timeout_seconds_validation(self):
+        # Missing / explicit-null is OK — uses DEFAULT_TIMEOUT_SECONDS.
+        self._v()
+        self._v(timeout_seconds=None)
+        # Positive int is OK.
+        self._v(timeout_seconds=600)
+        # Anything else is an error.
+        for bad in (0, -1, "60", 3.14, [60], True, False):
+            with self.assertRaisesRegex(sweep.SpecError, "timeout_seconds"):
+                self._v(timeout_seconds=bad)
+
 
 class TestEnumerateCombos(unittest.TestCase):
 

@@ -130,6 +130,14 @@ def _validate_spec(spec: dict[str, Any]) -> None:
     coupled_keys = set(coupled_axes[0].keys()) if coupled_axes else set()
     fixed_keys = set(fixed.keys())
 
+    if "timeout_seconds" in spec and spec["timeout_seconds"] is not None:
+        ts = spec["timeout_seconds"]
+        # bool is a subclass of int; reject it explicitly (True/False
+        # would silently coerce to 1/0).
+        if isinstance(ts, bool) or not isinstance(ts, int) or ts <= 0:
+            raise SpecError(
+                f"timeout_seconds must be a positive int (got {ts!r})")
+
     overlap = {
         "sweep_axes/coupled_axes": sweep_keys & coupled_keys,
         "sweep_axes/fixed":         sweep_keys & fixed_keys,
@@ -337,7 +345,11 @@ def run_one(
     env = {**base_environ, **combo, "RESULT_DIR": str(rdir)}
 
     cmd = [str(script_path), str(case_file)]
-    timeout = int(spec.get("timeout_seconds") or DEFAULT_TIMEOUT_SECONDS)
+    # _normalize_optional (vs `or default`) so an explicit `0` would
+    # surface — _validate_spec rejects 0 anyway, but the read here is
+    # consistent with the rest of the spec-loading path.
+    timeout = int(_normalize_optional(
+        spec, "timeout_seconds", DEFAULT_TIMEOUT_SECONDS))
     started = timer()
     try:
         proc = run_subprocess(cmd, env=env, check=False, timeout=timeout)
