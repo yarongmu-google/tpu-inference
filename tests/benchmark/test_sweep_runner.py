@@ -497,6 +497,14 @@ class TestMainCli(unittest.TestCase):
     # block is not covered by these tests because runpy.run_module reloads
     # the module in a fresh namespace, bypassing any mocks on run_sweep.
     # main() itself is fully covered above through direct invocation.
+    #
+    # tests/benchmark/test_parse_bench_log.py::TestMainCli::test_module_main_block
+    # *does* exercise the equivalent shim because parse_bench_log's main
+    # reads a real file and writes stdout — no mocking required, so the
+    # runpy reload is fine. If we ever refactor sweep.run_sweep to be
+    # invoked through a sys.argv-driven seam (e.g. an env var pointing at
+    # a script-runner stub instead of subprocess.run), the same approach
+    # would let us cover sweep.py's __main__ block too.
 
 
 if __name__ == "__main__":
