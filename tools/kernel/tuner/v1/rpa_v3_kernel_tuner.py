@@ -502,6 +502,12 @@ class RpaV3KernelTuner(KernelTunerBase):
                     ragged_paged_attention(*args, **kwargs))
             end_ns = time.perf_counter_ns()
             latency_ns = end_ns - start_ns
+            # Propagate the latest (live) kv_cache back into the cached
+            # inputs so the next run() call (warmup -> measurement, or the
+            # next tunable_params on the same key) reads a valid buffer.
+            # The original Array object passed in as args[3] is marked
+            # deleted by JAX donation; only the returned object is live.
+            inputs["kv_cache"] = args[3]
             return TuningStatus.SUCCESS, latency_ns / iters, latency_ns
         except Exception as err:
             logger.info(f"[Debug] Run failed: {err=}")
