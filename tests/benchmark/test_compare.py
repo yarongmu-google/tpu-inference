@@ -296,6 +296,15 @@ class TestExtractField(unittest.TestCase):
         self.assertEqual(compare._extract_field(r, "extra"), "something")
         self.assertEqual(compare._extract_field(r, "missing"), "")
 
+    def test_pipe_in_value_is_escaped(self):
+        # A pipe in cell content would break Markdown layout. Escape it.
+        r = {"combo_id": "x|y", "result_dir": Path("/"),
+             "metrics": {"k": "a|b"}, "meta": {"flag": "--foo a|b"}}
+        self.assertEqual(compare._extract_field(r, "combo_id"), r"x\|y")
+        self.assertEqual(compare._extract_field(r, "metrics.k"), r"a\|b")
+        self.assertEqual(compare._extract_field(r, "meta.flag"),
+                         r"--foo a\|b")
+
 
 class TestFormatMarkdownTable(unittest.TestCase):
 

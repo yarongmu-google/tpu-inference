@@ -168,15 +168,24 @@ def best_per_axis(
 
 
 def _extract_field(result: dict[str, Any], key: str) -> str:
+    """Look up a field path in a result dict, return as a Markdown-safe str.
+
+    Pipe characters in cell values are escaped (`|` -> `\\|`) so a value
+    containing a pipe doesn't break the table layout. Pure-data values
+    in our pipeline don't contain pipes today, but defending is cheap.
+    """
+    raw: Any
     if key == "combo_id":
-        return str(result.get("combo_id", ""))
-    if key == "result_dir":
-        return str(result.get("result_dir", ""))
-    if "." in key:
+        raw = result.get("combo_id", "")
+    elif key == "result_dir":
+        raw = result.get("result_dir", "")
+    elif "." in key:
         section, field = key.split(".", 1)
         section_dict = result.get(section, {}) or {}
-        return str(section_dict.get(field, ""))
-    return str(result.get(key, ""))
+        raw = section_dict.get(field, "")
+    else:
+        raw = result.get(key, "")
+    return str(raw).replace("|", r"\|")
 
 
 def format_markdown_table(
