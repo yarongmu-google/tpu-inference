@@ -56,19 +56,25 @@ P99 E2EL (ms):                           4500.30
 """
 
 
-class TestLastNumber(unittest.TestCase):
+class TestLastToken(unittest.TestCase):
 
     def test_extracts_last_token(self):
-        self.assertEqual(pbl._last_number("Mean TTFT (ms): 12.3"), "12.3")
+        self.assertEqual(pbl._last_token("Mean TTFT (ms): 12.3"), "12.3")
 
     def test_strips_trailing_whitespace(self):
-        self.assertEqual(pbl._last_number("foo bar 99   \n"), "99")
+        self.assertEqual(pbl._last_token("foo bar 99   \n"), "99")
 
     def test_empty_line(self):
-        self.assertEqual(pbl._last_number(""), "")
+        self.assertEqual(pbl._last_token(""), "")
 
     def test_whitespace_only(self):
-        self.assertEqual(pbl._last_number("   \t  "), "")
+        self.assertEqual(pbl._last_token("   \t  "), "")
+
+    def test_returns_non_numeric_token_verbatim(self):
+        # Documents the helper's honest contract: it returns the last
+        # token, period — numeric or not. Callers validate (or trust).
+        self.assertEqual(pbl._last_token("foo bar baz"), "baz")
+        self.assertEqual(pbl._last_token("99% complete"), "complete")
 
 
 class TestParseLatencyMetrics(unittest.TestCase):
@@ -156,6 +162,23 @@ class TestParseThroughputMetrics(unittest.TestCase):
         result = pbl.parse_throughput_metrics(lines, metrics=[("foo", "fooBAR")])
         self.assertEqual(result, {"foo": "42"})
 
+    def test_diagnostic_prefix_does_not_match(self):
+        # If vllm ever logs a diagnostic with the marker mid-line, a
+        # naive substring match would steal the slot. The start-anchor
+        # rejects such lines.
+        lines = [
+            "WARNING: Request throughput (req/s): too few samples — unreliable",
+            "Request throughput (req/s):              7.77",
+        ]
+        result = pbl.parse_throughput_metrics(lines)
+        self.assertEqual(result["RequestThroughput"], "7.77")
+
+    def test_leading_whitespace_tolerated(self):
+        # Indented lines still match (lstrip before startswith).
+        lines = ["   Request throughput (req/s):              3.30"]
+        result = pbl.parse_throughput_metrics(lines)
+        self.assertEqual(result["RequestThroughput"], "3.30")
+
 
 class TestParseBenchLog(unittest.TestCase):
 
@@ -175,6 +198,24 @@ class TestParseBenchLog(unittest.TestCase):
     def test_empty_input(self):
         result = pbl.parse_bench_log("")
         self.assertTrue(all(v == "" for v in result.values()))
+
+    def test_key_order_is_section_major_then_throughput(self):
+        # Pin the documented order: for each section in (TTFT, TPOT,
+        # ITL, E2EL) we emit (Mean, Median, P99), then the throughput
+        # keys in declared order. Section-major (NOT stat-major).
+        keys = list(pbl.parse_bench_log("").keys())
+        expected_latency = [
+            f"{stat}{sec}"
+            for sec in pbl.LATENCY_SECTIONS
+            for stat in pbl.LATENCY_STATS
+        ]
+        expected_throughput = [k for k, _ in pbl.THROUGHPUT_METRICS]
+        self.assertEqual(keys, expected_latency + expected_throughput)
+        # Sanity: first six keys are the three TTFT stats followed by
+        # the three TPOT stats — section-major.
+        self.assertEqual(keys[:6],
+                         ["MeanTTFT", "MedianTTFT", "P99TTFT",
+                          "MeanTPOT", "MedianTPOT", "P99TPOT"])
 
 
 class TestFormatMetrics(unittest.TestCase):

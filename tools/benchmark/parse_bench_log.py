@@ -35,8 +35,15 @@ THROUGHPUT_METRICS = (
 )
 
 
-def _last_number(line: str) -> str:
-    """Return the last whitespace-separated token of a line, or empty."""
+def _last_token(line: str) -> str:
+    """Return the last whitespace-separated token of a line, or empty.
+
+    Honest about the contract: this is *not* a numeric extractor. For
+    well-formed vllm output the last token happens to be the metric value,
+    but the helper does no numeric validation — a trailing parenthetical
+    or unit would be returned verbatim. Callers either trust the input
+    shape or validate downstream.
+    """
     parts = line.strip().split()
     return parts[-1] if parts else ""
 
@@ -46,14 +53,19 @@ def parse_latency_metrics(
     sections: Iterable[str] = LATENCY_SECTIONS,
     stats: Iterable[str] = LATENCY_STATS,
 ) -> dict[str, str]:
-    """Extract per-(stat,section) numbers from a list of bench-log lines.
+    """Extract per-(stat, section) numbers from a list of bench-log lines.
 
-    For each (stat, section), find a line containing both `f"{stat} {section}"`
-    and `f"{section} (ms):"`. Take the last whitespace-separated token of
-    that line as the numeric value.
+    For each (stat, section), find a line that:
+      - contains the substring ``f"{section} (ms):"``, AND
+      - matches the regex ``\\b{stat}\\b.*\\b{section}\\b`` (word-boundary
+        on both ends, so ``(stat, section)`` may be separated by any
+        intervening characters; section-header lines like ``"TTFT (ms):"``
+        with no preceding stat token don't match).
+    Take the last whitespace-separated token of that line as the value.
 
     Returns a dict like {"MeanTTFT": "12.3", "P99E2EL": "999.0", ...}.
-    Missing values are recorded as empty string.
+    Missing values are recorded as empty string. Key order is
+    section-major (see parse_bench_log docstring).
     """
     sections = tuple(sections)
     stats = tuple(stats)
@@ -64,11 +76,8 @@ def parse_latency_metrics(
             if section_marker not in line:
                 continue
             for stat in stats:
-                # Match the section header itself (no preceding stat) only as
-                # whole word — avoid the section header ("X (ms):") matching
-                # a stat-line for a different section.
                 if re.search(rf"\b{re.escape(stat)}\b.*\b{re.escape(sec)}\b", line):
-                    out[f"{stat}{sec}"] = _last_number(line)
+                    out[f"{stat}{sec}"] = _last_token(line)
     return out
 
 
@@ -78,22 +87,29 @@ def parse_throughput_metrics(
 ) -> dict[str, str]:
     """Extract single-line throughput metrics keyed by name.
 
-    `metrics` is an iterable of (output_key, search_substring). The first
-    line containing the substring contributes its last token as the value.
+    `metrics` is an iterable of (output_key, search_substring). For each
+    metric, the first line whose lstrip()ped form *starts* with the
+    substring contributes its last token as the value. The start-anchor
+    guards against a stray diagnostic line (e.g. "WARNING: Request
+    throughput (req/s): too few samples — unreliable") swallowing the
+    real metric.
     """
     out: dict[str, str] = {key: "" for key, _ in metrics}
     for line in lines:
+        stripped = line.lstrip()
         for key, marker in metrics:
-            if out[key] == "" and marker in line:
-                out[key] = _last_number(line)
+            if out[key] == "" and stripped.startswith(marker):
+                out[key] = _last_token(line)
     return out
 
 
 def parse_bench_log(text: str) -> dict[str, str]:
-    """Top-level: parse a vllm-bench-serve stdout/stderr blob into a flat dict.
+    """Top-level: parse a vllm-bench-serve stdout blob into a flat dict.
 
-    Combines latency + throughput extraction. Order of keys is stable:
-    (Mean|Median|P99) × (TTFT|TPOT|ITL|E2EL), then the throughput keys.
+    Combines latency + throughput extraction. Key order is deterministic
+    (and pinned by tests): for each section in (TTFT, TPOT, ITL, E2EL)
+    we emit (Mean, Median, P99) — section-major — followed by the
+    throughput keys in their declared order.
     """
     lines = text.splitlines()
     out: dict[str, str] = {}
