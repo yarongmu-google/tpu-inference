@@ -495,11 +495,17 @@ class RpaV3KernelTuner(KernelTunerBase):
             return TuningStatus.UNKNOWN_ERROR, float("inf"), float("inf")
 
         try:
+            # Async-dispatch all iters back-to-back, single block_until_ready
+            # at the end. Lets the device pipeline iter N+1's launch with iter
+            # N's tail; host (Python+JAX dispatch) overhead is amortized over
+            # the whole loop instead of paid per-iter. Per-call latency
+            # approaches kernel time as iters grows. Standard JAX benchmark
+            # pattern.
             start_ns = time.perf_counter_ns()
             for q_d, k_d, v_d in prepped_qkv:
                 args[0], args[1], args[2] = q_d, k_d, v_d
-                _, args[3] = jax.block_until_ready(
-                    ragged_paged_attention(*args, **kwargs))
+                _, args[3] = ragged_paged_attention(*args, **kwargs)
+            jax.block_until_ready(args[3])
             end_ns = time.perf_counter_ns()
             latency_ns = end_ns - start_ns
             # Propagate the latest (live) kv_cache back into the cached
