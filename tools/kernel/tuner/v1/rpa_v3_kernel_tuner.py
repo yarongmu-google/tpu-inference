@@ -32,6 +32,11 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 
+CASE_DECODE = "decode"
+CASE_PREFILL = "prefill"
+CASE_MIXED = "mixed"
+
+
 def cdiv(a, b):
     assert b != 0
     return (a + b - 1) // b
@@ -82,38 +87,41 @@ def get_simplified_raw_key(
     )
 
 
-# Temporarily set a large vmem limit for autotuning.
 VMEM_LIMIT_BYTES = 60 * 1024 * 1024
 SMEM_LIMIT_BYTES = 0.9 * 1024 * 1024
 jax.config.parse_flags_with_absl()
 
 
-def get_decode_heavy_example(max_num_tokens, max_model_len, actual_num_seqs):
-    """Returns a decode-heavy example: N-1 decode sequences, 1 prefill sequence."""
-    assert max_num_tokens >= actual_num_seqs
-    decode_end = actual_num_seqs - 1
+def get_decode_only_example(actual_num_seqs, max_model_len):
+    """All seqs decode (q_len=1). distribution=[N, N, N]."""
+    cu_q_lens = list(range(actual_num_seqs + 1))
+    kv_lens = [max_model_len] * actual_num_seqs
+    return cu_q_lens, kv_lens, actual_num_seqs, actual_num_seqs
+
+
+def get_prefill_only_example(actual_num_seqs, chunk_prefill_size,
+                             max_model_len):
+    """All seqs uniform K-prefill (q_len=K). distribution=[0, N, N].
+
+    Each seq has q_len=K and kv_len=max_model_len, modeling steady-state
+    chunked prefill where K is one chunk of an already-partially-prefilled
+    prompt — so the kernel must read (kv_len - K) tokens from the paged cache
+    per seq, exercising the realistic in-production path.
+    """
+    K = chunk_prefill_size
+    assert K > 0
+    cu_q_lens = [0]
+    for _ in range(actual_num_seqs):
+        cu_q_lens.append(cu_q_lens[-1] + K)
+    kv_lens = [max_model_len] * actual_num_seqs
+    return cu_q_lens, kv_lens, 0, actual_num_seqs
+
+
+def get_mixed_example(actual_num_seqs, max_num_tokens, max_model_len):
+    """Mixed: 1 decode + (N-1) prefill of varied q_len. distribution=[1, 1, N]."""
     if actual_num_seqs == 1:
         cu_q_lens = [0, max_num_tokens]
-    else:
-        cu_q_lens = list(range(actual_num_seqs))
-        prefill_q_len = max_num_tokens - (actual_num_seqs - 1)
-        cu_q_lens.append(cu_q_lens[-1] + prefill_q_len)
-    kv_lens = []
-    for i in range(actual_num_seqs):
-        q_len = cu_q_lens[i + 1] - cu_q_lens[i]
-        if q_len == 1:
-            kv_lens.append(max_model_len)
-        else:
-            kv_lens.append(q_len)
-    return cu_q_lens, kv_lens, decode_end
-
-
-def get_prefill_heavy_example(max_num_tokens, max_model_len, actual_num_seqs):
-    """Returns a prefill-heavy example: 1 decode sequence, N-1 prefill sequences."""
-    assert max_num_tokens >= actual_num_seqs
-    if actual_num_seqs == 1:
         decode_end = 0
-        cu_q_lens = [0, max_num_tokens]
     else:
         decode_end = 1
         cu_q_lens = [0, 1]
@@ -127,11 +135,8 @@ def get_prefill_heavy_example(max_num_tokens, max_model_len, actual_num_seqs):
     kv_lens = []
     for i in range(actual_num_seqs):
         q_len = cu_q_lens[i + 1] - cu_q_lens[i]
-        if q_len == 1:
-            kv_lens.append(max_model_len)
-        else:
-            kv_lens.append(q_len)
-    return cu_q_lens, kv_lens, decode_end
+        kv_lens.append(max_model_len if q_len == 1 else q_len)
+    return cu_q_lens, kv_lens, decode_end, decode_end
 
 
 @dataclasses.dataclass
@@ -144,130 +149,175 @@ class TuningKey:
     head_dim: int
     max_model_len: int
     sliding_window: int
+    case: str
+    chunk_prefill_size: int  # 0 when not CASE_PREFILL
 
 
 @dataclasses.dataclass
 class TunableParams:
-    bkv_p: int
     bq_sz: int
+    bkv_sz: int
+    bq_csz: int
+    bkv_csz: int
 
 
 class RpaV3KernelTuner(KernelTunerBase):
-    # This is a reference implementation of a KernelTuner for testing purposes.
-    # It defines a simple tuning key and tunable parameters, and simulates running
-    # a kernel by sleeping for a random short duration. The latency returned is
-    # not based on any real computation, but rather is just a placeholder to
-    # demonstrate the tuning pipeline.
+    """Tunes RPA v3 separately for the DECODE / PREFILL / MIXED cases.
+
+    The PREFILL case sweeps additionally over chunk_prefill_size (K), constrained
+    to K % bq_sz == 0 to avoid within-iter padding waste.
+    """
 
     def __init__(self, storage_manager):
         super().__init__(tuning_key_class=TuningKey,
                          tunable_params_class=TunableParams,
                          storage_manager=storage_manager,
                          job_bucket_size=100,
-                         kernel_tuner_name="rpa_v3_kernel_tuner"
-                         )  # Use a small bucket size for testing
-        self.max_num_tokens = 128
+                         kernel_tuner_name="rpa_v3_kernel_tuner")
+        # Workload shape.
+        self.max_num_tokens = 2048
         self.max_model_len = 2048
-        self.max_num_seqs = 128
-        self.bkv_p_lst = [64, 128]
-        self.bq_sz_lst = [128]
-        self.page_size = 128
+        self.max_num_seqs = 64
+        self.total_num_pages = 4096
+
+        # Model shape sweep. Override on a tuner instance to constrain.
+        self.page_size = [16, 32, 64, 128]
         self.q_dtype = jnp.bfloat16
-        self.kv_dtype = jnp.float8_e4m3fn
-        self.num_q_heads = 8
-        self.num_kv_heads = 4
-        self.head_dim = 256
-        self.total_num_pages = 1000
-        self.sliding_window = [512, 1024]
+        self.kv_dtype = [jnp.bfloat16, jnp.float8_e4m3fn]
+        self.num_q_heads = [8, 32]
+        self.num_kv_heads = [4, 8]
+        self.head_dim = [128, 256]
+        self.sliding_window = [None]
+
+        # Cases to tune. Set to a subset (e.g. [CASE_PREFILL]) to focus a run.
+        self.cases = [CASE_DECODE, CASE_PREFILL, CASE_MIXED]
+
+        # Tunable param sweep ranges.
+        self.bq_sz_lst = [16, 32, 64, 128, 256]
+        self.bkv_sz_lst = [256, 512, 1024, 2048, 4096]
+        self.bq_csz_lst = [16, 32, 64, 128]
+        self.bkv_csz_lst = [128, 256, 512, 1024]
+
+        # Chunk prefill sizes to sweep (PREFILL only).
+        self.chunk_prefill_size_lst = [64, 128, 256, 512, 1024, 2048]
+
+    def _block_sizes_valid(self, case, page_size, bq_sz, bkv_sz, bq_csz,
+                           bkv_csz, K):
+        if bq_sz % bq_csz != 0:
+            return False
+        if bkv_sz % bkv_csz != 0:
+            return False
+        if bkv_sz % page_size != 0:
+            return False
+        if bkv_csz % page_size != 0:
+            return False
+        if case == CASE_DECODE:
+            if bq_sz != 1 or bq_csz != 1:
+                return False
+        if case == CASE_PREFILL:
+            if K % bq_sz != 0:
+                return False
+            if bq_sz > K:
+                return False
+        return True
 
     def generate_cases(self) -> list[TuningCase]:
-        # tuning keys
-        max_model_len = self.max_model_len if isinstance(
-            self.max_model_len, list) else [self.max_model_len]
-        sliding_window = self.sliding_window if isinstance(
-            self.sliding_window, list) else [self.sliding_window]
-        page_size = self.page_size if isinstance(self.page_size,
-                                                 list) else [self.page_size]
-        q_dtype = self.q_dtype if isinstance(self.q_dtype,
-                                             list) else [self.q_dtype]
-        kv_dtype = self.kv_dtype if isinstance(self.kv_dtype,
-                                               list) else [self.kv_dtype]
-        num_q_heads = self.num_q_heads if isinstance(
-            self.num_q_heads, list) else [self.num_q_heads]
-        num_kv_heads = self.num_kv_heads if isinstance(
-            self.num_kv_heads, list) else [self.num_kv_heads]
-        head_dim = self.head_dim if isinstance(self.head_dim,
-                                               list) else [self.head_dim]
-        # tunable parameters
-        bkv_p_lst = self.bkv_p_lst if isinstance(self.bkv_p_lst,
-                                                 list) else [self.bkv_p_lst]
-        bq_sz_lst = self.bq_sz_lst if isinstance(self.bq_sz_lst,
-                                                 list) else [self.bq_sz_lst]
+        as_list = lambda x: x if isinstance(x, list) else [x]
+        sweep = dict(
+            page_size=as_list(self.page_size),
+            q_dtype=as_list(self.q_dtype),
+            kv_dtype=as_list(self.kv_dtype),
+            num_q_heads=as_list(self.num_q_heads),
+            num_kv_heads=as_list(self.num_kv_heads),
+            head_dim=as_list(self.head_dim),
+            max_model_len=as_list(self.max_model_len),
+            sliding_window=as_list(self.sliding_window),
+            cases=as_list(self.cases),
+        )
+        bq_sz_lst = as_list(self.bq_sz_lst)
+        bkv_sz_lst = as_list(self.bkv_sz_lst)
+        bq_csz_lst = as_list(self.bq_csz_lst)
+        bkv_csz_lst = as_list(self.bkv_csz_lst)
+        K_lst = as_list(self.chunk_prefill_size_lst)
 
-        cases = []
-        for page_size, q_dtype, kv_dtype, num_q_heads, num_kv_heads, head_dim, max_model_len, sliding_window, bkv_p, bq_sz in itertools.product(
-                page_size, q_dtype, kv_dtype, num_q_heads, num_kv_heads,
-                head_dim, max_model_len, sliding_window, bkv_p_lst, bq_sz_lst):
+        out: list[TuningCase] = []
+        for (ps, qd, kd, nq, nk, hd, mml, sw, case) in itertools.product(
+                sweep["page_size"], sweep["q_dtype"], sweep["kv_dtype"],
+                sweep["num_q_heads"], sweep["num_kv_heads"],
+                sweep["head_dim"], sweep["max_model_len"],
+                sweep["sliding_window"], sweep["cases"]):
+            if case == CASE_DECODE:
+                bq_iter, bqc_iter, K_iter = [1], [1], [0]
+            elif case == CASE_PREFILL:
+                bq_iter, bqc_iter, K_iter = bq_sz_lst, bq_csz_lst, K_lst
+            else:
+                bq_iter, bqc_iter, K_iter = bq_sz_lst, bq_csz_lst, [0]
 
-            tuning_key = TuningKey(
-                page_size=page_size,
-                q_dtype=jnp.dtype(q_dtype).name,
-                kv_dtype=jnp.dtype(kv_dtype).name,
-                num_q_heads=num_q_heads,
-                num_kv_heads=num_kv_heads,
-                head_dim=head_dim,
-                max_model_len=max_model_len,
-                sliding_window=sliding_window,
-            )
-            tunable_params = TunableParams(
-                bkv_p=bkv_p,
-                bq_sz=bq_sz,
-            )
-            (
-                page_size,
-                q_dtype_name,
-                kv_dtype_name,
-                num_q_heads,
-                num_kv_heads,
-                head_dim,
-                max_model_len,
-                sliding_window,
-            ) = get_simplified_raw_key(
-                tuning_key.page_size,
-                tuning_key.q_dtype,
-                tuning_key.kv_dtype,
-                tuning_key.num_q_heads,
-                tuning_key.num_kv_heads,
-                tuning_key.head_dim,
-                tuning_key.max_model_len,
-                tuning_key.sliding_window,
-            )
-            pages_per_seq = cdiv(max_model_len, page_size)
+            for bq_sz, bkv_sz, bq_csz, bkv_csz, K in itertools.product(
+                    bq_iter, bkv_sz_lst, bqc_iter, bkv_csz_lst, K_iter):
+                if not self._block_sizes_valid(case, ps, bq_sz, bkv_sz, bq_csz,
+                                               bkv_csz, K):
+                    continue
+                # bkv_sz expressed in tokens; cap pages-per-block.
+                pages_per_seq = cdiv(mml, ps)
+                if bkv_sz // ps > pages_per_seq:
+                    continue
+                if bkv_sz > 8192:
+                    continue
 
-            if bkv_p > pages_per_seq:
-                logger.info(f"[Debug] Skip ({page_size=}, {bkv_p=}) because"
-                            f" {bkv_p=} > {pages_per_seq=}")
-                continue
-            if page_size * bkv_p > 4096:
-                logger.info(
-                    f"[Debug] Skip because ({page_size=}) * ({bkv_p=}) ="
-                    f" {page_size * bkv_p} > 4096")
-                continue
+                tuning_key = TuningKey(
+                    page_size=ps,
+                    q_dtype=jnp.dtype(qd).name,
+                    kv_dtype=jnp.dtype(kd).name,
+                    num_q_heads=nq,
+                    num_kv_heads=nk,
+                    head_dim=hd,
+                    max_model_len=mml,
+                    sliding_window=sw,
+                    case=case,
+                    chunk_prefill_size=K,
+                )
+                tunable_params = TunableParams(bq_sz=bq_sz,
+                                               bkv_sz=bkv_sz,
+                                               bq_csz=bq_csz,
+                                               bkv_csz=bkv_csz)
+                out.append(TuningCase(tuning_key, tunable_params))
+        logger.info(f"[Debug] Generated {len(out)} cases")
+        return out
 
-            cases.append(TuningCase(tuning_key, tunable_params))
-        return cases
+    def _build_inputs(self, tuning_key: TuningKey):
+        case = tuning_key.case
+        max_num_seqs = self.max_num_seqs
+        if case == CASE_DECODE:
+            actual_num_seqs = min(32, max_num_seqs)
+            return get_decode_only_example(actual_num_seqs,
+                                           tuning_key.max_model_len) + (
+                                               actual_num_seqs, )
+        if case == CASE_PREFILL:
+            K = tuning_key.chunk_prefill_size
+            assert K > 0
+            actual_num_seqs = max(
+                1, min(self.max_num_tokens // K, max_num_seqs))
+            return get_prefill_only_example(actual_num_seqs, K,
+                                            tuning_key.max_model_len) + (
+                                                actual_num_seqs, )
+        actual_num_seqs = min(8, max_num_seqs)
+        return get_mixed_example(actual_num_seqs, self.max_num_tokens,
+                                 tuning_key.max_model_len) + (
+                                     actual_num_seqs, )
 
     def generate_inputs(self, tuning_key: TuningKey):
-        # Generate some mock inputs for the kernel based on the tuning key.
-        if self._TUNING_KEY and tuning_key == self._TUNING_KEY:
+        cache_key = (tuning_key.case, tuning_key.chunk_prefill_size,
+                     tuning_key.page_size, tuning_key.q_dtype,
+                     tuning_key.kv_dtype, tuning_key.num_q_heads,
+                     tuning_key.num_kv_heads, tuning_key.head_dim,
+                     tuning_key.max_model_len, tuning_key.sliding_window)
+        if getattr(self, "_INPUT_CACHE_KEY", None) == cache_key:
             return self._KERNEL_INPUTS_CACHE
-        self._TUNING_KEY = tuning_key
+        self._INPUT_CACHE_KEY = cache_key
 
-        cu_q_lens, kv_lens, decode_end = get_decode_heavy_example(
-            self.max_num_tokens,
-            self.max_model_len,
-            actual_num_seqs=35,
-        )
+        cu_q_lens, kv_lens, decode_end, prefill_end, actual_num_seqs = (
+            self._build_inputs(tuning_key))
 
         (
             page_size,
@@ -277,7 +327,7 @@ class RpaV3KernelTuner(KernelTunerBase):
             num_kv_heads,
             head_dim,
             max_model_len,
-            sliding_window,
+            _,
         ) = get_simplified_raw_key(
             tuning_key.page_size,
             tuning_key.q_dtype,
@@ -291,7 +341,7 @@ class RpaV3KernelTuner(KernelTunerBase):
         q_dtype = jnp.dtype(q_dtype_name)
         kv_dtype = jnp.dtype(kv_dtype_name)
         self.pages_per_seq = cdiv(max_model_len, page_size)
-        actual_num_seqs = len(kv_lens)
+
         cu_q_lens = jnp.array(cu_q_lens, dtype=jnp.int32)
         kv_lens = jnp.array(kv_lens, dtype=jnp.int32)
         cu_q_lens = jnp.pad(cu_q_lens,
@@ -300,43 +350,35 @@ class RpaV3KernelTuner(KernelTunerBase):
 
         q_shape = (self.max_num_tokens, num_q_heads, head_dim)
         kv_shape = (self.max_num_tokens, num_kv_heads, head_dim)
-        kv_cache_shape = get_kv_cache_shape(
-            self.total_num_pages,
-            page_size,
-            num_kv_heads,
-            head_dim,
-            kv_dtype,
-        )
-        q = jnp.array(
-            np.random.rand(*q_shape),
-            dtype=q_dtype,
-        )
-        k = jnp.array(
-            np.random.rand(*kv_shape),
-            dtype=kv_dtype,
-        )
-        v = jnp.array(
-            np.random.rand(*kv_shape),
-            dtype=kv_dtype,
-        )
-        kv_cache = jnp.array(
-            np.random.rand(*kv_cache_shape),
-            dtype=kv_dtype,
-        )
-        page_indices = np.random.randint(0,
-                                         self.total_num_pages,
-                                         size=(self.max_num_seqs *
-                                               self.pages_per_seq, ),
-                                         dtype=jnp.int32)
+        kv_cache_shape = get_kv_cache_shape(self.total_num_pages, page_size,
+                                            num_kv_heads, head_dim, kv_dtype)
 
-        distribution = jnp.array(
-            [decode_end, actual_num_seqs, actual_num_seqs], dtype=jnp.int32)
-        logger.info(f"[Debug] {distribution=}")
+        rng = np.random.default_rng(1234)
+        q = jnp.array(rng.random(size=q_shape, dtype=np.float32),
+                      dtype=q_dtype)
+        k = jnp.array(rng.random(size=kv_shape, dtype=np.float32),
+                      dtype=kv_dtype)
+        v = jnp.array(rng.random(size=kv_shape, dtype=np.float32),
+                      dtype=kv_dtype)
+        kv_cache = jnp.array(rng.random(size=kv_cache_shape,
+                                        dtype=np.float32),
+                             dtype=kv_dtype)
+        page_indices = jnp.array(rng.integers(
+            0,
+            self.total_num_pages,
+            size=(self.max_num_seqs * self.pages_per_seq, ),
+            dtype=np.int32),
+                                 dtype=jnp.int32)
+
+        distribution = jnp.array([decode_end, prefill_end, actual_num_seqs],
+                                 dtype=jnp.int32)
+        logger.info(
+            f"[Debug] case={tuning_key.case} K={tuning_key.chunk_prefill_size}"
+            f" actual_num_seqs={actual_num_seqs} {distribution=}")
 
         self._KERNEL_INPUTS_CACHE = {
             "cu_q_lens": cu_q_lens,
             "kv_lens": kv_lens,
-            "decode_end": decode_end,
             "q": q,
             "k": k,
             "v": v,
@@ -346,33 +388,30 @@ class RpaV3KernelTuner(KernelTunerBase):
         }
         return self._KERNEL_INPUTS_CACHE
 
+    def _kernel_kwargs(self, tuning_key: TuningKey,
+                       tunable_params: TunableParams) -> dict:
+        block_tuple = (tunable_params.bq_sz, tunable_params.bkv_sz,
+                       tunable_params.bq_csz, tunable_params.bkv_csz)
+        kwargs = {
+            "sliding_window": tuning_key.sliding_window,
+            "vmem_limit_bytes": VMEM_LIMIT_BYTES,
+        }
+        if tuning_key.case == CASE_DECODE:
+            kwargs["d_block_sizes"] = block_tuple
+        elif tuning_key.case == CASE_PREFILL:
+            kwargs["p_block_sizes"] = block_tuple
+            kwargs["chunk_prefill_size"] = tuning_key.chunk_prefill_size
+        else:
+            kwargs["m_block_sizes"] = block_tuple
+        return kwargs
+
     def run(self,
             tuning_key: TuningKey,
             tunable_params: TunableParams,
             iters: int = 1) -> tuple[TuningStatus, float, float]:
-        # Run the kernel with the given tuning key and tunable params, and return the latency.
-        logger.info(
-            f"Running rpa_v3 kernel with tuning_key={tuning_key}, tunable_params={tunable_params}, iters={iters}"
-        )
-        (
-            page_size,
-            _,
-            _,
-            _,
-            _,
-            _,
-            _,
-            _,
-        ) = get_simplified_raw_key(
-            tuning_key.page_size,
-            tuning_key.q_dtype,
-            tuning_key.kv_dtype,
-            tuning_key.num_q_heads,
-            tuning_key.num_kv_heads,
-            tuning_key.head_dim,
-            tuning_key.max_model_len,
-            tuning_key.sliding_window,
-        )
+        logger.info(f"Running rpa_v3 case={tuning_key.case} "
+                    f"K={tuning_key.chunk_prefill_size} "
+                    f"key={tuning_key} params={tunable_params} iters={iters}")
         inputs = self.generate_inputs(tuning_key)
         args = [
             inputs["q"],
@@ -384,58 +423,43 @@ class RpaV3KernelTuner(KernelTunerBase):
             inputs["cu_q_lens"],
             inputs["distribution"],
         ]
-        kwargs = {
-            "sliding_window": tuning_key.sliding_window,
-            "num_kv_pages_per_block": tunable_params.bkv_p,
-            "num_queries_per_block": tunable_params.bq_sz,
-            # Temporarily set a large vmem limit for autotuning.
-            "vmem_limit_bytes": VMEM_LIMIT_BYTES,
-        }
+        kwargs = self._kernel_kwargs(tuning_key, tunable_params)
 
         try:
             dynamic_validate_inputs(*args, **kwargs)
         except Exception as err:
-            logger.info(
-                f"[Debug] Failed with ({page_size=}, {tunable_params.bkv_p=},"
-                f" {tunable_params.bq_sz=}), got error: {err=}")
+            logger.info(f"[Debug] Validate failed: {err=}")
             return TuningStatus.UNKNOWN_ERROR, float("inf"), float("inf")
 
         vmem_estimate = get_vmem_estimate_bytes(
-            tuning_key.num_q_heads,
             tuning_key.num_kv_heads,
+            tuning_key.num_q_heads // tuning_key.num_kv_heads,
             tuning_key.head_dim,
             tunable_params.bq_sz,
-            tunable_params.bkv_p,
+            tunable_params.bkv_sz,
             tuning_key.q_dtype,
             tuning_key.kv_dtype,
         )
         if vmem_estimate > VMEM_LIMIT_BYTES:
-            logger.info(f"[Debug] Skip ({page_size=}, {tunable_params.bkv_p=},"
-                        f" {tunable_params.bq_sz=}) because {vmem_estimate=} >"
-                        f" {VMEM_LIMIT_BYTES=}")
+            logger.info(f"[Debug] Skip ({tunable_params=}): "
+                        f"{vmem_estimate=} > {VMEM_LIMIT_BYTES=}")
             return TuningStatus.SKIPPED, float("inf"), float("inf")
 
-        smem_estimate = get_smem_estimate_bytes(
-            self.max_num_seqs,
-            self.pages_per_seq,
-        )
+        smem_estimate = get_smem_estimate_bytes(self.max_num_seqs,
+                                                self.pages_per_seq)
         if smem_estimate > SMEM_LIMIT_BYTES:
-            logger.info(f"[Debug] Skip ({page_size=}, {tunable_params.bkv_p=},"
-                        f" {tunable_params.bq_sz=}) because {smem_estimate=} >"
-                        f" {SMEM_LIMIT_BYTES=}")
+            logger.info(f"[Debug] Skip ({tunable_params=}): "
+                        f"{smem_estimate=} > {SMEM_LIMIT_BYTES=}")
             return TuningStatus.SKIPPED, float("inf"), float("inf")
 
         try:
             start_ns = time.perf_counter_ns()
-            for i in range(iters):
+            for _ in range(iters):
                 _, args[3] = jax.block_until_ready(
                     ragged_paged_attention(*args, **kwargs))
-
             end_ns = time.perf_counter_ns()
-            latency_ns = (end_ns - start_ns)
-            return TuningStatus.SUCCESS, latency_ns / iters, latency_ns  # status, average latency, total latency
+            latency_ns = end_ns - start_ns
+            return TuningStatus.SUCCESS, latency_ns / iters, latency_ns
         except Exception as err:
-            logger.info(
-                f"[Debug] Failed with ({page_size=}, {tunable_params.bkv_p=},"
-                f" {tunable_params.bq_sz=}), got error: {err=}")
+            logger.info(f"[Debug] Run failed: {err=}")
             return TuningStatus.UNKNOWN_ERROR, float("inf"), float("inf")
