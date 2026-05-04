@@ -1,0 +1,26 @@
+{
+  "_comment": [
+    "Smoke-test baseline sweep for Llama 3 8B on TPU v7x. 2 combos.",
+    "Goal: validate the sweep-driver framework end-to-end before kicking",
+    "off the full ~36-combo baseline sweep. Disables the chunk-prefill",
+    "optimization (LONG_PREFILL_TOKEN_THRESHOLD=0) so request_distribution",
+    "stays [D, D, T] and the kernel skips its PREFILL pass — exactly the",
+    "main-branch behavior."
+  ],
+  "case_file": "tools/benchmark/cases/llama3_8b_v7x_prefill_heavy.env",
+  "sweep_name": "baseline_smoke",
+
+  "sweep_axes": {
+    "MAX_NUM_BATCHED_TOKENS": [2048, 4096]
+  },
+
+  "coupled_axes": [],
+
+  "fixed": {
+    "LONG_PREFILL_TOKEN_THRESHOLD": "0",
+    "MAX_NUM_SEQS":   "128",
+    "MAX_MODEL_LEN":  "4096",
+    "BLOCK_SIZE":     "128",
+    "NUM_PROMPTS":    "100"
+  }
+}
