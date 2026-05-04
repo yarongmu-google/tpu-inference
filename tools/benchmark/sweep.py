@@ -336,7 +336,11 @@ def run_one(
             duration_seconds=timer() - started,
             error=f"combo timed out after {timeout}s",
         )
-    except Exception as err:  # subprocess setup failure (rare)
+    except (OSError, subprocess.SubprocessError) as err:
+        # Narrow on purpose: catch only subprocess-launch failures (script
+        # not executable, ENOENT, etc.). Bugs in our own code (KeyError,
+        # AttributeError) should crash loudly so tests / sweeps surface
+        # them instead of producing a misleading FAILED row.
         return RunResult(
             status=RunStatus.FAILED,
             combo_id=cid,
@@ -354,6 +358,7 @@ def run_one(
             result_dir=rdir,
             return_code=rc,
             duration_seconds=duration,
+            error=f"subprocess exited with code {rc}",
         )
 
     # Success only counts if metrics.txt has actual content. is_completed
@@ -439,7 +444,17 @@ def git_commit_paths(
             return False
         run_subprocess(["git", "commit", "-m", message], check=True)
         if push:
-            target_branch = branch or _current_branch(run_subprocess)
+            if branch is None:
+                target_branch = _current_branch(run_subprocess)
+                if target_branch == "HEAD":
+                    # `git rev-parse --abbrev-ref HEAD` returns the literal
+                    # "HEAD" on a detached checkout. Pushing to that has
+                    # surprising / config-dependent semantics (push.default
+                    # decides), so refuse to guess. Caller can pass an
+                    # explicit branch= if they really mean it.
+                    return False
+            else:
+                target_branch = branch
             run_subprocess(["git", "push", remote, target_branch],
                            check=True)
         return True
@@ -499,9 +514,16 @@ def _make_auto_commit_callback(
         n = idx + 1
         is_last = (n == total)
         if (n % every == 0) or is_last:
-            git_fn([result.result_dir.parent], message=(
+            ok = git_fn([result.result_dir.parent], message=(
                 f"[Bench] Auto-commit sweep progress {n}/{total}"
             ), push=push)
+            if not ok:
+                # git_commit_paths returns False on subprocess error,
+                # nothing-staged, or detached HEAD. Surface so the user
+                # doesn't return tomorrow expecting results in the remote
+                # and find an unsynced local.
+                print(f"WARN: auto-commit/push failed at {n}/{total}",
+                      flush=True)
 
     return cb
 

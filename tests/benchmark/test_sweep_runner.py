@@ -118,6 +118,20 @@ class TestRunOne(unittest.TestCase):
         )
         self.assertEqual(result.status, sweep.RunStatus.FAILED)
         self.assertEqual(result.return_code, 2)
+        # Error string is set so _print_progress can show why the combo
+        # failed without needing the user to open the log dir.
+        self.assertIn("exited with code 2", result.error)
+
+    def test_unrelated_exception_propagates(self):
+        # Code-bug exceptions (KeyError, AttributeError, etc.) should NOT
+        # be swallowed as 'subprocess setup failed'. The narrow except
+        # clause means they crash loudly.
+        def buggy(cmd, env=None, check=False, timeout=None, **kw):
+            raise KeyError("broken stub")
+
+        with self.assertRaises(KeyError):
+            sweep.run_one(self.spec, self.combo, base_dir=self.base,
+                          run_subprocess=buggy, environ=self.fake_environ)
 
     def test_failed_when_subprocess_raises(self):
         def boom(cmd, env=None, check=False, **kw):
@@ -359,6 +373,49 @@ class TestGitCommitPaths(unittest.TestCase):
         self.assertFalse(sweep.git_commit_paths(["x"], "msg",
                                                 run_subprocess=fail_run))
 
+    def test_commit_succeeds_but_push_fails(self):
+        # The most-likely real-world failure: auth expired, branch
+        # protection rejected push, network blip. Commit landed, but
+        # nothing on the remote — caller must see False so the
+        # auto-commit callback can warn.
+        fake = MagicMock(side_effect=[
+            FakeProc(returncode=0),                     # add
+            FakeProc(returncode=1),                     # diff (has changes)
+            FakeProc(returncode=0),                     # commit
+            FakeProc(returncode=0, stdout="rpa3\n"),    # rev-parse
+            subprocess.CalledProcessError(1, "git push"),  # push raises
+        ])
+        ok = sweep.git_commit_paths(["x"], "msg", run_subprocess=fake)
+        self.assertFalse(ok)
+
+    def test_detached_head_refuses_push(self):
+        # rev-parse returns the literal 'HEAD' on detached checkout.
+        # Refuse rather than push to a config-dependent default.
+        fake = MagicMock(side_effect=[
+            FakeProc(returncode=0),                       # add
+            FakeProc(returncode=1),                       # diff (has changes)
+            FakeProc(returncode=0),                       # commit
+            FakeProc(returncode=0, stdout="HEAD\n"),      # rev-parse
+        ])
+        ok = sweep.git_commit_paths(["x"], "msg", run_subprocess=fake)
+        self.assertFalse(ok)
+        # Critically: no `git push` call was made.
+        cmds = [call.args[0][:2] for call in fake.call_args_list]
+        self.assertNotIn(["git", "push"], cmds)
+
+    def test_explicit_branch_overrides_detached_head(self):
+        # If the caller passes branch=… explicitly, we trust them.
+        fake = MagicMock(side_effect=[
+            FakeProc(returncode=0),  # add
+            FakeProc(returncode=1),  # diff
+            FakeProc(returncode=0),  # commit
+            FakeProc(returncode=0),  # push
+        ])
+        ok = sweep.git_commit_paths(["x"], "msg", branch="HEAD",
+                                    run_subprocess=fake)
+        # Explicit branch=HEAD is unusual but we let it through.
+        self.assertTrue(ok)
+
     def test_current_branch_helper_strips_newline(self):
         proc = FakeProc(returncode=0, stdout="some-branch\n")
         self.assertEqual(sweep._current_branch(MagicMock(return_value=proc)),
@@ -460,6 +517,19 @@ class TestAutoCommitCallback(unittest.TestCase):
         with redirect_stdout(buf):
             cb(self._make_result(), 0, 1)
         self.assertEqual(captured, [False])
+
+    def test_warning_printed_when_git_fails(self):
+        # git_commit_paths returning False (e.g. push failed) must
+        # surface as a WARN line so the user doesn't assume a clean push.
+        def fake_git(paths, message, push=True, run_subprocess=None,
+                     remote="origin", branch=None):
+            return False
+
+        cb = sweep._make_auto_commit_callback(every=1, push=True, git_fn=fake_git)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            cb(self._make_result(), 0, 1)
+        self.assertIn("WARN: auto-commit/push failed", buf.getvalue())
 
 
 class TestMainCli(unittest.TestCase):
