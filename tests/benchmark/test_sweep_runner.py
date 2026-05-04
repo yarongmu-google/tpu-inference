@@ -219,6 +219,29 @@ class TestRunOne(unittest.TestCase):
         # Cmd is [script, case_file].
         self.assertEqual(captured["cmd"][1], "cases/foo.env")
 
+    def test_result_dir_with_spaces_in_path(self):
+        # Defensive: confirm RESULT_DIR survives a path containing
+        # spaces (sweep.py passes a Path; run_benchmark.sh quotes its
+        # uses of $RESULT_DIR throughout).
+        captured = {}
+
+        def fake_run(cmd, env=None, check=False, timeout=None, **kw):
+            captured["RESULT_DIR"] = env["RESULT_DIR"]
+            Path(env["RESULT_DIR"]).mkdir(parents=True, exist_ok=True)
+            (Path(env["RESULT_DIR"]) / "metrics.txt").write_text(
+                "RequestThroughput=1.0\n")
+            return FakeProc(returncode=0)
+
+        with tempfile.TemporaryDirectory() as base_with_space_parent:
+            spaced_base = Path(base_with_space_parent) / "has spaces"
+            spaced_base.mkdir()
+            result = sweep.run_one(self.spec, self.combo,
+                                   base_dir=spaced_base,
+                                   run_subprocess=fake_run,
+                                   environ=self.fake_environ)
+        self.assertEqual(result.status, sweep.RunStatus.COMPLETED_FRESH)
+        self.assertIn(" ", captured["RESULT_DIR"])
+
     def test_default_environ_uses_os_environ_when_none(self):
         # When environ=None, the function reads os.environ; verify by setting
         # a unique key and observing it shows up in the env dict.
@@ -595,6 +618,16 @@ class TestMainCli(unittest.TestCase):
                             "--auto-commit-every", "1",
                             "--no-push"])
         self.assertFalse(captured["push"])
+
+    def test_negative_auto_commit_every_rejected(self):
+        # A bare type=int wouldn't catch this; main() sanity-checks.
+        with self.assertRaises(SystemExit):
+            sweep.main([str(self.spec_path), "--auto-commit-every", "-1"])
+
+    def test_no_push_without_auto_commit_rejected(self):
+        # --no-push only makes sense in combination with auto-commit.
+        with self.assertRaises(SystemExit):
+            sweep.main([str(self.spec_path), "--no-push"])
 
     # Note: the bottom-of-file `if __name__ == "__main__": sys.exit(main())`
     # block is not covered by these tests because runpy.run_module reloads

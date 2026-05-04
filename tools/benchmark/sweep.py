@@ -300,9 +300,22 @@ def run_one(
 ) -> RunResult:
     """Execute one combo by invoking run_benchmark.sh with combo env vars.
 
-    Skip if its result dir already has a metrics.txt (resumability). Returns
-    a RunResult describing what happened. Never raises on subprocess failure
-    — failures are reported as `RunStatus.FAILED` so a sweep can continue.
+    Skip if its result dir already has a non-empty metrics.txt
+    (resumability — see is_completed). Returns a RunResult describing
+    what happened. Never raises on subprocess failure (only on bugs in
+    *our* code) — known failure modes are reported as RunStatus.FAILED
+    so a sweep can continue.
+
+    Failure-mode reference (what populates the RunResult on FAILED):
+      - subprocess timed out   → error='combo timed out after Ns',
+                                 return_code=None
+      - subprocess raised      → error=repr(err), return_code=None
+        (caught: OSError, subprocess.SubprocessError; other exceptions
+        propagate so test/code bugs surface)
+      - subprocess exit != 0   → error='subprocess exited with code N',
+                                 return_code=N
+      - exit 0, metrics blank  → error='... missing or has no
+                                 RequestThroughput', return_code=0
 
     `run_subprocess`, `timer`, and `environ` are injected for testability.
     """
@@ -424,9 +437,16 @@ def git_commit_paths(
 ) -> bool:
     """Stage `paths`, commit with `message`, optionally push.
 
-    Returns True on success. Returns False if any subprocess step fails or
-    if `git diff --cached --quiet` shows nothing to commit (we treat
-    "nothing to commit" as a non-fatal no-op).
+    Returns True on success. Returns False if any subprocess step fails,
+    if `git diff --cached --quiet` shows nothing to commit (treated as a
+    non-fatal no-op), or if pushing was requested but the auto-detected
+    target branch is the literal 'HEAD' (detached checkout — refuse to
+    guess).
+
+    Not reentrant against concurrent index manipulation: the gap between
+    `git diff --cached --quiet` and `git commit` lets another process
+    change what's staged. Safe in single-script sweeps; risky if the
+    user is `git add`-ing in the same repo while a sweep runs.
 
     `run_subprocess` is injected for tests.
     """
@@ -529,7 +549,13 @@ def _make_auto_commit_callback(
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _build_parser().parse_args(argv)
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    if args.auto_commit_every < 0:
+        parser.error("--auto-commit-every must be >= 0")
+    if args.no_push and args.auto_commit_every == 0:
+        parser.error("--no-push requires --auto-commit-every > 0")
+
     if args.auto_commit_every > 0:
         on_result = _make_auto_commit_callback(
             args.auto_commit_every, push=not args.no_push)
