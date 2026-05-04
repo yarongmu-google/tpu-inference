@@ -4,10 +4,21 @@
     "Goal: validate that the chunk-prefill optimization activates and",
     "produces a metrics.txt at two K values (one mid-range, one max).",
     "Coupled axes pin (K, BLOCK_SIZE, RPA_P_BLOCK_SIZES) triples taken",
-    "from the 2026-05-03 tuning table (page_size=128 column)."
+    "from tmp/tuning_llama3_8b_v7x_prefill_2026_05_03.md (page_size=128",
+    "column).",
+    "",
+    "MAX_MODEL_LEN=4096 (overrides the case file's 10275) and",
+    "NUM_PROMPTS=100 keep the smoke run fast. The 1800-token prompts",
+    "+ 128-token outputs from the case file fit comfortably.",
+    "",
+    "Run:",
+    "  python -m tools.benchmark.sweep \\",
+    "    tools/benchmark/sweeps/llama3_8b_v7x_optimized_smoke.json"
   ],
   "case_file": "../cases/llama3_8b_v7x_prefill_heavy.env",
   "sweep_name": "optimized_smoke",
+
+  "timeout_seconds": 1800,
 
   "sweep_axes": {
     "MAX_NUM_BATCHED_TOKENS": [4096]
@@ -27,8 +38,8 @@
   ],
 
   "fixed": {
-    "MAX_NUM_SEQS":  "128",
-    "MAX_MODEL_LEN": "4096",
-    "NUM_PROMPTS":   "100"
+    "MAX_NUM_SEQS":  128,
+    "MAX_MODEL_LEN": 4096,
+    "NUM_PROMPTS":   100
   }
 }
