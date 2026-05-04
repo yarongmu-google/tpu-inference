@@ -307,9 +307,10 @@ class TestPaths(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             self.assertFalse(sweep.is_completed(d))
 
-    def test_is_completed_true_when_metrics_present(self):
+    def test_is_completed_true_when_request_throughput_present(self):
         with tempfile.TemporaryDirectory() as d:
-            (Path(d) / "metrics.txt").write_text("foo=bar\n")
+            (Path(d) / "metrics.txt").write_text(
+                "MeanTTFT=12.3\nRequestThroughput=8.30\n")
             self.assertTrue(sweep.is_completed(d))
 
     def test_is_completed_false_for_dir_named_metrics(self):
@@ -317,6 +318,39 @@ class TestPaths(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             os.mkdir(Path(d) / "metrics.txt")
             self.assertFalse(sweep.is_completed(d))
+
+    def test_is_completed_false_for_blank_request_throughput(self):
+        # A bench that died mid-write leaves the full key list with
+        # blank values. File exists, but RequestThroughput is empty —
+        # NOT a completed run.
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "metrics.txt").write_text(
+                "MeanTTFT=\nRequestThroughput=\nMeanITL=\n")
+            self.assertFalse(sweep.is_completed(d))
+
+    def test_is_completed_false_for_metrics_missing_throughput(self):
+        # File present but RequestThroughput key entirely absent —
+        # also not a completed run.
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "metrics.txt").write_text("MeanTTFT=12.3\n")
+            self.assertFalse(sweep.is_completed(d))
+
+    def test_is_completed_tolerates_whitespace_in_value(self):
+        # `RequestThroughput=  8.30  ` — strip() should accept this.
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "metrics.txt").write_text("RequestThroughput=  8.30  \n")
+            self.assertTrue(sweep.is_completed(d))
+
+    def test_is_completed_false_on_oserror(self):
+        # If reading metrics.txt raises (e.g. permission flip mid-sweep
+        # makes the file unreadable), is_completed treats the combo as
+        # 'not done' rather than crashing.
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "metrics.txt").write_text("RequestThroughput=8.30\n")
+            with patch("pathlib.Path.read_text",
+                       side_effect=PermissionError("denied")):
+                self.assertFalse(sweep.is_completed(d))
 
 
 if __name__ == "__main__":

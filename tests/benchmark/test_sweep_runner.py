@@ -81,7 +81,8 @@ class TestRunOne(unittest.TestCase):
         cid = sweep.combo_id(self.combo)
         rdir = sweep.result_dir(self.base, "case", "s", cid)
         rdir.mkdir(parents=True)
-        (rdir / "metrics.txt").write_text("foo=bar\n")
+        # is_completed now requires a non-empty RequestThroughput.
+        (rdir / "metrics.txt").write_text("RequestThroughput=8.30\n")
 
         # Subprocess MUST NOT be called.
         sentinel = MagicMock(side_effect=AssertionError("should not run"))
@@ -143,7 +144,9 @@ class TestRunOne(unittest.TestCase):
             run_subprocess=fake_run, environ=self.fake_environ,
         )
         self.assertEqual(result.status, sweep.RunStatus.FAILED)
-        self.assertIn("metrics.txt missing", result.error)
+        # Error message changed when is_completed grew a content check
+        # — covers both 'file missing' and 'file present but blank'.
+        self.assertIn("missing or has no RequestThroughput", result.error)
 
     def test_env_overrides_passed_to_subprocess(self):
         captured = {}
@@ -152,7 +155,7 @@ class TestRunOne(unittest.TestCase):
             captured["cmd"] = cmd
             captured["env"] = dict(env)
             Path(env["RESULT_DIR"]).mkdir(parents=True, exist_ok=True)
-            (Path(env["RESULT_DIR"]) / "metrics.txt").write_text("x=1\n")
+            (Path(env["RESULT_DIR"]) / "metrics.txt").write_text("RequestThroughput=8.30\n")
             return FakeProc(returncode=0)
 
         spec = _make_spec(case_file="cases/foo.env")
@@ -180,7 +183,7 @@ class TestRunOne(unittest.TestCase):
         def fake_run(cmd, env=None, check=False, **kw):
             captured["env"] = dict(env)
             Path(env["RESULT_DIR"]).mkdir(parents=True, exist_ok=True)
-            (Path(env["RESULT_DIR"]) / "metrics.txt").write_text("x=1\n")
+            (Path(env["RESULT_DIR"]) / "metrics.txt").write_text("RequestThroughput=8.30\n")
             return FakeProc(returncode=0)
 
         with patch.dict(os.environ, {"MY_TEST_KEY": "MY_TEST_VAL"}, clear=False):

@@ -217,8 +217,30 @@ def sweep_dir(
 
 
 def is_completed(rdir: str | os.PathLike) -> bool:
-    """A combo is 'done' if metrics.txt exists in its result dir."""
-    return Path(rdir, "metrics.txt").is_file()
+    """A combo is 'done' iff metrics.txt has a non-empty RequestThroughput.
+
+    File-existence alone is NOT enough: parse_bench_log.format_metrics
+    always emits the full key list with blank values for missing data,
+    so a bench that died after parse_bench_log started writing leaves
+    a non-zero-byte metrics.txt with `RequestThroughput=` (empty).
+    Without this guard, a re-run would skip-resume the dead combo and
+    the sweep would silently produce blank rows that look 'done'.
+
+    RequestThroughput is the canonical 'this run actually finished'
+    signal — every successful bench reports it, every failed one
+    reports it as empty.
+    """
+    p = Path(rdir, "metrics.txt")
+    if not p.is_file():
+        return False
+    try:
+        text = p.read_text()
+    except OSError:
+        return False
+    for line in text.splitlines():
+        if line.startswith("RequestThroughput=") and line.split("=", 1)[1].strip():
+            return True
+    return False
 
 
 # ----- Runner --------------------------------------------------------------
@@ -302,7 +324,9 @@ def run_one(
             duration_seconds=duration,
         )
 
-    # Success only counts if metrics.txt landed.
+    # Success only counts if metrics.txt has actual content. is_completed
+    # rejects both "file missing" and "file present but RequestThroughput
+    # is blank" (a partial-write artifact of a dying bench).
     if not is_completed(rdir):
         return RunResult(
             status=RunStatus.FAILED,
@@ -310,7 +334,8 @@ def run_one(
             result_dir=rdir,
             return_code=rc,
             duration_seconds=duration,
-            error="run_benchmark.sh exited 0 but metrics.txt missing",
+            error=("run_benchmark.sh exited 0 but metrics.txt is "
+                   "missing or has no RequestThroughput"),
         )
 
     return RunResult(
