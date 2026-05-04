@@ -250,6 +250,40 @@ def _jax_logprobs_materialize(
     )
 
 
+def compute_per_rank_distribution(
+    req_ids_per_rank: list[list[str]],
+    num_req_per_rank: list[int],
+    num_scheduled_tokens: dict[str, int],
+    chunk_prefill_size: int | None,
+) -> list[list[int]]:
+    """Compute the per-DP-rank request_distribution = [D, D+P, T] for each rank.
+
+    Mirrors PersistentBatchManager._reorder_batch's bucketing rule on the
+    per-rank slice, since the global input_batch has already been reordered
+    into [decode | uniform-K prefill | mixed] before DP partitioning.
+
+    - D = count of requests with num_scheduled_tokens == 1 (decode bucket).
+    - P = count of requests with num_scheduled_tokens == chunk_prefill_size
+      (uniform-K PREFILL bucket); zero when chunk_prefill_size is None.
+    - T = total requests assigned to the rank.
+
+    Returns a list of [D, D+P, T] triples, one per rank.
+    """
+    K = chunk_prefill_size
+    out = []
+    for rank in range(len(req_ids_per_rank)):
+        n_decode = 0
+        n_uniform = 0
+        for req_id in req_ids_per_rank[rank]:
+            n = num_scheduled_tokens[req_id]
+            if n == 1:
+                n_decode += 1
+            elif K is not None and n == K:
+                n_uniform += 1
+        out.append([n_decode, n_decode + n_uniform, num_req_per_rank[rank]])
+    return out
+
+
 class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
 
     def __init__(
@@ -1531,17 +1565,17 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
         positions = self.positions_cpu[:padded_total_num_scheduled_tokens]
         mrope_positions = self.mrope_positions_cpu[:, :
                                                    padded_total_num_scheduled_tokens]
-        _request_distribution = []
-        for dp_rank in range(dp_size):
-            _num_reqs = num_req_per_dp_rank[dp_rank]
-            # The batch has been reordered by _reorder_batch so decode requests come first
-            # Count decode requests (those with num_scheduled_tokens == 1) in this DP rank
-            num_decode_in_dp_rank = 0
-            for req_id in req_ids_dp[dp_rank]:
-                if scheduler_output.num_scheduled_tokens[req_id] == 1:
-                    num_decode_in_dp_rank += 1
-            _request_distribution.append(
-                [num_decode_in_dp_rank, num_decode_in_dp_rank, _num_reqs])
+        # Per-rank 3-way distribution [D, D+P, T]. The batch has already
+        # been reordered into [decode | uniform-K | mixed] by
+        # PersistentBatchManager._reorder_batch on the global input_batch,
+        # so within a DP rank's slice the bucket ordering still holds and
+        # these counts identify the bucket boundaries.
+        _request_distribution = compute_per_rank_distribution(
+            req_ids_dp,
+            num_req_per_dp_rank,
+            scheduler_output.num_scheduled_tokens,
+            self.chunk_prefill_size,
+        )
         request_distribution = np.array(_request_distribution,
                                         dtype=np.int32).ravel()
 
