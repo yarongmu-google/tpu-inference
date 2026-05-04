@@ -59,6 +59,28 @@ get_kv_cache_shape = rpa.get_kv_cache_shape
 ragged_paged_attention_hd64 = rpa_hd64.ragged_paged_attention_hd64
 get_kv_cache_shape_hd64 = rpa_hd64.get_kv_cache_shape
 
+# Static (Python int) chunk prefill size, set by the runner from
+# vllm_config.scheduler_config.long_prefill_token_threshold during init.
+# When None, ragged_paged_attention skips its PREFILL pass and behaves as
+# today (decode-only + mixed). When set to K > 0, sequences in the
+# request_distribution[0]:request_distribution[1] range are routed to
+# the static-q-len PREFILL path with q_len == K. Captured at first
+# JIT trace, so changing it after model_fn is traced has no effect.
+_chunk_prefill_size: int | None = None
+
+
+def set_chunk_prefill_size(value: int | None) -> None:
+    """Set the global chunk prefill size used by attention(). Call once
+    from runner init before any model_fn tracing.
+    """
+    global _chunk_prefill_size
+    _chunk_prefill_size = value
+    logger.info_once(f"Set chunk_prefill_size={_chunk_prefill_size}")
+
+
+def get_chunk_prefill_size() -> int | None:
+    return _chunk_prefill_size
+
 
 def sharded_flash_attention(
     mesh: Mesh,
@@ -389,6 +411,9 @@ def sharded_ragged_paged_attention(
         in_specs += (P(ShardingAxisName.ATTN_HEAD), )
         args += (attention_sink, )
 
+    # Read once at trace time so it's a Python int captured statically by jit.
+    chunk_prefill_size = _chunk_prefill_size
+
     def _ragged_paged_attention(*args):
         kwargs = dict(
             sm_scale=sm_scale,
@@ -396,6 +421,7 @@ def sharded_ragged_paged_attention(
             q_scale=q_scale,
             k_scale=k_scale,
             v_scale=v_scale,
+            chunk_prefill_size=chunk_prefill_size,
         )
         if not use_hd64:
             kwargs.update(
