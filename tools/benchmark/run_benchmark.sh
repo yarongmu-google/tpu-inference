@@ -62,8 +62,11 @@ set +a
 
 # NUM_PROMPTS comes from the case file (every case file sets it via :=).
 # DOWNLOAD_DIR and VLLM_DIR are deployment config, not workload, so their
-# defaults live here rather than in case files. Both use :- (substitute
-# only — never assign), the script-side companion to the case-side := form.
+# defaults live here rather than in case files. Both forms end with the
+# variable assigned. The case files use the `: "${VAR:=default}"` idiom
+# because they need `set -a` to export the assignment side-effect of `:=`.
+# The script uses `VAR="${VAR:-default}"` because there's no exporting
+# question and the form is more familiar.
 DOWNLOAD_DIR="${DOWNLOAD_DIR:-$HOME/hf-cache}"
 VLLM_DIR="${VLLM_DIR:-../vllm}"
 
