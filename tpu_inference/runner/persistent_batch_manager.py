@@ -46,52 +46,79 @@ class PersistentBatchManager:
         self.chunk_prefill_size = chunk_prefill_size
 
     def _reorder_batch(self, scheduler_output: "VllmSchedulerOutput") -> int:
-        """ Reorder the sheduled requests to RPA kernel friendly distribution
-        (decode_only, fixed_chunked_prefill_only, mixed) and set the request
-        distribution accordingly.
+        """Reorder the scheduled requests into the RPA kernel's 3-bucket
+        distribution: [decode | uniform-K prefill | mixed].
 
-        Returns:
-            The number of swaps in requests.
+        - decode: requests scheduled for exactly 1 token (q_len = 1).
+        - uniform-K prefill: requests scheduled for exactly K tokens, where
+          K = self.chunk_prefill_size. These run on the static-q-len PREFILL
+          kernel flavor.
+        - mixed: everything else (variable q_len > 1, including the trailing
+          partial chunk of long prompts and prompts shorter than K).
+
+        Sets self.input_batch.request_distribution = [D, D+P, T] where D is
+        the decode count, P is the uniform-K count, T is num_reqs. When
+        self.chunk_prefill_size is None, falls back to today's [D, D, T]
+        (empty PREFILL bucket; everything non-decode goes to MIXED).
+
+        Returns the number of swap_states calls performed.
         """
-        # Note(jevinjiang): currently we only consider decode_only.
         num_reqs = self.input_batch.num_reqs
         swap_cnt = 0
         if num_reqs <= 0:
             return swap_cnt
-        # If total_num_scheduled_tokens == num_reqs, every request
-        # is scheduled for exactly 1 token (all decode). No reordering needed.
+
+        nst = scheduler_output.num_scheduled_tokens
+        req_ids = self.input_batch.req_ids
+        K = self.chunk_prefill_size
+
+        # Fast path: every request is scheduled for exactly 1 token.
         if scheduler_output.total_num_scheduled_tokens == num_reqs:
-            num_decode = num_reqs
             self.input_batch.request_distribution = [
-                num_decode, num_decode, num_reqs
+                num_reqs, num_reqs, num_reqs
             ]
             return swap_cnt
-        # Use two-pointer approach to reorder the decode requests to front.
+
+        # Pass 1: two-pointer to move decodes (n=1) to the front of the batch.
         i, j = 0, num_reqs - 1
         while i < j:
-            i_req_id = self.input_batch.req_ids[i]
-            j_req_id = self.input_batch.req_ids[j]
-
-            if scheduler_output.num_scheduled_tokens[i_req_id] == 1:
-                # i is a decode request, move to the next one.
+            if nst[req_ids[i]] == 1:
                 i += 1
-            elif scheduler_output.num_scheduled_tokens[j_req_id] > 1:
-                # j is a prefill request, move to the previous one.
+            elif nst[req_ids[j]] > 1:
                 j -= 1
             else:
-                # Swap i and j.
                 self.input_batch.swap_states(i, j)
                 i += 1
                 j -= 1
                 swap_cnt += 1
+        num_decode = i + int(nst[req_ids[i]] == 1)
 
-        num_decode = i + int(scheduler_output.num_scheduled_tokens[
-            self.input_batch.req_ids[i]] == 1)
+        # Without K we keep today's [D, D, T] — empty PREFILL bucket.
+        if K is None or num_decode == num_reqs:
+            self.input_batch.request_distribution = [
+                num_decode, num_decode, num_reqs
+            ]
+            return swap_cnt
+
+        # Pass 2: within [num_decode, num_reqs), two-pointer to move
+        # uniform-K requests (n == K) to the front of the range. The tail
+        # (n != K and n != 1) becomes the MIXED bucket.
+        i, j = num_decode, num_reqs - 1
+        while i < j:
+            if nst[req_ids[i]] == K:
+                i += 1
+            elif nst[req_ids[j]] != K:
+                j -= 1
+            else:
+                self.input_batch.swap_states(i, j)
+                i += 1
+                j -= 1
+                swap_cnt += 1
+        num_uniform = (i - num_decode) + int(nst[req_ids[i]] == K)
 
         self.input_batch.request_distribution = [
-            num_decode, num_decode, num_reqs
+            num_decode, num_decode + num_uniform, num_reqs
         ]
-
         return swap_cnt
 
     def update_states(self, scheduler_output: "VllmSchedulerOutput",

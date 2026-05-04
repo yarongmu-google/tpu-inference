@@ -46,7 +46,7 @@ class MockInputBatch:
         self.req_id_to_index[id_j] = j
 
 
-def _create_manager(req_ids, num_scheduled_tokens_map):
+def _create_manager(req_ids, num_scheduled_tokens_map, chunk_prefill_size=None):
     """Helper to create a PersistentBatchManager with a MockInputBatch
     and a mock scheduler_output.
 
@@ -54,6 +54,8 @@ def _create_manager(req_ids, num_scheduled_tokens_map):
         req_ids: list of request id strings, in the order they appear
             in the batch.
         num_scheduled_tokens_map: dict mapping req_id -> num_scheduled_tokens.
+        chunk_prefill_size: K for the uniform-PREFILL bucket; None disables
+            3-way bucketing (today's [D, D, T] behavior).
 
     Returns:
         (manager, scheduler_output) tuple.
@@ -67,6 +69,7 @@ def _create_manager(req_ids, num_scheduled_tokens_map):
         uses_mrope=False,
         model_config=MagicMock(),
         is_last_rank=True,
+        chunk_prefill_size=chunk_prefill_size,
     )
 
     scheduler_output = MagicMock()
@@ -124,6 +127,123 @@ class TestReorderBatch(unittest.TestCase):
         # Last 2 should be prefill requests
         for rid in result_ids[2:]:
             self.assertGreater(num_scheduled[rid], 1)
+
+    # --------------------------------------------------------------
+    # 3-bucket tests (chunk_prefill_size is set). Each test asserts the
+    # final request_distribution = [D, D+P, T] and that the buckets land
+    # in the right ranges of req_ids: decodes in [0, D), uniform-K in
+    # [D, D+P), mixed in [D+P, T).
+    # --------------------------------------------------------------
+    K = 128
+
+    def _assert_buckets(self, manager, num_scheduled, expected_dist):
+        """Helper: distribution matches and reqs in each range satisfy
+        the bucket predicate."""
+        self.assertEqual(manager.input_batch.request_distribution,
+                         list(expected_dist))
+        d_end, p_end, t_end = expected_dist
+        rids = manager.input_batch.req_ids
+        for rid in rids[:d_end]:
+            self.assertEqual(num_scheduled[rid], 1, f"{rid} not decode")
+        for rid in rids[d_end:p_end]:
+            self.assertEqual(num_scheduled[rid], self.K,
+                             f"{rid} not uniform-K")
+        for rid in rids[p_end:t_end]:
+            n = num_scheduled[rid]
+            self.assertNotEqual(n, 1, f"{rid} unexpectedly decode")
+            self.assertNotEqual(n, self.K, f"{rid} unexpectedly uniform-K")
+
+    def test_3way_no_requests(self):
+        """Empty batch with chunk_prefill_size set: 0 swaps, no error."""
+        manager, sched_out = _create_manager([], {}, chunk_prefill_size=self.K)
+        self.assertEqual(manager._reorder_batch(sched_out), 0)
+
+    def test_3way_decode_only(self):
+        """All decode → fast path. distribution = [N, N, N]."""
+        req_ids = ["r0", "r1", "r2"]
+        nst = {r: 1 for r in req_ids}
+        manager, sched_out = _create_manager(req_ids, nst,
+                                             chunk_prefill_size=self.K)
+        with patch.object(manager.input_batch,
+                          'swap_states',
+                          wraps=manager.input_batch.swap_states) as mock_swap:
+            swap_cnt = manager._reorder_batch(sched_out)
+        self.assertEqual(swap_cnt, 0)
+        mock_swap.assert_not_called()
+        self._assert_buckets(manager, nst, [3, 3, 3])
+
+    def test_3way_prefill_only(self):
+        """All requests have n == K → all go to PREFILL bucket."""
+        req_ids = ["r0", "r1", "r2"]
+        nst = {r: self.K for r in req_ids}
+        manager, sched_out = _create_manager(req_ids, nst,
+                                             chunk_prefill_size=self.K)
+        manager._reorder_batch(sched_out)
+        self._assert_buckets(manager, nst, [0, 3, 3])
+
+    def test_3way_mix_only(self):
+        """All requests have variable q_len (none == 1 or == K) → all MIXED."""
+        req_ids = ["r0", "r1", "r2"]
+        nst = {"r0": 50, "r1": 200, "r2": 75}
+        manager, sched_out = _create_manager(req_ids, nst,
+                                             chunk_prefill_size=self.K)
+        manager._reorder_batch(sched_out)
+        self._assert_buckets(manager, nst, [0, 0, 3])
+
+    def test_3way_decode_plus_prefill(self):
+        """Decode + uniform-K only, interleaved input order."""
+        # Order: prefill, decode, prefill, decode → reorders to D, D, P, P.
+        req_ids = ["r0", "r1", "r2", "r3"]
+        nst = {"r0": self.K, "r1": 1, "r2": self.K, "r3": 1}
+        manager, sched_out = _create_manager(req_ids, nst,
+                                             chunk_prefill_size=self.K)
+        manager._reorder_batch(sched_out)
+        self._assert_buckets(manager, nst, [2, 4, 4])
+
+    def test_3way_decode_plus_mix(self):
+        """Decode + variable-q-len mix, no uniform-K. PREFILL bucket empty."""
+        req_ids = ["r0", "r1", "r2", "r3"]
+        nst = {"r0": 200, "r1": 1, "r2": 1, "r3": 50}
+        manager, sched_out = _create_manager(req_ids, nst,
+                                             chunk_prefill_size=self.K)
+        manager._reorder_batch(sched_out)
+        self._assert_buckets(manager, nst, [2, 2, 4])
+
+    def test_3way_prefill_plus_mix(self):
+        """Uniform-K + variable mix, no decode. DECODE bucket empty."""
+        req_ids = ["r0", "r1", "r2", "r3"]
+        nst = {"r0": 50, "r1": self.K, "r2": 200, "r3": self.K}
+        manager, sched_out = _create_manager(req_ids, nst,
+                                             chunk_prefill_size=self.K)
+        manager._reorder_batch(sched_out)
+        self._assert_buckets(manager, nst, [0, 2, 4])
+
+    def test_3way_all_three_buckets(self):
+        """Decode + uniform-K + variable mix, scrambled input order."""
+        req_ids = ["r0", "r1", "r2", "r3", "r4", "r5"]
+        nst = {
+            "r0": self.K,    # uniform-K
+            "r1": 1,         # decode
+            "r2": 200,       # mixed
+            "r3": 1,         # decode
+            "r4": self.K,    # uniform-K
+            "r5": 50,        # mixed
+        }
+        manager, sched_out = _create_manager(req_ids, nst,
+                                             chunk_prefill_size=self.K)
+        manager._reorder_batch(sched_out)
+        self._assert_buckets(manager, nst, [2, 4, 6])
+
+    def test_3way_disabled_falls_back_to_old_behavior(self):
+        """chunk_prefill_size=None: PREFILL bucket stays empty even when
+        requests have n == K. Distribution matches today's [D, D, T]."""
+        req_ids = ["r0", "r1", "r2"]
+        nst = {"r0": self.K, "r1": 1, "r2": 50}
+        manager, sched_out = _create_manager(req_ids, nst,
+                                             chunk_prefill_size=None)
+        manager._reorder_batch(sched_out)
+        self.assertEqual(manager.input_batch.request_distribution,
+                         [1, 1, 3])
 
 
 class TestPersistentBatchManager(unittest.TestCase):
