@@ -283,7 +283,24 @@ class RpaV3KernelTuner(KernelTunerBase):
                 pages_per_seq = cdiv(mml, ps)
                 if bkv_sz // ps > pages_per_seq:
                     continue
-                if bkv_sz > 8192:
+
+                # ---- Hybrid VMEM-Aware Tuning Pruning (Theoretical bounds) ----
+                # TPU v6e/v7x vector memory limit is 16MiB (16777216 bytes).
+                # We drop combinations that mathematically exceed this limit
+                # to save hours of guaranteed JAX compilation OOM crashes.
+                vmem_limit_bytes = 16 * 1024 * 1024
+                # For GQA, num_q_heads_per_kv_head is nq // nk
+                num_q_heads_per_kv_head = nq // nk
+                vmem_estimate = get_vmem_estimate_bytes(
+                    actual_num_kv_heads=nk,
+                    actual_num_q_heads_per_kv_head=num_q_heads_per_kv_head,
+                    actual_head_dim=hd,
+                    bq_sz=bq_sz,
+                    bkv_sz=bkv_sz,
+                    q_dtype=qd,
+                    kv_dtype=kd,
+                )
+                if vmem_estimate > vmem_limit_bytes:
                     continue
 
                 tuning_key = TuningKey(
@@ -527,6 +544,15 @@ class RpaV3KernelTuner(KernelTunerBase):
             # deleted by JAX donation; only the returned object is live.
             inputs["kv_cache"] = args[3]
             return TuningStatus.SUCCESS, latency_ns / iters, latency_ns
+        except jax.errors.JaxRuntimeError as err:
+            if "ResourceExhausted" in str(err) or "Out of memory" in str(err):
+                logger.info(f"[Debug] Run OOM (empirical bound hit): {err=}")
+                return TuningStatus.OUT_OF_MEMORY, float("inf"), float("inf")
+            logger.info(f"[Debug] Run JAX runtime error: {err=}")
+            return TuningStatus.UNKNOWN_ERROR, float("inf"), float("inf")
         except Exception as err:
+            if "ResourceExhausted" in str(err):
+                logger.info(f"[Debug] Compilation OOM: {err=}")
+                return TuningStatus.OUT_OF_MEMORY, float("inf"), float("inf")
             logger.info(f"[Debug] Run failed: {err=}")
             return TuningStatus.UNKNOWN_ERROR, float("inf"), float("inf")
