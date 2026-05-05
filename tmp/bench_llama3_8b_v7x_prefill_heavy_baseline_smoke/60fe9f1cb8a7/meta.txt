@@ -1,6 +1,6 @@
 case_file=/home/ymu_google_com/tpu-inference/tools/benchmark/cases/llama3_8b_v7x_prefill_heavy.env
 case_name=llama3_8b_v7x_prefill_heavy
-model=meta-llama/Meta-Llama-3-8B
+model=meta-llama/Meta-Llama-3-8B-Instruct
 max_num_seqs=128
 max_num_batched_tokens=4096
 tensor_parallel_size=1
@@ -15,6 +15,7 @@ long_prefill_token_threshold=0
 rpa_d_block_sizes=1,4096,1,1024
 rpa_p_block_sizes=default
 rpa_m_block_sizes=64,512,64,256
-git_commit=8cc8b65300909564ff221561e42a4ad104bc9263
+git_commit=299cabe0ea5116c2d00f1c2041b2e935a4910286
 git_branch=rpa3
-timestamp=20260505_071203
+timestamp=20260505_072424
+bench_duration_seconds=16

@@ -45,3 +45,56 @@ Traceback (most recent call last):
     from tools.benchmark._schema import THROUGHPUT_METRIC
 ModuleNotFoundError: No module named 'tools'
 [1/2] fca26aaf0cf3 failed (111.8s)  tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/fca26aaf0cf3  err=subprocess exited with code 1
+[rpa3 299cabe0ea] [Bench] Auto-commit sweep progress 1/2
+ 3 files changed, 51 insertions(+), 3 deletions(-)
+ create mode 100644 tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/fca26aaf0cf3/metrics.txt
+ create mode 100644 tmp/log/llama3_8b_v7x_baseline_smoke_20260505_072214.txt
+To github.com:yarongmu-google/tpu-inference.git
+   149f67f48a..299cabe0ea  rpa3 -> rpa3
+case_file=/home/ymu_google_com/tpu-inference/tools/benchmark/cases/llama3_8b_v7x_prefill_heavy.env
+case_name=llama3_8b_v7x_prefill_heavy
+model=meta-llama/Meta-Llama-3-8B-Instruct
+max_num_seqs=128
+max_num_batched_tokens=4096
+tensor_parallel_size=1
+max_model_len=4096
+dataset=sonnet
+input_len=1800
+output_len=128
+num_prompts=100
+request_rate=inf
+block_size=128
+long_prefill_token_threshold=0
+rpa_d_block_sizes=1,4096,1,1024
+rpa_p_block_sizes=default
+rpa_m_block_sizes=64,512,64,256
+git_commit=299cabe0ea5116c2d00f1c2041b2e935a4910286
+git_branch=rpa3
+timestamp=20260505_072424
+----
+Results: /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/60fe9f1cb8a7
+Starting vllm server (log: /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/60fe9f1cb8a7/vllm.log) ...
+Waiting up to 20 min for server startup ...
+  ready after 90s
+Running benchmark (stdout: /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/60fe9f1cb8a7/bench.log, stderr: /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/60fe9f1cb8a7/bench.log.stderr) ...
+==== Summary ====
+Request throughput (req/s):              14.47     
+Output token throughput (tok/s):         1852.60   
+Mean TTFT (ms):                          2518.56   
+Median TTFT (ms):                        2489.94   
+P99 TTFT (ms):                           4494.80   
+Mean TPOT (ms):                          31.73     
+Median TPOT (ms):                        32.00     
+P99 TPOT (ms):                           44.36     
+Mean ITL (ms):                           31.73     
+Median ITL (ms):                         18.90     
+P99 ITL (ms):                            105.53    
+Mean E2EL (ms):                          6547.81   
+Median E2EL (ms):                        6553.59   
+P99 E2EL (ms):                           6887.23   
+====
+Traceback (most recent call last):
+  File "/home/ymu_google_com/tpu-inference/tools/benchmark/parse_bench_log.py", line 25, in <module>
+    from tools.benchmark._schema import THROUGHPUT_METRIC
+ModuleNotFoundError: No module named 'tools'
+[2/2] 60fe9f1cb8a7 failed (100.2s)  tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/60fe9f1cb8a7  err=subprocess exited with code 1
