@@ -1,0 +1,44 @@
+case_file=/home/ymu_google_com/tpu-inference/tools/benchmark/cases/llama3_8b_v7x_prefill_heavy.env
+case_name=llama3_8b_v7x_prefill_heavy
+model=meta-llama/Meta-Llama-3-8B-Instruct
+max_num_seqs=128
+max_num_batched_tokens=2048
+tensor_parallel_size=1
+max_model_len=4096
+dataset=sonnet
+input_len=1800
+output_len=128
+num_prompts=1000
+request_rate=inf
+block_size=128
+long_prefill_token_threshold=0
+rpa_d_block_sizes=1,4096,1,1024
+rpa_p_block_sizes=default
+rpa_m_block_sizes=64,512,64,256
+git_commit=6c81fa408fb3d00fbfa62885f64e40fcd48d5c55
+git_branch=rpa3
+timestamp=20260505_104048
+----
+Results: /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_full/48ab74e87ea7
+Starting vllm server (log: /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_full/48ab74e87ea7/vllm.log) ...
+Waiting up to 20 min for server startup ...
+  ready after 90s
+Running benchmark (stdout: /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_full/48ab74e87ea7/bench.log, stderr: /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_full/48ab74e87ea7/bench.log.stderr) ...
+==== Summary ====
+Request throughput (req/s):              17.10     
+Output token throughput (tok/s):         2189.29   
+Mean TTFT (ms):                          28091.60  
+Median TTFT (ms):                        27805.87  
+P99 TTFT (ms):                           55823.42  
+Mean TPOT (ms):                          53.16     
+Median TPOT (ms):                        55.66     
+P99 TPOT (ms):                           56.65     
+Mean ITL (ms):                           53.16     
+Median ITL (ms):                         60.56     
+P99 ITL (ms):                            63.52     
+Mean E2EL (ms):                          34843.48  
+Median E2EL (ms):                        34908.31  
+P99 E2EL (ms):                           58324.14  
+====
+Saved metrics to /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_full/48ab74e87ea7/metrics.txt
+[1/3] 48ab74e87ea7 completed_fresh (153.6s)  tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_full/48ab74e87ea7
