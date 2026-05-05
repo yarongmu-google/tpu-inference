@@ -81,9 +81,18 @@ mkdir -p tmp/log
     SWEEP_DIR="tmp/bench_${SWEEP_NAME}"
     MODEL_DIR=$(dirname "$WORKLOAD")
     PROD_FILE="${MODEL_DIR}/production.service"
+    SERVICE_LOG="tmp/log/script_build_service_registry_${SWEEP_NAME}.txt"
 
-    # Extract the #1 ranked result and append to the production artifact
-    python3 tools/benchmark/build_service_registry.py "$SWEEP_DIR" --export-production "$PROD_FILE"
+    # Extract the #1 ranked result and append to the production artifact, logging the output
+    {
+        python3 tools/benchmark/build_service_registry.py "$SWEEP_DIR" --export-production "$PROD_FILE"
+    } 2>&1 | tee "$SERVICE_LOG"
+    
+    # Commit the script log independently 
+    git add -f "$SERVICE_LOG"
+    if ! git diff --cached --quiet; then
+        git commit -m "[Logs] Update build_service_registry script log for $SWEEP_NAME" || true
+    fi
 
     echo ""
     echo "=========================================================="
