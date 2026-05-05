@@ -93,8 +93,13 @@ BM_LOG="$RESULT_DIR/bench.log"
 META_FILE="$RESULT_DIR/meta.txt"
 METRICS_FILE="$RESULT_DIR/metrics.txt"
 
+# Canonicalize case_file to an absolute path so two combos that
+# referenced the same file from different CWDs produce identical
+# meta.case_file values for downstream comparison.
+CASE_FILE_ABS="$(cd "$(dirname "$CASE_FILE")" && pwd -P)/$(basename "$CASE_FILE")"
+
 {
-    echo "case_file=$CASE_FILE"
+    echo "case_file=$CASE_FILE_ABS"
     echo "case_name=$CASE_NAME"
     echo "model=$MODEL"
     echo "max_num_seqs=$MAX_NUM_SEQS"
@@ -106,9 +111,11 @@ METRICS_FILE="$RESULT_DIR/metrics.txt"
     echo "output_len=$OUTPUT_LEN"
     echo "num_prompts=$NUM_PROMPTS"
     echo "request_rate=$REQUEST_RATE"
+    # Sentinel 'default' (consistent across knobs) means: not explicitly
+    # set by the case file or the caller; vllm picks its built-in default.
     echo "block_size=${BLOCK_SIZE:-default}"
     echo "long_prefill_token_threshold=${LONG_PREFILL_TOKEN_THRESHOLD:-default}"
-    echo "rpa_p_block_sizes=${RPA_P_BLOCK_SIZES:-unset}"
+    echo "rpa_p_block_sizes=${RPA_P_BLOCK_SIZES:-default}"
     echo "git_commit=$(git rev-parse HEAD 2>/dev/null || echo unknown)"
     echo "git_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
     echo "timestamp=$TS"
@@ -251,12 +258,18 @@ echo "Running benchmark (stdout: $BM_LOG, stderr: $BM_ERR_LOG) ..."
 # Keep stdout (metric tables) and stderr (warnings, tracebacks) in
 # separate files. parse_bench_log only consumes $BM_LOG so warnings
 # never end up in metrics.txt.
+BENCH_START_S=$(date +%s)
 if ! ( cd "$VLLM_DIR" && vllm bench serve "${BM_ARGS[@]}" ) \
         > "$BM_LOG" 2> "$BM_ERR_LOG"; then
     echo "ERROR: bench failed. tail of $BM_ERR_LOG:" >&2
     tail -40 "$BM_ERR_LOG" >&2
     exit 1
 fi
+BENCH_DURATION_S=$(( $(date +%s) - BENCH_START_S ))
+# Append wall-clock duration to meta so compare.py can show it
+# alongside the throughput / latency columns. Useful for spotting
+# tail outliers and timeout-prone combos.
+echo "bench_duration_seconds=$BENCH_DURATION_S" >> "$META_FILE"
 
 echo "==== Summary ===="
 grep -E "Request throughput|Output token throughput|Total Token throughput|Mean.*\(ms\):|Median.*\(ms\):|P99.*\(ms\):" "$BM_LOG" || true
