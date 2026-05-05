@@ -1,0 +1,34 @@
+===== Kernel-tune winners =====
+Source runlog:  tmp/log/tune_all_llama3_8b_v7x_20260504_205222.txt
+Extracted at:   2026-05-05 07:03:50
+Phases found:   3
+
+
+===== decode =====
+case_set_id: llama3_8b_v7x_decode_20260504_205222
+db_path:     /tmp/kernel_tuner_run_2026_05_04_20_52_28
+
+  tuning_key={"page_size": 128, "q_dtype": "bfloat16", "kv_dtype": "bfloat16", "num_q_heads": 32, "num_kv_heads": 8, "head_dim": 128, "max_model_len": 8192, "sliding_window": null, "case": "decode", "chunk_prefill_size": 0}  best_latency_us=519  warmup_us=1106458  tunable_params={"bq_sz": 1, "bkv_sz": 4096, "bq_csz": 1, "bkv_csz": 1024}  case_id=29
+  tuning_key={"page_size": 64, "q_dtype": "bfloat16", "kv_dtype": "bfloat16", "num_q_heads": 32, "num_kv_heads": 8, "head_dim": 128, "max_model_len": 8192, "sliding_window": null, "case": "decode", "chunk_prefill_size": 0}  best_latency_us=525  warmup_us=1239932  tunable_params={"bq_sz": 1, "bkv_sz": 4096, "bq_csz": 1, "bkv_csz": 1024}  case_id=14
+
+===== prefill =====
+case_set_id: llama3_8b_v7x_prefill_20260504_205222
+db_path:     /tmp/kernel_tuner_run_2026_05_04_20_55_40
+
+  tuning_key={"page_size": 128, "q_dtype": "bfloat16", "kv_dtype": "bfloat16", "num_q_heads": 32, "num_kv_heads": 8, "head_dim": 128, "max_model_len": 8192, "sliding_window": null, "case": "prefill", "chunk_prefill_size": 1024}  best_latency_us=1021  warmup_us=2921682  tunable_params={"bq_sz": 256, "bkv_sz": 1024, "bq_csz": 256, "bkv_csz": 512}  case_id=1426
+  tuning_key={"page_size": 64, "q_dtype": "bfloat16", "kv_dtype": "bfloat16", "num_q_heads": 32, "num_kv_heads": 8, "head_dim": 128, "max_model_len": 8192, "sliding_window": null, "case": "prefill", "chunk_prefill_size": 1024}  best_latency_us=1014  warmup_us=2890257  tunable_params={"bq_sz": 256, "bkv_sz": 512, "bq_csz": 256, "bkv_csz": 512}  case_id=496
+  tuning_key={"page_size": 128, "q_dtype": "bfloat16", "kv_dtype": "bfloat16", "num_q_heads": 32, "num_kv_heads": 8, "head_dim": 128, "max_model_len": 8192, "sliding_window": null, "case": "prefill", "chunk_prefill_size": 128}  best_latency_us=1093  warmup_us=2725072  tunable_params={"bq_sz": 128, "bkv_sz": 2048, "bq_csz": 128, "bkv_csz": 1024}  case_id=1255
+  tuning_key={"page_size": 64, "q_dtype": "bfloat16", "kv_dtype": "bfloat16", "num_q_heads": 32, "num_kv_heads": 8, "head_dim": 128, "max_model_len": 8192, "sliding_window": null, "case": "prefill", "chunk_prefill_size": 128}  best_latency_us=1107  warmup_us=2123822  tunable_params={"bq_sz": 128, "bkv_sz": 4096, "bq_csz": 128, "bkv_csz": 512}  case_id=440
+  tuning_key={"page_size": 128, "q_dtype": "bfloat16", "kv_dtype": "bfloat16", "num_q_heads": 32, "num_kv_heads": 8, "head_dim": 128, "max_model_len": 8192, "sliding_window": null, "case": "prefill", "chunk_prefill_size": 2048}  best_latency_us=950  warmup_us=2869059  tunable_params={"bq_sz": 256, "bkv_sz": 2048, "bq_csz": 256, "bkv_csz": 512}  case_id=1491
+  tuning_key={"page_size": 64, "q_dtype": "bfloat16", "kv_dtype": "bfloat16", "num_q_heads": 32, "num_kv_heads": 8, "head_dim": 128, "max_model_len": 8192, "sliding_window": null, "case": "prefill", "chunk_prefill_size": 2048}  best_latency_us=955  warmup_us=2931271  tunable_params={"bq_sz": 256, "bkv_sz": 2048, "bq_csz": 256, "bkv_csz": 512}  case_id=621
+  tuning_key={"page_size": 128, "q_dtype": "bfloat16", "kv_dtype": "bfloat16", "num_q_heads": 32, "num_kv_heads": 8, "head_dim": 128, "max_model_len": 8192, "sliding_window": null, "case": "prefill", "chunk_prefill_size": 256}  best_latency_us=1040  warmup_us=2849033  tunable_params={"bq_sz": 256, "bkv_sz": 2048, "bq_csz": 256, "bkv_csz": 512}  case_id=1488
+  tuning_key={"page_size": 64, "q_dtype": "bfloat16", "kv_dtype": "bfloat16", "num_q_heads": 32, "num_kv_heads": 8, "head_dim": 128, "max_model_len": 8192, "sliding_window": null, "case": "prefill", "chunk_prefill_size": 256}  best_latency_us=1037  warmup_us=4709299  tunable_params={"bq_sz": 256, "bkv_sz": 1024, "bq_csz": 256, "bkv_csz": 1024}  case_id=558
+  tuning_key={"page_size": 128, "q_dtype": "bfloat16", "kv_dtype": "bfloat16", "num_q_heads": 32, "num_kv_heads": 8, "head_dim": 128, "max_model_len": 8192, "sliding_window": null, "case": "prefill", "chunk_prefill_size": 512}  best_latency_us=1036  warmup_us=2876955  tunable_params={"bq_sz": 256, "bkv_sz": 2048, "bq_csz": 256, "bkv_csz": 512}  case_id=1489
+  tuning_key={"page_size": 64, "q_dtype": "bfloat16", "kv_dtype": "bfloat16", "num_q_heads": 32, "num_kv_heads": 8, "head_dim": 128, "max_model_len": 8192, "sliding_window": null, "case": "prefill", "chunk_prefill_size": 512}  best_latency_us=1037  warmup_us=2895929  tunable_params={"bq_sz": 256, "bkv_sz": 1024, "bq_csz": 256, "bkv_csz": 512}  case_id=555
+
+===== mixed =====
+case_set_id: llama3_8b_v7x_mixed_20260504_205222
+db_path:     /tmp/kernel_tuner_run_2026_05_04_23_53_54
+
+  tuning_key={"page_size": 128, "q_dtype": "bfloat16", "kv_dtype": "bfloat16", "num_q_heads": 32, "num_kv_heads": 8, "head_dim": 128, "max_model_len": 8192, "sliding_window": null, "case": "mixed", "chunk_prefill_size": 0}  best_latency_us=265  warmup_us=1028419  tunable_params={"bq_sz": 64, "bkv_sz": 512, "bq_csz": 64, "bkv_csz": 256}  case_id=229
+  tuning_key={"page_size": 64, "q_dtype": "bfloat16", "kv_dtype": "bfloat16", "num_q_heads": 32, "num_kv_heads": 8, "head_dim": 128, "max_model_len": 8192, "sliding_window": null, "case": "mixed", "chunk_prefill_size": 0}  best_latency_us=335  warmup_us=1051335  tunable_params={"bq_sz": 64, "bkv_sz": 1024, "bq_csz": 64, "bkv_csz": 256}  case_id=26
