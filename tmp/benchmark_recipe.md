@@ -174,4 +174,13 @@ When optimizing for maximum throughput, it is critical to understand which param
 | `max_model_len` | `MAX_MODEL_LEN` | **Fixed**<br>(Workload Key) | **Workload Constraint:** Defines the maximum sequence length. Dictates maximum XLA loop bounds and bounds checks. Changing this requires a new tuning and sweeping cycle. |
 | Prompts / Request Rate | `NUM_PROMPTS`<br>`REQUEST_RATE` | **Fixed**<br>(Workload Key) | **Workload Constraint (Saturation):** Must be set high enough to generate a massive backlog. This ensures the TPU runs in a steady state for a sustained duration, providing stable and accurate throughput measurements. |
 
-**Note on Sweep execution:** While `chunk_prefill_size` (K) is fundamentally a tuned parameter, the overall system sweep scripts (`tools/benchmark/sweeps/*.json`) technically "sweep" K via `coupled_axes`. They do this by benchmarking the *fully-tuned* `K=128` (with its specific `RPA_P_BLOCK_SIZES`) against the *fully-tuned* `K=256`, etc., to find which K yields the highest end-to-end throughput for vLLM queueing.
+## Future Work: Hybrid VMEM-Aware Tuning Pruning
+
+To avoid wasting TPU time on combinations that are mathematically guaranteed to fail, we will implement a hybrid tuning strategy. 
+
+**The Goal:**
+1. **Pre-flight Calculation (Theoretical):** Before sending a `TuningKey` to XLA, use `get_smem_estimate_bytes()` and `get_vmem_estimate_bytes()` (from `tpu_inference/kernels/ragged_paged_attention/v3/kernel.py`) to estimate the VMEM footprint of the specific `(bq_sz, bkv_sz)` tile against the specific Model architecture (`head_dim`, `num_q_heads`, etc).
+2. **Static Pruning:** If the estimated VMEM exceeds the TPU hardware limits (~16MB on v6e/v7x), silently drop that combination from the tuning queue.
+3. **Dynamic Pruning (Empirical bounds-checking):** For the remaining cases, wrap the JAX execution in a `try/except` block. If the compiler still throws a `ResourceExhausted` error (because of XLA padding overheads), immediately record that boundary and prune all larger compute/memory tiles from the remaining search space for that specific `page_size` / `chunk_prefill_size`.
+
+This transforms the tuner from a "dumb grid search" into an intelligent, hardware-aware optimizer, allowing us to safely define massive search spaces (like `K=8192` and `bq_sz=8192`) without the penalty of watching the compiler crash thousands of times.

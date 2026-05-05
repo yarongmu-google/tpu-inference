@@ -188,7 +188,7 @@ class RpaV3KernelTuner(KernelTunerBase):
         self.total_num_pages = 4096
 
         # Model shape.
-        self.page_size = [64, 128]
+        self.page_size = [64, 128, 256]
         self.q_dtype = jnp.bfloat16
         # Switch to [jnp.float8_e4m3fn] if serving with quantized KV cache.
         self.kv_dtype = [jnp.bfloat16]
@@ -217,13 +217,13 @@ class RpaV3KernelTuner(KernelTunerBase):
         # Tunable block-size sweep, anchored at the kernel's v7 default for
         # this model (bq_sz=512, bkv_sz=2048, bq_csz=256, bkv_csz=512 — see
         # get_default_block_sizes in kernel.py).
-        self.bq_sz_lst = [32, 64, 128, 256, 512]
-        self.bkv_sz_lst = [512, 1024, 2048, 4096]
-        self.bq_csz_lst = [32, 64, 128, 256]
-        self.bkv_csz_lst = [128, 256, 512, 1024]
+        self.bq_sz_lst = [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
+        self.bkv_sz_lst = [512, 1024, 2048, 4096, 8192]
+        self.bq_csz_lst = [32, 64, 128, 256, 512, 1024, 2048]
+        self.bkv_csz_lst = [128, 256, 512, 1024, 2048]
 
         # Chunk prefill sizes to sweep (PREFILL only).
-        self.chunk_prefill_size_lst = [128, 256, 512, 1024, 2048]
+        self.chunk_prefill_size_lst = [128, 256, 512, 1024, 2048, 4096, 8192]
 
     def _block_sizes_valid(self, case, page_size, bq_sz, bkv_sz, bq_csz,
                            bkv_csz, K):
