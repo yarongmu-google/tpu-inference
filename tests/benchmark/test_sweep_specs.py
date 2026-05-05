@@ -59,11 +59,16 @@ class TestSmokeSpecs(unittest.TestCase):
         ks = sorted((c["LONG_PREFILL_TOKEN_THRESHOLD"] for c in combos),
                     key=int)
         self.assertEqual(ks, ["512", "2048"])
-        # Coupled (K, RPA_P_BLOCK_SIZES) pairing — the K=512 combo
-        # gets its specific block sizes, K=2048 gets its own.
+        # Coupled (K, RPA_P_BLOCK_SIZES) pairing — both K values pull
+        # from the all-three-flavors tune (page=128 winners). After that
+        # round, K=512 and K=2048 happen to share the same PREFILL block
+        # configuration (bq=256 bkv=2048 bq_c=256 bkv_c=512); the prior
+        # PREFILL-only round had them differ. Assertion checks both
+        # values explicitly so a future tune that re-differentiates them
+        # surfaces here, not in a silent serving regression.
         by_k = {c["LONG_PREFILL_TOKEN_THRESHOLD"]: c for c in combos}
-        self.assertEqual(by_k["512"]["RPA_P_BLOCK_SIZES"], "256,1024,128,1024")
-        self.assertEqual(by_k["2048"]["RPA_P_BLOCK_SIZES"], "256,512,256,512")
+        self.assertEqual(by_k["512"]["RPA_P_BLOCK_SIZES"], "256,2048,256,512")
+        self.assertEqual(by_k["2048"]["RPA_P_BLOCK_SIZES"], "256,2048,256,512")
 
     def test_smoke_specs_have_a_safe_timeout(self):
         # Both smoke specs should pin a per-combo timeout below the

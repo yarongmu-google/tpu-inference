@@ -4,15 +4,19 @@
     "Goal: validate that the chunk-prefill optimization activates and",
     "produces a metrics.txt at two K values (one mid-range, one max).",
     "Coupled axes pin (K, BLOCK_SIZE, RPA_P_BLOCK_SIZES) triples taken",
-    "from tmp/tuning_llama3_8b_v7x_prefill_2026_05_03.md (page_size=128",
-    "column).",
+    "from tmp/log/tuning_winners_20260505_070350.txt (page=128 column),",
+    "the all-three-flavors tune that replaced the PREFILL-only round.",
+    "RPA_D_BLOCK_SIZES and RPA_M_BLOCK_SIZES are also pinned to the",
+    "same tunes page=128 winners — necessary because the optimized",
+    "path produces traffic in all three buckets (DECODE for ongoing",
+    "decodes, PREFILL for chunked prefill, MIXED for residual).",
     "",
     "MAX_MODEL_LEN=4096 (overrides the case file's 10275) and",
     "NUM_PROMPTS=100 keep the smoke run fast. The 1800-token prompts",
     "+ 128-token outputs from the case file fit comfortably.",
     "",
     "Run:",
-    "  python -m tools.benchmark.sweep \\",
+    "  tools/benchmark/sweep.sh \\",
     "    tools/benchmark/sweeps/llama3_8b_v7x_optimized_smoke.json"
   ],
   "case_file": "../cases/llama3_8b_v7x_prefill_heavy.env",
@@ -24,22 +28,31 @@
     "MAX_NUM_BATCHED_TOKENS": [4096]
   },
 
+  "_block_sizes_source": "tmp/log/tuning_winners_20260505_070350.txt (page=128, llama3_8b_v7x)",
+
+  "_coupled_axes_provenance": [
+    "K=512  page=128: bq=256 bkv=2048 bq_c=256 bkv_c=512  (1036us)",
+    "K=2048 page=128: bq=256 bkv=2048 bq_c=256 bkv_c=512  (950us)"
+  ],
+
   "coupled_axes": [
     {
       "LONG_PREFILL_TOKEN_THRESHOLD": 512,
       "BLOCK_SIZE":                   128,
-      "RPA_P_BLOCK_SIZES":            "256,1024,128,1024"
+      "RPA_P_BLOCK_SIZES":            "256,2048,256,512"
     },
     {
       "LONG_PREFILL_TOKEN_THRESHOLD": 2048,
       "BLOCK_SIZE":                   128,
-      "RPA_P_BLOCK_SIZES":            "256,512,256,512"
+      "RPA_P_BLOCK_SIZES":            "256,2048,256,512"
     }
   ],
 
   "fixed": {
-    "MAX_NUM_SEQS":  128,
-    "MAX_MODEL_LEN": 4096,
-    "NUM_PROMPTS":   100
+    "MAX_NUM_SEQS":       128,
+    "MAX_MODEL_LEN":      4096,
+    "NUM_PROMPTS":        100,
+    "RPA_D_BLOCK_SIZES":  "1,4096,1,1024",
+    "RPA_M_BLOCK_SIZES":  "64,512,64,256"
   }
 }

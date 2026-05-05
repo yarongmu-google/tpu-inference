@@ -19,7 +19,7 @@
     "datapoint.",
     "",
     "Run:",
-    "  python -m tools.benchmark.sweep \\",
+    "  tools/benchmark/sweep.sh \\",
     "    tools/benchmark/sweeps/llama3_8b_v7x_baseline_smoke.json"
   ],
   "case_file": "../cases/llama3_8b_v7x_prefill_heavy.env",
@@ -33,11 +33,15 @@
 
   "coupled_axes": [],
 
+  "_block_sizes_source": "tmp/log/tuning_winners_20260505_070350.txt (page=128 winners, llama3_8b_v7x)",
+
   "fixed": {
     "LONG_PREFILL_TOKEN_THRESHOLD": 0,
     "MAX_NUM_SEQS":                 128,
     "MAX_MODEL_LEN":                4096,
     "BLOCK_SIZE":                   128,
-    "NUM_PROMPTS":                  100
+    "NUM_PROMPTS":                  100,
+    "RPA_D_BLOCK_SIZES":            "1,4096,1,1024",
+    "RPA_M_BLOCK_SIZES":            "64,512,64,256"
   }
 }
