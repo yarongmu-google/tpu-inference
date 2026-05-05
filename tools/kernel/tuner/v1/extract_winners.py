@@ -50,13 +50,27 @@ def main():
     #   }
     # }
     
+    basename = os.path.basename(runlog).replace("tune_all_", "").replace(".txt", "")
+    out_path = f"tmp/log/{basename}.kernel"
+
+    # ---- Accumulation Logic ----
+    # If the file already exists, load it so we can merge best-of-all-time.
     out_data = {
         "metadata": {
-            "source_runlog": runlog,
-            "extracted_at": datetime.now().isoformat(),
+            "last_updated_from_runlog": runlog,
+            "last_updated_at": datetime.now().isoformat(),
         },
-        "results": {}
+        "results": {"decode": [], "mixed": [], "prefill": []}
     }
+    
+    if os.path.exists(out_path):
+        try:
+            with open(out_path, "r") as f:
+                existing_data = json.load(f)
+                if "results" in existing_data:
+                    out_data["results"] = existing_data["results"]
+        except Exception as e:
+            print(f"WARN: Could not read existing {out_path}, starting fresh. ({e})", file=sys.stderr)
 
     for case_m, db_m in zip(case_matches, db_matches):
         case = case_m.group(1)
@@ -65,19 +79,36 @@ def main():
         print(f"Extracting {case} from {db_path}")
 
         try:
-            winners = local_query_min_latency(db_path, case_set_id, "0")
-            out_data["results"][case] = winners
+            new_winners = local_query_min_latency(db_path, case_set_id, "0")
+            
+            # Merge logic: keep the lowest latency per TuningKey.
+            existing_list = out_data["results"].get(case, [])
+            
+            # Map existing by TuningKey hash
+            best_map = {}
+            for r in existing_list:
+                # Use a sorted JSON string of the dict as a stable hash key
+                tk_hash = json.dumps(r.get("tuning_key", {}), sort_keys=True)
+                best_map[tk_hash] = r
+                
+            # Compare and update with new winners
+            for r in new_winners:
+                tk_hash = json.dumps(r.get("tuning_key", {}), sort_keys=True)
+                new_lat = r.get("Latency", float("inf"))
+                
+                if tk_hash not in best_map or new_lat < best_map[tk_hash].get("Latency", float("inf")):
+                    best_map[tk_hash] = r
+                    
+            # Rebuild the flat list
+            out_data["results"][case] = list(best_map.values())
+            
         except Exception as e:
             print(f"WARN: Failed to extract {case} from {db_path}: {e}", file=sys.stderr)
-
-    # Generate output path
-    basename = os.path.basename(runlog).replace("tune_all_", "").replace(".txt", "")
-    out_path = f"tmp/log/{basename}.kernel"
 
     with open(out_path, "w") as f:
         json.dump(out_data, f, indent=2)
 
-    print(f"\nWrote: {out_path}")
+    print(f"\nWrote (Accumulated): {out_path}")
 
 if __name__ == "__main__":
     main()
