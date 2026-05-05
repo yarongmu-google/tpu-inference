@@ -122,3 +122,8 @@ Traceback (most recent call last):
     raise AttributeError(f"{self.__class__.__name__} has no attribute {key}")
 AttributeError: CachedTokenizersBackend has no attribute default_chat_template. Did you mean: 'get_chat_template'?
 [2/2] 60fe9f1cb8a7 failed (104.9s)  tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/60fe9f1cb8a7  err=subprocess exited with code 1
+[rpa3 e07629170e] [Bench] Auto-commit sweep progress 2/2
+ 2 files changed, 85 insertions(+)
+ create mode 100644 tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/60fe9f1cb8a7/meta.txt
+To github.com:yarongmu-google/tpu-inference.git
+   8cc8b65300..e07629170e  rpa3 -> rpa3

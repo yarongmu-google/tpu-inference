@@ -91,3 +91,7 @@ P99 E2EL (ms):                           6913.96
 ====
 Saved metrics to /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/60fe9f1cb8a7/metrics.txt
 [2/2] 60fe9f1cb8a7 completed_fresh (101.5s)  tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/60fe9f1cb8a7
+[rpa3 7e003cb490] [Bench] Auto-commit sweep progress 2/2
+ 3 files changed, 66 insertions(+), 2 deletions(-)
+To github.com:yarongmu-google/tpu-inference.git
+   3cddc300b9..7e003cb490  rpa3 -> rpa3

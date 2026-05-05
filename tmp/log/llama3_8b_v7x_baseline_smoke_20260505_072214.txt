@@ -98,3 +98,8 @@ Traceback (most recent call last):
     from tools.benchmark._schema import THROUGHPUT_METRIC
 ModuleNotFoundError: No module named 'tools'
 [2/2] 60fe9f1cb8a7 failed (100.2s)  tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/60fe9f1cb8a7  err=subprocess exited with code 1
+[rpa3 ef65fe6a59] [Bench] Auto-commit sweep progress 2/2
+ 3 files changed, 57 insertions(+), 3 deletions(-)
+ create mode 100644 tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/60fe9f1cb8a7/metrics.txt
+To github.com:yarongmu-google/tpu-inference.git
+   299cabe0ea..ef65fe6a59  rpa3 -> rpa3

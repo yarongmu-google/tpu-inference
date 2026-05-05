@@ -101,3 +101,17 @@ P99 E2EL (ms):                           6924.50
 ====
 Saved metrics to /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_optimized_smoke/e12368c950dd/metrics.txt
 [2/2] e12368c950dd completed_fresh (140.1s)  tmp/bench_llama3_8b_v7x_prefill_heavy_optimized_smoke/e12368c950dd
+[rpa3 2c451d8723] [Bench] Auto-commit sweep progress 2/2
+ 3 files changed, 95 insertions(+)
+ create mode 100644 tmp/bench_llama3_8b_v7x_prefill_heavy_optimized_smoke/e12368c950dd/meta.txt
+ create mode 100644 tmp/bench_llama3_8b_v7x_prefill_heavy_optimized_smoke/e12368c950dd/metrics.txt
+To github.com:yarongmu-google/tpu-inference.git
+ ! [rejected]              rpa3 -> rpa3 (fetch first)
+error: failed to push some refs to 'github.com:yarongmu-google/tpu-inference.git'
+hint: Updates were rejected because the remote contains work that you do not
+hint: have locally. This is usually caused by another repository pushing to
+hint: the same ref. If you want to integrate the remote changes, use
+hint: 'git pull' before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+git_commit_paths: subprocess failed: Command '['git', 'push', 'origin', 'rpa3']' returned non-zero exit status 1.
+WARN: auto-commit/push failed at 2/2
