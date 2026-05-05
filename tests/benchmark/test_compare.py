@@ -24,7 +24,7 @@ import unittest
 from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path
 
-from tools.benchmark import extract_best_service as compare
+from tools.benchmark import build_service_registry as compare
 
 
 def _make_combo_dir(parent: Path, cid: str,

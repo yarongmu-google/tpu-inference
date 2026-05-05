@@ -3,11 +3,11 @@
 # and write them to a single committed .kernel JSON report.
 #
 # Usage:
-#   tools/kernel/tuner/v1/extract_winners.sh [runlog_path]
+#   tools/kernel/tuner/v1/build_kernel_registry.sh [runlog_path]
 
 set -euo pipefail
 
-python3 -m tools.kernel.tuner.v1.extract_winners "${1:-}"
+python3 -m tools.kernel.tuner.v1.build_kernel_registry "${1:-}"
 
 # Find the most recently written .kernel file
 OUT=$(ls -t tmp/log/*.kernel 2>/dev/null | head -1)

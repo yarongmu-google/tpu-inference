@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.benchmark.extract_best_service import export_production_service, _to_float
+from tools.benchmark.build_service_registry import export_production_registry, _to_float
 
 class TestExtractBestService(unittest.TestCase):
     def setUp(self):
@@ -29,7 +29,7 @@ class TestExtractBestService(unittest.TestCase):
             }
         }
         
-        export_production_service(best_result, self.out_path)
+        export_production_registry(best_result, self.out_path)
         
         with open(self.out_path) as f:
             data = json.load(f)
@@ -58,7 +58,7 @@ class TestExtractBestService(unittest.TestCase):
             "meta": {"input_len": "1024", "output_len": "1024", "max_num_seqs": "128"},
             "metrics": {"RequestThroughput": "15.0"}
         }
-        export_production_service(worse_result, self.out_path)
+        export_production_registry(worse_result, self.out_path)
         
         with open(self.out_path) as f:
             data = json.load(f)
@@ -69,7 +69,7 @@ class TestExtractBestService(unittest.TestCase):
             "meta": {"input_len": "1024", "output_len": "1024", "max_num_seqs": "256"},
             "metrics": {"RequestThroughput": "25.0"}
         }
-        export_production_service(better_result, self.out_path)
+        export_production_registry(better_result, self.out_path)
         
         with open(self.out_path) as f:
             data = json.load(f)

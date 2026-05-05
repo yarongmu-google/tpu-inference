@@ -302,7 +302,7 @@ def _build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def export_production_service(best_result: dict[str, Any], output_path: str | os.PathLike) -> None:
+def export_production_registry(best_result: dict[str, Any], output_path: str | os.PathLike) -> None:
     """Export the best combo into an accumulated production .service JSON."""
     import json
     
@@ -380,7 +380,7 @@ def main(argv: list[str] | None = None) -> int:
     print(format_markdown_table(results_to_print, columns))
 
     if args.export_production and results_to_print:
-        export_production_service(results_to_print[0], args.export_production)
+        export_production_registry(results_to_print[0], args.export_production)
 
     return 0
 
