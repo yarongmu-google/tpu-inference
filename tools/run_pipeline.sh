@@ -45,6 +45,28 @@ SERVICE_BASENAME=$(basename "$SERVICE" .service)
 # Sweep name is defined inside the .service file
 SWEEP_NAME=$(python3 -c "import json; print(json.load(open('$SERVICE'))['sweep_name'])")
 
+PIPELINE_LOG="tmp/log/pipeline_${WORKLOAD_BASENAME}.txt"
+SERVICE_LOG="tmp/log/script_build_service_registry_${SWEEP_NAME}.txt"
+mkdir -p tmp/log
+
+# Guarantee logs are committed even if a python script crashes (set -e)
+commit_logs() {
+    if [ -f "$SERVICE_LOG" ]; then
+        git add -f "$SERVICE_LOG"
+        if ! git diff --cached --quiet; then
+            git commit -m "[Logs] Update build_service_registry script log for $SWEEP_NAME" || true
+        fi
+    fi
+    if [ -f "$PIPELINE_LOG" ]; then
+        git add -f "$PIPELINE_LOG"
+        if ! git diff --cached --quiet; then
+            git commit -m "[Pipeline] Update master orchestrator runlog for $WORKLOAD_BASENAME" || true
+            git push origin "$(git rev-parse --abbrev-ref HEAD)" || true
+        fi
+    fi
+}
+trap commit_logs EXIT
+
 echo "=========================================================="
 echo " Starting End-to-End Optimization Pipeline"
 echo " Workload: $WORKLOAD_BASENAME"
@@ -54,10 +76,6 @@ if [ "$SMOKE" -eq 1 ]; then
 fi
 echo "=========================================================="
 echo ""
-
-# We tee the entire pipeline output to a central, overwriting log file.
-PIPELINE_LOG="tmp/log/pipeline_${WORKLOAD_BASENAME}.txt"
-mkdir -p tmp/log
 
 {
     echo "=== Layer 1: Hardware Tuning ==="
@@ -85,21 +103,13 @@ mkdir -p tmp/log
     echo ""
     echo "=== Layer 3: Building Production Configuration ==="
     SWEEP_DIR="tmp/bench_${SWEEP_NAME}"
-    MODEL_DIR=$(dirname "$WORKLOAD")
     PROD_FILE="${MODEL_DIR}/production.service"
-    SERVICE_LOG="tmp/log/script_build_service_registry_${SWEEP_NAME}.txt"
 
     # Extract the #1 ranked result and append to the production artifact, logging the output
     {
         python3 -m tools.benchmark.build_service_registry "$SWEEP_DIR" --export-production "$PROD_FILE"
     } 2>&1 | tee "$SERVICE_LOG"
     
-    # Commit the script log independently 
-    git add -f "$SERVICE_LOG"
-    if ! git diff --cached --quiet; then
-        git commit -m "[Logs] Update build_service_registry script log for $SWEEP_NAME" || true
-    fi
-
     echo ""
     echo "=========================================================="
     echo " Pipeline Complete."
@@ -107,10 +117,3 @@ mkdir -p tmp/log
     echo " $PROD_FILE"
     echo "=========================================================="
 } 2>&1 | tee "$PIPELINE_LOG"
-
-# Commit the pipeline log
-git add -f "$PIPELINE_LOG"
-if ! git diff --cached --quiet; then
-    git commit -m "[Pipeline] Update master orchestrator runlog for $WORKLOAD_BASENAME"
-    git push origin "$(git rev-parse --abbrev-ref HEAD)" || true
-fi
