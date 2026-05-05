@@ -222,6 +222,15 @@ class RpaV3KernelTuner(KernelTunerBase):
         # Chunk prefill sizes to sweep (PREFILL only).
         self.chunk_prefill_size_lst = [128, 256, 512, 1024, 2048, 4096, 8192]
 
+        if os.environ.get("SMOKE_TEST") == "1":
+            logger.info("SMOKE_TEST=1 detected: Truncating tuner search space to minimum.")
+            self.bq_sz_lst = [128]
+            self.bkv_sz_lst = [512]
+            self.bq_csz_lst = [128]
+            self.bkv_csz_lst = [256]
+            self.chunk_prefill_size_lst = [128]
+            self.page_size = [128]
+
     def _block_sizes_valid(self, case, page_size, bq_sz, bkv_sz, bq_csz,
                            bkv_csz, K):
         if bq_sz % bq_csz != 0:

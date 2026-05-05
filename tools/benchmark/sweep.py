@@ -110,6 +110,14 @@ def load_spec(path: str | os.PathLike) -> dict[str, Any]:
         except Exception as e:
             raise SpecError(f"failed to load kernel_registry: {e}") from e
 
+    if os.environ.get("SMOKE_TEST") == "1":
+        print("SMOKE_TEST=1 detected: Truncating service sweep space to 1 combo.", file=sys.stderr)
+        if "sweep_axes" in spec:
+            for k in spec["sweep_axes"]:
+                spec["sweep_axes"][k] = spec["sweep_axes"][k][:1]
+        if "coupled_axes" in spec and spec["coupled_axes"]:
+            spec["coupled_axes"] = spec["coupled_axes"][:1]
+
     return spec
 
 
