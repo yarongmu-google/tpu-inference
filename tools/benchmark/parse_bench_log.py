@@ -20,9 +20,31 @@ gets unit-tested independently of the surrounding shell driver.
 import argparse
 import re
 import sys
+from pathlib import Path
 from typing import Iterable, Mapping
 
-from tools.benchmark._schema import THROUGHPUT_METRIC
+# This module is invoked two ways and the import below has to work in
+# both:
+#   1. As a regular package import: `from tools.benchmark.parse_bench_log
+#      import ...` (the unit tests, and `python3 -m tools.benchmark...`).
+#      The repo root is already on sys.path by virtue of how the parent
+#      was launched, so no path manipulation is needed.
+#   2. By absolute path from run_benchmark.sh: `python3
+#      /abs/path/to/parse_bench_log.py bench.log`. run_benchmark.sh
+#      does this deliberately because `python3 -m` would require the
+#      repo root on sys.path / CWD, which is not guaranteed when
+#      sweep.py launches the script from an arbitrary directory. With
+#      absolute-path invocation Python only adds the script directory
+#      to sys.path — NOT the repo root — so the package-style import
+#      below would fail with ModuleNotFoundError.
+#
+# Add the repo root (parent of `tools/`) to sys.path if not already
+# present, so the package import works in both cases.
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from tools.benchmark._schema import THROUGHPUT_METRIC  # noqa: E402
 
 # Latency sections that vllm bench reports under "X (ms):" with rows like
 # "Mean X (ms): ...", "Median X (ms): ...", "P99 X (ms): ...".

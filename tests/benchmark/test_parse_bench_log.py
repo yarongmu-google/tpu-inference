@@ -18,9 +18,12 @@ Coverage target: 100% lines + branches of parse_bench_log.py.
 
 import io
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from pathlib import Path
 from unittest.mock import patch
 
 from tools.benchmark import parse_bench_log as pbl
@@ -264,6 +267,46 @@ class TestMainCli(unittest.TestCase):
         with self.assertRaises(SystemExit) as cm:
             pbl.main([])
         self.assertEqual(cm.exception.code, 2)
+
+    def test_runs_as_standalone_script_via_absolute_path(self):
+        """run_benchmark.sh invokes parse_bench_log.py by absolute path
+        from an arbitrary CWD — NOT via `python3 -m`. That path must work
+        even though the repo root is not on sys.path by default. The
+        module compensates by adding repo root to sys.path at import
+        time; this test guards against accidentally re-introducing the
+        ModuleNotFoundError we hit live in tmp/log/llama3_8b_v7x_baseline_smoke_20260505_072214.txt.
+
+        Spawn a fresh subprocess (clean PYTHONPATH) and invoke the
+        script by absolute path from /tmp; if the in-script sys.path
+        fix is removed or broken, this raises with the original
+        ModuleNotFoundError.
+        """
+        repo_root = Path(__file__).resolve().parent.parent.parent
+        script = repo_root / "tools" / "benchmark" / "parse_bench_log.py"
+        self.assertTrue(script.is_file(), f"sanity: {script} exists")
+
+        with tempfile.NamedTemporaryFile("w", suffix=".log",
+                                         delete=False) as f:
+            f.write("Request throughput (req/s):  7.77\n")
+            tmp = f.name
+        try:
+            # Clean env to drop any inherited PYTHONPATH that might
+            # accidentally make the package import work even without
+            # the in-script sys.path fix.
+            env = {k: v for k, v in os.environ.items()
+                   if k not in ("PYTHONPATH",)}
+            # CWD is intentionally /tmp (NOT the repo root) to mirror
+            # how sweep.py launches run_benchmark.sh from a sweep dir.
+            proc = subprocess.run(
+                [sys.executable, str(script), tmp],
+                capture_output=True, text=True, cwd="/tmp", env=env,
+                timeout=30)
+            self.assertEqual(
+                proc.returncode, 0,
+                f"abs-path invocation failed (stderr=\n{proc.stderr})")
+            self.assertIn("RequestThroughput=7.77", proc.stdout)
+        finally:
+            os.unlink(tmp)
 
     def test_module_main_block(self):
         # Cover the `if __name__ == "__main__"` line.
