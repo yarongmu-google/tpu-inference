@@ -1,0 +1,57 @@
+case_file=/home/ymu_google_com/tpu-inference/tools/benchmark/cases/llama3_8b_v7x_prefill_heavy.env
+case_name=llama3_8b_v7x_prefill_heavy
+model=meta-llama/Meta-Llama-3-8B
+max_num_seqs=128
+max_num_batched_tokens=2048
+tensor_parallel_size=1
+max_model_len=4096
+dataset=sonnet
+input_len=1800
+output_len=128
+num_prompts=100
+request_rate=inf
+block_size=128
+long_prefill_token_threshold=0
+rpa_p_block_sizes=default
+git_commit=18a189ae4f73fead95d7bb43de844e617fae61d1
+git_branch=rpa3
+timestamp=20260504_190653
+----
+Results: /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/cc4dc020c43d
+Starting vllm server (log: /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/cc4dc020c43d/vllm.log) ...
+Waiting up to 20 min for server startup ...
+ERROR: vllm exited early. tail of /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/cc4dc020c43d/vllm.log:
+/home/ymu_google_com/vllm/vllm/__init__.py:7: RuntimeWarning: Failed to read commit hash:
+No module named 'vllm._version'
+  from .version import __version__, __version_tuple__  # isort:skip
+INFO 05-04 19:06:55 [__init__.py:59] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+WARNING:absl:Tensorflow library not found, tensorflow.io.gfile operations will use native shim calls. GCS paths (i.e. 'gs://...') cannot be accessed.
+WARNING 05-04 19:06:58 [tpu_platform.py:329] Pin memory is not supported on TPU.
+Traceback (most recent call last):
+  File "/home/ymu_google_com/miniconda3/envs/vllm12/bin/vllm", line 6, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/home/ymu_google_com/vllm/vllm/entrypoints/cli/main.py", line 20, in main
+    import vllm.entrypoints.cli.launch
+  File "/home/ymu_google_com/vllm/vllm/entrypoints/cli/launch.py", line 12, in <module>
+    from vllm.entrypoints.openai.api_server import (
+  File "/home/ymu_google_com/vllm/vllm/entrypoints/openai/api_server.py", line 45, in <module>
+    from vllm.entrypoints.sagemaker.api_router import sagemaker_standards_bootstrap
+  File "/home/ymu_google_com/vllm/vllm/entrypoints/sagemaker/api_router.py", line 20, in <module>
+    from vllm.entrypoints.serve.instrumentator.basic import base
+  File "/home/ymu_google_com/vllm/vllm/entrypoints/serve/instrumentator/basic.py", line 9, in <module>
+    from vllm.entrypoints.serve.tokenize.serving import OpenAIServingTokenization
+  File "/home/ymu_google_com/vllm/vllm/entrypoints/serve/tokenize/serving.py", line 14, in <module>
+    from vllm.entrypoints.serve.render.serving import OpenAIServingRender
+  File "/home/ymu_google_com/vllm/vllm/entrypoints/serve/render/serving.py", line 48, in <module>
+    from vllm.parser import ParserManager
+  File "/home/ymu_google_com/vllm/vllm/parser/__init__.py", line 4, in <module>
+    from vllm.parser.abstract_parser import (
+  File "/home/ymu_google_com/vllm/vllm/parser/abstract_parser.py", line 41, in <module>
+    from vllm.tool_parsers.streaming import (
+  File "/home/ymu_google_com/vllm/vllm/tool_parsers/streaming.py", line 17, in <module>
+    from vllm.tool_parsers.mistral_tool_parser import MistralToolCall
+  File "/home/ymu_google_com/vllm/vllm/tool_parsers/mistral_tool_parser.py", line 16, in <module>
+    from mistral_common.protocol.instruct.tool_calls import (
+ImportError: cannot import name 'NamedToolChoice' from 'mistral_common.protocol.instruct.tool_calls' (/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/mistral_common/protocol/instruct/tool_calls.py)
+[1/2] cc4dc020c43d failed (10.1s)  tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/cc4dc020c43d  err=subprocess exited with code 1
