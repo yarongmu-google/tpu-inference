@@ -30,7 +30,7 @@
     "  tools/benchmark/sweep.sh \\",
     "    tools/benchmark/sweeps/llama3_8b_v7x_baseline_full_4k.service"
   ],
-  "case_file": "../cases/llama3_8b_v7x_balanced_4k.workload",
+  "case_file": "../cases/v7x/llama3_8b/balanced_4k.workload",
   "sweep_name": "baseline_full_4k",
 
   "timeout_seconds": 2400,

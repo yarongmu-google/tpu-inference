@@ -20,7 +20,7 @@
     "  tools/benchmark/sweep.sh \\",
     "    tools/benchmark/sweeps/llama3_8b_v7x_baseline_full.service"
   ],
-  "case_file": "../cases/llama3_8b_v7x_prefill_heavy.workload",
+  "case_file": "../cases/v7x/llama3_8b/prefill_heavy.workload",
   "sweep_name": "baseline_full",
 
   "timeout_seconds": 1800,
