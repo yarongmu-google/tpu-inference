@@ -26,16 +26,16 @@ usage() {
     cat <<EOF
 Usage: $0 <case_file> [--result-tag TAG] [--rate RATE]
 
-  case_file       Path to a tools/benchmark/cases/<name>.env file.
+  case_file       Path to a tools/benchmark/cases/<name>.workload file.
   --result-tag    Label appended to the result directory name. Defaults
                   to a timestamp.
   --rate          Request rate (--request-rate). Defaults to "inf"
                   (max throughput, no rate limit).
 
 Examples:
-  $0 tools/benchmark/cases/llama3_8b_v7x_balanced.env
-  $0 tools/benchmark/cases/llama3_8b_v7x_prefill_heavy.env --result-tag baseline
-  $0 tools/benchmark/cases/llama3_8b_v7x_prefill_heavy.env --result-tag opt --rate 5
+  $0 tools/benchmark/cases/llama3_8b_v7x_balanced.workload
+  $0 tools/benchmark/cases/llama3_8b_v7x_prefill_heavy.workload --result-tag baseline
+  $0 tools/benchmark/cases/llama3_8b_v7x_prefill_heavy.workload --result-tag opt --rate 5
 EOF
     exit 1
 }
@@ -73,7 +73,7 @@ set +a
 DOWNLOAD_DIR="${DOWNLOAD_DIR:-$HOME/hf-cache}"
 VLLM_DIR="${VLLM_DIR:-../vllm}"
 
-CASE_NAME="$(basename "$CASE_FILE" .env)"
+CASE_NAME="$(basename "$CASE_FILE" .workload)"
 TS="$(date +%Y%m%d_%H%M%S)"
 TAG="${RESULT_TAG:-$TS}"
 # RESULT_DIR is overridable from the env so sweep.py can direct each

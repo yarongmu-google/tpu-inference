@@ -32,7 +32,7 @@ from unittest.mock import MagicMock, patch
 from tools.benchmark import sweep
 
 
-def _make_spec(case_file="case.env", sweep_name="s",
+def _make_spec(case_file="case.workload", sweep_name="s",
                sweep_axes=None, coupled_axes=None, fixed=None):
     return {
         "case_file": case_file,
@@ -202,7 +202,7 @@ class TestRunOne(unittest.TestCase):
             (Path(env["RESULT_DIR"]) / "metrics.txt").write_text("RequestThroughput=8.30\n")
             return FakeProc(returncode=0)
 
-        spec = _make_spec(case_file="cases/foo.env")
+        spec = _make_spec(case_file="cases/foo.workload")
         combo = {"MAX_NUM_BATCHED_TOKENS": "4096", "BLOCK_SIZE": "128"}
         sweep.run_one(spec, combo, base_dir=self.base,
                       run_subprocess=fake_run,
@@ -217,7 +217,7 @@ class TestRunOne(unittest.TestCase):
         # RESULT_DIR points inside our base.
         self.assertTrue(captured["env"]["RESULT_DIR"].startswith(str(self.base)))
         # Cmd is [script, case_file].
-        self.assertEqual(captured["cmd"][1], "cases/foo.env")
+        self.assertEqual(captured["cmd"][1], "cases/foo.workload")
 
     def test_run_one_path_handling_tolerates_spaces(self):
         # Scope: this asserts that *sweep.py's* path-handling tolerates
@@ -270,10 +270,10 @@ class TestRunSweep(unittest.TestCase):
         self.spec = _make_spec(sweep_axes={"A": [1, 2]},
                                coupled_axes=[{"X": 1}, {"X": 2}])
         # load_spec now requires case_file to exist (pre-flight check).
-        # Materialize a dummy case.env alongside the spec so the test
+        # Materialize a dummy case.workload alongside the spec so the test
         # spec passes validation.
-        (Path(self.tmp.name) / "case.env").write_text(": \"${MODEL:=fake}\"\n")
-        self.spec_path = Path(self.tmp.name) / "spec.json"
+        (Path(self.tmp.name) / "case.workload").write_text(": \"${MODEL:=fake}\"\n")
+        self.spec_path = Path(self.tmp.name) / "spec.service"
         self.spec_path.write_text(json.dumps(self.spec))
 
     def tearDown(self):
@@ -711,8 +711,8 @@ class TestMainCli(unittest.TestCase):
         self.base = self.tmp.name
         spec = _make_spec(sweep_axes={"A": [1]})
         # load_spec's pre-flight check requires case_file to exist.
-        (Path(self.tmp.name) / "case.env").write_text(": \"${MODEL:=fake}\"\n")
-        self.spec_path = Path(self.tmp.name) / "spec.json"
+        (Path(self.tmp.name) / "case.workload").write_text(": \"${MODEL:=fake}\"\n")
+        self.spec_path = Path(self.tmp.name) / "spec.service"
         self.spec_path.write_text(json.dumps(spec))
 
     def tearDown(self):

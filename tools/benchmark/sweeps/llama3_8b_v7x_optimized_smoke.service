@@ -11,15 +11,15 @@
     "path produces traffic in all three buckets (DECODE for ongoing",
     "decodes, PREFILL for chunked prefill, MIXED for residual).",
     "",
-    "MAX_MODEL_LEN=4096 (overrides the case file's 10275) and",
+    "MAX_MODEL_LEN=8192 (overrides the case file) and",
     "NUM_PROMPTS=100 keep the smoke run fast. The 1800-token prompts",
     "+ 128-token outputs from the case file fit comfortably.",
     "",
     "Run:",
     "  tools/benchmark/sweep.sh \\",
-    "    tools/benchmark/sweeps/llama3_8b_v7x_optimized_smoke.json"
+    "    tools/benchmark/sweeps/llama3_8b_v7x_optimized_smoke.service"
   ],
-  "case_file": "../cases/llama3_8b_v7x_prefill_heavy.env",
+  "case_file": "../cases/llama3_8b_v7x_prefill_heavy.workload",
   "sweep_name": "optimized_smoke",
 
   "timeout_seconds": 1800,
@@ -50,7 +50,7 @@
 
   "fixed": {
     "MAX_NUM_SEQS":       128,
-    "MAX_MODEL_LEN":      4096,
+    "MAX_MODEL_LEN":      8192,
     "NUM_PROMPTS":        100,
     "RPA_D_BLOCK_SIZES":  "1,4096,1,1024",
     "RPA_M_BLOCK_SIZES":  "64,512,64,256"

@@ -175,15 +175,12 @@ class RpaV3KernelTuner(KernelTunerBase):
                          storage_manager=storage_manager,
                          job_bucket_size=100,
                          kernel_tuner_name="rpa_v3_kernel_tuner")
-        # ---- Llama 3 8B preset (first tuning target) ----
-        # Override these fields on a tuner instance for other models.
-        # Llama 3 8B: num_q_heads=32, num_kv_heads=8 (GQA 4:1), head_dim=128,
-        # no sliding window, native context 8192.
+        # ---- Single Source of Truth: Read from environment ----
+        # These must be set by tune_all_cases.sh sourcing a .workload case file.
+        self.max_num_tokens = int(os.environ["MAX_NUM_BATCHED_TOKENS"])
+        self.max_model_len = int(os.environ["MAX_MODEL_LEN"])
+        self.max_num_seqs = int(os.environ["MAX_NUM_SEQS"])
 
-        # Workload shape.
-        self.max_num_tokens = 2048
-        self.max_model_len = 8192
-        self.max_num_seqs = 32
         # Sized for max_model_len/page_size pages_per_seq × max_num_seqs.
         self.total_num_pages = 4096
 
@@ -192,9 +189,9 @@ class RpaV3KernelTuner(KernelTunerBase):
         self.q_dtype = jnp.bfloat16
         # Switch to [jnp.float8_e4m3fn] if serving with quantized KV cache.
         self.kv_dtype = [jnp.bfloat16]
-        self.num_q_heads = [32]
-        self.num_kv_heads = [8]
-        self.head_dim = [128]
+        self.num_q_heads = [int(os.environ["NUM_Q_HEADS"])]
+        self.num_kv_heads = [int(os.environ["NUM_KV_HEADS"])]
+        self.head_dim = [int(os.environ["HEAD_DIM"])]
         self.sliding_window = [None]
 
         # Cases to tune. Default is PREFILL only (the original target);

@@ -2,6 +2,10 @@
 
 : "${MODEL:=Qwen/Qwen2.5-Coder-32B-Instruct}"
 : "${TENSOR_PARALLEL_SIZE:=4}"
+n: "${NUM_Q_HEADS:=40}"
+: "${NUM_KV_HEADS:=8}"
+: "${HEAD_DIM:=128}"
+
 
 : "${MAX_NUM_SEQS:=128}"
 : "${MAX_NUM_BATCHED_TOKENS:=10275}"

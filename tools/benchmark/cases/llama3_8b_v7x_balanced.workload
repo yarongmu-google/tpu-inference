@@ -32,6 +32,10 @@
 # bench-side assertion.
 : "${MODEL:=meta-llama/Meta-Llama-3-8B-Instruct}"
 : "${TENSOR_PARALLEL_SIZE:=1}"
+n: "${NUM_Q_HEADS:=32}"
+: "${NUM_KV_HEADS:=8}"
+: "${HEAD_DIM:=128}"
+
 
 # Match bm-infra v7x defaults so workload shape is identical to the
 # Qwen3-Coder run except for the model.

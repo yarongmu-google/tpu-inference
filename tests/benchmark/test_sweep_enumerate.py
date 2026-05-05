@@ -29,7 +29,7 @@ from tools.benchmark import sweep
 
 
 def _write_json(d) -> str:
-    f = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+    f = tempfile.NamedTemporaryFile("w", suffix=".service", delete=False)
     if isinstance(d, str):
         f.write(d)
     else:
@@ -47,7 +47,7 @@ class TestLoadSpec(unittest.TestCase):
         self.addCleanup(shutil.rmtree, d, ignore_errors=True)
         case_path = Path(d) / case_name
         case_path.write_text(": \"${MODEL:=fake}\"\n")
-        spec_path = Path(d) / "spec.json"
+        spec_path = Path(d) / "spec.service"
         spec_path.write_text(json.dumps(spec))
         return str(spec_path)
 
@@ -62,12 +62,12 @@ class TestLoadSpec(unittest.TestCase):
 
     def test_full_valid(self):
         path = self._write_spec_with_case({
-            "case_file": "case.env",
+            "case_file": "case.workload",
             "sweep_name": "s",
             "sweep_axes": {"A": [1, 2]},
             "coupled_axes": [{"X": 1}, {"X": 2}],
             "fixed": {"F": "v"},
-        }, case_name="case.env")
+        }, case_name="case.workload")
         spec = sweep.load_spec(path)
         self.assertEqual(spec["sweep_axes"], {"A": [1, 2]})
 
@@ -75,7 +75,7 @@ class TestLoadSpec(unittest.TestCase):
         # Pre-flight existence check: a spec referencing a non-existent
         # case_file should fail at load, not 1740 times in a row at
         # runtime.
-        path = _write_json({"case_file": "/nope/does-not-exist.env",
+        path = _write_json({"case_file": "/nope/does-not-exist.workload",
                             "sweep_name": "y"})
         try:
             with self.assertRaisesRegex(sweep.SpecError,
@@ -132,7 +132,7 @@ class TestLoadSpec(unittest.TestCase):
         # OSError (FileNotFoundError) on open() is also wrapped.
         with self.assertRaisesRegex(sweep.SpecError,
                                     "could not read spec file"):
-            sweep.load_spec("/nonexistent/path/to/spec.json")
+            sweep.load_spec("/nonexistent/path/to/spec.service")
 
     def test_relative_case_file_resolved_against_spec_dir(self):
         # case_file is interpreted relative to the spec file's
@@ -142,22 +142,22 @@ class TestLoadSpec(unittest.TestCase):
             cases_dir = Path(d) / "cases"
             spec_dir.mkdir()
             cases_dir.mkdir()
-            (cases_dir / "x.env").write_text(": \"${MODEL:=fake}\"\n")
-            spec_path = spec_dir / "s.json"
+            (cases_dir / "x.workload").write_text(": \"${MODEL:=fake}\"\n")
+            spec_path = spec_dir / "s.service"
             spec_path.write_text(json.dumps({
-                "case_file": "../cases/x.env",
+                "case_file": "../cases/x.workload",
                 "sweep_name": "t",
             }))
             spec = sweep.load_spec(str(spec_path))
             self.assertTrue(Path(spec["case_file"]).is_absolute())
             self.assertTrue(Path(spec["case_file"]).is_file())
-            self.assertEqual(Path(spec["case_file"]).name, "x.env")
+            self.assertEqual(Path(spec["case_file"]).name, "x.workload")
 
     def test_absolute_case_file_passes_through(self):
         with tempfile.TemporaryDirectory() as d:
-            cases = Path(d) / "x.env"
+            cases = Path(d) / "x.workload"
             cases.write_text(": \"${MODEL:=fake}\"\n")
-            spec_path = Path(d) / "s.json"
+            spec_path = Path(d) / "s.service"
             spec_path.write_text(json.dumps({
                 "case_file": str(cases),
                 "sweep_name": "t",
@@ -356,23 +356,23 @@ class TestPaths(unittest.TestCase):
 
     def test_case_name_strips_dir_and_ext(self):
         self.assertEqual(
-            sweep.case_name_from_path("tools/benchmark/cases/foo.env"),
+            sweep.case_name_from_path("tools/benchmark/cases/foo.workload"),
             "foo")
 
     def test_case_name_no_ext(self):
         self.assertEqual(sweep.case_name_from_path("foo"), "foo")
 
     def test_case_name_other_ext(self):
-        self.assertEqual(sweep.case_name_from_path("foo.json"), "foo.json")
+        self.assertEqual(sweep.case_name_from_path("foo.service"), "foo.service")
 
     def test_case_name_multi_suffix(self):
-        # Conservative: strip exactly one trailing .env. Backup-style
-        # 'foo.env.bak' is NOT touched. 'foo.env.env' has its last
-        # .env stripped to 'foo.env'.
-        self.assertEqual(sweep.case_name_from_path("foo.env.bak"),
-                         "foo.env.bak")
-        self.assertEqual(sweep.case_name_from_path("foo.env.env"),
-                         "foo.env")
+        # Conservative: strip exactly one trailing .workload. Backup-style
+        # 'foo.workload.bak' is NOT touched. 'foo.workload.workload' has its last
+        # .workload stripped to 'foo.workload'.
+        self.assertEqual(sweep.case_name_from_path("foo.workload.bak"),
+                         "foo.workload.bak")
+        self.assertEqual(sweep.case_name_from_path("foo.workload.workload"),
+                         "foo.workload")
 
     def test_result_dir_shape(self):
         p = sweep.result_dir("/tmp/x", "casename", "sweepname", "abc123")

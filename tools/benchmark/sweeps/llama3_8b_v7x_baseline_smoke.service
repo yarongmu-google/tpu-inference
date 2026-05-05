@@ -7,7 +7,7 @@
     "request_distribution stays [D, D, T] and the kernel skips its",
     "PREFILL pass — exactly the main-branch behavior.",
     "",
-    "MAX_MODEL_LEN=4096 (overrides the case file's 10275) and",
+    "MAX_MODEL_LEN=8192 (overrides the case file) and",
     "NUM_PROMPTS=100 keep the smoke run fast. The 1800-token prompts",
     "+ 128-token outputs from the case file fit comfortably.",
     "",
@@ -20,9 +20,9 @@
     "",
     "Run:",
     "  tools/benchmark/sweep.sh \\",
-    "    tools/benchmark/sweeps/llama3_8b_v7x_baseline_smoke.json"
+    "    tools/benchmark/sweeps/llama3_8b_v7x_baseline_smoke.service"
   ],
-  "case_file": "../cases/llama3_8b_v7x_prefill_heavy.env",
+  "case_file": "../cases/llama3_8b_v7x_prefill_heavy.workload",
   "sweep_name": "baseline_smoke",
 
   "timeout_seconds": 1800,
@@ -38,7 +38,7 @@
   "fixed": {
     "LONG_PREFILL_TOKEN_THRESHOLD": 0,
     "MAX_NUM_SEQS":                 128,
-    "MAX_MODEL_LEN":                4096,
+    "MAX_MODEL_LEN":                8192,
     "BLOCK_SIZE":                   128,
     "NUM_PROMPTS":                  100,
     "RPA_D_BLOCK_SIZES":            "1,4096,1,1024",

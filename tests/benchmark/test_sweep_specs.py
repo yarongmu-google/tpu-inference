@@ -35,7 +35,7 @@ class TestSmokeSpecs(unittest.TestCase):
         return sweep.load_spec(str(SWEEPS_DIR / name))
 
     def test_baseline_smoke_parses_and_enumerates(self):
-        spec = self._load("llama3_8b_v7x_baseline_smoke.json")
+        spec = self._load("llama3_8b_v7x_baseline_smoke.service")
         combos = sweep.enumerate_combos(spec)
         self.assertEqual(len(combos), 2,
                          "baseline_smoke spec should produce 2 combos "
@@ -49,7 +49,7 @@ class TestSmokeSpecs(unittest.TestCase):
             ["2048", "4096"])
 
     def test_optimized_smoke_parses_and_enumerates(self):
-        spec = self._load("llama3_8b_v7x_optimized_smoke.json")
+        spec = self._load("llama3_8b_v7x_optimized_smoke.service")
         combos = sweep.enumerate_combos(spec)
         self.assertEqual(len(combos), 2,
                          "optimized_smoke spec should produce 2 combos "
@@ -73,7 +73,7 @@ class TestSmokeSpecs(unittest.TestCase):
     def test_baseline_full_parses_and_enumerates(self):
         # 3 combos: MAX_NUM_BATCHED_TOKENS in {2048, 4096, 8192}, no
         # coupled axes, K pinned to 0 (baseline).
-        spec = self._load("llama3_8b_v7x_baseline_full.json")
+        spec = self._load("llama3_8b_v7x_baseline_full.service")
         combos = sweep.enumerate_combos(spec)
         self.assertEqual(len(combos), 3,
                          "baseline_full should produce 3 combos "
@@ -89,7 +89,7 @@ class TestSmokeSpecs(unittest.TestCase):
     def test_optimized_full_parses_and_enumerates(self):
         # 15 combos: MAX_NUM_BATCHED_TOKENS x K, with K coupled to its
         # own RPA_P_BLOCK_SIZES from the tuning table.
-        spec = self._load("llama3_8b_v7x_optimized_full.json")
+        spec = self._load("llama3_8b_v7x_optimized_full.service")
         combos = sweep.enumerate_combos(spec)
         self.assertEqual(len(combos), 15,
                          "optimized_full should produce 15 combos "
@@ -107,7 +107,7 @@ class TestSmokeSpecs(unittest.TestCase):
         # coupled axes. The MAX_NUM_SEQS=1000 row is the load-bearing
         # one — its meant to expose v7x's HBM-backed concurrency
         # advantage that 128 leaves on the table.
-        spec = self._load("llama3_8b_v7x_baseline_full_4k.json")
+        spec = self._load("llama3_8b_v7x_baseline_full_4k.service")
         combos = sweep.enumerate_combos(spec)
         self.assertEqual(len(combos), 4,
                          "baseline_full_4k should produce 4 combos "
@@ -124,7 +124,7 @@ class TestSmokeSpecs(unittest.TestCase):
         # The cartesian-with-coupled-K is the load-bearing structure
         # — if enumerate_combos ever drops the cross-product behavior
         # this will surface here, not silently in a half-sized sweep.
-        spec = self._load("llama3_8b_v7x_optimized_full_4k.json")
+        spec = self._load("llama3_8b_v7x_optimized_full_4k.service")
         combos = sweep.enumerate_combos(spec)
         self.assertEqual(len(combos), 20,
                          "optimized_full_4k should produce 20 combos "
@@ -141,13 +141,13 @@ class TestSmokeSpecs(unittest.TestCase):
     def test_all_specs_have_a_safe_timeout(self):
         # All specs should pin a per-combo timeout below the generous
         # default so a hung run does not waste the budget.
-        for name in ("llama3_8b_v7x_baseline_smoke.json",
-                     "llama3_8b_v7x_optimized_smoke.json",
-                     "llama3_8b_v7x_baseline_full.json",
-                     "llama3_8b_v7x_optimized_full.json",
-                     "llama3_8b_v7x_baseline_full_4k.json",
-                     "llama3_8b_v7x_optimized_full_4k.json",
-                     "llama3_8b_v7x_baseline_full_4k.json"):
+        for name in ("llama3_8b_v7x_baseline_smoke.service",
+                     "llama3_8b_v7x_optimized_smoke.service",
+                     "llama3_8b_v7x_baseline_full.service",
+                     "llama3_8b_v7x_optimized_full.service",
+                     "llama3_8b_v7x_baseline_full_4k.service",
+                     "llama3_8b_v7x_optimized_full_4k.service",
+                     "llama3_8b_v7x_baseline_full_4k.service"):
             spec = self._load(name)
             self.assertIn("timeout_seconds", spec, msg=name)
             self.assertLessEqual(spec["timeout_seconds"],
@@ -158,13 +158,13 @@ class TestSmokeSpecs(unittest.TestCase):
         # case_file is encoded as '../cases/...' — the load_spec
         # resolution should produce an absolute path that points
         # at an existing file.
-        for name in ("llama3_8b_v7x_baseline_smoke.json",
-                     "llama3_8b_v7x_optimized_smoke.json",
-                     "llama3_8b_v7x_baseline_full.json",
-                     "llama3_8b_v7x_optimized_full.json",
-                     "llama3_8b_v7x_baseline_full_4k.json",
-                     "llama3_8b_v7x_optimized_full_4k.json",
-                     "llama3_8b_v7x_baseline_full_4k.json"):
+        for name in ("llama3_8b_v7x_baseline_smoke.service",
+                     "llama3_8b_v7x_optimized_smoke.service",
+                     "llama3_8b_v7x_baseline_full.service",
+                     "llama3_8b_v7x_optimized_full.service",
+                     "llama3_8b_v7x_baseline_full_4k.service",
+                     "llama3_8b_v7x_optimized_full_4k.service",
+                     "llama3_8b_v7x_baseline_full_4k.service"):
             spec = self._load(name)
             cf = Path(spec["case_file"])
             self.assertTrue(cf.is_absolute(), msg=name)

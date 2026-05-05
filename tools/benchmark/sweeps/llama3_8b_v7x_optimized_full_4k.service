@@ -1,30 +1,28 @@
 {
   "_comment": [
-    "Full optimized sweep for Llama 3 8B Instruct on TPU v7x.",
+    "Full optimized sweep at 4K context — the chunk-prefill A/B at the",
+    "v7x stress workload. Companion to baseline_full_4k.service.",
     "",
-    "Chunk-prefill ON. A/B target against llama3_8b_v7x_baseline_full.",
-    "Sweeps MAX_NUM_BATCHED_TOKENS x (K coupled with RPA_P_BLOCK_SIZES).",
-    "Five K values from the all-three-flavors tune; each Ks RPA_P_BLOCK_SIZES",
-    "is set to that Ks page=128 winner.",
+    "Combos: 20 (2 MAX_NUM_SEQS x 2 MAX_NUM_BATCHED_TOKENS x 5 K).",
+    "Cartesian over (MAX_NUM_SEQS, MAX_NUM_BATCHED_TOKENS) sweep_axes",
+    "with K-coupled-to-RPA_P_BLOCK_SIZES on the coupled_axes side.",
     "",
-    "Per-flavor blocks for DECODE and MIXED are fixed to the same tunes",
-    "page=128 winners — both buckets are active under chunk-prefill",
-    "(DECODE for ongoing decodes, MIXED for residual sequences whose",
-    "remaining tokens dont fit a clean K-sized chunk).",
-    "",
-    "Combos: 15 (3 MAX_NUM_BATCHED_TOKENS x 5 K). NUM_PROMPTS=1000.",
+    "K winners pulled from the all-three-flavors tune (page=128",
+    "column). Per-flavor blocks for DECODE and MIXED fixed to the",
+    "same tunes page=128 winners.",
     "",
     "Run:",
     "  tools/benchmark/sweep.sh \\",
-    "    tools/benchmark/sweeps/llama3_8b_v7x_optimized_full.json"
+    "    tools/benchmark/sweeps/llama3_8b_v7x_optimized_full_4k.service"
   ],
-  "case_file": "../cases/llama3_8b_v7x_prefill_heavy.env",
-  "sweep_name": "optimized_full",
+  "case_file": "../cases/llama3_8b_v7x_balanced_4k.workload",
+  "sweep_name": "optimized_full_4k",
 
-  "timeout_seconds": 1800,
+  "timeout_seconds": 2400,
 
   "sweep_axes": {
-    "MAX_NUM_BATCHED_TOKENS": [2048, 4096, 8192]
+    "MAX_NUM_SEQS":           [128, 1000],
+    "MAX_NUM_BATCHED_TOKENS": [4096, 10275]
   },
 
   "_block_sizes_source": "tmp/log/tuning_winners_20260505_070350.txt (page=128, llama3_8b_v7x)",
@@ -66,9 +64,7 @@
   ],
 
   "fixed": {
-    "MAX_NUM_SEQS":       128,
     "MAX_MODEL_LEN":      4096,
-    "NUM_PROMPTS":        1000,
     "RPA_D_BLOCK_SIZES":  "1,4096,1,1024",
     "RPA_M_BLOCK_SIZES":  "64,512,64,256"
   }

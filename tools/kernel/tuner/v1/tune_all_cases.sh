@@ -2,10 +2,10 @@
 # Tune RPA v3 kernel for all three cases (DECODE, PREFILL, MIXED) sequentially.
 #
 # Usage:
-#   tools/kernel/tuner/v1/tune_all_cases.sh [model_label]
+#   tools/kernel/tuner/v1/tune_all_cases.sh <path_to_case.workload> [runlog_label]
 #
-#   model_label   Optional label embedded in case_set_id and runlog name.
-#                 Defaults to "llama3_8b_v7x".
+#   path_to_case.workload  Required. Path to the .workload file defining the workload.
+#   runlog_label      Optional label for output files. Defaults to the case filename.
 #
 # Outputs:
 #   tmp/log/tune_all_<label>_<date>.txt           — runlog (auto-committed per case)
@@ -24,8 +24,22 @@
 
 set -euo pipefail
 
-LABEL="${1:-llama3_8b_v7x}"
+CASE_FILE="${1:-}"
+if [ -z "$CASE_FILE" ] || [ ! -f "$CASE_FILE" ]; then
+    echo "Usage: $0 <path_to_case.workload> [runlog_label]" >&2
+    exit 1
+fi
+
+# Extract filename without extension for default label
+DEFAULT_LABEL=$(basename "$CASE_FILE" .workload)
+LABEL="${2:-$DEFAULT_LABEL}"
 DATE=$(date +%Y%m%d_%H%M%S)
+
+# Load the workload definitions into the environment.
+# set -a forces all assigned variables to be exported.
+set -a
+source "$CASE_FILE"
+set +a
 
 mkdir -p tmp/log
 RUNLOG="tmp/log/tune_all_${LABEL}_${DATE}.txt"

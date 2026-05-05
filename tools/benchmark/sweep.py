@@ -21,7 +21,7 @@ vLLM.
 
 Spec shape:
     {
-      "case_file":       "<path to .env>",
+      "case_file":       "<path to .workload>",
       "sweep_name":      "<short label>",
       "sweep_axes":      {"VAR_A": [a1, a2], "VAR_B": [b1]},     // cartesian
       "coupled_axes":    [{"VAR_X": x1, "VAR_Y": y1}, ...],       // each entry = one combo
@@ -238,15 +238,15 @@ def combo_id(env: dict[str, str]) -> str:
 
 
 def case_name_from_path(case_file: str | os.PathLike) -> str:
-    """Strip dir + a single trailing .env suffix.
+    """Strip dir + a single trailing .workload suffix.
 
-    Conservative on multi-suffix names: ``foo.env.bak`` -> ``foo.env.bak``
-    (no .env suffix at the very end). ``foo.env.env`` -> ``foo.env`` (only
-    the last suffix is stripped). Plain non-.env names pass through.
+    Conservative on multi-suffix names: ``foo.workload.bak`` -> ``foo.workload.bak``
+    (no .workload suffix at the very end). ``foo.workload.workload`` -> ``foo.workload`` (only
+    the last suffix is stripped). Plain non-.workload names pass through.
     """
     base = os.path.basename(str(case_file))
-    if base.endswith(".env"):
-        return base[:-len(".env")]
+    if base.endswith(".workload"):
+        return base[:-len(".workload")]
     return base
 
 

@@ -23,8 +23,8 @@ git fetch origin && git checkout rpa3 && git pull origin rpa3
 
 | Case file                              | Workload         | Targets the PREFILL opt? |
 |----------------------------------------|------------------|--------------------------|
-| `llama3_8b_v7x_balanced.env`           | sonnet 1024/1024 | Mild — mixed prefill+decode in steady state. |
-| `llama3_8b_v7x_prefill_heavy.env`      | sonnet 1800/128  | **Yes** — prefill-dominated. The PREFILL kernel routing should win the most here. |
+| `llama3_8b_v7x_balanced.workload`           | sonnet 1024/1024 | Mild — mixed prefill+decode in steady state. |
+| `llama3_8b_v7x_prefill_heavy.workload`      | sonnet 1800/128  | **Yes** — prefill-dominated. The PREFILL kernel routing should win the most here. |
 
 The `1800/128` shape comes from bm-infra's `accuracy_jax.csv`. The QC repo
 doesn't currently run a prefill-heavy *perf* benchmark on v7x; we add it
@@ -62,7 +62,7 @@ exporting `LONG_PREFILL_TOKEN_THRESHOLD=0` for the run:
 ```bash
 LONG_PREFILL_TOKEN_THRESHOLD=0 \
   tools/benchmark/run_benchmark.sh \
-    tools/benchmark/cases/llama3_8b_v7x_prefill_heavy.env \
+    tools/benchmark/cases/llama3_8b_v7x_prefill_heavy.workload \
     --result-tag baseline_K0
 ```
 
@@ -82,7 +82,7 @@ For prefill-heavy with 1800-token prompts, K=512 or K=1024 are reasonable
 RPA_P_BLOCK_SIZES="256,1024,128,1024" \
 LONG_PREFILL_TOKEN_THRESHOLD=512 \
   tools/benchmark/run_benchmark.sh \
-    tools/benchmark/cases/llama3_8b_v7x_prefill_heavy.env \
+    tools/benchmark/cases/llama3_8b_v7x_prefill_heavy.workload \
     --result-tag opt_K512
 ```
 
@@ -91,7 +91,7 @@ LONG_PREFILL_TOKEN_THRESHOLD=512 \
 RPA_P_BLOCK_SIZES="256,2048,256,512" \
 LONG_PREFILL_TOKEN_THRESHOLD=1024 \
   tools/benchmark/run_benchmark.sh \
-    tools/benchmark/cases/llama3_8b_v7x_prefill_heavy.env \
+    tools/benchmark/cases/llama3_8b_v7x_prefill_heavy.workload \
     --result-tag opt_K1024
 ```
 
@@ -135,7 +135,7 @@ manually:
 ```bash
 for rate in inf 20 10 5 2; do
   tools/benchmark/run_benchmark.sh \
-    tools/benchmark/cases/llama3_8b_v7x_prefill_heavy.env \
+    tools/benchmark/cases/llama3_8b_v7x_prefill_heavy.workload \
     --result-tag opt_K512_rate${rate} \
     --rate $rate
 done
@@ -148,14 +148,14 @@ it often.
 ## Adding more cases later
 
 As we move to bm-infra's v7x models, copy a row from
-`/path/to/bm-infra/cases/hourly_tt_v7.csv` into a new `.env` file:
+`/path/to/bm-infra/cases/hourly_tt_v7.csv` into a new `.workload` file:
 
 ```
 Device,Model,MaxNumSeqs,MaxNumBatchedTokens,TensorParallelSize,MaxModelLen,Dataset,InputLen,OutputLen
 tpu7x-2,Qwen/Qwen3-Coder-30B-A3B-Instruct,128,10275,1,10275,sonnet,1024,1024
 ```
 
-…becomes `tools/benchmark/cases/qwen3_coder_30b_v7x_balanced.env` with
+…becomes `tools/benchmark/cases/qwen3_coder_30b_v7x_balanced.workload` with
 the same fields. Re-tune the kernel for the new model first
 (different `num_q_heads` / `num_kv_heads` / `head_dim` →
 different winning block sizes).
