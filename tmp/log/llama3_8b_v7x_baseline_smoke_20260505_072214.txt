@@ -1,0 +1,47 @@
+case_file=/home/ymu_google_com/tpu-inference/tools/benchmark/cases/llama3_8b_v7x_prefill_heavy.env
+case_name=llama3_8b_v7x_prefill_heavy
+model=meta-llama/Meta-Llama-3-8B-Instruct
+max_num_seqs=128
+max_num_batched_tokens=2048
+tensor_parallel_size=1
+max_model_len=4096
+dataset=sonnet
+input_len=1800
+output_len=128
+num_prompts=100
+request_rate=inf
+block_size=128
+long_prefill_token_threshold=0
+rpa_d_block_sizes=1,4096,1,1024
+rpa_p_block_sizes=default
+rpa_m_block_sizes=64,512,64,256
+git_commit=149f67f48af1f9b3e3c897a89fc40f5b9bd07344
+git_branch=rpa3
+timestamp=20260505_072214
+----
+Results: /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/fca26aaf0cf3
+Starting vllm server (log: /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/fca26aaf0cf3/vllm.log) ...
+Waiting up to 20 min for server startup ...
+  ready after 100s
+Running benchmark (stdout: /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/fca26aaf0cf3/bench.log, stderr: /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/fca26aaf0cf3/bench.log.stderr) ...
+==== Summary ====
+Request throughput (req/s):              13.89     
+Output token throughput (tok/s):         1778.33   
+Mean TTFT (ms):                          2766.86   
+Median TTFT (ms):                        2714.78   
+P99 TTFT (ms):                           5039.75   
+Mean TPOT (ms):                          30.34     
+Median TPOT (ms):                        30.93     
+P99 TPOT (ms):                           43.39     
+Mean ITL (ms):                           30.34     
+Median ITL (ms):                         18.78     
+P99 ITL (ms):                            63.69     
+Mean E2EL (ms):                          6620.09   
+Median E2EL (ms):                        6643.94   
+P99 E2EL (ms):                           7173.24   
+====
+Traceback (most recent call last):
+  File "/home/ymu_google_com/tpu-inference/tools/benchmark/parse_bench_log.py", line 25, in <module>
+    from tools.benchmark._schema import THROUGHPUT_METRIC
+ModuleNotFoundError: No module named 'tools'
+[1/2] fca26aaf0cf3 failed (111.8s)  tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/fca26aaf0cf3  err=subprocess exited with code 1
