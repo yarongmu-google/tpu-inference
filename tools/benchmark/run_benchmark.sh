@@ -96,7 +96,15 @@ METRICS_FILE="$RESULT_DIR/metrics.txt"
 # Canonicalize case_file to an absolute path so two combos that
 # referenced the same file from different CWDs produce identical
 # meta.case_file values for downstream comparison.
-CASE_FILE_ABS="$(cd "$(dirname "$CASE_FILE")" && pwd -P)/$(basename "$CASE_FILE")"
+#
+# `set -e` does NOT abort on a failed command substitution embedded
+# in an assignment, so a `cd` failure here would silently produce
+# `/$(basename "$CASE_FILE")` (empty + slash + name). The prior
+# `[ -f "$CASE_FILE" ]` check at line 60 makes this unreachable, but
+# the explicit `|| exit 1` is cheap insurance against future edits
+# that move the existence check.
+CASE_FILE_ABS="$(cd "$(dirname "$CASE_FILE")" && pwd -P)/$(basename "$CASE_FILE")" \
+    || { echo "ERROR: failed to canonicalize CASE_FILE=$CASE_FILE" >&2; exit 1; }
 
 {
     echo "case_file=$CASE_FILE_ABS"
@@ -269,6 +277,19 @@ BENCH_DURATION_S=$(( $(date +%s) - BENCH_START_S ))
 # Append wall-clock duration to meta so compare.py can show it
 # alongside the throughput / latency columns. Useful for spotting
 # tail outliers and timeout-prone combos.
+#
+# Scope: this is the duration of `vllm bench serve` ONLY. It excludes
+# server startup (model load + JIT compile + warmup), which is the
+# variable, minutes-long part of each combo. So compare.py's dur_s
+# column is "bench-time difference between combos" not "total
+# wall-clock per combo". For the latter, look at the gap between
+# meta.timestamp values across combos in a sweep, or extend this
+# script to write end_timestamp.
+#
+# Granularity is 1s (date +%s). Fine for the 100+ prompt benches we
+# run today; an ultra-short stub bench would round to 0–1s and look
+# broken in the table. Switch to date +%s.%N + awk if that becomes
+# real.
 echo "bench_duration_seconds=$BENCH_DURATION_S" >> "$META_FILE"
 
 echo "==== Summary ===="
