@@ -159,3 +159,19 @@ tpu7x-2,Qwen/Qwen3-Coder-30B-A3B-Instruct,128,10275,1,10275,sonnet,1024,1024
 the same fields. Re-tune the kernel for the new model first
 (different `num_q_heads` / `num_kv_heads` / `head_dim` →
 different winning block sizes).
+
+## Parameter Ownership: Tuning vs Sweeping
+
+When optimizing for maximum throughput, it is critical to understand which parameters are responsible for hardware-level XLA shapes (Kernel Tuning) versus vLLM queuing logic (Python Scheduler Sweeps).
+
+| Python / Internal Variable | Environment Variable | Action | Reason / Phase Responsibility |
+| :--- | :--- | :--- | :--- |
+| `p_block_sizes`<br>`d_block_sizes`<br>`m_block_sizes` | `RPA_P_BLOCK_SIZES`<br>`RPA_D_BLOCK_SIZES`<br>`RPA_M_BLOCK_SIZES` | **Tuned**<br>(Pinned in Sweep) | **Hardware Kernel Optimization:** The tuner systematically searches for the lowest-latency `[bq, bkv, bq_c, bkv_c]` memory tiles for the XLA loops. These winning values are then strictly pinned during the sweep. |
+| `page_size` | `BLOCK_SIZE` | **Tuned**<br>(Pinned in Sweep) | **Hardware Kernel Optimization:** The KV Cache page size is a static dimension of the XLA tensor. The tuner evaluates different page sizes to find the best memory layout. The winner is pinned in the sweep. |
+| `chunk_prefill_size` | `LONG_PREFILL_TOKEN_THRESHOLD` | **Tuned**<br>(Pinned in Sweep) | **Hardware Kernel Optimization:** Dictates the static sequence length (`q_len`) for the PREFILL attention loop. The tuner identifies the most efficient chunk size (K). The sweep pins this value. |
+| `max_num_batched_tokens` | `MAX_NUM_BATCHED_TOKENS` | **Swept** | **Python Scheduler Optimization:** Dictates how many total tokens vLLM can pull from the queue per step. Swept to find the value that keeps the XLA kernel perfectly saturated without causing queue starvation or excessive chunking overhead. |
+| `max_num_seqs` | `MAX_NUM_SEQS` | **Swept** | **Python Scheduler Optimization:** Dictates the maximum concurrency. Swept to find the concurrency limit that maximizes HBM utilization (filling the batch) without causing frequent KV-cache evictions or out-of-memory errors. |
+| `max_model_len` | `MAX_MODEL_LEN` | **Fixed**<br>(Workload Key) | **Workload Constraint:** Defines the maximum sequence length. Dictates maximum XLA loop bounds and bounds checks. Changing this requires a new tuning and sweeping cycle. |
+| Prompts / Request Rate | `NUM_PROMPTS`<br>`REQUEST_RATE` | **Fixed**<br>(Workload Key) | **Workload Constraint (Saturation):** Must be set high enough to generate a massive backlog. This ensures the TPU runs in a steady state for a sustained duration, providing stable and accurate throughput measurements. |
+
+**Note on Sweep execution:** While `chunk_prefill_size` (K) is fundamentally a tuned parameter, the overall system sweep scripts (`tools/benchmark/sweeps/*.json`) technically "sweep" K via `coupled_axes`. They do this by benchmarking the *fully-tuned* `K=128` (with its specific `RPA_P_BLOCK_SIZES`) against the *fully-tuned* `K=256`, etc., to find which K yields the highest end-to-end throughput for vLLM queueing.
