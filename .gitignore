@@ -203,3 +203,14 @@ shellcheck*/
 csrc/moe/marlin_moe_wna16/kernel_*
 
 !/support_matrices/**
+
+# Sweep result dirs (tools/benchmark/sweep.py): keep metrics.txt and
+# meta.txt under git so cross-sweep comparisons survive VM eviction,
+# but exclude the bulky logs and the regenerable sonnet_4x.txt. A
+# 30-min vllm session emits ~50–100 MB of log per combo; 1740 combos
+# would otherwise inflate the .git tree by ~85 GB.
+tmp/bench_*/*/vllm.log
+tmp/bench_*/*/bench.log
+tmp/bench_*/*/bench.log.stderr
+tmp/bench_*/*/sonnet_4x.txt
+tmp/bench_*/*/profile/
