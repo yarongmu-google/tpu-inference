@@ -26,8 +26,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from tools.benchmark._schema import (
+    META_FILENAME, METRICS_FILENAME, THROUGHPUT_METRIC,
+)
 
-DEFAULT_METRIC = "RequestThroughput"
+
+DEFAULT_METRIC = THROUGHPUT_METRIC
 
 # Default columns for the rendered table. Each entry is
 # ('<section>.<field>' or 'combo_id'/'result_dir', <header label>).
@@ -96,8 +100,8 @@ def collect_results(sweep_dir: str | os.PathLike) -> list[dict[str, Any]]:
     for combo_dir in sorted(sdir.iterdir()):
         if not combo_dir.is_dir():
             continue
-        metrics_path = combo_dir / "metrics.txt"
-        meta_path = combo_dir / "meta.txt"
+        metrics_path = combo_dir / METRICS_FILENAME
+        meta_path = combo_dir / META_FILENAME
         if not metrics_path.is_file():
             continue
         out.append({

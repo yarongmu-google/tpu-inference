@@ -269,7 +269,10 @@ class TestRunSweep(unittest.TestCase):
         self.base = Path(self.tmp.name)
         self.spec = _make_spec(sweep_axes={"A": [1, 2]},
                                coupled_axes=[{"X": 1}, {"X": 2}])
-        # Write to a temp JSON path
+        # load_spec now requires case_file to exist (pre-flight check).
+        # Materialize a dummy case.env alongside the spec so the test
+        # spec passes validation.
+        (Path(self.tmp.name) / "case.env").write_text(": \"${MODEL:=fake}\"\n")
         self.spec_path = Path(self.tmp.name) / "spec.json"
         self.spec_path.write_text(json.dumps(self.spec))
 
@@ -580,6 +583,8 @@ class TestMainCli(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.base = self.tmp.name
         spec = _make_spec(sweep_axes={"A": [1]})
+        # load_spec's pre-flight check requires case_file to exist.
+        (Path(self.tmp.name) / "case.env").write_text(": \"${MODEL:=fake}\"\n")
         self.spec_path = Path(self.tmp.name) / "spec.json"
         self.spec_path.write_text(json.dumps(spec))
 

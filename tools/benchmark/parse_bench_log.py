@@ -22,14 +22,19 @@ import re
 import sys
 from typing import Iterable, Mapping
 
+from tools.benchmark._schema import THROUGHPUT_METRIC
+
 # Latency sections that vllm bench reports under "X (ms):" with rows like
 # "Mean X (ms): ...", "Median X (ms): ...", "P99 X (ms): ...".
 LATENCY_SECTIONS = ("TTFT", "TPOT", "ITL", "E2EL")
 LATENCY_STATS = ("Mean", "Median", "P99")
 
-# Single-line metrics that appear once each.
+# Single-line metrics that appear once each. The first entry's key
+# (THROUGHPUT_METRIC) is the canonical 'this combo finished' signal —
+# kept in tools/benchmark/_schema.py so sweep.is_completed and
+# compare.DEFAULT_METRIC can refer to the same string.
 THROUGHPUT_METRICS = (
-    ("RequestThroughput", "Request throughput (req/s):"),
+    (THROUGHPUT_METRIC, "Request throughput (req/s):"),
     ("OutputTokenThroughput", "Output token throughput (tok/s):"),
     ("TotalTokenThroughput", "Total Token throughput (tok/s):"),
 )

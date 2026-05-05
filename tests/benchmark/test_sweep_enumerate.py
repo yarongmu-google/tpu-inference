@@ -39,29 +39,47 @@ def _write_json(d) -> str:
 
 class TestLoadSpec(unittest.TestCase):
 
+    def _write_spec_with_case(self, spec: dict, case_name: str = "x"):
+        """Write a spec to a temp file and materialize its case_file
+        alongside, so load_spec's pre-flight existence check passes."""
+        import tempfile
+        d = tempfile.mkdtemp()
+        case_path = Path(d) / case_name
+        case_path.write_text(": \"${MODEL:=fake}\"\n")
+        spec_path = Path(d) / "spec.json"
+        spec_path.write_text(json.dumps(spec))
+        return str(spec_path)
+
     def test_minimal_valid(self):
-        path = _write_json({"case_file": "x", "sweep_name": "y"})
-        try:
-            spec = sweep.load_spec(path)
-            # case_file got resolved to absolute against the spec dir.
-            # Check the basename, since the temp dir varies per run.
-            self.assertEqual(Path(spec["case_file"]).name, "x")
-            self.assertTrue(Path(spec["case_file"]).is_absolute())
-            self.assertEqual(spec["sweep_name"], "y")
-        finally:
-            os.unlink(path)
+        path = self._write_spec_with_case(
+            {"case_file": "x", "sweep_name": "y"})
+        spec = sweep.load_spec(path)
+        # case_file got resolved to absolute against the spec dir.
+        self.assertEqual(Path(spec["case_file"]).name, "x")
+        self.assertTrue(Path(spec["case_file"]).is_absolute())
+        self.assertEqual(spec["sweep_name"], "y")
 
     def test_full_valid(self):
-        path = _write_json({
+        path = self._write_spec_with_case({
             "case_file": "case.env",
             "sweep_name": "s",
             "sweep_axes": {"A": [1, 2]},
             "coupled_axes": [{"X": 1}, {"X": 2}],
             "fixed": {"F": "v"},
-        })
+        }, case_name="case.env")
+        spec = sweep.load_spec(path)
+        self.assertEqual(spec["sweep_axes"], {"A": [1, 2]})
+
+    def test_missing_case_file_rejected(self):
+        # Pre-flight existence check: a spec referencing a non-existent
+        # case_file should fail at load, not 1740 times in a row at
+        # runtime.
+        path = _write_json({"case_file": "/nope/does-not-exist.env",
+                            "sweep_name": "y"})
         try:
-            spec = sweep.load_spec(path)
-            self.assertEqual(spec["sweep_axes"], {"A": [1, 2]})
+            with self.assertRaisesRegex(sweep.SpecError,
+                                        "case_file does not exist"):
+                sweep.load_spec(path)
         finally:
             os.unlink(path)
 

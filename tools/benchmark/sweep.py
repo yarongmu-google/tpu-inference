@@ -55,6 +55,10 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
+from tools.benchmark._schema import (
+    META_FILENAME, METRICS_FILENAME, THROUGHPUT_METRIC,
+)
+
 
 class SpecError(ValueError):
     """Raised when a sweep spec is malformed."""
@@ -86,6 +90,13 @@ def load_spec(path: str | os.PathLike) -> dict[str, Any]:
     cf = Path(spec["case_file"])
     if not cf.is_absolute():
         spec["case_file"] = str((Path(path).resolve().parent / cf).resolve())
+    # Pre-flight existence check: fail at load, not 1740 times in a row at
+    # runtime. Without this guard, a bad case_file path would be reported
+    # by every combo as 'case file not found' from inside run_benchmark.sh,
+    # wasting hours before the user sees the spec was wrong.
+    if not Path(spec["case_file"]).is_file():
+        raise SpecError(
+            f"case_file does not exist: {spec['case_file']}")
     return spec
 
 
@@ -272,15 +283,16 @@ def is_completed(rdir: str | os.PathLike) -> bool:
     signal — every successful bench reports it, every failed one
     reports it as empty.
     """
-    p = Path(rdir, "metrics.txt")
+    p = Path(rdir, METRICS_FILENAME)
     if not p.is_file():
         return False
     try:
         text = p.read_text()
     except OSError:
         return False
+    prefix = f"{THROUGHPUT_METRIC}="
     for line in text.splitlines():
-        if line.startswith("RequestThroughput=") and line.split("=", 1)[1].strip():
+        if line.startswith(prefix) and line.split("=", 1)[1].strip():
             return True
     return False
 
@@ -412,8 +424,8 @@ def run_one(
             result_dir=rdir,
             return_code=rc,
             duration_seconds=duration,
-            error=("run_benchmark.sh exited 0 but metrics.txt is "
-                   "missing or has no RequestThroughput"),
+            error=(f"run_benchmark.sh exited 0 but {METRICS_FILENAME} is "
+                   f"missing or has no {THROUGHPUT_METRIC}"),
         )
 
     return RunResult(
