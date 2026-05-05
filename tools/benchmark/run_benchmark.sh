@@ -142,14 +142,22 @@ echo "Results: $RESULT_DIR"
 if [ "$DATASET" = "sonnet" ]; then
     [ -f "$VLLM_DIR/benchmarks/sonnet.txt" ] \
         || { echo "ERROR: $VLLM_DIR/benchmarks/sonnet.txt not found; set VLLM_DIR." >&2; exit 1; }
-    # Generate sonnet_4x.txt inside the per-run RESULT_DIR rather than
-    # mutating $VLLM_DIR/benchmarks/. Two reasons:
-    #   1. We don't own $VLLM_DIR; mutating it is bad hygiene.
-    #   2. Concurrent runs (parallel sweeps) would race on the shared file
-    #      and silently corrupt each other.
+    # Generate the sonnet repeats file inside the per-run RESULT_DIR
+    # rather than mutating $VLLM_DIR/benchmarks/. Two reasons:
+    #   1. We dont own $VLLM_DIR; mutating it is bad hygiene.
+    #   2. Concurrent runs (parallel sweeps) would race on the shared
+    #      file and silently corrupt each other.
+    #
+    # Repeat factor: vllm bench sonnet samples a window of INPUT_LEN
+    # tokens from this file. The file needs >= INPUT_LEN tokens or
+    # bench errors out. Single sonnet.txt is ~1000 tokens, so 16x
+    # gives ~16000 tokens — comfortably above any INPUT_LEN we plan
+    # to test (smoke uses 1024-1800, full uses up to 4096). Variable
+    # name kept as SONNET_4X for compatibility with downstream consumers
+    # that grep meta.txt; the literal repeat count just changed.
     SONNET_4X="$RESULT_DIR/sonnet_4x.txt"
     : > "$SONNET_4X"
-    for _ in 1 2 3 4; do
+    for _ in $(seq 1 16); do
         cat "$VLLM_DIR/benchmarks/sonnet.txt" >> "$SONNET_4X"
     done
 fi

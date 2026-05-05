@@ -102,13 +102,64 @@ class TestSmokeSpecs(unittest.TestCase):
         self.assertEqual(by_k["1024"]["RPA_P_BLOCK_SIZES"], "256,1024,256,512")
         self.assertEqual(by_k["2048"]["RPA_P_BLOCK_SIZES"], "256,2048,256,512")
 
+    def test_baseline_full_4k_parses_and_enumerates(self):
+        # 4 combos: 2 MAX_NUM_SEQS x 2 MAX_NUM_BATCHED_TOKENS, no
+        # coupled axes. The MAX_NUM_SEQS=1000 row is the load-bearing
+        # one — its meant to expose v7x's HBM-backed concurrency
+        # advantage that 128 leaves on the table.
+        spec = self._load("llama3_8b_v7x_baseline_full_4k.json")
+        combos = sweep.enumerate_combos(spec)
+        self.assertEqual(len(combos), 4,
+                         "baseline_full_4k should produce 4 combos "
+                         "(2 MAX_NUM_SEQS x 2 MAX_NUM_BATCHED_TOKENS)")
+        pairs = {(c["MAX_NUM_SEQS"], c["MAX_NUM_BATCHED_TOKENS"])
+                 for c in combos}
+        self.assertEqual(
+            pairs,
+            {("128", "4096"), ("128", "10275"),
+             ("1000", "4096"), ("1000", "10275")})
+
+    def test_optimized_full_4k_parses_and_enumerates(self):
+        # 20 combos: (2 MAX_NUM_SEQS x 2 MAX_NUM_BATCHED_TOKENS) x 5 K.
+        # The cartesian-with-coupled-K is the load-bearing structure
+        # — if enumerate_combos ever drops the cross-product behavior
+        # this will surface here, not silently in a half-sized sweep.
+        spec = self._load("llama3_8b_v7x_optimized_full_4k.json")
+        combos = sweep.enumerate_combos(spec)
+        self.assertEqual(len(combos), 20,
+                         "optimized_full_4k should produce 20 combos "
+                         "(2 x 2 x 5)")
+        # Each K should appear exactly 4 times (once per
+        # (max_num_seqs, max_num_batched_tokens) pair).
+        from collections import Counter
+        k_counts = Counter(c["LONG_PREFILL_TOKEN_THRESHOLD"]
+                           for c in combos)
+        self.assertEqual(dict(k_counts),
+                         {"128": 4, "256": 4, "512": 4,
+                          "1024": 4, "2048": 4})
+
+    def test_baseline_full_chat_short_parses_and_enumerates(self):
+        # 6 combos: 3 MAX_NUM_SEQS x 2 MAX_NUM_BATCHED_TOKENS. Validates
+        # the v7x-saturation sweeps shape and confirms max_num_seqs=1000
+        # makes it into the enumerated combos (its the load-bearing knob).
+        spec = self._load("llama3_8b_v7x_baseline_full_chat_short.json")
+        combos = sweep.enumerate_combos(spec)
+        self.assertEqual(len(combos), 6,
+                         "baseline_full_chat_short should produce 6 combos "
+                         "(3 MAX_NUM_SEQS x 2 MAX_NUM_BATCHED_TOKENS)")
+        seqs_seen = {c["MAX_NUM_SEQS"] for c in combos}
+        self.assertEqual(seqs_seen, {"128", "512", "1000"})
+
     def test_all_specs_have_a_safe_timeout(self):
         # All specs should pin a per-combo timeout below the generous
         # default so a hung run does not waste the budget.
         for name in ("llama3_8b_v7x_baseline_smoke.json",
                      "llama3_8b_v7x_optimized_smoke.json",
                      "llama3_8b_v7x_baseline_full.json",
-                     "llama3_8b_v7x_optimized_full.json"):
+                     "llama3_8b_v7x_optimized_full.json",
+                     "llama3_8b_v7x_baseline_full_4k.json",
+                     "llama3_8b_v7x_optimized_full_4k.json",
+                     "llama3_8b_v7x_baseline_full_chat_short.json"):
             spec = self._load(name)
             self.assertIn("timeout_seconds", spec, msg=name)
             self.assertLessEqual(spec["timeout_seconds"],
@@ -122,7 +173,10 @@ class TestSmokeSpecs(unittest.TestCase):
         for name in ("llama3_8b_v7x_baseline_smoke.json",
                      "llama3_8b_v7x_optimized_smoke.json",
                      "llama3_8b_v7x_baseline_full.json",
-                     "llama3_8b_v7x_optimized_full.json"):
+                     "llama3_8b_v7x_optimized_full.json",
+                     "llama3_8b_v7x_baseline_full_4k.json",
+                     "llama3_8b_v7x_optimized_full_4k.json",
+                     "llama3_8b_v7x_baseline_full_chat_short.json"):
             spec = self._load(name)
             cf = Path(spec["case_file"])
             self.assertTrue(cf.is_absolute(), msg=name)
