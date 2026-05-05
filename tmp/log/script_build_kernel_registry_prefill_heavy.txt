@@ -1,12 +1,11 @@
 === Executing build_kernel_registry.py ===
 Reading runlog: tmp/log/tune_all_prefill_heavy.txt
-Extracting decode from /tmp/kernel_tuner_run_2026_05_05_15_09_47
-Extracting prefill from /tmp/kernel_tuner_run_2026_05_05_15_10_12
-Extracting mixed from /tmp/kernel_tuner_run_2026_05_05_15_10_41
+Extracting decode from /tmp/kernel_tuner_run_2026_05_05_15_20_28
+Extracting prefill from /tmp/kernel_tuner_run_2026_05_05_15_20_34
+Extracting mixed from /tmp/kernel_tuner_run_2026_05_05_15_20_40
 
 Wrote (Accumulated): tools/benchmark/cases/v7x/llama3_8b/production.kernel
-[rpa3 259ae538ba] [Kernel-Tune] Winners extracted to production.kernel
- 1 file changed, 83 insertions(+)
- create mode 100644 tools/benchmark/cases/v7x/llama3_8b/production.kernel
+[rpa3 a98ae52575] [Kernel-Tune] Winners extracted to production.kernel
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 To github.com:yarongmu-google/tpu-inference.git
-   3fd5a50686..259ae538ba  rpa3 -> rpa3
+   f0cc92fd0f..a98ae52575  rpa3 -> rpa3
