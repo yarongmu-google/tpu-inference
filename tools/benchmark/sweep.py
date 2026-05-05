@@ -97,6 +97,19 @@ def load_spec(path: str | os.PathLike) -> dict[str, Any]:
     if not Path(spec["case_file"]).is_file():
         raise SpecError(
             f"case_file does not exist: {spec['case_file']}")
+
+    if "kernel_registry" in spec:
+        kr = Path(spec["kernel_registry"])
+        if not kr.is_absolute():
+            spec["kernel_registry"] = str((Path(path).resolve().parent / kr).resolve())
+        if not Path(spec["kernel_registry"]).is_file():
+            raise SpecError(f"kernel_registry does not exist: {spec['kernel_registry']}")
+        try:
+            with open(spec["kernel_registry"]) as f:
+                spec["_loaded_kernel_registry"] = json.load(f)
+        except Exception as e:
+            raise SpecError(f"failed to load kernel_registry: {e}") from e
+
     return spec
 
 
@@ -123,6 +136,11 @@ def _validate_spec(spec: dict[str, Any]) -> None:
         v = spec[k]
         if not isinstance(v, str) or not v:
             raise SpecError(f"{k} must be a non-empty string (got {v!r})")
+
+    if "kernel_registry" in spec:
+        v = spec["kernel_registry"]
+        if not isinstance(v, str) or not v:
+            raise SpecError(f"kernel_registry must be a non-empty string (got {v!r})")
 
     sweep_axes = _normalize_optional(spec, "sweep_axes", {})
     coupled_axes = _normalize_optional(spec, "coupled_axes", [])
@@ -215,7 +233,46 @@ def enumerate_combos(spec: dict[str, Any]) -> list[dict[str, str]]:
             env.update(cart_dict)
             env.update(cpl)
             env.update(fixed)
-            combos.append({k: str(v) for k, v in env.items()})
+            combo = {k: str(v) for k, v in env.items()}
+
+            if "_loaded_kernel_registry" in spec:
+                registry = spec["_loaded_kernel_registry"]
+                results = registry.get("results", {})
+                
+                # Default to 128 if not strictly in combo, to match common TPU v7x pages.
+                page_size = int(combo.get("BLOCK_SIZE", "128"))
+                k = int(combo.get("LONG_PREFILL_TOKEN_THRESHOLD", "0"))
+                
+                def find_best(case_name, target_k, target_page_size):
+                    if case_name not in results: return None
+                    for entry in results[case_name]:
+                        tk = entry.get("tuning_key", {})
+                        if tk.get("page_size") == target_page_size:
+                            if case_name == "prefill":
+                                if tk.get("chunk_prefill_size") == target_k:
+                                    return entry.get("tunable_params")
+                            else:
+                                return entry.get("tunable_params")
+                    return None
+
+                def fmt(p):
+                    if not p: return None
+                    return f"{p['bq_sz']},{p['bkv_sz']},{p['bq_csz']},{p['bkv_csz']}"
+
+                d_params = find_best("decode", 0, page_size)
+                if d_params and "RPA_D_BLOCK_SIZES" not in combo:
+                    combo["RPA_D_BLOCK_SIZES"] = fmt(d_params)
+
+                m_params = find_best("mixed", 0, page_size)
+                if m_params and "RPA_M_BLOCK_SIZES" not in combo:
+                    combo["RPA_M_BLOCK_SIZES"] = fmt(m_params)
+
+                if k > 0:
+                    p_params = find_best("prefill", k, page_size)
+                    if p_params and "RPA_P_BLOCK_SIZES" not in combo:
+                        combo["RPA_P_BLOCK_SIZES"] = fmt(p_params)
+
+            combos.append(combo)
     return combos
 
 
