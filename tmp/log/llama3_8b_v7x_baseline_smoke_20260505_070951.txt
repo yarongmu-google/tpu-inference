@@ -1,0 +1,59 @@
+case_file=/home/ymu_google_com/tpu-inference/tools/benchmark/cases/llama3_8b_v7x_prefill_heavy.env
+case_name=llama3_8b_v7x_prefill_heavy
+model=meta-llama/Meta-Llama-3-8B
+max_num_seqs=128
+max_num_batched_tokens=2048
+tensor_parallel_size=1
+max_model_len=4096
+dataset=sonnet
+input_len=1800
+output_len=128
+num_prompts=100
+request_rate=inf
+block_size=128
+long_prefill_token_threshold=0
+rpa_d_block_sizes=1,4096,1,1024
+rpa_p_block_sizes=default
+rpa_m_block_sizes=64,512,64,256
+git_commit=c8fc0a4ccc5e9d483d81350f8498a093a9724546
+git_branch=rpa3
+timestamp=20260505_070952
+----
+Results: /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/fca26aaf0cf3
+Starting vllm server (log: /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/fca26aaf0cf3/vllm.log) ...
+Waiting up to 20 min for server startup ...
+  ready after 110s
+Running benchmark (stdout: /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/fca26aaf0cf3/bench.log, stderr: /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/fca26aaf0cf3/bench.log.stderr) ...
+ERROR: bench failed. tail of /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/fca26aaf0cf3/bench.log.stderr:
+WARNING:absl:Tensorflow library not found, tensorflow.io.gfile operations will use native shim calls. GCS paths (i.e. 'gs://...') cannot be accessed.
+WARNING:root:Duplicate op registration for aten.__and__
+Traceback (most recent call last):
+  File "/home/ymu_google_com/miniconda3/envs/vllm12/bin/vllm", line 6, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/home/ymu_google_com/vllm/vllm/entrypoints/cli/main.py", line 92, in main
+    args.dispatch_function(args)
+  File "/home/ymu_google_com/vllm/vllm/entrypoints/cli/benchmark/serve.py", line 21, in cmd
+    main(args)
+  File "/home/ymu_google_com/vllm/vllm/benchmarks/serve.py", line 1630, in main
+    return asyncio.run(main_async(args))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/asyncio/base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/home/ymu_google_com/vllm/vllm/benchmarks/serve.py", line 1767, in main_async
+    input_requests = get_samples(args, tokenizer)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ymu_google_com/vllm/vllm/benchmarks/datasets/datasets.py", line 1847, in get_samples
+    assert tokenizer.chat_template or tokenizer.default_chat_template, (
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/transformers/tokenization_utils_base.py", line 1301, in __getattr__
+    raise AttributeError(f"{self.__class__.__name__} has no attribute {key}")
+AttributeError: CachedTokenizersBackend has no attribute default_chat_template. Did you mean: 'get_chat_template'?
+[1/2] fca26aaf0cf3 failed (115.1s)  tmp/bench_llama3_8b_v7x_prefill_heavy_baseline_smoke/fca26aaf0cf3  err=subprocess exited with code 1
