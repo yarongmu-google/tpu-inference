@@ -177,6 +177,21 @@ class RpaV3KernelTuner(KernelTunerBase):
                          kernel_tuner_name="rpa_v3_kernel_tuner")
 
         # ---- Idempotency: Load existing registry to skip tuned cases ----
+        #
+        # Granularity is by `tuning_key` only (page_size, case, K, model
+        # geometry, ...) — NOT by `(tuning_key, tunable_params)`. So once
+        # ANY winner exists for `(page=128, K=512)` in the registry, the
+        # tuner skips ALL `(bq, bkv, bq_csz, bkv_csz)` combos for that
+        # key on re-run.
+        #
+        # This works well for INCREMENTAL coverage (adding new K values
+        # or new page sizes to the search) but does NOT support EXPANDING
+        # the inner block-size grid (e.g. raising bkv_sz_lst max from
+        # 2048 to 8192 and re-running the same K). To re-tune an
+        # existing key with a wider inner grid, delete or trim the
+        # corresponding entries from production.kernel before running.
+        # If you need finer-grained idempotency, hash
+        # `(tuning_key, tunable_params)` instead.
         self.completed_tuning_keys = set()
         registry_path = os.environ.get("RPA_V3_KERNEL_REGISTRY")
         if registry_path and os.path.exists(registry_path):
@@ -312,10 +327,23 @@ class RpaV3KernelTuner(KernelTunerBase):
                     continue
 
                 # ---- Hybrid VMEM-Aware Tuning Pruning (Theoretical bounds) ----
-                # TPU v6e/v7x vector memory limit is 16MiB (16777216 bytes).
-                # We drop combinations that mathematically exceed this limit
-                # to save hours of guaranteed JAX compilation OOM crashes.
-                vmem_limit_bytes = 16 * 1024 * 1024
+                # Mathematically estimate the kernels per-iteration VMEM
+                # footprint and drop combos that wont fit. This saves hours
+                # of guaranteed JAX compilation OOM crashes.
+                #
+                # The pre-flight uses the same VMEM_LIMIT_BYTES constant as
+                # the runtime check below (~60 MB on v7x — chosen as a safe
+                # margin under v7xs ~64 MB per-core VMEM capacity). A more
+                # aggressive pre-flight (e.g. 16 MiB v6e-era estimate) would
+                # silently prune valid v7x combos that the runtime check
+                # would happily accept.
+                #
+                # NOTE: VMEM_LIMIT_BYTES is conservative for v7x and may
+                # be too LENIENT for v6e (which has ~16 MB VMEM). When
+                # tuning targets a smaller-VMEM device, this constant
+                # should be auto-detected (e.g. via
+                # `pltpu.get_tpu_info().vmem_capacity_bytes`) or set
+                # device-specifically. Today the constant is hardcoded.
                 # For GQA, num_q_heads_per_kv_head is nq // nk
                 num_q_heads_per_kv_head = nq // nk
                 vmem_estimate = get_vmem_estimate_bytes(
@@ -327,7 +355,7 @@ class RpaV3KernelTuner(KernelTunerBase):
                     q_dtype=qd,
                     kv_dtype=kd,
                 )
-                if vmem_estimate > vmem_limit_bytes:
+                if vmem_estimate > VMEM_LIMIT_BYTES:
                     continue
 
                 tuning_key = TuningKey(
@@ -582,12 +610,12 @@ class RpaV3KernelTuner(KernelTunerBase):
         except jax.errors.JaxRuntimeError as err:
             if "ResourceExhausted" in str(err) or "Out of memory" in str(err):
                 logger.info(f"[Debug] Run OOM (empirical bound hit): {err=}")
-                return TuningStatus.OUT_OF_MEMORY, float("inf"), float("inf")
+                return TuningStatus.FAILED_OOM, float("inf"), float("inf")
             logger.info(f"[Debug] Run JAX runtime error: {err=}")
             return TuningStatus.UNKNOWN_ERROR, float("inf"), float("inf")
         except Exception as err:
             if "ResourceExhausted" in str(err):
                 logger.info(f"[Debug] Compilation OOM: {err=}")
-                return TuningStatus.OUT_OF_MEMORY, float("inf"), float("inf")
+                return TuningStatus.FAILED_OOM, float("inf"), float("inf")
             logger.info(f"[Debug] Run failed: {err=}")
             return TuningStatus.UNKNOWN_ERROR, float("inf"), float("inf")
