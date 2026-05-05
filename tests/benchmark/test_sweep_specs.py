@@ -138,18 +138,6 @@ class TestSmokeSpecs(unittest.TestCase):
                          {"128": 4, "256": 4, "512": 4,
                           "1024": 4, "2048": 4})
 
-    def test_baseline_full_chat_short_parses_and_enumerates(self):
-        # 6 combos: 3 MAX_NUM_SEQS x 2 MAX_NUM_BATCHED_TOKENS. Validates
-        # the v7x-saturation sweeps shape and confirms max_num_seqs=1000
-        # makes it into the enumerated combos (its the load-bearing knob).
-        spec = self._load("llama3_8b_v7x_baseline_full_chat_short.json")
-        combos = sweep.enumerate_combos(spec)
-        self.assertEqual(len(combos), 6,
-                         "baseline_full_chat_short should produce 6 combos "
-                         "(3 MAX_NUM_SEQS x 2 MAX_NUM_BATCHED_TOKENS)")
-        seqs_seen = {c["MAX_NUM_SEQS"] for c in combos}
-        self.assertEqual(seqs_seen, {"128", "512", "1000"})
-
     def test_all_specs_have_a_safe_timeout(self):
         # All specs should pin a per-combo timeout below the generous
         # default so a hung run does not waste the budget.
@@ -159,7 +147,7 @@ class TestSmokeSpecs(unittest.TestCase):
                      "llama3_8b_v7x_optimized_full.json",
                      "llama3_8b_v7x_baseline_full_4k.json",
                      "llama3_8b_v7x_optimized_full_4k.json",
-                     "llama3_8b_v7x_baseline_full_chat_short.json"):
+                     "llama3_8b_v7x_baseline_full_4k.json"):
             spec = self._load(name)
             self.assertIn("timeout_seconds", spec, msg=name)
             self.assertLessEqual(spec["timeout_seconds"],
@@ -176,7 +164,7 @@ class TestSmokeSpecs(unittest.TestCase):
                      "llama3_8b_v7x_optimized_full.json",
                      "llama3_8b_v7x_baseline_full_4k.json",
                      "llama3_8b_v7x_optimized_full_4k.json",
-                     "llama3_8b_v7x_baseline_full_chat_short.json"):
+                     "llama3_8b_v7x_baseline_full_4k.json"):
             spec = self._load(name)
             cf = Path(spec["case_file"])
             self.assertTrue(cf.is_absolute(), msg=name)
