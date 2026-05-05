@@ -102,7 +102,7 @@ echo ""
 
     echo ""
     echo "=== Layer 3: Building Production Configuration ==="
-    SWEEP_DIR="tmp/bench_${SWEEP_NAME}"
+    SWEEP_DIR="tmp/bench_${WORKLOAD_BASENAME}_${SWEEP_NAME}"
     PROD_FILE="${MODEL_DIR}/production.service"
 
     # Extract the #1 ranked result and append to the production artifact, logging the output
