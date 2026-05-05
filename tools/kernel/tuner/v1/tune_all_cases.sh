@@ -34,6 +34,15 @@ fi
 DEFAULT_LABEL=$(basename "$CASE_FILE" .workload)
 LABEL="${2:-$DEFAULT_LABEL}"
 
+# Per-run timestamp for case_set_id. The RUNLOG filename is intentionally
+# stable across runs (so accumulation in build_kernel_registry merges into
+# the same .kernel file — see commit 8d4242e3) but the case_set_id MUST
+# be unique per run because LocalDbManager treats it as a primary key in
+# /tmp/kernel_tuner_run_*/CaseSet.json. Without DATE, re-running the same
+# workload would either overwrite the previous run's DB rows or — under
+# `set -u` — crash with `DATE: unbound variable`.
+DATE=$(date +%Y%m%d_%H%M%S)
+
 # Load the workload definitions into the environment.
 # set -a forces all assigned variables to be exported.
 set -a
