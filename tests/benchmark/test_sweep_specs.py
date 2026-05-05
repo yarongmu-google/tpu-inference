@@ -70,23 +70,59 @@ class TestSmokeSpecs(unittest.TestCase):
         self.assertEqual(by_k["512"]["RPA_P_BLOCK_SIZES"], "256,2048,256,512")
         self.assertEqual(by_k["2048"]["RPA_P_BLOCK_SIZES"], "256,2048,256,512")
 
-    def test_smoke_specs_have_a_safe_timeout(self):
-        # Both smoke specs should pin a per-combo timeout below the
-        # generous default so a hung run doesn't waste the budget.
+    def test_baseline_full_parses_and_enumerates(self):
+        # 3 combos: MAX_NUM_BATCHED_TOKENS in {2048, 4096, 8192}, no
+        # coupled axes, K pinned to 0 (baseline).
+        spec = self._load("llama3_8b_v7x_baseline_full.json")
+        combos = sweep.enumerate_combos(spec)
+        self.assertEqual(len(combos), 3,
+                         "baseline_full should produce 3 combos "
+                         "(MAX_NUM_BATCHED_TOKENS x 3, no coupled axes)")
+        # Every combo must carry K=0 (chunk-prefill OFF) and the
+        # tuned D/M block sizes from the fixed block. Catches a stray
+        # K override or missing fixed-block plumbing.
+        for c in combos:
+            self.assertEqual(c["LONG_PREFILL_TOKEN_THRESHOLD"], "0")
+            self.assertEqual(c["RPA_D_BLOCK_SIZES"], "1,4096,1,1024")
+            self.assertEqual(c["RPA_M_BLOCK_SIZES"], "64,512,64,256")
+
+    def test_optimized_full_parses_and_enumerates(self):
+        # 15 combos: MAX_NUM_BATCHED_TOKENS x K, with K coupled to its
+        # own RPA_P_BLOCK_SIZES from the tuning table.
+        spec = self._load("llama3_8b_v7x_optimized_full.json")
+        combos = sweep.enumerate_combos(spec)
+        self.assertEqual(len(combos), 15,
+                         "optimized_full should produce 15 combos "
+                         "(3 MAX_NUM_BATCHED_TOKENS x 5 coupled K values)")
+        # Spot-check the K=2048 / K=128 winners — both have distinct
+        # RPA_P_BLOCK_SIZES from the all-three-flavors tune. If a
+        # future re-tune shifts these, the test surfaces it.
+        by_k = {c["LONG_PREFILL_TOKEN_THRESHOLD"]: c for c in combos}
+        self.assertEqual(by_k["128"]["RPA_P_BLOCK_SIZES"], "128,2048,128,1024")
+        self.assertEqual(by_k["1024"]["RPA_P_BLOCK_SIZES"], "256,1024,256,512")
+        self.assertEqual(by_k["2048"]["RPA_P_BLOCK_SIZES"], "256,2048,256,512")
+
+    def test_all_specs_have_a_safe_timeout(self):
+        # All specs should pin a per-combo timeout below the generous
+        # default so a hung run does not waste the budget.
         for name in ("llama3_8b_v7x_baseline_smoke.json",
-                     "llama3_8b_v7x_optimized_smoke.json"):
+                     "llama3_8b_v7x_optimized_smoke.json",
+                     "llama3_8b_v7x_baseline_full.json",
+                     "llama3_8b_v7x_optimized_full.json"):
             spec = self._load(name)
             self.assertIn("timeout_seconds", spec, msg=name)
             self.assertLessEqual(spec["timeout_seconds"],
                                  sweep.DEFAULT_TIMEOUT_SECONDS, msg=name)
             self.assertGreater(spec["timeout_seconds"], 0, msg=name)
 
-    def test_smoke_specs_resolve_case_file(self):
+    def test_all_specs_resolve_case_file(self):
         # case_file is encoded as '../cases/...' — the load_spec
         # resolution should produce an absolute path that points
         # at an existing file.
         for name in ("llama3_8b_v7x_baseline_smoke.json",
-                     "llama3_8b_v7x_optimized_smoke.json"):
+                     "llama3_8b_v7x_optimized_smoke.json",
+                     "llama3_8b_v7x_baseline_full.json",
+                     "llama3_8b_v7x_optimized_full.json"):
             spec = self._load(name)
             cf = Path(spec["case_file"])
             self.assertTrue(cf.is_absolute(), msg=name)
