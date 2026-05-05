@@ -626,6 +626,83 @@ class TestAutoCommitCallback(unittest.TestCase):
             cb(self._make_result(), 0, 1)
         self.assertIn("WARN: auto-commit/push failed", buf.getvalue())
 
+    def test_runlog_staged_when_present(self):
+        # When runlog= is provided AND the file exists, it rides along in
+        # the staged paths so a remote reader sees console output too.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        sweep_dir = Path(tmp.name)
+        result = self._make_result_in_real_dir(sweep_dir, "abc")
+        runlog_path = Path(tmp.name) / "runlog.txt"
+        runlog_path.write_text("progress line 1\nprogress line 2\n")
+
+        captured: list[tuple] = []
+
+        def fake_git(paths, message, push=True, run_subprocess=None,
+                     remote="origin", branch=None):
+            captured.append(tuple(str(p) for p in paths))
+            return True
+
+        cb = sweep._make_auto_commit_callback(
+            every=1, push=False, git_fn=fake_git, runlog=str(runlog_path))
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            cb(result, 0, 1)
+        self.assertEqual(len(captured), 1)
+        self.assertIn(str(runlog_path), captured[0])
+
+    def test_runlog_skipped_when_file_missing(self):
+        # An early auto-commit fire might happen before tee has flushed
+        # any bytes to the runlog path. Tolerate the missing file —
+        # commit metrics/meta and skip the runlog this round.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        sweep_dir = Path(tmp.name)
+        result = self._make_result_in_real_dir(sweep_dir, "abc")
+        # Path that does not (yet) exist:
+        runlog_path = Path(tmp.name) / "does-not-exist.txt"
+
+        captured: list[tuple] = []
+
+        def fake_git(paths, message, push=True, run_subprocess=None,
+                     remote="origin", branch=None):
+            captured.append(tuple(str(p) for p in paths))
+            return True
+
+        cb = sweep._make_auto_commit_callback(
+            every=1, push=False, git_fn=fake_git, runlog=str(runlog_path))
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            cb(result, 0, 1)
+        self.assertEqual(len(captured), 1)
+        self.assertNotIn(str(runlog_path), captured[0])
+        # metrics + meta still got staged.
+        for p in captured[0]:
+            self.assertTrue(p.endswith("metrics.txt") or p.endswith("meta.txt"))
+
+    def test_runlog_none_does_nothing(self):
+        # Default (no runlog) must not stage any extra files.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        sweep_dir = Path(tmp.name)
+        result = self._make_result_in_real_dir(sweep_dir, "abc")
+
+        captured: list[tuple] = []
+
+        def fake_git(paths, message, push=True, run_subprocess=None,
+                     remote="origin", branch=None):
+            captured.append(tuple(str(p) for p in paths))
+            return True
+
+        cb = sweep._make_auto_commit_callback(
+            every=1, push=False, git_fn=fake_git)  # runlog defaults to None
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            cb(result, 0, 1)
+        self.assertEqual(len(captured), 1)
+        for p in captured[0]:
+            self.assertTrue(p.endswith("metrics.txt") or p.endswith("meta.txt"))
+
 
 class TestMainCli(unittest.TestCase):
 
@@ -681,7 +758,7 @@ class TestMainCli(unittest.TestCase):
         # When --no-push is passed, the auto-commit callback should disable push.
         captured = {}
 
-        def fake_make(every, push, git_fn=None):
+        def fake_make(every, push, git_fn=None, runlog=None):
             captured["push"] = push
             return lambda r, i, n: None
 
@@ -693,6 +770,22 @@ class TestMainCli(unittest.TestCase):
                             "--no-push"])
         self.assertFalse(captured["push"])
 
+    def test_runlog_threaded_to_callback(self):
+        # --runlog should reach _make_auto_commit_callback as runlog=...
+        captured = {}
+
+        def fake_make(every, push, git_fn=None, runlog=None):
+            captured["runlog"] = runlog
+            return lambda r, i, n: None
+
+        with patch("tools.benchmark.sweep._make_auto_commit_callback",
+                   side_effect=fake_make):
+            with patch("tools.benchmark.sweep.run_sweep", return_value=[]):
+                sweep.main([str(self.spec_path),
+                            "--auto-commit-every", "1",
+                            "--runlog", "tmp/log/x.txt"])
+        self.assertEqual(captured["runlog"], "tmp/log/x.txt")
+
     def test_negative_auto_commit_every_rejected(self):
         # A bare type=int wouldn't catch this; main() sanity-checks.
         with self.assertRaises(SystemExit):
@@ -702,6 +795,14 @@ class TestMainCli(unittest.TestCase):
         # --no-push only makes sense in combination with auto-commit.
         with self.assertRaises(SystemExit):
             sweep.main([str(self.spec_path), "--no-push"])
+
+    def test_runlog_without_auto_commit_rejected(self):
+        # --runlog only makes sense in combination with auto-commit:
+        # the runlog only gets staged on auto-commit fires, so without
+        # auto-commit there's nothing to stage. Surface as a CLI error.
+        with self.assertRaises(SystemExit):
+            sweep.main([str(self.spec_path),
+                        "--runlog", "tmp/log/x.txt"])
 
     # Note: the bottom-of-file `if __name__ == "__main__": sys.exit(main())`
     # block is not covered by these tests because runpy.run_module reloads

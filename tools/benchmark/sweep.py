@@ -558,6 +558,12 @@ def _build_parser() -> argparse.ArgumentParser:
                          "`origin <current-branch>`."))
     p.add_argument("--no-push", action="store_true",
                    help="With --auto-commit-every > 0, commit but don't push.")
+    p.add_argument("--runlog", default=None,
+                   help=("Path to a console runlog (typically the file you "
+                         "are tee-ing this command's stdout/stderr into). "
+                         "When set, every auto-commit also stages this file "
+                         "so a remote reader can diagnose hangs/crashes "
+                         "alongside the metrics."))
     return p
 
 
@@ -576,6 +582,7 @@ def _make_auto_commit_callback(
     every: int,
     push: bool,
     git_fn: Callable = git_commit_paths,
+    runlog: str | os.PathLike | None = None,
 ) -> Callable[[RunResult, int, int], None]:
     """Build an on_result callback that commits every N combos and at end.
 
@@ -592,7 +599,16 @@ def _make_auto_commit_callback(
     missed (e.g., a partial-failure window) still gets picked up.
     `git diff --cached --quiet` in git_commit_paths short-circuits to
     a no-op when nothing's changed since the last commit.
+
+    If `runlog` is given, that path is staged alongside the metrics on
+    each commit. The file is expected to be the tee'd console output
+    of this run; its presence isn't required at every commit (early
+    fires before tee creates the file are tolerated — the path is just
+    skipped). This is what gets a remote reader (or a future you) the
+    progress / error context that metrics.txt doesn't carry.
     """
+
+    runlog_path = Path(runlog) if runlog is not None else None
 
     def cb(result: RunResult, idx: int, total: int) -> None:
         _print_progress(result, idx, total)
@@ -600,8 +616,10 @@ def _make_auto_commit_callback(
         is_last = (n == total)
         if (n % every == 0) or is_last:
             sweep_dir = result.result_dir.parent
-            paths = sorted(sweep_dir.glob(f"*/{METRICS_FILENAME}")) \
+            paths: list = sorted(sweep_dir.glob(f"*/{METRICS_FILENAME}")) \
                   + sorted(sweep_dir.glob(f"*/{META_FILENAME}"))
+            if runlog_path is not None and runlog_path.is_file():
+                paths.append(runlog_path)
             ok = git_fn(paths, message=(
                 f"[Bench] Auto-commit sweep progress {n}/{total}"
             ), push=push)
@@ -626,7 +644,14 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.auto_commit_every > 0:
         on_result = _make_auto_commit_callback(
-            args.auto_commit_every, push=not args.no_push)
+            args.auto_commit_every, push=not args.no_push,
+            runlog=args.runlog)
+    elif args.runlog is not None:
+        # --runlog without --auto-commit-every is meaningless: the runlog
+        # only gets staged on auto-commit fires, so without auto-commit
+        # there's nothing to stage. Surface as a CLI error rather than
+        # silently ignoring the flag.
+        parser.error("--runlog requires --auto-commit-every > 0")
     else:
         on_result = _print_progress
 
