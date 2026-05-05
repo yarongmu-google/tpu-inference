@@ -10,6 +10,13 @@ from tools.kernel.tuner.v1.inspect_result_cli import local_query_min_latency
 def main():
     parser = argparse.ArgumentParser(description="Extract kernel tuning winners into a .kernel file.")
     parser.add_argument("runlog", nargs="?", help="Path to runlog. Defaults to latest tmp/log/tune_all_*.txt")
+    parser.add_argument("--out", default=None,
+                        help="Output .kernel path. Defaults to "
+                             "tmp/log/<runlog-basename>.kernel. Required when "
+                             "the orchestrator wants the registry to land at "
+                             "cases/<topo>/<model>/production.kernel — without "
+                             "this, the sweep reads a different file than the "
+                             "pipeline writes.")
     args = parser.parse_args()
 
     runlog = args.runlog
@@ -35,12 +42,12 @@ def main():
     if len(case_matches) != len(db_matches):
         print(f"Mismatch: {len(case_matches)} case headers vs {len(db_matches)} DB paths.", file=sys.stderr)
         sys.exit(1)
-    
+
     if not case_matches:
         print("No phases found in runlog.", file=sys.stderr)
         sys.exit(1)
 
-    # Structure: 
+    # Structure:
     # {
     #   "metadata": {"runlog": runlog, "timestamp": ...},
     #   "results": {
@@ -49,9 +56,12 @@ def main():
     #       "mixed": [...]
     #   }
     # }
-    
-    basename = os.path.basename(runlog).replace("tune_all_", "").replace(".txt", "")
-    out_path = f"tmp/log/{basename}.kernel"
+
+    if args.out:
+        out_path = args.out
+    else:
+        basename = os.path.basename(runlog).replace("tune_all_", "").replace(".txt", "")
+        out_path = f"tmp/log/{basename}.kernel"
 
     # ---- Accumulation Logic ----
     # If the file already exists, load it so we can merge best-of-all-time.
@@ -105,6 +115,7 @@ def main():
         except Exception as e:
             print(f"WARN: Failed to extract {case} from {db_path}: {e}", file=sys.stderr)
 
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     with open(out_path, "w") as f:
         json.dump(out_data, f, indent=2)
 
