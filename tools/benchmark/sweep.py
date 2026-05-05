@@ -577,14 +577,32 @@ def _make_auto_commit_callback(
     push: bool,
     git_fn: Callable = git_commit_paths,
 ) -> Callable[[RunResult, int, int], None]:
-    """Build an on_result callback that commits every N combos and at end."""
+    """Build an on_result callback that commits every N combos and at end.
+
+    Stages the per-combo metrics.txt + meta.txt files explicitly rather
+    than the sweep parent directory. The parent-dir form would also work
+    when the sweep lives under tmp/ (the .gitignore patterns for
+    vllm.log, bench.log, sonnet_4x.txt, profile/ are scoped there), but
+    breaks under any other --base-dir: `git add results/sweep_dir/`
+    would also stage the multi-GB log files. Enumerating the safe
+    files explicitly is robust regardless of where the sweep lands.
+
+    Each fire re-stages all currently-completed combos, not just the
+    one that just finished — so a previous combo that was somehow
+    missed (e.g., a partial-failure window) still gets picked up.
+    `git diff --cached --quiet` in git_commit_paths short-circuits to
+    a no-op when nothing's changed since the last commit.
+    """
 
     def cb(result: RunResult, idx: int, total: int) -> None:
         _print_progress(result, idx, total)
         n = idx + 1
         is_last = (n == total)
         if (n % every == 0) or is_last:
-            ok = git_fn([result.result_dir.parent], message=(
+            sweep_dir = result.result_dir.parent
+            paths = sorted(sweep_dir.glob(f"*/{METRICS_FILENAME}")) \
+                  + sorted(sweep_dir.glob(f"*/{META_FILENAME}"))
+            ok = git_fn(paths, message=(
                 f"[Bench] Auto-commit sweep progress {n}/{total}"
             ), push=push)
             if not ok:

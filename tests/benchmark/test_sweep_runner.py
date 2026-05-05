@@ -513,7 +513,25 @@ class TestAutoCommitCallback(unittest.TestCase):
             combo_id="abc", result_dir=Path(parent) / "abc",
             duration_seconds=0.1)
 
+    def _make_result_in_real_dir(self, parent: Path, combo_id: str):
+        """Materialize <parent>/<combo_id>/{metrics.txt,meta.txt} so the
+        callback's glob() can find them, and return a matching RunResult."""
+        d = parent / combo_id
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "metrics.txt").write_text("RequestThroughput=1.0\n")
+        (d / "meta.txt").write_text("case_name=x\n")
+        return sweep.RunResult(
+            status=sweep.RunStatus.COMPLETED_FRESH,
+            combo_id=combo_id, result_dir=d, duration_seconds=0.1)
+
     def test_commits_every_n(self):
+        # The callback enumerates per-combo metrics.txt + meta.txt via
+        # glob(), so use a real directory rather than a fake path.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        sweep_dir = Path(tmp.name)
+        result = self._make_result_in_real_dir(sweep_dir, "abc")
+
         calls = []
 
         def fake_git(paths, message, push=True, run_subprocess=None,
@@ -526,11 +544,43 @@ class TestAutoCommitCallback(unittest.TestCase):
         for i in range(4):
             buf = io.StringIO()
             with redirect_stdout(buf):
-                cb(self._make_result(), i, 4)
+                cb(result, i, 4)
         self.assertEqual(len(calls), 2)
-        # Each commit references the parent dir of the result dir.
+        # Each commit stages the per-combo metrics.txt + meta.txt
+        # (sorted: metrics.txt files first, then meta.txt files).
+        expected = (
+            str(sweep_dir / "abc" / "metrics.txt"),
+            str(sweep_dir / "abc" / "meta.txt"),
+        )
         for paths, _, _ in calls:
-            self.assertEqual(paths, ("/tmp/sw",))
+            self.assertEqual(paths, expected)
+
+    def test_explicit_enumeration_skips_logs(self):
+        # Drop a vllm.log next to metrics/meta.txt; it must not be staged.
+        # This is the bug the structural change closes when --base-dir
+        # is outside tmp/ (and so .gitignore patterns don't apply).
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        sweep_dir = Path(tmp.name)
+        result = self._make_result_in_real_dir(sweep_dir, "abc")
+        (sweep_dir / "abc" / "vllm.log").write_text("noise\n")
+        (sweep_dir / "abc" / "bench.log").write_text("noise\n")
+
+        captured: list[tuple] = []
+
+        def fake_git(paths, message, push=True, run_subprocess=None,
+                     remote="origin", branch=None):
+            captured.append(tuple(str(p) for p in paths))
+            return True
+
+        cb = sweep._make_auto_commit_callback(every=1, push=False, git_fn=fake_git)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            cb(result, 0, 1)
+        self.assertEqual(len(captured), 1)
+        for p in captured[0]:
+            self.assertTrue(p.endswith("metrics.txt") or p.endswith("meta.txt"),
+                            f"unexpected staged path: {p}")
 
     def test_commits_at_last_even_when_not_multiple(self):
         # total=3, every=5: never hits multiple but last (n=3) triggers final commit.
