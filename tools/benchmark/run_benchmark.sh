@@ -97,14 +97,20 @@ METRICS_FILE="$RESULT_DIR/metrics.txt"
 # referenced the same file from different CWDs produce identical
 # meta.case_file values for downstream comparison.
 #
-# `set -e` does NOT abort on a failed command substitution embedded
-# in an assignment, so a `cd` failure here would silently produce
-# `/$(basename "$CASE_FILE")` (empty + slash + name). The prior
-# `[ -f "$CASE_FILE" ]` check at line 60 makes this unreachable, but
-# the explicit `|| exit 1` is cheap insurance against future edits
-# that move the existence check.
-CASE_FILE_ABS="$(cd "$(dirname "$CASE_FILE")" && pwd -P)/$(basename "$CASE_FILE")" \
+# Two assignments, not one. The natural one-liner form
+#   CASE_FILE_ABS="$(cd ... && pwd -P)/$(basename "$CASE_FILE")" || ...
+# would NOT catch a cd failure: per POSIX, the exit status of an
+# assignment with multiple command substitutions is the status of
+# the LAST one performed (here `basename`, always 0). The `||` would
+# be dead code. Splitting into a `cd` assignment first and the path
+# join second makes the cd-failure case have its own statement, so
+# `||` fires correctly. The prior `[ -f "$CASE_FILE" ]` check at
+# line 60 makes a cd failure unreachable today, but this is the
+# point of the insurance — to hold up if a future edit weakens or
+# moves that check.
+CASE_DIR_ABS="$(cd "$(dirname "$CASE_FILE")" && pwd -P)" \
     || { echo "ERROR: failed to canonicalize CASE_FILE=$CASE_FILE" >&2; exit 1; }
+CASE_FILE_ABS="$CASE_DIR_ABS/$(basename "$CASE_FILE")"
 
 {
     echo "case_file=$CASE_FILE_ABS"
