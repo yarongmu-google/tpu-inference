@@ -38,7 +38,7 @@ SPEC="$1"; shift
 
 mkdir -p tmp/log
 SPEC_NAME="$(basename "$SPEC" .service)"
-RUNLOG="tmp/log/${SPEC_NAME}_$(date +%Y%m%d_%H%M%S).txt"
+RUNLOG="tmp/log/sweep_${SPEC_NAME}.txt"
 
 # `pipefail` makes the pipeline exit non-zero if python fails;
 # otherwise tee's 0 would mask a sweep failure.

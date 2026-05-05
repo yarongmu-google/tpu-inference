@@ -33,7 +33,6 @@ fi
 # Extract filename without extension for default label
 DEFAULT_LABEL=$(basename "$CASE_FILE" .workload)
 LABEL="${2:-$DEFAULT_LABEL}"
-DATE=$(date +%Y%m%d_%H%M%S)
 
 # Load the workload definitions into the environment.
 # set -a forces all assigned variables to be exported.
@@ -42,7 +41,7 @@ source "$CASE_FILE"
 set +a
 
 mkdir -p tmp/log
-RUNLOG="tmp/log/tune_all_${LABEL}_${DATE}.txt"
+RUNLOG="tmp/log/tune_all_${LABEL}.txt"
 echo "Runlog: $RUNLOG"
 
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"

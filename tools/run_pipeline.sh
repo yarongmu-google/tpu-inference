@@ -55,34 +55,47 @@ fi
 echo "=========================================================="
 echo ""
 
-echo "=== Layer 1: Hardware Tuning ==="
-# Execute the tuner against the SSoT workload boundaries
-tools/kernel/tuner/v1/tune_all_cases.sh "$WORKLOAD" "$WORKLOAD_BASENAME"
+# We tee the entire pipeline output to a central, overwriting log file.
+PIPELINE_LOG="tmp/log/pipeline_${WORKLOAD_BASENAME}.txt"
+mkdir -p tmp/log
 
-echo ""
-echo "=== Layer 1: Building Kernel Registry ==="
-# Find the runlog we just generated and aggregate the winners into the .kernel file
-RUNLOG=$(ls -t tmp/log/tune_all_${WORKLOAD_BASENAME}_*.txt | head -1)
-tools/kernel/tuner/v1/build_kernel_registry.sh "$RUNLOG"
-echo "Kernel Registry updated."
+{
+    echo "=== Layer 1: Hardware Tuning ==="
+    # Execute the tuner against the SSoT workload boundaries
+    tools/kernel/tuner/v1/tune_all_cases.sh "$WORKLOAD" "$WORKLOAD_BASENAME"
 
-echo ""
-echo "=== Layer 2: Service Sweeping ==="
-# Run the scheduler combinations, which will auto-link from the .kernel file
-tools/benchmark/sweep.sh "$SERVICE"
+    echo ""
+    echo "=== Layer 1: Building Kernel Registry ==="
+    # Pass the exact known runlog name
+    RUNLOG="tmp/log/tune_all_${WORKLOAD_BASENAME}.txt"
+    tools/kernel/tuner/v1/build_kernel_registry.sh "$RUNLOG"
+    echo "Kernel Registry updated."
 
-echo ""
-echo "=== Layer 3: Building Production Configuration ==="
-SWEEP_DIR="tmp/bench_${SWEEP_NAME}"
-MODEL_DIR=$(dirname "$WORKLOAD")
-PROD_FILE="${MODEL_DIR}/production.service"
+    echo ""
+    echo "=== Layer 2: Service Sweeping ==="
+    # Run the scheduler combinations, which will auto-link from the .kernel file
+    tools/benchmark/sweep.sh "$SERVICE"
 
-# Extract the #1 ranked result and append to the production artifact
-python3 tools/benchmark/build_service_registry.py "$SWEEP_DIR" --export-production "$PROD_FILE"
+    echo ""
+    echo "=== Layer 3: Building Production Configuration ==="
+    SWEEP_DIR="tmp/bench_${SWEEP_NAME}"
+    MODEL_DIR=$(dirname "$WORKLOAD")
+    PROD_FILE="${MODEL_DIR}/production.service"
 
-echo ""
-echo "=========================================================="
-echo " Pipeline Complete."
-echo " Final production configuration saved to:"
-echo " $PROD_FILE"
-echo "=========================================================="
+    # Extract the #1 ranked result and append to the production artifact
+    python3 tools/benchmark/build_service_registry.py "$SWEEP_DIR" --export-production "$PROD_FILE"
+
+    echo ""
+    echo "=========================================================="
+    echo " Pipeline Complete."
+    echo " Final production configuration saved to:"
+    echo " $PROD_FILE"
+    echo "=========================================================="
+} 2>&1 | tee "$PIPELINE_LOG"
+
+# Commit the pipeline log
+git add -f "$PIPELINE_LOG"
+if ! git diff --cached --quiet; then
+    git commit -m "[Pipeline] Update master orchestrator runlog for $WORKLOAD_BASENAME"
+    git push origin "$(git rev-parse --abbrev-ref HEAD)" || true
+fi
