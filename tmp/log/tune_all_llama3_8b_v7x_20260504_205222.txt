@@ -6905,3 +6905,21 @@ I0505 00:13:37.175527 135500595873728 local_db_manager.py:291] Final DB file: /t
 I0505 00:13:37.175543 135500595873728 local_db_manager.py:291] Final DB file: /tmp/kernel_tuner_run_2026_05_04_23_53_54/CaseResults.json
 I0505 00:13:37.175559 135500595873728 local_db_manager.py:291] Final DB file: /tmp/kernel_tuner_run_2026_05_04_23_53_54/WorkBuckets.json
 ===== 2026-05-05 00:13:44 mixed done in 1196s =====
+
+===== 2026-05-05 00:13:50 ALL CASES DONE =====
+
+Local DB: /tmp/kernel_tuner_run_2026_05_04_23_53_54
+
+Inspector commands to extract winners (run on the same TPU VM):
+  python3 -m tools.kernel.tuner.v1.inspect_result_cli \
+      --source=local --db-path=/tmp/kernel_tuner_run_2026_05_04_23_53_54 \
+      query_min_latency \
+      --case_set_id=llama3_8b_v7x_decode_20260504_205222 --run_id=0
+  python3 -m tools.kernel.tuner.v1.inspect_result_cli \
+      --source=local --db-path=/tmp/kernel_tuner_run_2026_05_04_23_53_54 \
+      query_min_latency \
+      --case_set_id=llama3_8b_v7x_prefill_20260504_205222 --run_id=0
+  python3 -m tools.kernel.tuner.v1.inspect_result_cli \
+      --source=local --db-path=/tmp/kernel_tuner_run_2026_05_04_23_53_54 \
+      query_min_latency \
+      --case_set_id=llama3_8b_v7x_mixed_20260504_205222 --run_id=0
