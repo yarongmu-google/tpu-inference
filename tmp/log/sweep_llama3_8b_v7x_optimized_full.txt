@@ -1,0 +1,46 @@
+Runlog: tmp/log/sweep_llama3_8b_v7x_optimized_full.txt
+SMOKE_TEST=1 detected: Truncating service sweep space to 1 combo.
+case_file=/home/ymu_google_com/tpu-inference/tools/benchmark/cases/v7x/llama3_8b/prefill_heavy.workload
+case_name=prefill_heavy
+model=meta-llama/Meta-Llama-3-8B-Instruct
+max_num_seqs=128
+max_num_batched_tokens=2048
+tensor_parallel_size=1
+max_model_len=8192
+dataset=sonnet
+input_len=8191
+output_len=1
+num_prompts=1000
+request_rate=inf
+block_size=128
+long_prefill_token_threshold=128
+rpa_d_block_sizes=1,512,1,256
+rpa_p_block_sizes=128,512,128,256
+rpa_m_block_sizes=128,512,128,256
+git_commit=9e1ea8ab08457c1155cc3a87fed019b58a1b87fd
+git_branch=rpa3
+timestamp=20260505_151110
+----
+Results: /home/ymu_google_com/tpu-inference/tmp/bench_prefill_heavy_optimized_full/c1113c9a7462
+Starting vllm server (log: /home/ymu_google_com/tpu-inference/tmp/bench_prefill_heavy_optimized_full/c1113c9a7462/vllm.log) ...
+Waiting up to 20 min for server startup ...
+  ready after 120s
+Running benchmark (stdout: /home/ymu_google_com/tpu-inference/tmp/bench_prefill_heavy_optimized_full/c1113c9a7462/bench.log, stderr: /home/ymu_google_com/tpu-inference/tmp/bench_prefill_heavy_optimized_full/c1113c9a7462/bench.log.stderr) ...
+==== Summary ====
+Request throughput (req/s):              4.49      
+Output token throughput (tok/s):         4.49      
+Mean TTFT (ms):                          113306.65 
+Median TTFT (ms):                        114210.43 
+P99 TTFT (ms):                           220874.59 
+Mean TPOT (ms):                          0.00      
+Median TPOT (ms):                        0.00      
+P99 TPOT (ms):                           0.00      
+Mean ITL (ms):                           0.00      
+Median ITL (ms):                         0.00      
+P99 ITL (ms):                            0.00      
+Mean E2EL (ms):                          113306.65 
+Median E2EL (ms):                        114210.43 
+P99 E2EL (ms):                           220874.59 
+====
+Saved metrics to /home/ymu_google_com/tpu-inference/tmp/bench_prefill_heavy_optimized_full/c1113c9a7462/metrics.txt
+[1/1] c1113c9a7462 completed_fresh (352.6s)  tmp/bench_prefill_heavy_optimized_full/c1113c9a7462
