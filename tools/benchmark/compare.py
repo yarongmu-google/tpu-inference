@@ -43,12 +43,14 @@ DEFAULT_COLUMNS: list[tuple[str, str]] = [
     ("meta.block_size", "page"),
     ("meta.long_prefill_token_threshold", "K"),
     ("meta.rpa_p_block_sizes", "p_blk"),
+    ("meta.request_rate", "rate"),
     ("metrics.RequestThroughput", "req/s"),
     ("metrics.OutputTokenThroughput", "out_tok/s"),
     ("metrics.MeanTTFT", "ttft_mean"),
     ("metrics.P99TTFT", "ttft_p99"),
     ("metrics.MeanITL", "itl_mean"),
     ("metrics.P99ITL", "itl_p99"),
+    ("meta.bench_duration_seconds", "dur_s"),
     ("combo_id", "id"),
 ]
 
