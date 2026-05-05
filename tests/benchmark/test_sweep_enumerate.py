@@ -20,6 +20,7 @@ in a later commit and gets its own test file).
 
 import json
 import os
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -42,8 +43,8 @@ class TestLoadSpec(unittest.TestCase):
     def _write_spec_with_case(self, spec: dict, case_name: str = "x"):
         """Write a spec to a temp file and materialize its case_file
         alongside, so load_spec's pre-flight existence check passes."""
-        import tempfile
         d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
         case_path = Path(d) / case_name
         case_path.write_text(": \"${MODEL:=fake}\"\n")
         spec_path = Path(d) / "spec.json"
