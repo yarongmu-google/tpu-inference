@@ -61,6 +61,12 @@ mkdir -p tmp/log
 
 {
     echo "=== Layer 1: Hardware Tuning ==="
+    MODEL_DIR=$(dirname "$WORKLOAD")
+    PROD_KERNEL="${MODEL_DIR}/production.kernel"
+    
+    # Export the registry path so the tuner can skip already-tuned cases
+    export RPA_V3_KERNEL_REGISTRY="$PROD_KERNEL"
+
     # Execute the tuner against the SSoT workload boundaries
     tools/kernel/tuner/v1/tune_all_cases.sh "$WORKLOAD" "$WORKLOAD_BASENAME"
 
@@ -68,8 +74,8 @@ mkdir -p tmp/log
     echo "=== Layer 1: Building Kernel Registry ==="
     # Pass the exact known runlog name
     RUNLOG="tmp/log/tune_all_${WORKLOAD_BASENAME}.txt"
-    tools/kernel/tuner/v1/build_kernel_registry.sh "$RUNLOG"
-    echo "Kernel Registry updated."
+    tools/kernel/tuner/v1/build_kernel_registry.sh "$RUNLOG" "$PROD_KERNEL"
+    echo "Kernel Registry updated at $PROD_KERNEL."
 
     echo ""
     echo "=== Layer 2: Service Sweeping ==="

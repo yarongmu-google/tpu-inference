@@ -175,6 +175,24 @@ class RpaV3KernelTuner(KernelTunerBase):
                          storage_manager=storage_manager,
                          job_bucket_size=100,
                          kernel_tuner_name="rpa_v3_kernel_tuner")
+
+        # ---- Idempotency: Load existing registry to skip tuned cases ----
+        self.completed_tuning_keys = set()
+        registry_path = os.environ.get("RPA_V3_KERNEL_REGISTRY")
+        if registry_path and os.path.exists(registry_path):
+            try:
+                import json
+                with open(registry_path, "r") as f:
+                    registry_data = json.load(f)
+                    for case_name, results in registry_data.get("results", {}).items():
+                        for entry in results:
+                            tk_dict = entry.get("tuning_key", {})
+                            tk_hash = json.dumps(tk_dict, sort_keys=True)
+                            self.completed_tuning_keys.add(tk_hash)
+                logger.info(f"Loaded {len(self.completed_tuning_keys)} completed TuningKeys from {registry_path}")
+            except Exception as e:
+                logger.warning(f"Failed to read existing kernel registry: {e}")
+
         # ---- Single Source of Truth: Read from environment ----
         # These must be set by tune_all_cases.sh sourcing a .workload case file.
         self.max_num_tokens = int(os.environ["MAX_NUM_BATCHED_TOKENS"])
@@ -324,6 +342,14 @@ class RpaV3KernelTuner(KernelTunerBase):
                     case=case,
                     chunk_prefill_size=K,
                 )
+
+                # Skip if we already successfully tuned this exact environment shape
+                import json
+                tk_dict = dataclasses.asdict(tuning_key)
+                tk_hash = json.dumps(tk_dict, sort_keys=True)
+                if tk_hash in self.completed_tuning_keys:
+                    continue
+
                 tunable_params = TunableParams(bq_sz=bq_sz,
                                                bkv_sz=bkv_sz,
                                                bq_csz=bq_csz,
