@@ -174,13 +174,52 @@ When optimizing for maximum throughput, it is critical to understand which param
 | `max_model_len` | `MAX_MODEL_LEN` | **Fixed**<br>(Workload Key) | **Workload Constraint:** Defines the maximum sequence length. Dictates maximum XLA loop bounds and bounds checks. Changing this requires a new tuning and sweeping cycle. |
 | Prompts / Request Rate | `NUM_PROMPTS`<br>`REQUEST_RATE` | **Fixed**<br>(Workload Key) | **Workload Constraint (Saturation):** Must be set high enough to generate a massive backlog. This ensures the TPU runs in a steady state for a sustained duration, providing stable and accurate throughput measurements. |
 
-## Future Work: Hybrid VMEM-Aware Tuning Pruning
+## The 3-Layer Optimization Pipeline
 
-To avoid wasting TPU time on combinations that are mathematically guaranteed to fail, we will implement a hybrid tuning strategy. 
+This repository uses a fully automated, crash-safe, and self-documenting 3-layer pipeline to discover the absolute maximum throughput configurations for a given model. 
 
-**The Goal:**
-1. **Pre-flight Calculation (Theoretical):** Before sending a `TuningKey` to XLA, use `get_smem_estimate_bytes()` and `get_vmem_estimate_bytes()` (from `tpu_inference/kernels/ragged_paged_attention/v3/kernel.py`) to estimate the VMEM footprint of the specific `(bq_sz, bkv_sz)` tile against the specific Model architecture (`head_dim`, `num_q_heads`, etc).
-2. **Static Pruning:** If the estimated VMEM exceeds the TPU hardware limits (~16MB on v6e/v7x), silently drop that combination from the tuning queue.
-3. **Dynamic Pruning (Empirical bounds-checking):** For the remaining cases, wrap the JAX execution in a `try/except` block. If the compiler still throws a `ResourceExhausted` error (because of XLA padding overheads), immediately record that boundary and prune all larger compute/memory tiles from the remaining search space for that specific `page_size` / `chunk_prefill_size`.
+The pipeline guarantees that software scheduler benchmarks are always run against mathematically optimal hardware kernels, and it organizes the results into persistent JSON registries.
 
-This transforms the tuner from a "dumb grid search" into an intelligent, hardware-aware optimizer, allowing us to safely define massive search spaces (like `K=8192` and `bq_sz=8192`) without the penalty of watching the compiler crash thousands of times.
+### Architecture and File Taxonomy
+
+Files are organized strictly by Hardware Topology and Model Architecture:
+`tools/benchmark/cases/<hardware_topology>/<model_architecture>/`
+*(e.g., `tools/benchmark/cases/v7x/llama3_8b/`)*
+
+There are three types of configuration files corresponding to the three layers of the pipeline:
+
+1.  **Layer 1: The Workload (`.workload`)**
+    *   **What it is:** The Single Source of Truth (SSoT) for model geometry (`HEAD_DIM`, `NUM_Q_HEADS`) and macroscopic workload constraints (`MAX_MODEL_LEN`, `INPUT_LEN`, `OUTPUT_LEN`).
+    *   **Example:** `prefill_heavy.workload`
+
+2.  **Layer 2: The Hardware Registry (`.kernel`)**
+    *   **What it is:** An accumulating JSON database that maps `(K, page_size)` -> The lowest-latency XLA memory tiles (`RPA_P_BLOCK_SIZES`, etc.) discovered by the JAX compiler grid search. 
+    *   **Example:** `production.kernel`
+
+3.  **Layer 3: The Service Registry (`.service`)**
+    *   **What it is:** A JSON sweep definition that sweeps Python scheduler limits (`MAX_NUM_SEQS`, `MAX_NUM_BATCHED_TOKENS`) while automatically linking to the optimal hardware blocks in the `.kernel` file. The final output is an accumulated JSON containing the highest-throughput configuration keyed by the traffic shape (e.g., `8191_in_1_out`).
+    *   **Example:** `production.service` (Output), `llama3_8b_v7x_optimized_full.service` (Input)
+
+### Running the Pipeline
+
+You do not need to run the tuner, extractor, and sweeper manually. Use the master orchestrator script.
+
+```bash
+# Usage:
+tools/run_pipeline.sh [--smoke] <path/to/.workload> <path/to/.service>
+
+# Example:
+tools/run_pipeline.sh tools/benchmark/cases/v7x/llama3_8b/prefill_heavy.workload tools/benchmark/sweeps/llama3_8b_v7x_optimized_full.service
+```
+
+**The orchestrator automatically:**
+1. Loads the Workload boundaries.
+2. Runs the Hardware Tuner (dropping impossible OOM combinations mathematically).
+3. Updates `production.kernel`.
+4. Runs the vLLM Sweeper (auto-linking the kernels).
+5. Extracts the #1 ranked result to `production.service`.
+6. Explicitly logs, commits, and pushes every phase to Git so you can debug asynchronously.
+
+### The `--smoke` flag
+If you append `--smoke` to the `run_pipeline.sh` command, it intercepts the search boundaries natively. It forces the Tuner to only compile 1 hardware block per flavor, and it truncates the Sweeper JSON arrays to only test 1 scheduler combination. 
+This allows you to validate a massive pipeline configuration end-to-end in under 60 seconds before executing a 12-hour production run.
