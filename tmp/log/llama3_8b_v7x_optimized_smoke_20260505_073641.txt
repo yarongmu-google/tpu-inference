@@ -42,3 +42,62 @@ P99 E2EL (ms):                           6970.40
 ====
 Saved metrics to /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_optimized_smoke/a0aaa12dcdb1/metrics.txt
 [1/2] a0aaa12dcdb1 completed_fresh (140.4s)  tmp/bench_llama3_8b_v7x_prefill_heavy_optimized_smoke/a0aaa12dcdb1
+[rpa3 c3af0a3c6c] [Bench] Auto-commit sweep progress 1/2
+ 3 files changed, 80 insertions(+)
+ create mode 100644 tmp/bench_llama3_8b_v7x_prefill_heavy_optimized_smoke/a0aaa12dcdb1/meta.txt
+ create mode 100644 tmp/bench_llama3_8b_v7x_prefill_heavy_optimized_smoke/a0aaa12dcdb1/metrics.txt
+ create mode 100644 tmp/log/llama3_8b_v7x_optimized_smoke_20260505_073641.txt
+To github.com:yarongmu-google/tpu-inference.git
+ ! [rejected]              rpa3 -> rpa3 (fetch first)
+error: failed to push some refs to 'github.com:yarongmu-google/tpu-inference.git'
+hint: Updates were rejected because the remote contains work that you do not
+hint: have locally. This is usually caused by another repository pushing to
+hint: the same ref. If you want to integrate the remote changes, use
+hint: 'git pull' before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+git_commit_paths: subprocess failed: Command '['git', 'push', 'origin', 'rpa3']' returned non-zero exit status 1.
+WARN: auto-commit/push failed at 1/2
+case_file=/home/ymu_google_com/tpu-inference/tools/benchmark/cases/llama3_8b_v7x_prefill_heavy.env
+case_name=llama3_8b_v7x_prefill_heavy
+model=meta-llama/Meta-Llama-3-8B-Instruct
+max_num_seqs=128
+max_num_batched_tokens=4096
+tensor_parallel_size=1
+max_model_len=4096
+dataset=sonnet
+input_len=1800
+output_len=128
+num_prompts=100
+request_rate=inf
+block_size=128
+long_prefill_token_threshold=2048
+rpa_d_block_sizes=1,4096,1,1024
+rpa_p_block_sizes=256,2048,256,512
+rpa_m_block_sizes=64,512,64,256
+git_commit=c3af0a3c6ccd7713b819840aa841b4c5ecf1e0fc
+git_branch=rpa3
+timestamp=20260505_073907
+----
+Results: /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_optimized_smoke/e12368c950dd
+Starting vllm server (log: /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_optimized_smoke/e12368c950dd/vllm.log) ...
+Waiting up to 20 min for server startup ...
+  ready after 130s
+Running benchmark (stdout: /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_optimized_smoke/e12368c950dd/bench.log, stderr: /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_optimized_smoke/e12368c950dd/bench.log.stderr) ...
+==== Summary ====
+Request throughput (req/s):              14.40     
+Output token throughput (tok/s):         1842.58   
+Mean TTFT (ms):                          2526.67   
+Median TTFT (ms):                        2498.87   
+P99 TTFT (ms):                           4508.11   
+Mean TPOT (ms):                          31.94     
+Median TPOT (ms):                        32.21     
+P99 TPOT (ms):                           44.58     
+Mean ITL (ms):                           31.94     
+Median ITL (ms):                         19.03     
+P99 ITL (ms):                            106.15    
+Mean E2EL (ms):                          6583.43   
+Median E2EL (ms):                        6589.15   
+P99 E2EL (ms):                           6924.50   
+====
+Saved metrics to /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_prefill_heavy_optimized_smoke/e12368c950dd/metrics.txt
+[2/2] e12368c950dd completed_fresh (140.1s)  tmp/bench_llama3_8b_v7x_prefill_heavy_optimized_smoke/e12368c950dd

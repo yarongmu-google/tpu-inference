@@ -1,0 +1,15 @@
+MeanTTFT=2526.67
+MedianTTFT=2498.87
+P99TTFT=4508.11
+MeanTPOT=31.94
+MedianTPOT=32.21
+P99TPOT=44.58
+MeanITL=31.94
+MedianITL=19.03
+P99ITL=106.15
+MeanE2EL=6583.43
+MedianE2EL=6589.15
+P99E2EL=6924.50
+RequestThroughput=14.40
+OutputTokenThroughput=1842.58
+TotalTokenThroughput=
