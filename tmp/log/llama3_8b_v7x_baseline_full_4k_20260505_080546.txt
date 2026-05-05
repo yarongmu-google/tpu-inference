@@ -143,3 +143,53 @@ P99 E2EL (ms):                           552621.94
 ====
 Saved metrics to /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_balanced_4k_baseline_full_4k/9c69e347b79d/metrics.txt
 [3/4] 9c69e347b79d completed_fresh (719.9s)  tmp/bench_llama3_8b_v7x_balanced_4k_baseline_full_4k/9c69e347b79d
+[rpa3 2a4b4dfef4] [Bench] Auto-commit sweep progress 3/4
+ 3 files changed, 86 insertions(+)
+ create mode 100644 tmp/bench_llama3_8b_v7x_balanced_4k_baseline_full_4k/9c69e347b79d/meta.txt
+ create mode 100644 tmp/bench_llama3_8b_v7x_balanced_4k_baseline_full_4k/9c69e347b79d/metrics.txt
+To github.com:yarongmu-google/tpu-inference.git
+   1acbd4fa21..2a4b4dfef4  rpa3 -> rpa3
+case_file=/home/ymu_google_com/tpu-inference/tools/benchmark/cases/llama3_8b_v7x_balanced_4k.env
+case_name=llama3_8b_v7x_balanced_4k
+model=meta-llama/Meta-Llama-3-8B-Instruct
+max_num_seqs=1000
+max_num_batched_tokens=10275
+tensor_parallel_size=1
+max_model_len=4096
+dataset=sonnet
+input_len=2048
+output_len=2048
+num_prompts=1000
+request_rate=inf
+block_size=128
+long_prefill_token_threshold=0
+rpa_d_block_sizes=1,4096,1,1024
+rpa_p_block_sizes=default
+rpa_m_block_sizes=64,512,64,256
+git_commit=2a4b4dfef49718e08d59f75ef67837ced47a0d5b
+git_branch=rpa3
+timestamp=20260505_083931
+----
+Results: /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_balanced_4k_baseline_full_4k/1f04bbd2a065
+Starting vllm server (log: /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_balanced_4k_baseline_full_4k/1f04bbd2a065/vllm.log) ...
+Waiting up to 20 min for server startup ...
+  ready after 130s
+Running benchmark (stdout: /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_balanced_4k_baseline_full_4k/1f04bbd2a065/bench.log, stderr: /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_balanced_4k_baseline_full_4k/1f04bbd2a065/bench.log.stderr) ...
+==== Summary ====
+Request throughput (req/s):              1.71      
+Output token throughput (tok/s):         3492.00   
+Mean TTFT (ms):                          220529.06 
+Median TTFT (ms):                        240869.08 
+P99 TTFT (ms):                           479011.54 
+Mean TPOT (ms):                          64.06     
+Median TPOT (ms):                        55.97     
+P99 TPOT (ms):                           106.07    
+Mean ITL (ms):                           64.06     
+Median ITL (ms):                         44.24     
+P99 ITL (ms):                            382.19    
+Mean E2EL (ms):                          351656.03 
+Median E2EL (ms):                        355873.00 
+P99 E2EL (ms):                           585154.07 
+====
+Saved metrics to /home/ymu_google_com/tpu-inference/tmp/bench_llama3_8b_v7x_balanced_4k_baseline_full_4k/1f04bbd2a065/metrics.txt
+[4/4] 1f04bbd2a065 completed_fresh (722.5s)  tmp/bench_llama3_8b_v7x_balanced_4k_baseline_full_4k/1f04bbd2a065
