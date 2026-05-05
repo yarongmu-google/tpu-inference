@@ -91,7 +91,7 @@ mkdir -p tmp/log
 
     # Extract the #1 ranked result and append to the production artifact, logging the output
     {
-        python3 tools/benchmark/build_service_registry.py "$SWEEP_DIR" --export-production "$PROD_FILE"
+        python3 -m tools.benchmark.build_service_registry "$SWEEP_DIR" --export-production "$PROD_FILE"
     } 2>&1 | tee "$SERVICE_LOG"
     
     # Commit the script log independently 
