@@ -29,7 +29,7 @@ import re
 import unittest
 from pathlib import Path
 
-from tools.benchmark import compare
+from tools.benchmark import extract_best_service as compare
 
 
 # Meta-writer pattern: an `echo "<key>=...` form, where <key> is a

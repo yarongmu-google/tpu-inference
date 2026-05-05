@@ -295,7 +295,68 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="Comma-separated column keys to display. Each key is "
                         "'<section>.<field>' (section in {meta, metrics}) or "
                         "'combo_id' / 'result_dir'. Defaults to a sensible set.")
+    p.add_argument("--export-production", default=None,
+                   help="Path to export the absolute best configuration as a .service JSON file "
+                        "(e.g., tools/benchmark/cases/v7x/llama3_8b/production.service). "
+                        "If the file exists, it will accumulate the new workload shape.")
     return p
+
+
+def export_production_service(best_result: dict[str, Any], output_path: str | os.PathLike) -> None:
+    """Export the best combo into an accumulated production .service JSON."""
+    import json
+    
+    out_path = Path(output_path)
+    data = {}
+    if out_path.is_file():
+        try:
+            with open(out_path) as f:
+                data = json.load(f)
+        except Exception:
+            pass
+
+    meta = best_result.get("meta", {})
+    metrics = best_result.get("metrics", {})
+
+    model = meta.get("model", "unknown")
+    tp = meta.get("tensor_parallel_size", "1")
+    input_len = meta.get("input_len", "unknown")
+    output_len = meta.get("output_len", "unknown")
+    
+    workload_key = f"{input_len}_in_{output_len}_out"
+
+    if "model" not in data:
+        data["model"] = model
+    if "tensor_parallel_size" not in data:
+        data["tensor_parallel_size"] = tp
+    if "best_configs_by_workload" not in data:
+        data["best_configs_by_workload"] = {}
+
+    entry = {
+        "MAX_NUM_SEQS": meta.get("max_num_seqs"),
+        "MAX_NUM_BATCHED_TOKENS": meta.get("max_num_batched_tokens"),
+        "BLOCK_SIZE": meta.get("block_size"),
+        "LONG_PREFILL_TOKEN_THRESHOLD": meta.get("long_prefill_token_threshold"),
+        "RPA_P_BLOCK_SIZES": meta.get("rpa_p_block_sizes"),
+        "RPA_D_BLOCK_SIZES": meta.get("rpa_d_block_sizes"),
+        "RPA_M_BLOCK_SIZES": meta.get("rpa_m_block_sizes"),
+        "metrics": metrics
+    }
+
+    # Only overwrite if new throughput is better
+    existing = data["best_configs_by_workload"].get(workload_key)
+    if existing:
+        old_tp = _to_float(existing.get("metrics", {}).get(DEFAULT_METRIC)) or 0.0
+        new_tp = _to_float(metrics.get(DEFAULT_METRIC)) or 0.0
+        if new_tp > old_tp:
+            data["best_configs_by_workload"][workload_key] = entry
+    else:
+        data["best_configs_by_workload"][workload_key] = entry
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, "w") as f:
+        json.dump(data, f, indent=2)
+    print(f"\nExported absolute best configuration to: {out_path}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -317,6 +378,10 @@ def main(argv: list[str] | None = None) -> int:
         results_to_print = rank_by(results, args.metric, descending=descending)
 
     print(format_markdown_table(results_to_print, columns))
+
+    if args.export_production and results_to_print:
+        export_production_service(results_to_print[0], args.export_production)
+
     return 0
 
 
