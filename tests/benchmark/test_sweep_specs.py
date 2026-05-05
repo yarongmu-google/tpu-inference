@@ -97,66 +97,34 @@ class TestSmokeSpecs(unittest.TestCase):
         # test_sweep_auto_link.
         spec = self._load("llama3_8b_v7x_optimized_full.service")
         # Skip if the registry is missing (e.g. this is a fresh checkout
-        # before the first tune) — the structural enumeration still
-        # works, but auto-link injection requires the registry.
+        # before the first tune).
         if "_loaded_kernel_registry" not in spec:
             self.skipTest(
                 "kernel_registry not loaded — run tools/run_pipeline.sh "
                 "or the kernel tuner first to produce production.kernel")
+        # enumerate_combos raises SpecError if any spec K is missing
+        # from the registry (since b1c8d4f4 / silent-skip fix). So a
+        # successful call here means the registry covers every K in
+        # the spec — which is exactly the precondition for firing the
+        # full sweep without wasting TPU on un-tuned defaults.
         combos = sweep.enumerate_combos(spec)
         self.assertEqual(len(combos), 15,
                          "optimized_full should produce 15 combos "
                          "(3 MAX_NUM_BATCHED_TOKENS x 5 K values)")
         ks = {c["LONG_PREFILL_TOKEN_THRESHOLD"] for c in combos}
         self.assertEqual(ks, {"128", "256", "512", "1024", "2048"})
-
-        # Format check helper: a valid block-size value is four
-        # comma-separated positive integers ("bq,bkv,bq_csz,bkv_csz").
-        def assert_block_sizes_valid(value, key):
-            parts = value.split(",")
-            self.assertEqual(len(parts), 4, f"{key}={value}")
-            for p in parts:
-                self.assertTrue(p.isdigit(), f"{key}={value}")
-
-        # Auto-link should populate D + M blocks on every combo (no K
-        # dependence). If these are missing, the registry is broken for
-        # this workload — don't waste TPU cycles on a sweep that will
-        # rely on un-tuned MIXED defaults that we know OOM.
+        # Auto-link populated D, M, and P blocks on every combo. Format
+        # is "bq,bkv,bq_csz,bkv_csz" — four comma-separated positive
+        # ints. Don't pin specific values; just verify the auto-link
+        # fired for all three flavors.
         for c in combos:
-            for key in ("RPA_D_BLOCK_SIZES", "RPA_M_BLOCK_SIZES"):
-                self.assertIn(
-                    key, c,
-                    f"auto-link did not populate {key} — production.kernel "
-                    f"is missing the {key.split('_')[1].lower()} entry")
-                assert_block_sizes_valid(c[key], key)
-
-        # PREFILL block sizes are K-keyed. If the registry is missing
-        # an entry for a K in the spec, the auto-link silently skips
-        # that combo and the kernel falls back to a possibly-OOM
-        # default. Surface this as a hard failure so the registry is
-        # populated BEFORE running the sweep, rather than discovering
-        # mid-run that some combos crash.
-        registry = spec.get("_loaded_kernel_registry", {})
-        prefill_ks_in_registry = {
-            entry["tuning_key"].get("chunk_prefill_size")
-            for entry in registry.get("results", {}).get("prefill", [])
-            if entry["tuning_key"].get("page_size") == 128
-        }
-        spec_ks = {int(c["LONG_PREFILL_TOKEN_THRESHOLD"]) for c in combos}
-        missing_ks = spec_ks - prefill_ks_in_registry
-        self.assertFalse(
-            missing_ks,
-            f"production.kernel missing PREFILL entries for K={sorted(missing_ks)} "
-            f"at page_size=128. Auto-link will silently skip RPA_P_BLOCK_SIZES "
-            f"for these combos; running the sweep would burn TPU on un-tuned "
-            f"PREFILL defaults. Re-run kernel tuning to populate them.")
-
-        for c in combos:
-            self.assertIn("RPA_P_BLOCK_SIZES", c,
-                          f"K={c['LONG_PREFILL_TOKEN_THRESHOLD']}: "
-                          f"missing RPA_P_BLOCK_SIZES after auto-link")
-            assert_block_sizes_valid(c["RPA_P_BLOCK_SIZES"],
-                                     "RPA_P_BLOCK_SIZES")
+            for key in ("RPA_D_BLOCK_SIZES", "RPA_M_BLOCK_SIZES",
+                        "RPA_P_BLOCK_SIZES"):
+                self.assertIn(key, c)
+                parts = c[key].split(",")
+                self.assertEqual(len(parts), 4, f"{key}={c[key]}")
+                for p in parts:
+                    self.assertTrue(p.isdigit(), f"{key}={c[key]}")
 
     def test_baseline_full_4k_parses_and_enumerates(self):
         # 4 combos: 2 MAX_NUM_SEQS x 2 MAX_NUM_BATCHED_TOKENS, no

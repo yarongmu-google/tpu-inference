@@ -93,3 +93,70 @@ class TestSweepAutoLink(unittest.TestCase):
             
         with self.assertRaisesRegex(SpecError, "kernel_registry does not exist"):
             load_spec(spec_file)
+
+    def test_missing_prefill_entry_for_swept_K_raises(self):
+        # Registry has only K in {512, 1024} for PREFILL (per setUp). Spec
+        # sweeps K=2048 — no entry. Auto-link must raise rather than
+        # silently leave RPA_P_BLOCK_SIZES unset and let the kernel fall
+        # back to (often-OOM) defaults.
+        spec_file = self.tmp_path / "test.service"
+        spec_data = {
+            "sweep_name": "test",
+            "case_file": "test.workload",
+            "kernel_registry": "test.kernel",
+            "fixed": {"BLOCK_SIZE": 128},
+            "sweep_axes": {"LONG_PREFILL_TOKEN_THRESHOLD": [2048]},
+        }
+        with open(spec_file, "w") as f:
+            json.dump(spec_data, f)
+
+        spec = load_spec(spec_file)
+        with self.assertRaisesRegex(SpecError,
+                                    r"no PREFILL entry at .*K=2048"):
+            enumerate_combos(spec)
+
+    def test_missing_decode_entry_at_page_size_raises(self):
+        # Registry has DECODE/MIXED/PREFILL only at page_size=128. Spec
+        # uses BLOCK_SIZE=64 — no decode entry there. Hard fail.
+        spec_file = self.tmp_path / "test.service"
+        spec_data = {
+            "sweep_name": "test",
+            "case_file": "test.workload",
+            "kernel_registry": "test.kernel",
+            "fixed": {"BLOCK_SIZE": 64},
+            "sweep_axes": {"LONG_PREFILL_TOKEN_THRESHOLD": [0]},
+        }
+        with open(spec_file, "w") as f:
+            json.dump(spec_data, f)
+
+        spec = load_spec(spec_file)
+        with self.assertRaisesRegex(SpecError,
+                                    r"no DECODE entry at page_size=64"):
+            enumerate_combos(spec)
+
+    def test_user_provided_block_sizes_skip_registry_check(self):
+        # User-pinned RPA_*_BLOCK_SIZES in fixed should bypass the
+        # registry lookup entirely — registry can be missing the
+        # corresponding entry and enumeration still succeeds. This is
+        # the explicit-override path.
+        spec_file = self.tmp_path / "test.service"
+        spec_data = {
+            "sweep_name": "test",
+            "case_file": "test.workload",
+            "kernel_registry": "test.kernel",
+            "fixed": {
+                "BLOCK_SIZE": 64,  # registry has no page=64 entries
+                "RPA_D_BLOCK_SIZES": "1,2048,1,256",
+                "RPA_M_BLOCK_SIZES": "32,1024,32,128",
+            },
+            "sweep_axes": {"LONG_PREFILL_TOKEN_THRESHOLD": [0]},
+        }
+        with open(spec_file, "w") as f:
+            json.dump(spec_data, f)
+
+        spec = load_spec(spec_file)
+        combos = enumerate_combos(spec)
+        # Should NOT raise; user override wins.
+        self.assertEqual(len(combos), 1)
+        self.assertEqual(combos[0]["RPA_D_BLOCK_SIZES"], "1,2048,1,256")
+        self.assertEqual(combos[0]["RPA_M_BLOCK_SIZES"], "32,1024,32,128")

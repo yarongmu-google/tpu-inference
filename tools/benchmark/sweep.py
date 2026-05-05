@@ -246,11 +246,11 @@ def enumerate_combos(spec: dict[str, Any]) -> list[dict[str, str]]:
             if "_loaded_kernel_registry" in spec:
                 registry = spec["_loaded_kernel_registry"]
                 results = registry.get("results", {})
-                
+
                 # Default to 128 if not strictly in combo, to match common TPU v7x pages.
                 page_size = int(combo.get("BLOCK_SIZE", "128"))
                 k = int(combo.get("LONG_PREFILL_TOKEN_THRESHOLD", "0"))
-                
+
                 def find_best(case_name, target_k, target_page_size):
                     if case_name not in results: return None
                     for entry in results[case_name]:
@@ -264,21 +264,48 @@ def enumerate_combos(spec: dict[str, Any]) -> list[dict[str, str]]:
                     return None
 
                 def fmt(p):
-                    if not p: return None
                     return f"{p['bq_sz']},{p['bkv_sz']},{p['bq_csz']},{p['bkv_csz']}"
 
-                d_params = find_best("decode", 0, page_size)
-                if d_params and "RPA_D_BLOCK_SIZES" not in combo:
+                # For each block-size key the kernel needs, either:
+                #   - the user provided it manually in fixed/coupled (we
+                #     respect that override), OR
+                #   - the registry must have a winner for the matching
+                #     (case, page_size, K).
+                # If neither is true, the kernel would silently fall back
+                # to compiled defaults at run time — which we already know
+                # OOM on v7x for MIXED at MAX_NUM_BATCHED_TOKENS=2048.
+                # Raise here so the misconfiguration is caught at spec-
+                # load time, before any TPU cycles are spent.
+                if "RPA_D_BLOCK_SIZES" not in combo:
+                    d_params = find_best("decode", 0, page_size)
+                    if d_params is None:
+                        raise SpecError(
+                            f"kernel_registry has no DECODE entry at "
+                            f"page_size={page_size}. Either populate the "
+                            f"registry by re-running kernel tuning, or set "
+                            f"RPA_D_BLOCK_SIZES manually in the spec.")
                     combo["RPA_D_BLOCK_SIZES"] = fmt(d_params)
 
-                m_params = find_best("mixed", 0, page_size)
-                if m_params and "RPA_M_BLOCK_SIZES" not in combo:
+                if "RPA_M_BLOCK_SIZES" not in combo:
+                    m_params = find_best("mixed", 0, page_size)
+                    if m_params is None:
+                        raise SpecError(
+                            f"kernel_registry has no MIXED entry at "
+                            f"page_size={page_size}. Either populate the "
+                            f"registry by re-running kernel tuning, or set "
+                            f"RPA_M_BLOCK_SIZES manually in the spec.")
                     combo["RPA_M_BLOCK_SIZES"] = fmt(m_params)
 
-                if k > 0:
+                if k > 0 and "RPA_P_BLOCK_SIZES" not in combo:
                     p_params = find_best("prefill", k, page_size)
-                    if p_params and "RPA_P_BLOCK_SIZES" not in combo:
-                        combo["RPA_P_BLOCK_SIZES"] = fmt(p_params)
+                    if p_params is None:
+                        raise SpecError(
+                            f"kernel_registry has no PREFILL entry at "
+                            f"(page_size={page_size}, K={k}). Either "
+                            f"re-run kernel tuning to populate this K, "
+                            f"or set RPA_P_BLOCK_SIZES manually for this "
+                            f"combo.")
+                    combo["RPA_P_BLOCK_SIZES"] = fmt(p_params)
 
             combos.append(combo)
     return combos
