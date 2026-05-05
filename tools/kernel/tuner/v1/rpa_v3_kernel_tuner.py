@@ -15,6 +15,7 @@
 import dataclasses
 import itertools
 import logging
+import os
 import time
 
 import jax
@@ -196,8 +197,22 @@ class RpaV3KernelTuner(KernelTunerBase):
         self.head_dim = [128]
         self.sliding_window = [None]
 
-        # Cases to tune. Start with PREFILL only; widen later.
-        self.cases = [CASE_PREFILL]
+        # Cases to tune. Default is PREFILL only (the original target);
+        # the env var RPA_V3_TUNER_CASES overrides — comma-separated subset of
+        # {"decode","prefill","mixed"}. Lets a wrapper script tune one case
+        # per python invocation without code edits, and matches the local-DB
+        # convention of "one case_set_id per case".
+        cases_env = os.getenv("RPA_V3_TUNER_CASES")
+        if cases_env:
+            self.cases = [c.strip() for c in cases_env.split(",") if c.strip()]
+            valid = {CASE_DECODE, CASE_PREFILL, CASE_MIXED}
+            unknown = [c for c in self.cases if c not in valid]
+            if unknown:
+                raise ValueError(
+                    f"RPA_V3_TUNER_CASES contains unknown case(s) {unknown}; "
+                    f"valid: {sorted(valid)}")
+        else:
+            self.cases = [CASE_PREFILL]
 
         # Tunable block-size sweep, anchored at the kernel's v7 default for
         # this model (bq_sz=512, bkv_sz=2048, bq_csz=256, bkv_csz=512 — see
