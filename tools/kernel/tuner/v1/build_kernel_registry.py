@@ -32,18 +32,34 @@ def main():
         print(f"Runlog not found: {runlog}", file=sys.stderr)
         sys.exit(1)
 
-    # Prefer the JSON sidecar manifest produced by tune_all_cases.sh —
+    # Prefer the JSONL sidecar manifest produced by tune_all_cases.sh —
     # the runlogs prose is intended for humans and could change without
     # notice. The manifest is the machine-readable source of truth:
-    # tmp/log/tune_all_<label>.manifest.json with entries
-    # [{"case": "...", "case_set_id": "...", "db_path": "..."}, ...].
-    # Fall back to runlog regex if the manifest is absent (legacy runs).
-    manifest_path = runlog.replace(".txt", ".manifest.json")
+    # tmp/log/tune_all_<label>.manifest.jsonl with one JSON object per
+    # line: {"case": "...", "case_set_id": "...", "db_path": "..."}.
+    # Fall back to legacy .json (single array) and then to runlog regex.
+    manifest_jsonl = runlog.replace(".txt", ".manifest.jsonl")
+    manifest_json = runlog.replace(".txt", ".manifest.json")
     phases = []  # list of (case, case_set_id, db_path) tuples
-    if os.path.isfile(manifest_path):
-        print(f"Reading manifest: {manifest_path}")
+    if os.path.isfile(manifest_jsonl):
+        print(f"Reading manifest: {manifest_jsonl}")
         try:
-            with open(manifest_path) as f:
+            with open(manifest_jsonl) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    entry = json.loads(line)
+                    phases.append(
+                        (entry["case"], entry["case_set_id"], entry["db_path"]))
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            print(f"WARN: jsonl manifest unreadable ({e}); trying legacy json.",
+                  file=sys.stderr)
+            phases = []
+    if not phases and os.path.isfile(manifest_json):
+        print(f"Reading legacy manifest: {manifest_json}")
+        try:
+            with open(manifest_json) as f:
                 manifest = json.load(f)
             for entry in manifest:
                 phases.append(

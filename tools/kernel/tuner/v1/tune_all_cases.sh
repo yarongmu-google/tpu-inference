@@ -93,11 +93,16 @@ echo "Runlog: $RUNLOG"
 # "Database initialized at ...") is intended for humans and could change
 # without notice. The manifest is the source of truth.
 #
+# Format: JSONL (one JSON object per line). Append-only writes via `>>`
+# are atomic for short payloads on POSIX, so concurrent invocations
+# with the same LABEL would interleave entries cleanly rather than
+# racing a read-modify-write on a single JSON array.
+#
 # Path mirrors the runlog basename so consumers can derive one from the
-# other. Overwritten per-run (matches the ephemeral-log convention).
-MANIFEST="tmp/log/tune_all_${LABEL}.manifest.json"
+# other. The .jsonl extension makes the format self-documenting.
+# Truncated per-run (matches the ephemeral-log convention).
+MANIFEST="tmp/log/tune_all_${LABEL}.manifest.jsonl"
 : > "$MANIFEST"
-echo "[]" > "$MANIFEST"
 
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 
@@ -135,9 +140,16 @@ export PYTHONUNBUFFERED=1
 # commits wouldn't actually capture per-case progress.
 for CASE in decode prefill mixed; do
     CASE_SET_ID="${LABEL}_${CASE}_${DATE}"
+    # Authoritative DB path: bash decides where the runner writes,
+    # rather than the runner generating a timestamped path that bash
+    # then has to discover via `ls -td` (which races under concurrent
+    # invocations). CASE_SET_ID is unique per (label, case, date), so
+    # this is collision-free even with parallel runs.
+    DB_PATH="/tmp/kernel_tuner_run_${CASE_SET_ID}"
     {
         echo ""
         echo "===== $(date '+%F %T') Tuning $CASE (case_set_id=$CASE_SET_ID) ====="
+        echo "DB path: $DB_PATH"
         START_S=$(date +%s)
 
         # RPA_V3_TUNER_CASES set per-case here intentionally — overrides
@@ -149,45 +161,41 @@ for CASE in decode prefill mixed; do
             --kernel_tuner_name=rpa_v3_kernel_tuner \
             --run_locally=true \
             --case_set_id="$CASE_SET_ID" \
-            --case_set_desc="$LABEL $CASE kernel tune $(date +%F)"
+            --case_set_desc="$LABEL $CASE kernel tune $(date +%F)" \
+            --db_path="$DB_PATH"
 
         DUR=$(( $(date +%s) - START_S ))
         echo "===== $(date '+%F %T') $CASE done in ${DUR}s ====="
     } 2>&1 | tee -a "$RUNLOG"
 
     # Append (case, case_set_id, db_path) to the sidecar manifest.
-    # LocalDbManager creates a fresh /tmp/kernel_tuner_run_<timestamp>/
-    # per python invocation, so the latest mtime under that prefix is
-    # the DB this case just wrote. Captured AFTER the tee so the file
-    # exists; build_kernel_registry.py reads this manifest in
-    # preference to runlog regex.
-    DB_PATH=$(ls -td /tmp/kernel_tuner_run_* 2>/dev/null | head -1)
+    # DB_PATH was decided above and passed to the runner via --db_path,
+    # so this is the path the runner just wrote — no discovery needed.
+    # JSONL append: race-safe under concurrent runs.
     python3 -c "
 import json, sys
-path = sys.argv[1]
 entry = {'case': sys.argv[2], 'case_set_id': sys.argv[3], 'db_path': sys.argv[4]}
-with open(path) as f:
-    data = json.load(f)
-data.append(entry)
-with open(path, 'w') as f:
-    json.dump(data, f, indent=2)
+with open(sys.argv[1], 'a') as f:
+    f.write(json.dumps(entry) + '\n')
 " "$MANIFEST" "$CASE" "$CASE_SET_ID" "$DB_PATH"
 
     commit_progress "$CASE done ($LABEL $DATE)"
 done
 
-# Final summary (also committed).
+# Final summary (also committed). Inspector commands now reference each
+# cases own DB path (one per case_set_id), matching how the runner
+# was invoked above. Previously this used a single `ls -td` heuristic
+# DB_PATH for all three cases, which was wrong as soon as we adopted
+# per-case DB paths.
 {
     echo ""
     echo "===== $(date '+%F %T') ALL CASES DONE ====="
     echo ""
-    DB_PATH=$(ls -td /tmp/kernel_tuner_run_* 2>/dev/null | head -1)
-    echo "Local DB: $DB_PATH"
-    echo ""
     echo "Inspector commands to extract winners (run on the same TPU VM):"
     for CASE in decode prefill mixed; do
+        CASE_DB="/tmp/kernel_tuner_run_${LABEL}_${CASE}_${DATE}"
         echo "  python3 -m tools.kernel.tuner.v1.inspect_result_cli \\"
-        echo "      --source=local --db-path=$DB_PATH \\"
+        echo "      --source=local --db-path=$CASE_DB \\"
         echo "      query_min_latency \\"
         echo "      --case_set_id=${LABEL}_${CASE}_${DATE} --run_id=0"
     done

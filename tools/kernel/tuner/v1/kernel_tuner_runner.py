@@ -71,6 +71,17 @@ _TPU_VERSION = flags.DEFINE_string(
     'tpu_version', '',
     'The TPU version to use for tuning. Supported values are "tpu6e" and "tpu7x".'
 )
+# Authoritative DB path. When set, LocalDbManager uses this exact
+# directory instead of generating a fresh /tmp/kernel_tuner_run_<ts>/
+# at construction time. Lets the orchestrator (tune_all_cases.sh)
+# pre-compute the path per case so the sidecar manifest can record
+# it deterministically — no more `ls -td /tmp/kernel_tuner_run_*`
+# heuristic, which races under concurrent invocations.
+# Only used when --run_locally=true.
+_DB_PATH = flags.DEFINE_string(
+    'db_path', '',
+    'Local DB directory path (overrides the timestamped default). '
+    'Only used when --run_locally=true.')
 
 # Note: For simplicity, we are directly referencing the kernel tuner class
 # here. In the future, we can consider a more flexible plugin-based system
@@ -107,7 +118,8 @@ def main(argv):
 
     # Initialize storage manager
     if _RUN_LOCALLY.value:
-        storage_manager = LocalDbManager()
+        storage_manager = LocalDbManager(
+            db_path=_DB_PATH.value or None)
     else:
         # Lazy import: google-cloud-spanner is only needed for cloud runs.
         from tools.kernel.tuner.v1.storage_management.spanner_database_manager import \
