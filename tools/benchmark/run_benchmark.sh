@@ -152,13 +152,17 @@ if [ "$DATASET" = "sonnet" ]; then
     # tokens from this file. The file needs >= INPUT_LEN tokens or
     # bench errors out. Single sonnet.txt is ~1000 tokens, so 16x
     # gives ~16000 tokens — comfortably above any INPUT_LEN we plan
-    # to test (smoke uses 1024-1800, full uses up to 4096). Variable
-    # name kept as SONNET_4X for compatibility with downstream consumers
-    # that grep meta.txt; the literal repeat count just changed.
-    SONNET_4X="$RESULT_DIR/sonnet_4x.txt"
-    : > "$SONNET_4X"
-    for _ in $(seq 1 16); do
-        cat "$VLLM_DIR/benchmarks/sonnet.txt" >> "$SONNET_4X"
+    # to test today.
+    #
+    # File is named "sonnet_4x.txt" for backwards-compat with the
+    # gitignore pattern `tmp/bench_*/*/sonnet_4x.txt`. Variable
+    # renamed from the old SONNET_4X to SONNET_INPUT_FILE so the
+    # name no longer lies about the repeat count.
+    SONNET_REPEATS=16
+    SONNET_INPUT_FILE="$RESULT_DIR/sonnet_4x.txt"
+    : > "$SONNET_INPUT_FILE"
+    for _ in $(seq 1 "$SONNET_REPEATS"); do
+        cat "$VLLM_DIR/benchmarks/sonnet.txt" >> "$SONNET_INPUT_FILE"
     done
 fi
 
@@ -264,7 +268,7 @@ BM_ARGS=(
 case "$DATASET" in
     sonnet)
         BM_ARGS+=(
-            --dataset-path "$SONNET_4X"
+            --dataset-path "$SONNET_INPUT_FILE"
             --sonnet-input-len  "$INPUT_LEN"
             --sonnet-output-len "$OUTPUT_LEN"
         ) ;;

@@ -94,6 +94,10 @@ for CASE in decode prefill mixed; do
         echo "===== $(date '+%F %T') Tuning $CASE (case_set_id=$CASE_SET_ID) ====="
         START_S=$(date +%s)
 
+        # RPA_V3_TUNER_CASES set per-case here intentionally — overrides
+        # any caller-provided value so this loop drives the case order.
+        # If a caller wants to tune a single case, invoke kernel_tuner_runner
+        # directly (this loop assumes it owns RPA_V3_TUNER_CASES).
         RPA_V3_TUNER_CASES="$CASE" python3 \
             -m tools.kernel.tuner.v1.kernel_tuner_runner \
             --kernel_tuner_name=rpa_v3_kernel_tuner \

@@ -108,8 +108,11 @@ def synthesize_service_spec(
 
     workload_path = str(Path(workload_path).resolve())
     workload_dir = os.path.dirname(workload_path)
-    workload_basename = os.path.basename(workload_path).replace(
-        ".workload", "")
+    # Use removesuffix (3.9+) rather than .replace(".workload", "") —
+    # the latter strips embedded occurrences too (e.g. a workload named
+    # `my.workload.workload` would round-trip to `my`).
+    workload_basename = os.path.basename(workload_path).removesuffix(
+        ".workload")
 
     # sweep_name is the SECOND component of the bench result dir
     # template (run_benchmark.sh: tmp/bench_${CASE_NAME}_${TAG}, where
