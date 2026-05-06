@@ -44,6 +44,23 @@ if [ ! -f "$WORKLOAD" ]; then
     exit 1
 fi
 
+# Workload files are bash-sourced (`set -a; source "$WORKLOAD"`) by
+# run_benchmark.sh and tune_all_cases.sh — so the contents execute as
+# bash. To prevent accidental arbitrary-code execution from a typo
+# (e.g., passing /tmp/something.sh by mistake), require WORKLOAD to
+# resolve under tools/benchmark/cases/. Repo-controlled workload files
+# are still trusted; this just blocks paths outside the expected tree.
+WORKLOAD_ABS=$(cd "$(dirname "$WORKLOAD")" && pwd -P)/$(basename "$WORKLOAD")
+CASES_ROOT_ABS=$(cd "tools/benchmark/cases" && pwd -P)
+case "$WORKLOAD_ABS" in
+    "$CASES_ROOT_ABS"/*) ;;
+    *)
+        echo "Error: workload must live under tools/benchmark/cases/ (sourced as bash)." >&2
+        echo "Got: $WORKLOAD_ABS" >&2
+        exit 1
+        ;;
+esac
+
 KERNEL_ID="${KERNEL_ID:-rpa_v3}"
 SERVICE_ID="${SERVICE_ID:-vllm}"
 
@@ -75,29 +92,44 @@ PIPELINE_LOG="tmp/log/pipeline_${WORKLOAD_BASENAME}.txt"
 SERVICE_LOG="tmp/log/script_build_service_registry_${SWEEP_NAME}.txt"
 
 # Guarantee logs and the production.service artifact are committed
-# even if a python script crashes (set -e). production.service is the
-# whole point of the pipeline; without committing it, a remote reader
-# only sees the kernel registry + log breadcrumbs and has to re-run
-# locally to reconstruct the winner.
+# even if a python script crashes (set -e) — but commit ONLY the
+# specific paths we own. Two correctness rules in this trap:
+#
+# 1. `git commit -- <path>` (path-restricted commit) is used instead
+#    of "stage then commit". The "git add then git commit" form would
+#    fold any pre-existing staged files (from the user's manual `git
+#    add` outside the script) into our auto-commit. The path-
+#    restricted form commits only what was added for that path,
+#    leaving the user's pre-staged work intact.
+#
+# 2. Auto-push is opt-in via PIPELINE_AUTOPUSH=1 (default off). The
+#    trap fires on Ctrl-C and `set -e` aborts; pushing partial logs
+#    to a shared branch on every interrupt is too aggressive. The
+#    full run (which actually wants the push) sets this explicitly.
+_should_autopush() {
+    [ "${PIPELINE_AUTOPUSH:-0}" = "1" ]
+}
+
+_commit_path_only() {
+    local path="$1"
+    local message="$2"
+    [ -f "$path" ] || return 0
+    git add -f -- "$path" 2>/dev/null || return 0
+    if ! git diff --cached --quiet -- "$path"; then
+        git commit -m "$message" -- "$path" || true
+    fi
+}
+
 commit_logs() {
-    if [ -f "$SERVICE_LOG" ]; then
-        git add -f "$SERVICE_LOG"
-        if ! git diff --cached --quiet; then
-            git commit -m "[Logs] Update build_service_registry script log for $SWEEP_NAME" || true
-        fi
-    fi
-    if [ -f "$PROD_SERVICE" ]; then
-        git add -f "$PROD_SERVICE"
-        if ! git diff --cached --quiet; then
-            git commit -m "[Pipeline] Update production.service for $WORKLOAD_BASENAME" || true
-        fi
-    fi
-    if [ -f "$PIPELINE_LOG" ]; then
-        git add -f "$PIPELINE_LOG"
-        if ! git diff --cached --quiet; then
-            git commit -m "[Pipeline] Update master orchestrator runlog for $WORKLOAD_BASENAME" || true
-            git push origin "$(git rev-parse --abbrev-ref HEAD)" || true
-        fi
+    _commit_path_only "$SERVICE_LOG" \
+        "[Logs] Update build_service_registry script log for $SWEEP_NAME"
+    _commit_path_only "$PROD_SERVICE" \
+        "[Pipeline] Update production.service for $WORKLOAD_BASENAME"
+    _commit_path_only "$PIPELINE_LOG" \
+        "[Pipeline] Update master orchestrator runlog for $WORKLOAD_BASENAME"
+    if _should_autopush; then
+        git push origin "$(git rev-parse --abbrev-ref HEAD)" || \
+            echo "WARN: PIPELINE_AUTOPUSH=1 but push failed" >&2
     fi
 }
 trap commit_logs EXIT
