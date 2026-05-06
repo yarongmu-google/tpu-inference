@@ -192,15 +192,19 @@ clean_up() {
     if [ -z "${VLLM_PID:-}" ]; then
         return 0
     fi
-    # Belt-and-suspenders: TERM the whole process group AND the leader by
-    # PID. In the happy path (`set -m` took effect), the group signal does
-    # the work and the per-PID signal is a no-op (parent already dead). In
-    # the silent-no-op path (set -m didn't take, e.g. some container
-    # runtimes), the group signal is ESRCH and the per-PID signal is what
-    # actually kills the parent — degrading cleanly to pre-process-group
-    # behavior (workers may orphan, but parent reliably dies).
-    kill -- -"$VLLM_PID" 2>/dev/null || true
-    kill    "$VLLM_PID" 2>/dev/null || true
+    # Belt-and-suspenders: TERM the whole process group (if we have a
+    # safe PGID) AND the leader by PID. In the happy path (`set -m`
+    # took effect, VLLM_PGID is non-empty and != $$), the group signal
+    # does the work and the per-PID signal is a no-op (parent already
+    # dead). In the silent-no-op path (set -m didnt take, VLLM_PGID
+    # cleared to empty above), only the per-PID signal fires —
+    # degrading cleanly to pre-process-group behavior (workers may
+    # orphan, but parent reliably dies, and crucially we do NOT
+    # signal this scripts own process group by mistake).
+    if [ -n "${VLLM_PGID:-}" ]; then
+        kill -- -"$VLLM_PGID" 2>/dev/null || true
+    fi
+    kill "$VLLM_PID" 2>/dev/null || true
     # Wait up to 5 s for the tree to wind down. The parent's `wait()`
     # for its workers means leader-exit lags worker-exit, so this
     # really is "tree quiesces" not "leader gone".
@@ -209,8 +213,10 @@ clean_up() {
         sleep 1
     done
     # KILL — same belt-and-suspenders pair.
-    kill -9 -- -"$VLLM_PID" 2>/dev/null || true
-    kill -9    "$VLLM_PID" 2>/dev/null || true
+    if [ -n "${VLLM_PGID:-}" ]; then
+        kill -9 -- -"$VLLM_PGID" 2>/dev/null || true
+    fi
+    kill -9 "$VLLM_PID" 2>/dev/null || true
 }
 trap clean_up EXIT
 
@@ -218,39 +224,55 @@ echo "Starting vllm server (log: $VLLM_LOG) ..."
 # `set -m` (job control) puts the next backgrounded command into its
 # own process group; `$!` is then both PID and PGID of the new group.
 # In constrained environments (some container runtimes without /dev/tty)
-# `set -m` may emit stderr noise or be silently no-op. The 2>/dev/null
-# suppresses the noise; the silent-no-op path degrades cleanup back to
-# the pre-process-group behavior (orphan workers possible) — same as
-# what we had before, no regression. Re-disabled immediately so the
-# rest of the script's behavior is unchanged.
+# `set -m` may emit stderr noise or be silently no-op.
 set -m 2>/dev/null || true
 VLLM_USE_V1=1 vllm serve "$MODEL" "${SERVE_ARGS[@]}" > "$VLLM_LOG" 2>&1 &
 VLLM_PID=$!
 set +m 2>/dev/null || true
+
+# Capture the actual process-group ID via ps. If `set -m` took effect
+# this is the same as $VLLM_PID (parent is its own PGID); if `set -m`
+# was a silent no-op the captured PGID is the bash shells own group,
+# and the cleanup `kill -- -$VLLM_PGID` would signal the wrong group
+# (potentially this script itself). Capture VLLM_PGID empty in that
+# case so the cleanup falls back to the per-PID kill only.
+VLLM_PGID=$(ps -o pgid= -p "$VLLM_PID" 2>/dev/null | tr -d ' ' || true)
+if [ -n "$VLLM_PGID" ] && [ "$VLLM_PGID" = "$$" ]; then
+    # PGID matches THIS shells group — `set -m` was a no-op. Clear so
+    # the cleanup does not signal ourselves.
+    VLLM_PGID=""
+fi
 
 # Readiness probe: scrape vllm's log for the FastAPI startup-complete
 # string. NOT a /health HTTP poll — that would be more robust but
 # requires port plumbing and a curl dependency. If vllm changes this
 # log message in a future version, this loop silently times out;
 # upgrade to a /health probe is the natural follow-up.
+#
+# Timeout in SECONDS (default 1200 = 20 minutes). Override via
+# READINESS_TIMEOUT_SECONDS in the env. The default suits Llama 3 8B
+# on v7x; bigger models or first-time JIT compiles may need more.
 SERVER_READY_MARKER="Application startup complete"
-echo "Waiting up to 20 min for server startup ..."
+: "${READINESS_TIMEOUT_SECONDS:=1200}"
+READINESS_POLL_INTERVAL_S=10
+READINESS_MAX_ITERS=$(( READINESS_TIMEOUT_SECONDS / READINESS_POLL_INTERVAL_S ))
+echo "Waiting up to ${READINESS_TIMEOUT_SECONDS}s for server startup ..."
 SERVER_READY=0
-for i in $(seq 1 120); do
+for i in $(seq 1 "$READINESS_MAX_ITERS"); do
     if ! kill -0 "$VLLM_PID" 2>/dev/null; then
         echo "ERROR: vllm exited early. tail of $VLLM_LOG:" >&2
         tail -40 "$VLLM_LOG" >&2
         exit 1
     fi
     if grep -Fq "$SERVER_READY_MARKER" "$VLLM_LOG"; then
-        echo "  ready after $((i * 10))s"
+        echo "  ready after $((i * READINESS_POLL_INTERVAL_S))s"
         SERVER_READY=1
         break
     fi
-    sleep 10
+    sleep "$READINESS_POLL_INTERVAL_S"
 done
 if [ "$SERVER_READY" -ne 1 ]; then
-    echo "ERROR: vllm did not become ready within 20 min" \
+    echo "ERROR: vllm did not become ready within ${READINESS_TIMEOUT_SECONDS}s" \
          "(no '$SERVER_READY_MARKER' in $VLLM_LOG)" >&2
     tail -40 "$VLLM_LOG" >&2
     exit 1

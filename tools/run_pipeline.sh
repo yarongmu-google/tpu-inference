@@ -64,6 +64,19 @@ esac
 KERNEL_ID="${KERNEL_ID:-rpa_v3}"
 SERVICE_ID="${SERVICE_ID:-vllm}"
 
+# Pre-flight: every sub-script the orchestrator invokes must exist and
+# be executable, otherwise we get an opaque "command not found" or
+# permission error mid-pipeline. Fail fast with an actionable message.
+for script in \
+    "tools/kernel/tuner/v1/tune_all_cases.sh" \
+    "tools/kernel/tuner/v1/build_kernel_registry.sh" \
+    "tools/benchmark/sweep.sh"; do
+    if [ ! -x "$script" ]; then
+        echo "Error: sub-script not executable: $script" >&2
+        exit 1
+    fi
+done
+
 export SMOKE_TEST=$SMOKE
 
 WORKLOAD_BASENAME=$(basename "$WORKLOAD" .workload)
