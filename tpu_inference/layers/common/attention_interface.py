@@ -59,23 +59,14 @@ get_kv_cache_shape = rpa.get_kv_cache_shape
 ragged_paged_attention_hd64 = rpa_hd64.ragged_paged_attention_hd64
 get_kv_cache_shape_hd64 = rpa_hd64.get_kv_cache_shape
 
-# Static (Python int) chunk prefill size, set by the runner from
-# vllm_config.scheduler_config.long_prefill_token_threshold during init.
-# When None, ragged_paged_attention skips its PREFILL pass and behaves as
-# today (decode-only + mixed). When set to K > 0, sequences in the
-# request_distribution[0]:request_distribution[1] range are routed to
-# the static-q-len PREFILL path with q_len == K. Captured at first
-# JIT trace, so changing it after model_fn is traced has no effect.
-_chunk_prefill_size: int | None = None
-
-
-def set_chunk_prefill_size(value: int | None) -> None:
-    """Set the global chunk prefill size used by attention(). Call once
-    from runner init before any model_fn tracing.
-    """
-    global _chunk_prefill_size
-    _chunk_prefill_size = value
-    logger.info_once(f"Set chunk_prefill_size={_chunk_prefill_size}")
+# NOTE: previously this module exported `_chunk_prefill_size` /
+# `set_chunk_prefill_size` so the runner could set a global that
+# attention() read at JIT-trace time. Removed in favour of threading
+# the value through AttentionMetadata.chunk_prefill_size — a setter
+# that mutates module state the attention layer captures at first
+# trace is a footgun: re-setting after trace silently no-ops, and
+# nothing in the type system prevents that misuse. The metadata-
+# threaded form is captured per-trace as a meta_field.
 
 
 def sharded_flash_attention(
@@ -358,6 +349,7 @@ def sharded_ragged_paged_attention(
     q_scale: float | None = None,
     k_scale: float | None = None,
     v_scale: float | None = None,
+    chunk_prefill_size: int | None = None,
 ):
     """Shards along KV heads."""
     # Handle GQA/MQA where num_kv_heads < tp_size
@@ -406,9 +398,6 @@ def sharded_ragged_paged_attention(
 
         in_specs += (P(ShardingAxisName.ATTN_HEAD), )
         args += (attention_sink, )
-
-    # Read once at trace time so it's a Python int captured statically by jit.
-    chunk_prefill_size = _chunk_prefill_size
 
     def _ragged_paged_attention(*args):
         kwargs = dict(
@@ -488,6 +477,11 @@ def attention(
         q_scale=q_scale,
         k_scale=k_scale,
         v_scale=v_scale,
+        # chunk_prefill_size threaded through AttentionMetadata as a
+        # meta_field so JIT captures it as a static Python int at
+        # trace time (per-trace, not per-step — same as before, but
+        # without the module-global mutation footgun).
+        chunk_prefill_size=md.chunk_prefill_size,
     )
 
     return kv_cache, output

@@ -229,6 +229,7 @@ class CompilationManager:
                 query_start_loc=query_start_loc,
                 request_distribution=request_distribution,
                 mamba_state_indices=mamba_state_indices,
+                chunk_prefill_size=self.runner.chunk_prefill_size,
             )
             return attention_metadata_gid
 
@@ -847,6 +848,7 @@ class CompilationManager:
                 query_start_loc=query_start_loc,
                 request_distribution=request_distribution,
                 mamba_state_indices=eagle3_mamba_state_indices,
+                chunk_prefill_size=self.runner.chunk_prefill_size,
             )
 
             def filter_token_and_prepare_initial_inputs_wrapper(

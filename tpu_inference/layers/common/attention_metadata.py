@@ -29,7 +29,16 @@ import jax
         "request_distribution",
         "mamba_state_indices",
     ],
-    meta_fields=[],
+    meta_fields=[
+        # Static Python int (or None) — captured into the JIT trace as
+        # a constant. Plumbed through to ragged_paged_attention to
+        # control whether the kernel runs its static-q-len PREFILL
+        # pass. Previously a module-global in attention_interface.py;
+        # threading it here lets the runner set it per-step on the
+        # metadata and avoids the JIT-trace-capture footgun of a
+        # mutable module global.
+        "chunk_prefill_size",
+    ],
     drop_fields=["query_start_loc_cpu", "seq_lens_cpu"],
 )
 @dataclass
@@ -53,6 +62,11 @@ class AttentionMetadata(object):
     # None for models without mamba layers; pure-mamba models would also
     # use this field, only hybrid models exercise it today.
     mamba_state_indices: jax.Array | None = None
+    # Static (Python int) — when None, ragged_paged_attention skips its
+    # PREFILL pass (decode-only + mixed). When set to K > 0, sequences
+    # in the request_distribution[0]:request_distribution[1] slice are
+    # routed to the static-q-len PREFILL path with q_len == K.
+    chunk_prefill_size: int | None = None
 
     query_start_loc_cpu: Any = field(init=False)
     seq_lens_cpu: Any = field(init=False)

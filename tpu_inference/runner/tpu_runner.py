@@ -357,7 +357,9 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
         # bucketing and skip the PREFILL pass.
         cp_threshold = self.scheduler_config.long_prefill_token_threshold
         self.chunk_prefill_size = cp_threshold if cp_threshold > 0 else None
-        attention_interface.set_chunk_prefill_size(self.chunk_prefill_size)
+        # chunk_prefill_size now flows via AttentionMetadata.chunk_prefill_size
+        # (set on every metadata constructed in build_attn) — no module-
+        # global setter to call.
 
         self.persistent_batch_manager = PersistentBatchManager(
             self.requests, self.input_batch, self.encoder_cache,
@@ -1706,6 +1708,7 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
                 query_start_loc=query_start_loc,
                 request_distribution=request_distribution,
                 mamba_state_indices=mamba_state_indices,
+                chunk_prefill_size=self.chunk_prefill_size,
             )
 
             # This is for making these cpu buffers hidden during tracing
@@ -1994,6 +1997,7 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
                 query_start_loc=query_start_loc,
                 request_distribution=request_distribution,
                 mamba_state_indices=mamba_state_indices,
+                chunk_prefill_size=self.chunk_prefill_size,
             )
             # This is for making these cpu buffers hidden during tracing
             attention_metadata_gid.query_start_loc_cpu = query_start_loc_view
