@@ -143,6 +143,8 @@ _commit_path_only() {
 }
 
 commit_logs() {
+    _commit_path_only "$PROD_KERNEL" \
+        "[Kernel-Tune] Update production.kernel for $WORKLOAD_BASENAME"
     _commit_path_only "$SERVICE_LOG" \
         "[Logs] Update build_service_registry script log for $SWEEP_NAME"
     _commit_path_only "$PROD_SERVICE" \
@@ -178,6 +180,9 @@ echo ""
     echo ""
     echo "=== Layer 1: Building Kernel Registry ==="
     RUNLOG="tmp/log/tune_all_${WORKLOAD_BASENAME}.txt"
+    # build_kernel_registry.sh is pure now (no git). The orchestrators
+    # commit_logs trap stages the produced .kernel file alongside
+    # production.service and the pipeline log.
     tools/kernel/tuner/v1/build_kernel_registry.sh "$RUNLOG" "$PROD_KERNEL"
     echo "Kernel Registry updated at $PROD_KERNEL."
 
