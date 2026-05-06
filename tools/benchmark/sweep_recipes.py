@@ -73,10 +73,14 @@ RECIPES: dict[tuple[str, str], dict[str, Any]] = {
             "MAX_NUM_BATCHED_TOKENS":       [2048, 4096, 8192, 10275],
             # MAX_NUM_SEQS values:
             #   128 — bm-infra v6e/v7x default; the floor.
+            #   256 — middle rung; useful at long-context (32K+) where
+            #          per-request KV is large enough that 1000 is not
+            #          actually reachable but 128 leaves throughput on
+            #          the table.
             #   1000 — saturate concurrency on v7xs HBM-backed capacity;
             #          vllm auto-caps the actual concurrency to whatever
             #          fits, so 1000 is "use as much as you can".
-            "MAX_NUM_SEQS":                 [128, 1000],
+            "MAX_NUM_SEQS":                 [128, 256, 1000],
             # K=0 folds the baseline (chunk-prefill OFF) into the same
             # sweep — the highest-throughput row wins regardless of K.
             # Powers-of-two from 128 up to MAX_MODEL_LEN cover the K
