@@ -63,14 +63,24 @@ RECIPES: dict[tuple[str, str], dict[str, Any]] = {
             # vllm scheduler knobs (orthogonal to kernel; swept end-to-end).
             #
             # MAX_NUM_BATCHED_TOKENS values:
-            #   2048 — minimum that fits one full single-prompt prefill
-            #          for the prefill_heavy workload (8K input, K=2048).
-            #   4096, 8192 — power-of-two steps for headroom/throughput
-            #          scaling.
-            #   10275 — bm-infras (QC repo) v7x default for the standard
-            #          sonnet 1024/1024 workload; included for apples-to-
-            #          apples comparison against their dashboards.
-            "MAX_NUM_BATCHED_TOKENS":       [2048, 4096, 8192, 10275],
+            #   8192  — floor; was the throughput peak in the 8B
+            #           prefill_heavy sweep, and is the smallest value
+            #           large enough to hold one chunk at the largest
+            #           K we sweep (K=2048) plus headroom. Below 8192
+            #           the sweep was uninformative at 8B (4.71-4.79
+            #           req/s across [2048, 4096, 8192]).
+            #   16384 — 2x scaling.
+            #   32768 — fits one full 32K-context prefill in one
+            #           scheduler step (relevant for the 70B workload).
+            #   65536 — 2x past a single full request; gives the
+            #           scheduler room to pack chunks from multiple
+            #           requests in one step at long context.
+            #
+            # Removed: 2048, 4096 (uninformative at 8B); 10275 (an
+            # 8B-TP1 artifact that collapsed throughput from 4.79 to
+            # 3.39 req/s — likely a kernel-tile-shape mismatch at the
+            # non-power-of-2 dimension; see commit log).
+            "MAX_NUM_BATCHED_TOKENS":       [8192, 16384, 32768, 65536],
             # MAX_NUM_SEQS values:
             #   128 — bm-infra v6e/v7x default; the floor.
             #   256 — middle rung; useful at long-context (32K+) where
