@@ -30,6 +30,23 @@ if [ -z "$CASE_FILE" ] || [ ! -f "$CASE_FILE" ]; then
     exit 1
 fi
 
+# Workload-path guard — duplicated from run_pipeline.sh because this
+# script can be invoked directly (not just via the orchestrator).
+# Without it, `set -a; source "$CASE_FILE"` below would execute
+# arbitrary bash from any path the user passes. Use python3
+# os.path.realpath so SYMLINKS are resolved (a symlink under cases/
+# pointing to /tmp/evil.sh would otherwise slip through).
+CASE_FILE_REAL=$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$CASE_FILE")
+CASES_ROOT_REAL=$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "tools/benchmark/cases")
+case "$CASE_FILE_REAL" in
+    "$CASES_ROOT_REAL"/*) ;;
+    *)
+        echo "Error: workload (after symlink resolution) must live under tools/benchmark/cases/ (sourced as bash)." >&2
+        echo "Got: $CASE_FILE_REAL" >&2
+        exit 1
+        ;;
+esac
+
 # Extract filename without extension for default label
 DEFAULT_LABEL=$(basename "$CASE_FILE" .workload)
 LABEL="${2:-$DEFAULT_LABEL}"

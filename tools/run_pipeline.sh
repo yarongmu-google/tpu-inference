@@ -50,13 +50,22 @@ fi
 # (e.g., passing /tmp/something.sh by mistake), require WORKLOAD to
 # resolve under tools/benchmark/cases/. Repo-controlled workload files
 # are still trusted; this just blocks paths outside the expected tree.
-WORKLOAD_ABS=$(cd "$(dirname "$WORKLOAD")" && pwd -P)/$(basename "$WORKLOAD")
-CASES_ROOT_ABS=$(cd "tools/benchmark/cases" && pwd -P)
-case "$WORKLOAD_ABS" in
-    "$CASES_ROOT_ABS"/*) ;;
+#
+# Use python3 os.path.realpath instead of `cd && pwd -P` so the FILE
+# itself is symlink-resolved, not just its parent directory. Without
+# this, a symlink like cases/v7x/foo.workload -> /tmp/evil.sh would
+# pass the prefix check (cases/v7x/foo.workload looks under cases/)
+# but `source` would execute the symlink target.
+#
+# tune_all_cases.sh has its own copy of this guard (for the case where
+# its invoked directly, not via the orchestrator).
+WORKLOAD_REAL=$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$WORKLOAD")
+CASES_ROOT_REAL=$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "tools/benchmark/cases")
+case "$WORKLOAD_REAL" in
+    "$CASES_ROOT_REAL"/*) ;;
     *)
-        echo "Error: workload must live under tools/benchmark/cases/ (sourced as bash)." >&2
-        echo "Got: $WORKLOAD_ABS" >&2
+        echo "Error: workload (after symlink resolution) must live under tools/benchmark/cases/ (sourced as bash)." >&2
+        echo "Got: $WORKLOAD_REAL" >&2
         exit 1
         ;;
 esac
