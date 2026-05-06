@@ -1,1 +1,6 @@
 [1/48] dac00b05e6bf skipped_resumed (—)  tmp/bench_prefill_heavy_rpa_v3_vllm/dac00b05e6bf
+[rpa3 7da1b88cf0] [Bench] Auto-commit sweep progress 1/48
+ 1 file changed, 1 insertion(+), 46 deletions(-)
+To github.com:yarongmu-google/tpu-inference.git
+   f9276556f8..7da1b88cf0  rpa3 -> rpa3
+[2/48] df6000c654ef skipped_resumed (—)  tmp/bench_prefill_heavy_rpa_v3_vllm/df6000c654ef
