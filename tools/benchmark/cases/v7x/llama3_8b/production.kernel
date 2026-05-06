@@ -1,7 +1,7 @@
 {
   "metadata": {
     "last_updated_from_runlog": "tmp/log/tune_all_prefill_heavy.txt",
-    "last_updated_at": "2026-05-05T17:41:46.175716"
+    "last_updated_at": "2026-05-06T05:00:50.157394"
   },
   "results": {
     "decode": [
@@ -27,6 +27,52 @@
         "Latency": 1593,
         "WarmupTime": 1059762,
         "CaseId": 0
+      },
+      {
+        "tuning_key": {
+          "page_size": 256,
+          "q_dtype": "bfloat16",
+          "kv_dtype": "bfloat16",
+          "num_q_heads": 32,
+          "num_kv_heads": 8,
+          "head_dim": 128,
+          "max_model_len": 8192,
+          "sliding_window": null,
+          "case": "decode",
+          "chunk_prefill_size": 0
+        },
+        "tunable_params": {
+          "bq_sz": 1,
+          "bkv_sz": 4096,
+          "bq_csz": 1,
+          "bkv_csz": 2048
+        },
+        "Latency": 791,
+        "WarmupTime": 1158610,
+        "CaseId": 29
+      },
+      {
+        "tuning_key": {
+          "page_size": 64,
+          "q_dtype": "bfloat16",
+          "kv_dtype": "bfloat16",
+          "num_q_heads": 32,
+          "num_kv_heads": 8,
+          "head_dim": 128,
+          "max_model_len": 8192,
+          "sliding_window": null,
+          "case": "decode",
+          "chunk_prefill_size": 0
+        },
+        "tunable_params": {
+          "bq_sz": 1,
+          "bkv_sz": 4096,
+          "bq_csz": 1,
+          "bkv_csz": 2048
+        },
+        "Latency": 798,
+        "WarmupTime": 1617102,
+        "CaseId": 16
       }
     ],
     "mixed": [
@@ -52,6 +98,52 @@
         "Latency": 1199,
         "WarmupTime": 1619230,
         "CaseId": 0
+      },
+      {
+        "tuning_key": {
+          "page_size": 256,
+          "q_dtype": "bfloat16",
+          "kv_dtype": "bfloat16",
+          "num_q_heads": 32,
+          "num_kv_heads": 8,
+          "head_dim": 128,
+          "max_model_len": 8192,
+          "sliding_window": null,
+          "case": "mixed",
+          "chunk_prefill_size": 0
+        },
+        "tunable_params": {
+          "bq_sz": 256,
+          "bkv_sz": 2048,
+          "bq_csz": 128,
+          "bkv_csz": 256
+        },
+        "Latency": 1113,
+        "WarmupTime": 2207219,
+        "CaseId": 336
+      },
+      {
+        "tuning_key": {
+          "page_size": 64,
+          "q_dtype": "bfloat16",
+          "kv_dtype": "bfloat16",
+          "num_q_heads": 32,
+          "num_kv_heads": 8,
+          "head_dim": 128,
+          "max_model_len": 8192,
+          "sliding_window": null,
+          "case": "mixed",
+          "chunk_prefill_size": 0
+        },
+        "tunable_params": {
+          "bq_sz": 256,
+          "bkv_sz": 1024,
+          "bq_csz": 128,
+          "bkv_csz": 256
+        },
+        "Latency": 1230,
+        "WarmupTime": 2197627,
+        "CaseId": 123
       }
     ],
     "prefill": [
@@ -77,6 +169,466 @@
         "Latency": 5889,
         "WarmupTime": 1900753,
         "CaseId": 0
+      },
+      {
+        "tuning_key": {
+          "page_size": 128,
+          "q_dtype": "bfloat16",
+          "kv_dtype": "bfloat16",
+          "num_q_heads": 32,
+          "num_kv_heads": 8,
+          "head_dim": 128,
+          "max_model_len": 8192,
+          "sliding_window": null,
+          "case": "prefill",
+          "chunk_prefill_size": 1024
+        },
+        "tunable_params": {
+          "bq_sz": 256,
+          "bkv_sz": 1024,
+          "bq_csz": 256,
+          "bkv_csz": 512
+        },
+        "Latency": 4831,
+        "WarmupTime": 3054754,
+        "CaseId": 2192
+      },
+      {
+        "tuning_key": {
+          "page_size": 256,
+          "q_dtype": "bfloat16",
+          "kv_dtype": "bfloat16",
+          "num_q_heads": 32,
+          "num_kv_heads": 8,
+          "head_dim": 128,
+          "max_model_len": 8192,
+          "sliding_window": null,
+          "case": "prefill",
+          "chunk_prefill_size": 1024
+        },
+        "tunable_params": {
+          "bq_sz": 256,
+          "bkv_sz": 2048,
+          "bq_csz": 256,
+          "bkv_csz": 512
+        },
+        "Latency": 4829,
+        "WarmupTime": 3184695,
+        "CaseId": 3488
+      },
+      {
+        "tuning_key": {
+          "page_size": 64,
+          "q_dtype": "bfloat16",
+          "kv_dtype": "bfloat16",
+          "num_q_heads": 32,
+          "num_kv_heads": 8,
+          "head_dim": 128,
+          "max_model_len": 8192,
+          "sliding_window": null,
+          "case": "prefill",
+          "chunk_prefill_size": 1024
+        },
+        "tunable_params": {
+          "bq_sz": 256,
+          "bkv_sz": 2048,
+          "bq_csz": 256,
+          "bkv_csz": 512
+        },
+        "Latency": 4853,
+        "WarmupTime": 3147842,
+        "CaseId": 986
+      },
+      {
+        "tuning_key": {
+          "page_size": 256,
+          "q_dtype": "bfloat16",
+          "kv_dtype": "bfloat16",
+          "num_q_heads": 32,
+          "num_kv_heads": 8,
+          "head_dim": 128,
+          "max_model_len": 8192,
+          "sliding_window": null,
+          "case": "prefill",
+          "chunk_prefill_size": 128
+        },
+        "tunable_params": {
+          "bq_sz": 128,
+          "bkv_sz": 2048,
+          "bq_csz": 128,
+          "bkv_csz": 2048
+        },
+        "Latency": 5175,
+        "WarmupTime": 4969959,
+        "CaseId": 3197
+      },
+      {
+        "tuning_key": {
+          "page_size": 64,
+          "q_dtype": "bfloat16",
+          "kv_dtype": "bfloat16",
+          "num_q_heads": 32,
+          "num_kv_heads": 8,
+          "head_dim": 128,
+          "max_model_len": 8192,
+          "sliding_window": null,
+          "case": "prefill",
+          "chunk_prefill_size": 128
+        },
+        "tunable_params": {
+          "bq_sz": 128,
+          "bkv_sz": 2048,
+          "bq_csz": 128,
+          "bkv_csz": 2048
+        },
+        "Latency": 5224,
+        "WarmupTime": 13473929,
+        "CaseId": 602
+      },
+      {
+        "tuning_key": {
+          "page_size": 128,
+          "q_dtype": "bfloat16",
+          "kv_dtype": "bfloat16",
+          "num_q_heads": 32,
+          "num_kv_heads": 8,
+          "head_dim": 128,
+          "max_model_len": 8192,
+          "sliding_window": null,
+          "case": "prefill",
+          "chunk_prefill_size": 2048
+        },
+        "tunable_params": {
+          "bq_sz": 256,
+          "bkv_sz": 2048,
+          "bq_csz": 256,
+          "bkv_csz": 512
+        },
+        "Latency": 4550,
+        "WarmupTime": 3189355,
+        "CaseId": 2307
+      },
+      {
+        "tuning_key": {
+          "page_size": 256,
+          "q_dtype": "bfloat16",
+          "kv_dtype": "bfloat16",
+          "num_q_heads": 32,
+          "num_kv_heads": 8,
+          "head_dim": 128,
+          "max_model_len": 8192,
+          "sliding_window": null,
+          "case": "prefill",
+          "chunk_prefill_size": 2048
+        },
+        "tunable_params": {
+          "bq_sz": 256,
+          "bkv_sz": 1024,
+          "bq_csz": 256,
+          "bkv_csz": 512
+        },
+        "Latency": 4558,
+        "WarmupTime": 3067219,
+        "CaseId": 3399
+      },
+      {
+        "tuning_key": {
+          "page_size": 64,
+          "q_dtype": "bfloat16",
+          "kv_dtype": "bfloat16",
+          "num_q_heads": 32,
+          "num_kv_heads": 8,
+          "head_dim": 128,
+          "max_model_len": 8192,
+          "sliding_window": null,
+          "case": "prefill",
+          "chunk_prefill_size": 2048
+        },
+        "tunable_params": {
+          "bq_sz": 256,
+          "bkv_sz": 2048,
+          "bq_csz": 256,
+          "bkv_csz": 512
+        },
+        "Latency": 4570,
+        "WarmupTime": 3140080,
+        "CaseId": 987
+      },
+      {
+        "tuning_key": {
+          "page_size": 128,
+          "q_dtype": "bfloat16",
+          "kv_dtype": "bfloat16",
+          "num_q_heads": 32,
+          "num_kv_heads": 8,
+          "head_dim": 128,
+          "max_model_len": 8192,
+          "sliding_window": null,
+          "case": "prefill",
+          "chunk_prefill_size": 256
+        },
+        "tunable_params": {
+          "bq_sz": 256,
+          "bkv_sz": 2048,
+          "bq_csz": 256,
+          "bkv_csz": 512
+        },
+        "Latency": 4961,
+        "WarmupTime": 3180489,
+        "CaseId": 2304
+      },
+      {
+        "tuning_key": {
+          "page_size": 256,
+          "q_dtype": "bfloat16",
+          "kv_dtype": "bfloat16",
+          "num_q_heads": 32,
+          "num_kv_heads": 8,
+          "head_dim": 128,
+          "max_model_len": 8192,
+          "sliding_window": null,
+          "case": "prefill",
+          "chunk_prefill_size": 256
+        },
+        "tunable_params": {
+          "bq_sz": 256,
+          "bkv_sz": 2048,
+          "bq_csz": 256,
+          "bkv_csz": 512
+        },
+        "Latency": 4961,
+        "WarmupTime": 3196878,
+        "CaseId": 3486
+      },
+      {
+        "tuning_key": {
+          "page_size": 64,
+          "q_dtype": "bfloat16",
+          "kv_dtype": "bfloat16",
+          "num_q_heads": 32,
+          "num_kv_heads": 8,
+          "head_dim": 128,
+          "max_model_len": 8192,
+          "sliding_window": null,
+          "case": "prefill",
+          "chunk_prefill_size": 256
+        },
+        "tunable_params": {
+          "bq_sz": 256,
+          "bkv_sz": 1024,
+          "bq_csz": 256,
+          "bkv_csz": 1024
+        },
+        "Latency": 4970,
+        "WarmupTime": 4905146,
+        "CaseId": 876
+      },
+      {
+        "tuning_key": {
+          "page_size": 128,
+          "q_dtype": "bfloat16",
+          "kv_dtype": "bfloat16",
+          "num_q_heads": 32,
+          "num_kv_heads": 8,
+          "head_dim": 128,
+          "max_model_len": 8192,
+          "sliding_window": null,
+          "case": "prefill",
+          "chunk_prefill_size": 4096
+        },
+        "tunable_params": {
+          "bq_sz": 256,
+          "bkv_sz": 2048,
+          "bq_csz": 256,
+          "bkv_csz": 512
+        },
+        "Latency": 3298,
+        "WarmupTime": 3138829,
+        "CaseId": 2308
+      },
+      {
+        "tuning_key": {
+          "page_size": 256,
+          "q_dtype": "bfloat16",
+          "kv_dtype": "bfloat16",
+          "num_q_heads": 32,
+          "num_kv_heads": 8,
+          "head_dim": 128,
+          "max_model_len": 8192,
+          "sliding_window": null,
+          "case": "prefill",
+          "chunk_prefill_size": 4096
+        },
+        "tunable_params": {
+          "bq_sz": 256,
+          "bkv_sz": 2048,
+          "bq_csz": 256,
+          "bkv_csz": 512
+        },
+        "Latency": 3274,
+        "WarmupTime": 3184492,
+        "CaseId": 3490
+      },
+      {
+        "tuning_key": {
+          "page_size": 64,
+          "q_dtype": "bfloat16",
+          "kv_dtype": "bfloat16",
+          "num_q_heads": 32,
+          "num_kv_heads": 8,
+          "head_dim": 128,
+          "max_model_len": 8192,
+          "sliding_window": null,
+          "case": "prefill",
+          "chunk_prefill_size": 4096
+        },
+        "tunable_params": {
+          "bq_sz": 256,
+          "bkv_sz": 1024,
+          "bq_csz": 256,
+          "bkv_csz": 512
+        },
+        "Latency": 3309,
+        "WarmupTime": 3093130,
+        "CaseId": 874
+      },
+      {
+        "tuning_key": {
+          "page_size": 128,
+          "q_dtype": "bfloat16",
+          "kv_dtype": "bfloat16",
+          "num_q_heads": 32,
+          "num_kv_heads": 8,
+          "head_dim": 128,
+          "max_model_len": 8192,
+          "sliding_window": null,
+          "case": "prefill",
+          "chunk_prefill_size": 512
+        },
+        "tunable_params": {
+          "bq_sz": 256,
+          "bkv_sz": 1024,
+          "bq_csz": 256,
+          "bkv_csz": 1024
+        },
+        "Latency": 4970,
+        "WarmupTime": 4918686,
+        "CaseId": 2197
+      },
+      {
+        "tuning_key": {
+          "page_size": 256,
+          "q_dtype": "bfloat16",
+          "kv_dtype": "bfloat16",
+          "num_q_heads": 32,
+          "num_kv_heads": 8,
+          "head_dim": 128,
+          "max_model_len": 8192,
+          "sliding_window": null,
+          "case": "prefill",
+          "chunk_prefill_size": 512
+        },
+        "tunable_params": {
+          "bq_sz": 256,
+          "bkv_sz": 1024,
+          "bq_csz": 256,
+          "bkv_csz": 1024
+        },
+        "Latency": 4962,
+        "WarmupTime": 4978747,
+        "CaseId": 3403
+      },
+      {
+        "tuning_key": {
+          "page_size": 64,
+          "q_dtype": "bfloat16",
+          "kv_dtype": "bfloat16",
+          "num_q_heads": 32,
+          "num_kv_heads": 8,
+          "head_dim": 128,
+          "max_model_len": 8192,
+          "sliding_window": null,
+          "case": "prefill",
+          "chunk_prefill_size": 512
+        },
+        "tunable_params": {
+          "bq_sz": 256,
+          "bkv_sz": 2048,
+          "bq_csz": 256,
+          "bkv_csz": 512
+        },
+        "Latency": 4975,
+        "WarmupTime": 3249346,
+        "CaseId": 985
+      },
+      {
+        "tuning_key": {
+          "page_size": 128,
+          "q_dtype": "bfloat16",
+          "kv_dtype": "bfloat16",
+          "num_q_heads": 32,
+          "num_kv_heads": 8,
+          "head_dim": 128,
+          "max_model_len": 8192,
+          "sliding_window": null,
+          "case": "prefill",
+          "chunk_prefill_size": 8192
+        },
+        "tunable_params": {
+          "bq_sz": 256,
+          "bkv_sz": 1024,
+          "bq_csz": 256,
+          "bkv_csz": 512
+        },
+        "Latency": 2395,
+        "WarmupTime": 3081703,
+        "CaseId": 2195
+      },
+      {
+        "tuning_key": {
+          "page_size": 256,
+          "q_dtype": "bfloat16",
+          "kv_dtype": "bfloat16",
+          "num_q_heads": 32,
+          "num_kv_heads": 8,
+          "head_dim": 128,
+          "max_model_len": 8192,
+          "sliding_window": null,
+          "case": "prefill",
+          "chunk_prefill_size": 8192
+        },
+        "tunable_params": {
+          "bq_sz": 256,
+          "bkv_sz": 1024,
+          "bq_csz": 256,
+          "bkv_csz": 512
+        },
+        "Latency": 2400,
+        "WarmupTime": 3161445,
+        "CaseId": 3401
+      },
+      {
+        "tuning_key": {
+          "page_size": 64,
+          "q_dtype": "bfloat16",
+          "kv_dtype": "bfloat16",
+          "num_q_heads": 32,
+          "num_kv_heads": 8,
+          "head_dim": 128,
+          "max_model_len": 8192,
+          "sliding_window": null,
+          "case": "prefill",
+          "chunk_prefill_size": 8192
+        },
+        "tunable_params": {
+          "bq_sz": 256,
+          "bkv_sz": 1024,
+          "bq_csz": 256,
+          "bkv_csz": 512
+        },
+        "Latency": 2410,
+        "WarmupTime": 3110194,
+        "CaseId": 875
       }
     ]
   }
