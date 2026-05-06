@@ -172,7 +172,22 @@ CASE_FILE_ABS="$CASE_DIR_ABS/$(basename "$CASE_FILE")"
     # vllm HEAD at run time. is_completed in sweep.py uses this AND
     # git_commit above to invalidate cached combos when either side
     # of the served stack changes (vllm scheduler / runner / kernel).
-    echo "vllm_commit=$( (cd \"$VLLM_DIR\" 2>/dev/null && git rev-parse HEAD 2>/dev/null) || echo unknown)"
+    #
+    # Guard explicitly against unset/empty/non-existent VLLM_DIR:
+    # without this, an empty VLLM_DIR could let `git rev-parse` run
+    # in cwd (this repo, tpu_inference) and silently mis-record the
+    # tpu_inference HEAD as vllm_commit — corrupting the meta cache
+    # key. Use `git -C` so the path is explicit, no cd needed.
+    # `.git` may be a directory (normal clone) or a file (worktree),
+    # so use `-e`. Without this, a path like /tmp/foo (exists but not
+    # a repo) would pass `-d` but `git -C` would fail loudly into
+    # `unknown` — fine, but the explicit `-e .git` is a clearer intent.
+    if [ -n "${VLLM_DIR:-}" ] && [ -e "$VLLM_DIR/.git" ]; then
+        VLLM_COMMIT_VAL=$(git -C "$VLLM_DIR" rev-parse HEAD 2>/dev/null || echo unknown)
+    else
+        VLLM_COMMIT_VAL=unknown
+    fi
+    echo "vllm_commit=$VLLM_COMMIT_VAL"
     echo "timestamp=$TS"
 } | tee "$META_FILE"
 echo "----"

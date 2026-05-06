@@ -213,6 +213,22 @@ class RpaV3KernelTuner(KernelTunerBase):
         # code the kernel transitively depends on) changes. Per the
         # users storage policy we do NOT garbage-collect older-commit
         # entries; the registry just grows with code history.
+        #
+        # Asymmetry note (intentional): the sweep-side cache key
+        # (sweep.py is_completed) mixes BOTH tpu_inference and vllm
+        # commit SHAs, because the served stack depends on both. The
+        # kernel cache key here mixes ONLY tpu_inference, because the
+        # tuned artefact is a JAX kernel function — it does not
+        # transitively depend on any vllm code. A vllm bump should not
+        # invalidate kernel winners; it should only invalidate sweep
+        # results. If that assumption ever changes (e.g. the kernel
+        # interface starts importing from vllm), add vllm SHA here.
+        #
+        # SKIP_COMMIT_CACHE_CHECK=1 escape hatch: ignore code_revision
+        # when checking idempotency. Mirrors sweep.pys behaviour. Useful
+        # for re-using winners from prior commits when iterating on
+        # non-kernel code (docs, sweep recipes, runlogs) without paying
+        # a 3-4 hour re-tune.
         try:
             self.code_revision = subprocess.run(
                 ["git", "rev-parse", "--short=12", "HEAD"],
@@ -225,6 +241,13 @@ class RpaV3KernelTuner(KernelTunerBase):
                 "Could not determine tpu_inference HEAD commit; "
                 "TuningKey.code_revision will be empty (cache invalidation "
                 "across commits will not work). Are we outside a git checkout?")
+        self._skip_commit_cache_check = (
+            os.environ.get("SKIP_COMMIT_CACHE_CHECK", "0") == "1")
+        if self._skip_commit_cache_check:
+            logger.warning(
+                "SKIP_COMMIT_CACHE_CHECK=1: code_revision will be ignored "
+                "when checking idempotency; entries from older commits will "
+                "be reused.")
 
         # ---- Idempotency: Load existing registry to skip tuned cases ----
         #
@@ -258,6 +281,9 @@ class RpaV3KernelTuner(KernelTunerBase):
                         # and silently make EVERY un-keyed combo a no-op.
                         if not tk_dict:
                             continue
+                        if self._skip_commit_cache_check:
+                            tk_dict = {k: v for k, v in tk_dict.items()
+                                       if k != "code_revision"}
                         tk_hash = json.dumps(tk_dict, sort_keys=True)
                         self.completed_tuning_keys.add(tk_hash)
                 logger.info(f"Loaded {len(self.completed_tuning_keys)} completed TuningKeys from {registry_path}")
@@ -432,6 +458,9 @@ class RpaV3KernelTuner(KernelTunerBase):
 
                 # Skip if we already successfully tuned this exact environment shape
                 tk_dict = dataclasses.asdict(tuning_key)
+                if self._skip_commit_cache_check:
+                    tk_dict = {k: v for k, v in tk_dict.items()
+                               if k != "code_revision"}
                 tk_hash = json.dumps(tk_dict, sort_keys=True)
                 if tk_hash in self.completed_tuning_keys:
                     continue
