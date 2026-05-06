@@ -367,6 +367,13 @@ class Eagle3Proposer:
             query_start_loc=query_start_loc,
             request_distribution=attn_metadata.request_distribution,
             mamba_state_indices=attn_metadata.mamba_state_indices,
+            # Forward chunk_prefill_size from the source metadata.
+            # Otherwise this rebuild defaults to None and produces a
+            # different JIT trace key from compilation_managers warmup
+            # (which primes the eagle3 cache with chunk_prefill_size=K).
+            # Result without forwarding: warmup compile is discarded
+            # and the first real eagle3 step pays a fresh compile.
+            chunk_prefill_size=attn_metadata.chunk_prefill_size,
         )
 
         target_hidden_states, input_ids, last_token_indices = self._prepare_hidden_states_and_input_ids(
