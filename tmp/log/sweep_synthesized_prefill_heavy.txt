@@ -19,3 +19,8 @@ To github.com:yarongmu-google/tpu-inference.git
 To github.com:yarongmu-google/tpu-inference.git
    af29d27074..b80ecb4d6b  rpa3 -> rpa3
 [5/48] 906f8b277739 skipped_resumed (—)  tmp/bench_prefill_heavy_rpa_v3_vllm/906f8b277739
+[rpa3 7657da4739] [Bench] Auto-commit sweep progress 5/48
+ 1 file changed, 5 insertions(+)
+To github.com:yarongmu-google/tpu-inference.git
+   b80ecb4d6b..7657da4739  rpa3 -> rpa3
+[6/48] 54ccc1eb587a skipped_resumed (—)  tmp/bench_prefill_heavy_rpa_v3_vllm/54ccc1eb587a
