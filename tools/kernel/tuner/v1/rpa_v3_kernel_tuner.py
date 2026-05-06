@@ -24,6 +24,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from tools.kernel.tuner.v1.cache_key_utils import (
+    should_skip_commit_cache_check, tuning_key_hash)
 from tools.kernel.tuner.v1.common.kernel_tuner_base import (KernelTunerBase,
                                                             TuningCase,
                                                             TuningStatus)
@@ -241,8 +243,7 @@ class RpaV3KernelTuner(KernelTunerBase):
                 "Could not determine tpu_inference HEAD commit; "
                 "TuningKey.code_revision will be empty (cache invalidation "
                 "across commits will not work). Are we outside a git checkout?")
-        self._skip_commit_cache_check = (
-            os.environ.get("SKIP_COMMIT_CACHE_CHECK", "0") == "1")
+        self._skip_commit_cache_check = should_skip_commit_cache_check()
         if self._skip_commit_cache_check:
             logger.warning(
                 "SKIP_COMMIT_CACHE_CHECK=1: code_revision will be ignored "
@@ -281,10 +282,9 @@ class RpaV3KernelTuner(KernelTunerBase):
                         # and silently make EVERY un-keyed combo a no-op.
                         if not tk_dict:
                             continue
-                        if self._skip_commit_cache_check:
-                            tk_dict = {k: v for k, v in tk_dict.items()
-                                       if k != "code_revision"}
-                        tk_hash = json.dumps(tk_dict, sort_keys=True)
+                        tk_hash = tuning_key_hash(
+                            tk_dict,
+                            skip_commit_cache_check=self._skip_commit_cache_check)
                         self.completed_tuning_keys.add(tk_hash)
                 logger.info(f"Loaded {len(self.completed_tuning_keys)} completed TuningKeys from {registry_path}")
             except Exception as e:
@@ -458,10 +458,9 @@ class RpaV3KernelTuner(KernelTunerBase):
 
                 # Skip if we already successfully tuned this exact environment shape
                 tk_dict = dataclasses.asdict(tuning_key)
-                if self._skip_commit_cache_check:
-                    tk_dict = {k: v for k, v in tk_dict.items()
-                               if k != "code_revision"}
-                tk_hash = json.dumps(tk_dict, sort_keys=True)
+                tk_hash = tuning_key_hash(
+                    tk_dict,
+                    skip_commit_cache_check=self._skip_commit_cache_check)
                 if tk_hash in self.completed_tuning_keys:
                     continue
 
