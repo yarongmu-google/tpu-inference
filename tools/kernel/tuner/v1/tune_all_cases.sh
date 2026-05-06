@@ -66,6 +66,23 @@ set -a
 source "$CASE_FILE"
 set +a
 
+# Validate / derive MAX_MODEL_LEN. Same logic as in run_benchmark.sh —
+# duplicated because both consumers need it and a sourced helper
+# carries its own fragility. For fixed-shape sonnet workloads
+# MAX_MODEL_LEN MUST equal INPUT_LEN + OUTPUT_LEN; otherwise the SMEM
+# estimate (which scales as max_num_seqs * max_model_len / page_size)
+# is wrong, which can either falsely-prune valid page sizes or pass
+# combos that will fail at runtime.
+EXPECTED_MML=$(( INPUT_LEN + OUTPUT_LEN ))
+if [ -z "${MAX_MODEL_LEN:-}" ]; then
+    MAX_MODEL_LEN=$EXPECTED_MML
+    export MAX_MODEL_LEN
+elif [ "$MAX_MODEL_LEN" -ne "$EXPECTED_MML" ]; then
+    echo "Error: MAX_MODEL_LEN=$MAX_MODEL_LEN in $(basename "$CASE_FILE") does not match INPUT_LEN+OUTPUT_LEN=$EXPECTED_MML." >&2
+    echo "Set MAX_MODEL_LEN=$EXPECTED_MML or remove the line to auto-compute." >&2
+    exit 1
+fi
+
 mkdir -p tmp/log
 RUNLOG="tmp/log/tune_all_${LABEL}.txt"
 echo "Runlog: $RUNLOG"

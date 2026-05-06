@@ -38,10 +38,17 @@
 
 
 # Match bm-infra v7x defaults so workload shape is identical to the
-# Qwen3-Coder run except for the model.
+# Qwen3-Coder run except for the model. Note that 10275 is the step-
+# token budget (MAX_NUM_BATCHED_TOKENS), NOT the per-request context
+# length: at INPUT_LEN+OUTPUT_LEN=2048 each request only ever uses
+# 2K tokens of KV. MAX_MODEL_LEN > 2048 over-allocates the KV pool
+# and silently caps effective max_num_seqs (vllm reduces concurrency
+# to fit max_num_seqs * cdiv(max_model_len, block_size) pages into
+# the available HBM). The validator in run_benchmark.sh /
+# tune_all_cases.sh enforces MAX_MODEL_LEN == INPUT_LEN + OUTPUT_LEN.
 : "${MAX_NUM_SEQS:=128}"
 : "${MAX_NUM_BATCHED_TOKENS:=10275}"
-: "${MAX_MODEL_LEN:=10275}"
+: "${MAX_MODEL_LEN:=2048}"
 
 # vLLM's --block-size (KV-cache page size). Empty = let vLLM pick its
 # default for this version (the value drifts across releases — check

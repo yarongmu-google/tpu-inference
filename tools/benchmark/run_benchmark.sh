@@ -81,6 +81,23 @@ set -a
 source "$CASE_FILE"
 set +a
 
+# Validate / derive MAX_MODEL_LEN. For our fixed-shape sonnet
+# workloads it MUST equal INPUT_LEN + OUTPUT_LEN — anything bigger
+# over-allocates HBM and silently caps effective max_num_seqs (vllm
+# reduces concurrency to fit max_num_seqs * cdiv(max_model_len,
+# block_size) pages into the pool); anything smaller truncates
+# requests. If the workload omits MAX_MODEL_LEN, compute it; if set
+# to a different value, fail-fast with a pointed error.
+EXPECTED_MML=$(( INPUT_LEN + OUTPUT_LEN ))
+if [ -z "${MAX_MODEL_LEN:-}" ]; then
+    MAX_MODEL_LEN=$EXPECTED_MML
+    export MAX_MODEL_LEN
+elif [ "$MAX_MODEL_LEN" -ne "$EXPECTED_MML" ]; then
+    echo "Error: MAX_MODEL_LEN=$MAX_MODEL_LEN in $(basename "$CASE_FILE") does not match INPUT_LEN+OUTPUT_LEN=$EXPECTED_MML." >&2
+    echo "Set MAX_MODEL_LEN=$EXPECTED_MML or remove the line to auto-compute." >&2
+    exit 1
+fi
+
 # NUM_PROMPTS comes from the case file (every case file sets it via :=).
 # DOWNLOAD_DIR and VLLM_DIR are deployment config, not workload, so their
 # defaults live here rather than in case files. Both forms end with the
