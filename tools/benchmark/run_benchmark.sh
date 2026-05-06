@@ -58,6 +58,24 @@ while [ $# -gt 0 ]; do
 done
 
 [ -f "$CASE_FILE" ] || { echo "case file not found: $CASE_FILE" >&2; exit 1; }
+
+# Workload-path guard — duplicated from run_pipeline.sh and
+# tune_all_cases.sh because run_benchmark.sh can be invoked directly
+# (its own --help advertises that). Without this, `set -a; source
+# "$CASE_FILE"` below would execute arbitrary bash from any path the
+# user passes. python3 os.path.realpath resolves SYMLINKS so a
+# symlink under cases/ pointing to /tmp/evil.sh is also rejected.
+CASE_FILE_REAL=$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$CASE_FILE")
+CASES_ROOT_REAL=$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "tools/benchmark/cases")
+case "$CASE_FILE_REAL" in
+    "$CASES_ROOT_REAL"/*) ;;
+    *)
+        echo "Error: workload (after symlink resolution) must live under tools/benchmark/cases/ (sourced as bash)." >&2
+        echo "Got: $CASE_FILE_REAL" >&2
+        exit 1
+        ;;
+esac
+
 set -a
 # shellcheck disable=SC1090
 source "$CASE_FILE"
