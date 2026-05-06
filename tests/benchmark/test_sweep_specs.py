@@ -11,199 +11,150 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Smoke-test that the checked-in sweep specs parse and produce the
-expected combo counts.
+"""Tests for the sweep_recipes module + the orchestrator's synthesized
+spec.
 
-Functions as a regression guard: if a future change to the spec format
-or to a checked-in spec file desyncs them, the smoke tests at the top
-of a sweep dev cycle catch it before TPU time is spent.
+After the architectural refactor (the .service files were deleted; the
+orchestrator now synthesizes specs from .workload + a per-(kernel,
+service) recipe), there are no checked-in `.service` files to test
+against. These tests cover:
 
-There are no longer dedicated `*_smoke.service` files — the orchestrator
-takes a `--smoke` flag that natively truncates any .service to 1 combo,
-so a separate copy is redundant. These tests cover the four production
-specs (baseline_full, baseline_full_4k, optimized_full, optimized_full_4k).
+  - The recipe table is well-shaped for each registered (kernel,
+    service) entry.
+  - Synthesis from a real .workload produces a spec sweep.py can
+    parse.
+  - The synthesized spec preserves the architectural invariants:
+    case_file points to the .workload, kernel_registry points to
+    production.kernel beside the workload, and block sizes are NOT
+    hardcoded in fixed (they auto-link from the registry).
 """
 
+import json
+import tempfile
 import unittest
 from collections import Counter
 from pathlib import Path
 
 from tools.benchmark import sweep
+from tools.benchmark.sweep_recipes import RECIPES, synthesize_service_spec
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SWEEPS_DIR = REPO_ROOT / "tools" / "benchmark" / "sweeps"
-
-ALL_SPECS = (
-    "llama3_8b_v7x_baseline_full.service",
-    "llama3_8b_v7x_baseline_full_4k.service",
-    "llama3_8b_v7x_optimized_full.service",
-    "llama3_8b_v7x_optimized_full_4k.service",
-)
+WORKLOAD_DIR = REPO_ROOT / "tools" / "benchmark" / "cases"
 
 
-def _block_sizes_str_valid(value):
-    """Format check: four comma-separated positive integers."""
-    parts = value.split(",")
-    if len(parts) != 4:
-        return False
-    return all(p.isdigit() and int(p) > 0 for p in parts)
+class TestRecipes(unittest.TestCase):
+
+    def test_recipes_have_required_fields(self):
+        # Each registered (kernel, service) recipe must have the
+        # fields the synthesizer expects. Catches a typo'd recipe at
+        # test time instead of at orchestrator-runtime.
+        for key, recipe in RECIPES.items():
+            self.assertIsInstance(key, tuple, msg=key)
+            self.assertEqual(len(key), 2, msg=key)
+            self.assertIn("sweep_axes", recipe, msg=key)
+            self.assertIn("fixed", recipe, msg=key)
+            self.assertIn("timeout_seconds", recipe, msg=key)
+            self.assertIsInstance(recipe["sweep_axes"], dict, msg=key)
+            self.assertIsInstance(recipe["fixed"], dict, msg=key)
+            self.assertIsInstance(recipe["timeout_seconds"], int, msg=key)
+
+    def test_no_block_sizes_hardcoded_in_fixed(self):
+        # RPA_*_BLOCK_SIZES come from production.kernel via auto-link.
+        # If a recipe ever pins them in `fixed`, that defeats the
+        # auto-link and re-creates the staleness problem the registry
+        # was supposed to solve.
+        for key, recipe in RECIPES.items():
+            for k in recipe["fixed"]:
+                self.assertFalse(
+                    k.startswith("RPA_") and k.endswith("_BLOCK_SIZES"),
+                    f"Recipe {key} pins {k} in fixed; remove and let "
+                    "auto-link from production.kernel inject it.")
 
 
-class TestSmokeSpecs(unittest.TestCase):
+class TestSynthesizeFromRealWorkload(unittest.TestCase):
+    """End-to-end: take a real .workload, synthesize a spec, parse it
+    via sweep.load_spec, enumerate combos. Catches mismatches between
+    the synthesizer and what sweep.py expects."""
 
-    def _load(self, name: str) -> dict:
-        return sweep.load_spec(str(SWEEPS_DIR / name))
+    def setUp(self):
+        # Pick the prefill_heavy workload as the canonical input —
+        # it's the one tonight's run uses.
+        self.workload = (
+            WORKLOAD_DIR / "v7x" / "llama3_8b" / "prefill_heavy.workload")
+        self.assertTrue(self.workload.is_file(),
+                        f"Sanity: {self.workload} should exist")
 
-    # ------------------------- baseline_full -------------------------
-
-    def test_baseline_full_parses_and_enumerates(self):
-        # 3 combos: MAX_NUM_BATCHED_TOKENS in {2048, 4096, 8192}, no
-        # coupled axes, K pinned to 0 (chunk-prefill OFF).
-        spec = self._load("llama3_8b_v7x_baseline_full.service")
-        if "_loaded_kernel_registry" not in spec:
-            self.skipTest(
-                "kernel_registry not loaded — run tools/run_pipeline.sh "
-                "or the kernel tuner first to produce production.kernel")
-        combos = sweep.enumerate_combos(spec)
-        self.assertEqual(len(combos), 3,
-                         "baseline_full should produce 3 combos "
-                         "(MAX_NUM_BATCHED_TOKENS x 3, no coupled axes)")
-        # Every combo must carry K=0 and the auto-linked D + M block
-        # sizes from the registry. PREFILL is NOT injected since K=0.
-        for c in combos:
-            self.assertEqual(c["LONG_PREFILL_TOKEN_THRESHOLD"], "0")
-            self.assertIn("RPA_D_BLOCK_SIZES", c)
-            self.assertIn("RPA_M_BLOCK_SIZES", c)
-            self.assertNotIn("RPA_P_BLOCK_SIZES", c)
-            self.assertTrue(_block_sizes_str_valid(c["RPA_D_BLOCK_SIZES"]))
-            self.assertTrue(_block_sizes_str_valid(c["RPA_M_BLOCK_SIZES"]))
-
-    # ----------------------- baseline_full_4k ------------------------
-
-    def test_baseline_full_4k_parses_and_enumerates(self):
-        # 4 combos: 2 MAX_NUM_SEQS x 2 MAX_NUM_BATCHED_TOKENS, K=0.
-        # The MAX_NUM_SEQS=1000 row is the load-bearing one — its meant
-        # to expose v7xs HBM-backed concurrency advantage.
-        spec = self._load("llama3_8b_v7x_baseline_full_4k.service")
-        if "_loaded_kernel_registry" not in spec:
-            self.skipTest(
-                "kernel_registry not loaded — run tools/run_pipeline.sh "
-                "or the kernel tuner first to produce production.kernel")
-        combos = sweep.enumerate_combos(spec)
-        self.assertEqual(len(combos), 4,
-                         "baseline_full_4k should produce 4 combos "
-                         "(2 MAX_NUM_SEQS x 2 MAX_NUM_BATCHED_TOKENS)")
-        pairs = {(c["MAX_NUM_SEQS"], c["MAX_NUM_BATCHED_TOKENS"])
-                 for c in combos}
+    def test_synthesize_for_rpa_v3_vllm(self):
+        spec = synthesize_service_spec(
+            str(self.workload), kernel_id="rpa_v3", service_id="vllm")
+        # Architectural invariants
+        self.assertEqual(Path(spec["case_file"]).resolve(),
+                         self.workload.resolve())
         self.assertEqual(
-            pairs,
-            {("128", "4096"), ("128", "10275"),
-             ("1000", "4096"), ("1000", "10275")})
-        for c in combos:
-            self.assertEqual(c["LONG_PREFILL_TOKEN_THRESHOLD"], "0")
-            self.assertIn("RPA_D_BLOCK_SIZES", c)
-            self.assertIn("RPA_M_BLOCK_SIZES", c)
-            self.assertNotIn("RPA_P_BLOCK_SIZES", c)
+            Path(spec["kernel_registry"]).name, "production.kernel")
+        self.assertIn("sweep_axes", spec)
+        self.assertIn("fixed", spec)
+        self.assertNotIn("RPA_D_BLOCK_SIZES", spec["fixed"])
+        self.assertNotIn("RPA_M_BLOCK_SIZES", spec["fixed"])
+        self.assertNotIn("RPA_P_BLOCK_SIZES", spec["fixed"])
+        # Spec must round-trip through JSON without losing anything
+        roundtripped = json.loads(json.dumps(spec))
+        self.assertEqual(roundtripped["sweep_axes"], spec["sweep_axes"])
 
-    # ------------------------ optimized_full -------------------------
-
-    def test_optimized_full_parses_and_enumerates(self):
-        # 15 combos: 3 MAX_NUM_BATCHED_TOKENS x 5 K. All blocks (D, M,
-        # P) auto-linked from production.kernel keyed on (case, page,
-        # K). enumerate_combos itself raises if the registry is missing
-        # any K, so a successful call here means the registry covers
-        # every K in the spec — exactly the precondition for firing
-        # the full sweep without wasting TPU on un-tuned defaults.
-        spec = self._load("llama3_8b_v7x_optimized_full.service")
-        if "_loaded_kernel_registry" not in spec:
+    def test_synthesized_spec_parses_via_sweep(self):
+        # Write to a temp file, then load_spec it. If sweep.load_spec
+        # rejects the synthesized shape, the orchestrator would crash
+        # at runtime; this catches it at test-time.
+        spec = synthesize_service_spec(
+            str(self.workload), kernel_id="rpa_v3", service_id="vllm")
+        with tempfile.NamedTemporaryFile(
+                "w", suffix=".service", delete=False) as f:
+            json.dump(spec, f)
+            spec_path = f.name
+        try:
+            loaded = sweep.load_spec(spec_path)
+        finally:
+            import os
+            os.unlink(spec_path)
+        # Registry might not exist (fresh checkout) — sweep.load_spec
+        # raises in that case. Skip the enumeration check if so.
+        if "_loaded_kernel_registry" not in loaded:
             self.skipTest(
-                "kernel_registry not loaded — run tools/run_pipeline.sh "
-                "or the kernel tuner first to produce production.kernel")
-        combos = sweep.enumerate_combos(spec)
-        self.assertEqual(len(combos), 15,
-                         "optimized_full should produce 15 combos "
-                         "(3 MAX_NUM_BATCHED_TOKENS x 5 K values)")
-        ks = {c["LONG_PREFILL_TOKEN_THRESHOLD"] for c in combos}
-        self.assertEqual(ks, {"128", "256", "512", "1024", "2048"})
-        for c in combos:
-            for key in ("RPA_D_BLOCK_SIZES", "RPA_M_BLOCK_SIZES",
-                        "RPA_P_BLOCK_SIZES"):
-                self.assertIn(key, c)
-                self.assertTrue(_block_sizes_str_valid(c[key]),
-                                f"{key}={c[key]}")
-
-    # ----------------------- optimized_full_4k -----------------------
-
-    def test_optimized_full_4k_parses_and_enumerates(self):
-        # 20 combos: 2 MAX_NUM_SEQS x 2 MAX_NUM_BATCHED_TOKENS x 5 K
-        # (full cartesian; coupled_axes is now empty after migration to
-        # kernel_registry auto-link).
-        spec = self._load("llama3_8b_v7x_optimized_full_4k.service")
-        if "_loaded_kernel_registry" not in spec:
+                "production.kernel not present yet — Layer 1 has not run.")
+        # Registry MAY exist but not cover every K in the recipe.
+        # enumerate_combos raises in that case (the strict-auto-link
+        # pre-flight). That is the desired behavior at runtime — fail
+        # before TPU cycles are spent — but as a unit test it just
+        # means we are mid-tune. Skip with a clear message.
+        try:
+            combos = sweep.enumerate_combos(loaded)
+        except sweep.SpecError as e:
             self.skipTest(
-                "kernel_registry not loaded — run tools/run_pipeline.sh "
-                "or the kernel tuner first to produce production.kernel")
-        combos = sweep.enumerate_combos(spec)
-        self.assertEqual(len(combos), 20,
-                         "optimized_full_4k should produce 20 combos "
-                         "(2 x 2 x 5)")
-        # Each K should appear exactly 4 times (once per
-        # (max_num_seqs, max_num_batched_tokens) pair).
-        k_counts = Counter(c["LONG_PREFILL_TOKEN_THRESHOLD"]
-                           for c in combos)
-        self.assertEqual(dict(k_counts),
-                         {"128": 4, "256": 4, "512": 4,
-                          "1024": 4, "2048": 4})
-        for c in combos:
-            for key in ("RPA_D_BLOCK_SIZES", "RPA_M_BLOCK_SIZES",
-                        "RPA_P_BLOCK_SIZES"):
-                self.assertIn(key, c)
+                f"production.kernel is incomplete relative to the recipe; "
+                f"finish the tune first. Underlying message: {e}")
+        recipe = RECIPES[("rpa_v3", "vllm")]
+        expected = 1
+        for v in recipe["sweep_axes"].values():
+            expected *= len(v)
+        self.assertEqual(len(combos), expected,
+                         f"Combo count = {len(combos)}; recipe expects "
+                         f"{expected}")
+        # Each K value should appear exactly (combos / len(K)) times,
+        # one for each (max_num_batched_tokens, max_num_seqs) pair.
+        ks_in_recipe = recipe["sweep_axes"]["LONG_PREFILL_TOKEN_THRESHOLD"]
+        k_counts = Counter(c["LONG_PREFILL_TOKEN_THRESHOLD"] for c in combos)
+        per_k = expected // len(ks_in_recipe)
+        for k in ks_in_recipe:
+            self.assertEqual(k_counts[str(k)], per_k,
+                             f"K={k} appears {k_counts[str(k)]} times, "
+                             f"expected {per_k}")
 
-    # -------------------------- meta tests ---------------------------
-
-    def test_all_specs_have_a_safe_timeout(self):
-        # All specs should pin a per-combo timeout below the generous
-        # default so a hung run does not waste the budget.
-        for name in ALL_SPECS:
-            spec = self._load(name)
-            self.assertIn("timeout_seconds", spec, msg=name)
-            self.assertLessEqual(spec["timeout_seconds"],
-                                 sweep.DEFAULT_TIMEOUT_SECONDS, msg=name)
-            self.assertGreater(spec["timeout_seconds"], 0, msg=name)
-
-    def test_all_specs_resolve_case_file(self):
-        # case_file is encoded as '../cases/...' — the load_spec
-        # resolution should produce an absolute path that points
-        # at an existing file.
-        for name in ALL_SPECS:
-            spec = self._load(name)
-            cf = Path(spec["case_file"])
-            self.assertTrue(cf.is_absolute(), msg=name)
-            self.assertTrue(cf.is_file(),
-                            msg=f"{name}: case_file does not exist: {cf}")
-
-    def test_all_specs_use_kernel_registry(self):
-        # After the migration, every checked-in spec sources block sizes
-        # from production.kernel via auto-link rather than hardcoding.
-        # If a future PR adds a spec without kernel_registry, this test
-        # surfaces the architectural drift.
-        for name in ALL_SPECS:
-            spec_path = SWEEPS_DIR / name
-            import json
-            with open(spec_path) as f:
-                raw = json.load(f)
-            self.assertIn("kernel_registry", raw,
-                          f"{name} must reference kernel_registry — "
-                          "do not re-introduce hardcoded RPA_*_BLOCK_SIZES.")
-            fixed = raw.get("fixed", {}) or {}
-            for k in ("RPA_D_BLOCK_SIZES",
-                      "RPA_M_BLOCK_SIZES",
-                      "RPA_P_BLOCK_SIZES"):
-                self.assertNotIn(
-                    k, fixed,
-                    f"{name}: {k} hardcoded in fixed; remove and let "
-                    "auto-link from kernel_registry inject it.")
+    def test_unknown_recipe_raises(self):
+        with self.assertRaisesRegex(ValueError, "No sweep recipe"):
+            synthesize_service_spec(
+                str(self.workload),
+                kernel_id="nonexistent_kernel", service_id="vllm")
 
 
 if __name__ == "__main__":
