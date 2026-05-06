@@ -332,3 +332,43 @@ P99 E2EL (ms):                           210751.72
 ====
 Saved metrics to /home/ymu_google_com/tpu-inference/tmp/bench_prefill_heavy_rpa_v3_vllm/54ccc1eb587a/metrics.txt
 [6/48] 54ccc1eb587a completed_fresh (343.8s)  tmp/bench_prefill_heavy_rpa_v3_vllm/54ccc1eb587a
+[rpa3 40844bbe1a] [Bench] Auto-commit sweep progress 6/48
+ 3 files changed, 94 insertions(+)
+ create mode 100644 tmp/bench_prefill_heavy_rpa_v3_vllm/54ccc1eb587a/meta.txt
+ create mode 100644 tmp/bench_prefill_heavy_rpa_v3_vllm/54ccc1eb587a/metrics.txt
+To github.com:yarongmu-google/tpu-inference.git
+ ! [rejected]              rpa3 -> rpa3 (fetch first)
+error: failed to push some refs to 'github.com:yarongmu-google/tpu-inference.git'
+hint: Updates were rejected because the remote contains work that you do not
+hint: have locally. This is usually caused by another repository pushing to
+hint: the same ref. If you want to integrate the remote changes, use
+hint: 'git pull' before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+git_commit_paths: subprocess failed: Command '['git', 'push', 'origin', 'rpa3']' returned non-zero exit status 1.
+WARN: auto-commit/push failed at 6/48
+case_file=/home/ymu_google_com/tpu-inference/tools/benchmark/cases/v7x/llama3_8b/prefill_heavy.workload
+case_name=prefill_heavy
+model=meta-llama/Meta-Llama-3-8B-Instruct
+max_num_seqs=1000
+max_num_batched_tokens=2048
+tensor_parallel_size=1
+max_model_len=8192
+dataset=sonnet
+input_len=8191
+output_len=1
+num_prompts=1000
+request_rate=inf
+block_size=128
+long_prefill_token_threshold=0
+rpa_d_block_sizes=1,512,1,256
+rpa_p_block_sizes=default
+rpa_m_block_sizes=128,512,128,256
+git_commit=40844bbe1a97af9ff437ef0d6bbc120e45ee2aab
+git_branch=rpa3
+timestamp=20260506_053547
+----
+Results: /home/ymu_google_com/tpu-inference/tmp/bench_prefill_heavy_rpa_v3_vllm/4b9d79d47084
+Starting vllm server (log: /home/ymu_google_com/tpu-inference/tmp/bench_prefill_heavy_rpa_v3_vllm/4b9d79d47084/vllm.log) ...
+Waiting up to 20 min for server startup ...
+  ready after 130s
+Running benchmark (stdout: /home/ymu_google_com/tpu-inference/tmp/bench_prefill_heavy_rpa_v3_vllm/4b9d79d47084/bench.log, stderr: /home/ymu_google_com/tpu-inference/tmp/bench_prefill_heavy_rpa_v3_vllm/4b9d79d47084/bench.log.stderr) ...
