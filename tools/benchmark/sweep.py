@@ -407,21 +407,77 @@ def sweep_dir(
     return Path(base_dir) / f"bench_{case_name}_{sweep_name}"
 
 
-def is_completed(rdir: str | os.PathLike) -> bool:
-    """A combo is 'done' iff metrics.txt has a non-empty RequestThroughput.
+def _read_meta_value(rdir: Path, key: str) -> str | None:
+    """Read a single key=value line out of meta.txt. Returns the value
+    string (after `=`) or None if the file is missing or the key is
+    absent. No type coercion."""
+    p = Path(rdir, META_FILENAME)
+    if not p.is_file():
+        return None
+    try:
+        text = p.read_text()
+    except OSError:
+        return None
+    prefix = f"{key}="
+    for line in text.splitlines():
+        if line.startswith(prefix):
+            return line.split("=", 1)[1].strip()
+    return None
 
-    File-existence alone is NOT enough: parse_bench_log.format_metrics
-    always emits the full key list with blank values for missing data,
-    so a bench that died after parse_bench_log started writing leaves
-    a non-zero-byte metrics.txt with `RequestThroughput=` (empty).
-    Without this guard, a re-run would skip-resume the dead combo and
-    the sweep would silently produce blank rows that look 'done'.
 
-    RequestThroughput is the canonical 'this run actually finished'
-    signal — every successful bench reports it, every failed one
-    reports it as empty.
+def _current_stack_commits() -> tuple[str | None, str | None]:
+    """Return (tpu_inference HEAD, vllm HEAD) full SHAs, or None each
+    if unavailable. Used by is_completed to invalidate cached combos
+    after a code change on either side of the served stack.
+
+    Cached at module load — both repos are static across one sweep
+    invocation.
     """
-    p = Path(rdir, METRICS_FILENAME)
+    return (_CURRENT_TPU_COMMIT, _CURRENT_VLLM_COMMIT)
+
+
+def _git_head(repo_path: str) -> str | None:
+    try:
+        import subprocess
+        r = subprocess.run(
+            ["git", "-C", repo_path, "rev-parse", "HEAD"],
+            capture_output=True, check=True, text=True, timeout=5,
+        )
+        return r.stdout.strip()
+    except (subprocess.SubprocessError, OSError, FileNotFoundError):
+        return None
+
+
+_CURRENT_TPU_COMMIT = _git_head(".")
+_CURRENT_VLLM_COMMIT = _git_head(os.environ.get("VLLM_DIR", "../vllm"))
+
+
+def is_completed(rdir: str | os.PathLike) -> bool:
+    """A combo is 'done' iff metrics.txt has a non-empty RequestThroughput
+    AND meta.txt records the current (tpu_inference, vllm) HEAD commits.
+
+    Two layers:
+
+    1. File-existence alone is NOT enough: parse_bench_log.format_metrics
+       always emits the full key list with blank values for missing data,
+       so a bench that died after parse_bench_log started writing leaves
+       a non-zero-byte metrics.txt with `RequestThroughput=` (empty).
+       Without this guard, a re-run would skip-resume the dead combo
+       and the sweep would silently produce blank rows that look 'done'.
+
+    2. Even a complete metrics.txt is stale if the served stack
+       (tpu_inference + vllm) has changed since the run. The kernel /
+       runner / scheduler may have moved; the cached number no longer
+       reflects what would happen NOW. Both meta.git_commit and
+       meta.vllm_commit must match the current HEADs of the two repos
+       — otherwise return False so the combo re-runs.
+
+       Conservative: ANY commit mismatch invalidates. If you want softer
+       invalidation (e.g., only when perf-affecting code changed), set
+       SKIP_COMMIT_CACHE_CHECK=1 in the env to bypass this layer.
+    """
+    rdir = Path(rdir)
+    p = rdir / METRICS_FILENAME
     if not p.is_file():
         return False
     try:
@@ -429,10 +485,30 @@ def is_completed(rdir: str | os.PathLike) -> bool:
     except OSError:
         return False
     prefix = f"{THROUGHPUT_METRIC}="
-    for line in text.splitlines():
-        if line.startswith(prefix) and line.split("=", 1)[1].strip():
-            return True
-    return False
+    has_throughput = any(
+        line.startswith(prefix) and line.split("=", 1)[1].strip()
+        for line in text.splitlines())
+    if not has_throughput:
+        return False
+
+    if os.environ.get("SKIP_COMMIT_CACHE_CHECK") == "1":
+        return True
+
+    cur_tpu, cur_vllm = _current_stack_commits()
+    cached_tpu = _read_meta_value(rdir, "git_commit")
+    cached_vllm = _read_meta_value(rdir, "vllm_commit")
+
+    # If we cant determine the current commits (e.g., running outside
+    # a checkout), fall back to the legacy "throughput exists =>
+    # complete" check rather than refusing to skip anything.
+    if cur_tpu is None and cur_vllm is None:
+        return True
+
+    if cur_tpu is not None and cached_tpu != cur_tpu:
+        return False
+    if cur_vllm is not None and cached_vllm != cur_vllm:
+        return False
+    return True
 
 
 # ----- Runner --------------------------------------------------------------

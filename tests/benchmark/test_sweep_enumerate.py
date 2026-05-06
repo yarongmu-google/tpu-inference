@@ -23,9 +23,30 @@ import os
 import shutil
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
 from tools.benchmark import sweep
+
+
+@contextmanager
+def _env(**kw):
+    """Temporarily set env vars; restore originals on exit. Used by
+    is_completed tests that need SKIP_COMMIT_CACHE_CHECK to bypass
+    the commit-match layer when validating the throughput-content
+    invariant in isolation."""
+    saved = {k: os.environ.get(k) for k in kw}
+    for k, v in kw.items():
+        os.environ[k] = v
+    try:
+        yield
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
 
 def _write_json(d) -> str:
@@ -387,14 +408,19 @@ class TestPaths(unittest.TestCase):
             self.assertFalse(sweep.is_completed(d))
 
     def test_is_completed_true_when_request_throughput_present(self):
-        with tempfile.TemporaryDirectory() as d:
+        # SKIP_COMMIT_CACHE_CHECK bypasses the (tpu_inference, vllm)
+        # commit match — these tests focus on the throughput-content
+        # invariant, not the commit-cache layer.
+        with tempfile.TemporaryDirectory() as d, \
+                _env(SKIP_COMMIT_CACHE_CHECK="1"):
             (Path(d) / "metrics.txt").write_text(
                 "MeanTTFT=12.3\nRequestThroughput=8.30\n")
             self.assertTrue(sweep.is_completed(d))
 
     def test_is_completed_false_for_dir_named_metrics(self):
         # If 'metrics.txt' exists as a directory, not a file, it's NOT done.
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory() as d, \
+                _env(SKIP_COMMIT_CACHE_CHECK="1"):
             os.mkdir(Path(d) / "metrics.txt")
             self.assertFalse(sweep.is_completed(d))
 
@@ -402,7 +428,8 @@ class TestPaths(unittest.TestCase):
         # A bench that died mid-write leaves the full key list with
         # blank values. File exists, but RequestThroughput is empty —
         # NOT a completed run.
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory() as d, \
+                _env(SKIP_COMMIT_CACHE_CHECK="1"):
             (Path(d) / "metrics.txt").write_text(
                 "MeanTTFT=\nRequestThroughput=\nMeanITL=\n")
             self.assertFalse(sweep.is_completed(d))
@@ -410,13 +437,59 @@ class TestPaths(unittest.TestCase):
     def test_is_completed_false_for_metrics_missing_throughput(self):
         # File present but RequestThroughput key entirely absent —
         # also not a completed run.
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory() as d, \
+                _env(SKIP_COMMIT_CACHE_CHECK="1"):
             (Path(d) / "metrics.txt").write_text("MeanTTFT=12.3\n")
             self.assertFalse(sweep.is_completed(d))
 
+    def test_is_completed_false_when_tpu_commit_mismatches(self):
+        # Throughput is present but meta.txts cached git_commit does
+        # not match the current tpu_inference HEAD — combo is stale,
+        # must re-run.
+        with tempfile.TemporaryDirectory() as d, \
+                patch.object(sweep, "_CURRENT_TPU_COMMIT", "current_tpu"), \
+                patch.object(sweep, "_CURRENT_VLLM_COMMIT", "current_vllm"):
+            (Path(d) / "metrics.txt").write_text(
+                "MeanTTFT=12.3\nRequestThroughput=8.30\n")
+            (Path(d) / "meta.txt").write_text(
+                "git_commit=stale_tpu\nvllm_commit=current_vllm\n")
+            self.assertFalse(sweep.is_completed(d))
+
+    def test_is_completed_false_when_vllm_commit_mismatches(self):
+        with tempfile.TemporaryDirectory() as d, \
+                patch.object(sweep, "_CURRENT_TPU_COMMIT", "current_tpu"), \
+                patch.object(sweep, "_CURRENT_VLLM_COMMIT", "current_vllm"):
+            (Path(d) / "metrics.txt").write_text(
+                "MeanTTFT=12.3\nRequestThroughput=8.30\n")
+            (Path(d) / "meta.txt").write_text(
+                "git_commit=current_tpu\nvllm_commit=stale_vllm\n")
+            self.assertFalse(sweep.is_completed(d))
+
+    def test_is_completed_true_when_both_commits_match(self):
+        with tempfile.TemporaryDirectory() as d, \
+                patch.object(sweep, "_CURRENT_TPU_COMMIT", "abc"), \
+                patch.object(sweep, "_CURRENT_VLLM_COMMIT", "xyz"):
+            (Path(d) / "metrics.txt").write_text(
+                "MeanTTFT=12.3\nRequestThroughput=8.30\n")
+            (Path(d) / "meta.txt").write_text(
+                "git_commit=abc\nvllm_commit=xyz\n")
+            self.assertTrue(sweep.is_completed(d))
+
+    def test_is_completed_legacy_when_commits_unavailable(self):
+        # If the current-stack commits cannot be determined (running
+        # outside a git checkout), fall back to the legacy
+        # throughput-only check rather than refusing to skip anything.
+        with tempfile.TemporaryDirectory() as d, \
+                patch.object(sweep, "_CURRENT_TPU_COMMIT", None), \
+                patch.object(sweep, "_CURRENT_VLLM_COMMIT", None):
+            (Path(d) / "metrics.txt").write_text(
+                "MeanTTFT=12.3\nRequestThroughput=8.30\n")
+            self.assertTrue(sweep.is_completed(d))
+
     def test_is_completed_tolerates_whitespace_in_value(self):
         # `RequestThroughput=  8.30  ` — strip() should accept this.
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory() as d, \
+                _env(SKIP_COMMIT_CACHE_CHECK="1"):
             (Path(d) / "metrics.txt").write_text("RequestThroughput=  8.30  \n")
             self.assertTrue(sweep.is_completed(d))
 

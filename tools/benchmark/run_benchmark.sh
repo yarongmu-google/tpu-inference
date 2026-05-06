@@ -169,6 +169,10 @@ CASE_FILE_ABS="$CASE_DIR_ABS/$(basename "$CASE_FILE")"
     echo "rpa_m_block_sizes=${RPA_M_BLOCK_SIZES:-default}"
     echo "git_commit=$(git rev-parse HEAD 2>/dev/null || echo unknown)"
     echo "git_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+    # vllm HEAD at run time. is_completed in sweep.py uses this AND
+    # git_commit above to invalidate cached combos when either side
+    # of the served stack changes (vllm scheduler / runner / kernel).
+    echo "vllm_commit=$( (cd \"$VLLM_DIR\" 2>/dev/null && git rev-parse HEAD 2>/dev/null) || echo unknown)"
     echo "timestamp=$TS"
 } | tee "$META_FILE"
 echo "----"

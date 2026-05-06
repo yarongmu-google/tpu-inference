@@ -17,6 +17,7 @@ import itertools
 import json
 import logging
 import os
+import subprocess
 import time
 
 import jax
@@ -177,6 +178,12 @@ class TuningKey:
     sliding_window: int
     case: str
     chunk_prefill_size: int  # 0 when not CASE_PREFILL
+    # tpu_inference HEAD short-SHA at tune time. Included in the
+    # idempotency cache key so a kernel.py change invalidates prior
+    # winners — old commits stale entries naturally do not match the
+    # current commits hash and get re-tuned. Default empty string for
+    # backwards-compat with older entries that pre-date this field.
+    code_revision: str = ""
 
 
 @dataclasses.dataclass
@@ -200,6 +207,24 @@ class RpaV3KernelTuner(KernelTunerBase):
                          storage_manager=storage_manager,
                          job_bucket_size=100,
                          kernel_tuner_name="rpa_v3_kernel_tuner")
+
+        # tpu_inference HEAD short-SHA, baked into every TuningKey so
+        # idempotency invalidates when kernel.py (or any tpu_inference
+        # code the kernel transitively depends on) changes. Per the
+        # users storage policy we do NOT garbage-collect older-commit
+        # entries; the registry just grows with code history.
+        try:
+            self.code_revision = subprocess.run(
+                ["git", "rev-parse", "--short=12", "HEAD"],
+                capture_output=True, check=True, text=True,
+                timeout=5,
+            ).stdout.strip()
+        except (subprocess.SubprocessError, OSError, FileNotFoundError):
+            self.code_revision = ""
+            logger.warning(
+                "Could not determine tpu_inference HEAD commit; "
+                "TuningKey.code_revision will be empty (cache invalidation "
+                "across commits will not work). Are we outside a git checkout?")
 
         # ---- Idempotency: Load existing registry to skip tuned cases ----
         #
@@ -402,6 +427,7 @@ class RpaV3KernelTuner(KernelTunerBase):
                     sliding_window=sw,
                     case=case,
                     chunk_prefill_size=K,
+                    code_revision=self.code_revision,
                 )
 
                 # Skip if we already successfully tuned this exact environment shape

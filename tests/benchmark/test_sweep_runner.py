@@ -61,9 +61,20 @@ class TestRunOne(unittest.TestCase):
         self.combo = {"A": "1"}
         # Lock down the env so dict ordering / interactions are predictable.
         self.fake_environ = {"PATH": "/usr/bin"}
+        # is_completed grew a (tpu_inference, vllm) commit-match check.
+        # These tests are about run_ones throughput-content logic, not
+        # the commit-cache layer, so bypass the latter via the env var
+        # rather than fabricate matching meta.txt entries in every
+        # fixture.
+        self._saved_skip = os.environ.get("SKIP_COMMIT_CACHE_CHECK")
+        os.environ["SKIP_COMMIT_CACHE_CHECK"] = "1"
 
     def tearDown(self):
         self.tmp.cleanup()
+        if self._saved_skip is None:
+            os.environ.pop("SKIP_COMMIT_CACHE_CHECK", None)
+        else:
+            os.environ["SKIP_COMMIT_CACHE_CHECK"] = self._saved_skip
 
     def _fake_subprocess_writing_metrics(self, returncode=0):
         """Returns a stub for subprocess.run that writes metrics.txt into
