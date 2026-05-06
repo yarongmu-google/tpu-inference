@@ -78,10 +78,6 @@ def set_chunk_prefill_size(value: int | None) -> None:
     logger.info_once(f"Set chunk_prefill_size={_chunk_prefill_size}")
 
 
-def get_chunk_prefill_size() -> int | None:
-    return _chunk_prefill_size
-
-
 def sharded_flash_attention(
     mesh: Mesh,
     causal: bool = True,

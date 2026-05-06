@@ -272,14 +272,34 @@ def compute_per_rank_distribution(
     K = chunk_prefill_size
     out = []
     for rank in range(len(req_ids_per_rank)):
+        ids = req_ids_per_rank[rank]
+        # The per-rank slice MUST already be ordered [D…D, P…P, M…M] —
+        # this is guaranteed by PersistentBatchManager._reorder_batch
+        # which reorders globally before DP partitioning. If a future
+        # change introduces a sort/permute that breaks the ordering,
+        # the [D, D+P, T] triple computed below would silently mis-
+        # bucket requests and corrupt the kernel inputs. Walk the
+        # ordering explicitly and assert no decode/uniform request
+        # appears AFTER a mixed one.
         n_decode = 0
         n_uniform = 0
-        for req_id in req_ids_per_rank[rank]:
+        seen_mixed = False
+        for req_id in ids:
             n = num_scheduled_tokens[req_id]
             if n == 1:
+                assert not seen_mixed, (
+                    f"per-rank ordering invariant violated on rank {rank}: "
+                    f"decode request {req_id} appears after a mixed/non-uniform "
+                    "request. _reorder_batch must run before DP partitioning.")
                 n_decode += 1
             elif K is not None and n == K:
+                assert not seen_mixed, (
+                    f"per-rank ordering invariant violated on rank {rank}: "
+                    f"uniform-K prefill request {req_id} appears after a mixed "
+                    "request. _reorder_batch must run before DP partitioning.")
                 n_uniform += 1
+            else:
+                seen_mixed = True
         out.append([n_decode, n_decode + n_uniform, num_req_per_rank[rank]])
     return out
 

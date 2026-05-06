@@ -14,7 +14,7 @@
 """Cross-language drift detector for meta.txt schema.
 
 The meta.txt key namespace is duplicated across two languages:
-``run_benchmark.sh`` writes ``echo "<key>=$VAR"`` lines; ``compare.py``
+``run_benchmark.sh`` writes ``echo "<key>=$VAR"`` lines; ``build_service_registry.py``
 references those keys as ``meta.<key>`` strings in DEFAULT_COLUMNS. A
 rename or removal on either side breaks the rendered table silently
 (missing field shows blank instead of raising). This test parses the
@@ -29,7 +29,7 @@ import re
 import unittest
 from pathlib import Path
 
-from tools.benchmark import build_service_registry as compare
+from tools.benchmark import build_service_registry
 
 
 # Meta-writer pattern: an `echo "<key>=...` form, where <key> is a
@@ -54,7 +54,7 @@ def _meta_keys_from_script(script_path: Path) -> set[str]:
 def _meta_columns_in_default() -> set[str]:
     """Return the set of `meta.<key>` keys referenced by DEFAULT_COLUMNS."""
     out: set[str] = set()
-    for key, _label in compare.DEFAULT_COLUMNS:
+    for key, _label in build_service_registry.DEFAULT_COLUMNS:
         if key.startswith("meta."):
             out.add(key.split(".", 1)[1])
     return out
@@ -68,11 +68,11 @@ def _run_benchmark_path() -> Path:
 class TestMetaSchema(unittest.TestCase):
 
     def test_every_default_column_meta_key_is_written_by_bash(self):
-        """compare.DEFAULT_COLUMNS shouldn't reference meta.X with no writer.
+        """build_service_registry.DEFAULT_COLUMNS shouldn't reference meta.X with no writer.
 
         If this fails, either the column was added without a bash writer
         (typo or premature column add) or the bash writer was renamed
-        without updating compare.DEFAULT_COLUMNS.
+        without updating build_service_registry.DEFAULT_COLUMNS.
         """
         bash_keys = _meta_keys_from_script(_run_benchmark_path())
         column_keys = _meta_columns_in_default()

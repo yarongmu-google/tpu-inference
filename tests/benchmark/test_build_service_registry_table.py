@@ -11,9 +11,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Unit tests for tools.benchmark.compare.
+"""Unit tests for the table / ranking utilities in
+tools.benchmark.build_service_registry.
 
-Coverage target: 100% lines + branches of compare.py except the
+The exporter (export_production_registry, _make_workload_key) is
+covered by test_build_service_registry.py. This file covers the
+parse-rank-format helpers (parse_kv_file, _to_float, rank_by,
+format_markdown_table, etc.) — the utilities the build_service_registry
+module inherited from its earlier bsr.py incarnation.
+
+Coverage target: 100% lines + branches of those helpers, except the
 `if __name__ == \"__main__\": sys.exit(main())` shim.
 """
 
@@ -24,7 +31,7 @@ import unittest
 from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path
 
-from tools.benchmark import build_service_registry as compare
+from tools.benchmark import build_service_registry as bsr
 
 
 def _make_combo_dir(parent: Path, cid: str,
@@ -50,7 +57,7 @@ class TestParseKvFile(unittest.TestCase):
             f.write("a=1\nb=2\nc=3\n")
             p = f.name
         try:
-            self.assertEqual(compare.parse_kv_file(p),
+            self.assertEqual(bsr.parse_kv_file(p),
                              {"a": "1", "b": "2", "c": "3"})
         finally:
             os.unlink(p)
@@ -61,7 +68,7 @@ class TestParseKvFile(unittest.TestCase):
             f.write("a=1\n\nno_equals_here\nb=\n")
             p = f.name
         try:
-            self.assertEqual(compare.parse_kv_file(p),
+            self.assertEqual(bsr.parse_kv_file(p),
                              {"a": "1", "b": ""})
         finally:
             os.unlink(p)
@@ -72,7 +79,7 @@ class TestParseKvFile(unittest.TestCase):
             f.write("a=key=val\n")
             p = f.name
         try:
-            self.assertEqual(compare.parse_kv_file(p), {"a": "key=val"})
+            self.assertEqual(bsr.parse_kv_file(p), {"a": "key=val"})
         finally:
             os.unlink(p)
 
@@ -82,7 +89,7 @@ class TestParseKvFile(unittest.TestCase):
             f.write("a=1\r\nb=2\r\n")
             p = f.name
         try:
-            self.assertEqual(compare.parse_kv_file(p),
+            self.assertEqual(bsr.parse_kv_file(p),
                              {"a": "1", "b": "2"})
         finally:
             os.unlink(p)
@@ -98,10 +105,10 @@ class TestCollectResults(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_empty_dir_yields_nothing(self):
-        self.assertEqual(compare.collect_results(self.dir), [])
+        self.assertEqual(bsr.collect_results(self.dir), [])
 
     def test_nonexistent_dir_yields_nothing(self):
-        self.assertEqual(compare.collect_results(self.dir / "nope"), [])
+        self.assertEqual(bsr.collect_results(self.dir / "nope"), [])
 
     def test_collects_combos_with_metrics(self):
         _make_combo_dir(self.dir, "abc",
@@ -110,7 +117,7 @@ class TestCollectResults(unittest.TestCase):
         _make_combo_dir(self.dir, "def",
                         metrics={"RequestThroughput": "3.4"},
                         meta={"K": "256"})
-        results = compare.collect_results(self.dir)
+        results = bsr.collect_results(self.dir)
         self.assertEqual(len(results), 2)
         ids = {r["combo_id"] for r in results}
         self.assertEqual(ids, {"abc", "def"})
@@ -122,13 +129,13 @@ class TestCollectResults(unittest.TestCase):
         _make_combo_dir(self.dir, "done",
                         metrics={"RequestThroughput": "1.0"},
                         meta={"K": "128"})
-        results = compare.collect_results(self.dir)
+        results = bsr.collect_results(self.dir)
         self.assertEqual([r["combo_id"] for r in results], ["done"])
 
     def test_tolerates_missing_meta(self):
         _make_combo_dir(self.dir, "no_meta",
                         metrics={"RequestThroughput": "1.0"}, meta=None)
-        results = compare.collect_results(self.dir)
+        results = bsr.collect_results(self.dir)
         self.assertEqual(results[0]["meta"], {})
 
     def test_skips_files_at_top_level(self):
@@ -136,39 +143,39 @@ class TestCollectResults(unittest.TestCase):
         (self.dir / "stray.txt").write_text("hello")
         _make_combo_dir(self.dir, "real",
                         metrics={"RequestThroughput": "1.0"}, meta={})
-        results = compare.collect_results(self.dir)
+        results = bsr.collect_results(self.dir)
         self.assertEqual([r["combo_id"] for r in results], ["real"])
 
 
 class TestToFloat(unittest.TestCase):
 
     def test_numeric_strings(self):
-        self.assertEqual(compare._to_float("3.14"), 3.14)
-        self.assertEqual(compare._to_float("42"), 42.0)
-        self.assertEqual(compare._to_float("-1"), -1.0)
+        self.assertEqual(bsr._to_float("3.14"), 3.14)
+        self.assertEqual(bsr._to_float("42"), 42.0)
+        self.assertEqual(bsr._to_float("-1"), -1.0)
 
     def test_none_and_empty(self):
-        self.assertIsNone(compare._to_float(None))
-        self.assertIsNone(compare._to_float(""))
+        self.assertIsNone(bsr._to_float(None))
+        self.assertIsNone(bsr._to_float(""))
 
     def test_non_numeric(self):
-        self.assertIsNone(compare._to_float("not a number"))
+        self.assertIsNone(bsr._to_float("not a number"))
 
     def test_unsupported_type(self):
         # `float([1, 2])` raises TypeError -> caught -> None.
-        self.assertIsNone(compare._to_float([1, 2]))
+        self.assertIsNone(bsr._to_float([1, 2]))
 
     def test_nan_returns_none(self):
         # NaN breaks sorted()'s ordering contract; treat as missing.
-        self.assertIsNone(compare._to_float("nan"))
-        self.assertIsNone(compare._to_float("NaN"))
+        self.assertIsNone(bsr._to_float("nan"))
+        self.assertIsNone(bsr._to_float("NaN"))
 
     def test_inf_returns_none(self):
         # ±inf is well-ordered but more likely a bench bug than a real
         # datapoint. Reject so it doesn't silently sort to top.
-        self.assertIsNone(compare._to_float("inf"))
-        self.assertIsNone(compare._to_float("-inf"))
-        self.assertIsNone(compare._to_float("Infinity"))
+        self.assertIsNone(bsr._to_float("inf"))
+        self.assertIsNone(bsr._to_float("-inf"))
+        self.assertIsNone(bsr._to_float("Infinity"))
 
 
 class TestRankBy(unittest.TestCase):
@@ -179,23 +186,23 @@ class TestRankBy(unittest.TestCase):
 
     def test_sorts_descending_by_default(self):
         results = [self._r("a", "1"), self._r("b", "3"), self._r("c", "2")]
-        out = compare.rank_by(results, "RequestThroughput")
+        out = bsr.rank_by(results, "RequestThroughput")
         self.assertEqual([r["combo_id"] for r in out], ["b", "c", "a"])
 
     def test_ascending(self):
         results = [self._r("a", "1"), self._r("b", "3"), self._r("c", "2")]
-        out = compare.rank_by(results, "RequestThroughput", descending=False)
+        out = bsr.rank_by(results, "RequestThroughput", descending=False)
         self.assertEqual([r["combo_id"] for r in out], ["a", "c", "b"])
 
     def test_missing_values_go_last(self):
         results = [self._r("a", ""), self._r("b", "1.0"), self._r("c", "2.0")]
-        out = compare.rank_by(results, "RequestThroughput")
+        out = bsr.rank_by(results, "RequestThroughput")
         # "a" missing -> end. "c" > "b".
         self.assertEqual([r["combo_id"] for r in out], ["c", "b", "a"])
 
     def test_missing_values_ascending_still_last(self):
         results = [self._r("a", ""), self._r("b", "5"), self._r("c", "1")]
-        out = compare.rank_by(results, "RequestThroughput", descending=False)
+        out = bsr.rank_by(results, "RequestThroughput", descending=False)
         self.assertEqual([r["combo_id"] for r in out], ["c", "b", "a"])
 
     def test_missing_metric_key(self):
@@ -204,7 +211,7 @@ class TestRankBy(unittest.TestCase):
             {"combo_id": "a", "metrics": {}, "meta": {}, "result_dir": Path("/")},
             self._r("b", "9"),
         ]
-        out = compare.rank_by(results, "RequestThroughput")
+        out = bsr.rank_by(results, "RequestThroughput")
         self.assertEqual([r["combo_id"] for r in out], ["b", "a"])
 
     def test_nan_value_sorts_as_missing(self):
@@ -212,7 +219,7 @@ class TestRankBy(unittest.TestCase):
         # NaN comparisons return False. Now treated as missing -> last.
         results = [self._r("a", "nan"), self._r("b", "1.0"),
                    self._r("c", "2.0")]
-        out = compare.rank_by(results, "RequestThroughput")
+        out = bsr.rank_by(results, "RequestThroughput")
         self.assertEqual([r["combo_id"] for r in out], ["c", "b", "a"])
 
 
@@ -230,7 +237,7 @@ class TestBestPerAxis(unittest.TestCase):
             self._r("c", "256", "9"),  # winner for K=256
             self._r("d", "256", "7"),
         ]
-        best = compare.best_per_axis(results, "K", "RequestThroughput")
+        best = bsr.best_per_axis(results, "K", "RequestThroughput")
         self.assertEqual(best["128"]["combo_id"], "b")
         self.assertEqual(best["256"]["combo_id"], "c")
 
@@ -238,7 +245,7 @@ class TestBestPerAxis(unittest.TestCase):
         results = [self._r("a", "128", "5")]
         results.append({"combo_id": "b", "metrics": {"RequestThroughput": "9"},
                         "meta": {}, "result_dir": Path("/")})
-        best = compare.best_per_axis(results, "K", "RequestThroughput")
+        best = bsr.best_per_axis(results, "K", "RequestThroughput")
         self.assertEqual(set(best.keys()), {"128"})
 
     def test_drops_axis_value_empty(self):
@@ -246,7 +253,7 @@ class TestBestPerAxis(unittest.TestCase):
             self._r("a", "", "5"),
             self._r("b", "128", "9"),
         ]
-        best = compare.best_per_axis(results, "K", "RequestThroughput")
+        best = bsr.best_per_axis(results, "K", "RequestThroughput")
         self.assertEqual(set(best.keys()), {"128"})
 
     def test_drops_group_with_no_numeric_metric(self):
@@ -254,12 +261,12 @@ class TestBestPerAxis(unittest.TestCase):
             self._r("a", "128", ""),
             self._r("b", "128", "not a number"),
         ]
-        best = compare.best_per_axis(results, "K", "RequestThroughput")
+        best = bsr.best_per_axis(results, "K", "RequestThroughput")
         self.assertEqual(best, {})
 
     def test_ascending(self):
         results = [self._r("a", "128", "5"), self._r("b", "128", "8")]
-        best = compare.best_per_axis(results, "K", "RequestThroughput",
+        best = bsr.best_per_axis(results, "K", "RequestThroughput",
                                      descending=False)
         self.assertEqual(best["128"]["combo_id"], "a")  # smallest wins
 
@@ -269,40 +276,40 @@ class TestExtractField(unittest.TestCase):
     def test_combo_id(self):
         r = {"combo_id": "abc", "result_dir": Path("/"),
              "metrics": {}, "meta": {}}
-        self.assertEqual(compare._extract_field(r, "combo_id"), "abc")
+        self.assertEqual(bsr._extract_field(r, "combo_id"), "abc")
 
     def test_result_dir(self):
         r = {"combo_id": "abc", "result_dir": Path("/x"),
              "metrics": {}, "meta": {}}
-        self.assertEqual(compare._extract_field(r, "result_dir"), "/x")
+        self.assertEqual(bsr._extract_field(r, "result_dir"), "/x")
 
     def test_dotted(self):
         r = {"combo_id": "abc", "result_dir": Path("/"),
              "metrics": {"RequestThroughput": "1.2"},
              "meta": {"K": "128"}}
-        self.assertEqual(compare._extract_field(r, "metrics.RequestThroughput"),
+        self.assertEqual(bsr._extract_field(r, "metrics.RequestThroughput"),
                          "1.2")
-        self.assertEqual(compare._extract_field(r, "meta.K"), "128")
+        self.assertEqual(bsr._extract_field(r, "meta.K"), "128")
 
     def test_missing_section_or_field(self):
         r = {"combo_id": "abc", "result_dir": Path("/"),
              "metrics": {}, "meta": {}}
-        self.assertEqual(compare._extract_field(r, "metrics.NoSuch"), "")
-        self.assertEqual(compare._extract_field(r, "missing.NoSuch"), "")
+        self.assertEqual(bsr._extract_field(r, "metrics.NoSuch"), "")
+        self.assertEqual(bsr._extract_field(r, "missing.NoSuch"), "")
 
     def test_top_level_key(self):
         r = {"combo_id": "abc", "extra": "something",
              "result_dir": Path("/"), "metrics": {}, "meta": {}}
-        self.assertEqual(compare._extract_field(r, "extra"), "something")
-        self.assertEqual(compare._extract_field(r, "missing"), "")
+        self.assertEqual(bsr._extract_field(r, "extra"), "something")
+        self.assertEqual(bsr._extract_field(r, "missing"), "")
 
     def test_pipe_in_value_is_escaped(self):
         # A pipe in cell content would break Markdown layout. Escape it.
         r = {"combo_id": "x|y", "result_dir": Path("/"),
              "metrics": {"k": "a|b"}, "meta": {"flag": "--foo a|b"}}
-        self.assertEqual(compare._extract_field(r, "combo_id"), r"x\|y")
-        self.assertEqual(compare._extract_field(r, "metrics.k"), r"a\|b")
-        self.assertEqual(compare._extract_field(r, "meta.flag"),
+        self.assertEqual(bsr._extract_field(r, "combo_id"), r"x\|y")
+        self.assertEqual(bsr._extract_field(r, "metrics.k"), r"a\|b")
+        self.assertEqual(bsr._extract_field(r, "meta.flag"),
                          r"--foo a\|b")
 
 
@@ -310,7 +317,7 @@ class TestFormatMarkdownTable(unittest.TestCase):
 
     def test_empty(self):
         self.assertEqual(
-            compare.format_markdown_table([], compare.DEFAULT_COLUMNS),
+            bsr.format_markdown_table([], bsr.DEFAULT_COLUMNS),
             "(no results)")
 
     def test_basic(self):
@@ -323,7 +330,7 @@ class TestFormatMarkdownTable(unittest.TestCase):
         cols = [("combo_id", "id"),
                 ("metrics.RequestThroughput", "req/s"),
                 ("meta.max_num_seqs", "MNS")]
-        out = compare.format_markdown_table(results, cols)
+        out = bsr.format_markdown_table(results, cols)
         # Should have header, separator, and one data row.
         lines = out.splitlines()
         self.assertEqual(len(lines), 3)
@@ -343,7 +350,7 @@ class TestFormatMarkdownTable(unittest.TestCase):
         results = [{"combo_id": "abc", "result_dir": Path("/"),
                     "metrics": {}, "meta": {}}]
         cols = [("combo_id", "id|here")]
-        out = compare.format_markdown_table(results, cols)
+        out = bsr.format_markdown_table(results, cols)
         # Header line contains the escaped form.
         header = out.splitlines()[0]
         self.assertIn(r"id\|here", header)
@@ -365,7 +372,7 @@ class TestFormatMarkdownTable(unittest.TestCase):
         }]
         cols = [("combo_id", "id"),
                 ("metrics.RequestThroughput", "x")]
-        out = compare.format_markdown_table(results, cols)
+        out = bsr.format_markdown_table(results, cols)
         for line in out.splitlines():
             # Same width across rows.
             self.assertEqual(line.count("|"), 3)
@@ -374,13 +381,13 @@ class TestFormatMarkdownTable(unittest.TestCase):
 class TestColumnsFromArg(unittest.TestCase):
 
     def test_default_when_empty(self):
-        self.assertEqual(compare._columns_from_arg(None),
-                         compare.DEFAULT_COLUMNS)
-        self.assertEqual(compare._columns_from_arg(""),
-                         compare.DEFAULT_COLUMNS)
+        self.assertEqual(bsr._columns_from_arg(None),
+                         bsr.DEFAULT_COLUMNS)
+        self.assertEqual(bsr._columns_from_arg(""),
+                         bsr.DEFAULT_COLUMNS)
 
     def test_parses_csv(self):
-        result = compare._columns_from_arg(
+        result = bsr._columns_from_arg(
             "combo_id,metrics.RequestThroughput,meta.K")
         self.assertEqual(result, [
             ("combo_id", "combo_id"),
@@ -389,7 +396,7 @@ class TestColumnsFromArg(unittest.TestCase):
         ])
 
     def test_strips_whitespace_and_blanks(self):
-        result = compare._columns_from_arg(" combo_id , , meta.K ")
+        result = bsr._columns_from_arg(" combo_id , , meta.K ")
         self.assertEqual(result, [
             ("combo_id", "combo_id"),
             ("meta.K", "K"),
@@ -399,18 +406,18 @@ class TestColumnsFromArg(unittest.TestCase):
 class TestSortAxisKeys(unittest.TestCase):
 
     def test_numeric_sorts_ascending(self):
-        self.assertEqual(compare._sort_axis_keys(["1024", "128", "256"]),
+        self.assertEqual(bsr._sort_axis_keys(["1024", "128", "256"]),
                          ["128", "256", "1024"])
 
     def test_strings_after_numerics(self):
         self.assertEqual(
-            compare._sort_axis_keys(["zoo", "128", "abc", "1024"]),
+            bsr._sort_axis_keys(["zoo", "128", "abc", "1024"]),
             ["128", "1024", "abc", "zoo"])
 
     def test_negatives_and_zero(self):
         # Pin behavior across the negative-zero-positive boundary.
         # Numeric values sort ascending: -5, 0, 10.
-        self.assertEqual(compare._sort_axis_keys(["10", "0", "-5"]),
+        self.assertEqual(bsr._sort_axis_keys(["10", "0", "-5"]),
                          ["-5", "0", "10"])
 
     def test_negative_zero_does_not_crash(self):
@@ -420,7 +427,7 @@ class TestSortAxisKeys(unittest.TestCase):
         # position of '-0.0' vs '0' is implementation detail (Python
         # has -0.0 == 0.0; tuple-tiebreak via the string form depends
         # on lexicographic order of '-' vs '0').
-        out = compare._sort_axis_keys(["1", "0", "-0.0"])
+        out = bsr._sort_axis_keys(["1", "0", "-0.0"])
         self.assertEqual(set(out), {"1", "0", "-0.0"})
         self.assertEqual(out[-1], "1")  # '1' > 0 sorts last regardless
 
@@ -437,7 +444,7 @@ class TestMainCli(unittest.TestCase):
     def test_empty_dir_returns_one(self):
         buf_err = io.StringIO()
         with redirect_stderr(buf_err):
-            rc = compare.main([str(self.dir)])
+            rc = bsr.main([str(self.dir)])
         self.assertEqual(rc, 1)
         self.assertIn("No results", buf_err.getvalue())
 
@@ -452,7 +459,7 @@ class TestMainCli(unittest.TestCase):
                         meta={"K": "256", "case_name": "x"})
         buf = io.StringIO()
         with redirect_stdout(buf):
-            rc = compare.main([str(self.dir),
+            rc = bsr.main([str(self.dir),
                                "--columns", "combo_id,meta.K,metrics.RequestThroughput"])
         self.assertEqual(rc, 0)
         out = buf.getvalue()
@@ -469,7 +476,7 @@ class TestMainCli(unittest.TestCase):
                         metrics={"RequestThroughput": "3.4"}, meta={})
         buf = io.StringIO()
         with redirect_stdout(buf):
-            rc = compare.main([str(self.dir), "--ascending",
+            rc = bsr.main([str(self.dir), "--ascending",
                                "--columns", "combo_id,metrics.RequestThroughput"])
         self.assertEqual(rc, 0)
         body = buf.getvalue().splitlines()[2:]
@@ -487,7 +494,7 @@ class TestMainCli(unittest.TestCase):
                         meta={"K": "256"})
         buf = io.StringIO()
         with redirect_stdout(buf):
-            rc = compare.main([str(self.dir),
+            rc = bsr.main([str(self.dir),
                                "--best-per", "K",
                                "--columns", "combo_id,meta.K,metrics.RequestThroughput"])
         self.assertEqual(rc, 0)
