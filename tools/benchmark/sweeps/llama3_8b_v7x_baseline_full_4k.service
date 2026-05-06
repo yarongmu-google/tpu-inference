@@ -31,6 +31,7 @@
     "    tools/benchmark/sweeps/llama3_8b_v7x_baseline_full_4k.service"
   ],
   "case_file": "../cases/v7x/llama3_8b/balanced_4k.workload",
+  "kernel_registry": "../cases/v7x/llama3_8b/production.kernel",
   "sweep_name": "baseline_full_4k",
 
   "timeout_seconds": 2400,
@@ -42,13 +43,9 @@
 
   "coupled_axes": [],
 
-  "_block_sizes_source": "tmp/log/tuning_winners_20260505_070350.txt (page=128, llama3_8b_v7x)",
-
   "fixed": {
     "LONG_PREFILL_TOKEN_THRESHOLD": 0,
     "MAX_MODEL_LEN":                4096,
-    "BLOCK_SIZE":                   128,
-    "RPA_D_BLOCK_SIZES":            "1,4096,1,1024",
-    "RPA_M_BLOCK_SIZES":            "64,512,64,256"
+    "BLOCK_SIZE":                   128
   }
 }

@@ -4,68 +4,30 @@
     "v7x stress workload. Companion to baseline_full_4k.service.",
     "",
     "Combos: 20 (2 MAX_NUM_SEQS x 2 MAX_NUM_BATCHED_TOKENS x 5 K).",
-    "Cartesian over (MAX_NUM_SEQS, MAX_NUM_BATCHED_TOKENS) sweep_axes",
-    "with K-coupled-to-RPA_P_BLOCK_SIZES on the coupled_axes side.",
-    "",
-    "K winners pulled from the all-three-flavors tune (page=128",
-    "column). Per-flavor blocks for DECODE and MIXED fixed to the",
-    "same tunes page=128 winners.",
+    "Cartesian over (MAX_NUM_SEQS, MAX_NUM_BATCHED_TOKENS, K). All",
+    "block sizes (D, M, P) auto-linked from production.kernel keyed on",
+    "(case, page_size, K).",
     "",
     "Run:",
     "  tools/benchmark/sweep.sh \\",
     "    tools/benchmark/sweeps/llama3_8b_v7x_optimized_full_4k.service"
   ],
   "case_file": "../cases/v7x/llama3_8b/balanced_4k.workload",
+  "kernel_registry": "../cases/v7x/llama3_8b/production.kernel",
   "sweep_name": "optimized_full_4k",
 
   "timeout_seconds": 2400,
 
   "sweep_axes": {
-    "MAX_NUM_SEQS":           [128, 1000],
-    "MAX_NUM_BATCHED_TOKENS": [4096, 10275]
+    "MAX_NUM_SEQS":                  [128, 1000],
+    "MAX_NUM_BATCHED_TOKENS":         [4096, 10275],
+    "LONG_PREFILL_TOKEN_THRESHOLD":   [128, 256, 512, 1024, 2048]
   },
 
-  "_block_sizes_source": "tmp/log/tuning_winners_20260505_070350.txt (page=128, llama3_8b_v7x)",
-
-  "_coupled_axes_provenance": [
-    "K=128  page=128: bq=128 bkv=2048 bq_c=128 bkv_c=1024  (1093us)",
-    "K=256  page=128: bq=256 bkv=2048 bq_c=256 bkv_c=512   (1040us)",
-    "K=512  page=128: bq=256 bkv=2048 bq_c=256 bkv_c=512   (1036us)",
-    "K=1024 page=128: bq=256 bkv=1024 bq_c=256 bkv_c=512   (1021us)",
-    "K=2048 page=128: bq=256 bkv=2048 bq_c=256 bkv_c=512   ( 950us)"
-  ],
-
-  "coupled_axes": [
-    {
-      "LONG_PREFILL_TOKEN_THRESHOLD": 128,
-      "BLOCK_SIZE":                   128,
-      "RPA_P_BLOCK_SIZES":            "128,2048,128,1024"
-    },
-    {
-      "LONG_PREFILL_TOKEN_THRESHOLD": 256,
-      "BLOCK_SIZE":                   128,
-      "RPA_P_BLOCK_SIZES":            "256,2048,256,512"
-    },
-    {
-      "LONG_PREFILL_TOKEN_THRESHOLD": 512,
-      "BLOCK_SIZE":                   128,
-      "RPA_P_BLOCK_SIZES":            "256,2048,256,512"
-    },
-    {
-      "LONG_PREFILL_TOKEN_THRESHOLD": 1024,
-      "BLOCK_SIZE":                   128,
-      "RPA_P_BLOCK_SIZES":            "256,1024,256,512"
-    },
-    {
-      "LONG_PREFILL_TOKEN_THRESHOLD": 2048,
-      "BLOCK_SIZE":                   128,
-      "RPA_P_BLOCK_SIZES":            "256,2048,256,512"
-    }
-  ],
+  "coupled_axes": [],
 
   "fixed": {
-    "MAX_MODEL_LEN":      4096,
-    "RPA_D_BLOCK_SIZES":  "1,4096,1,1024",
-    "RPA_M_BLOCK_SIZES":  "64,512,64,256"
+    "BLOCK_SIZE":    128,
+    "MAX_MODEL_LEN": 4096
   }
 }

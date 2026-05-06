@@ -5,14 +5,12 @@
     "Chunk-prefill OFF (LONG_PREFILL_TOKEN_THRESHOLD=0). All sequences",
     "route through the MIXED bucket. Sweeps MAX_NUM_BATCHED_TOKENS to",
     "characterize how the step token budget interacts with the prefill-",
-    "heavy 1800/128 workload. 2048 starves decode (1800-token prefill",
-    "consumes 88% of the budget); 4096 has comfortable headroom; 8192",
-    "is the larger-batch corner case (more decode tokens per step but",
-    "longer kernel calls).",
+    "heavy workload. 2048 starves decode; 4096 has comfortable headroom;",
+    "8192 is the larger-batch corner case.",
     "",
-    "Block sizes pinned to the all-three-flavors tune (page=128 winners,",
-    "llama3_8b_v7x). NUM_PROMPTS=1000 vs 100 in the smoke — tighter",
-    "percentile estimates.",
+    "Block sizes auto-linked from production.kernel — DECODE and MIXED",
+    "blocks are injected per combo at the page_size in BLOCK_SIZE. K=0",
+    "means no PREFILL block lookup. NUM_PROMPTS=1000 for tight percentiles.",
     "",
     "Combos: 3.",
     "",
@@ -21,6 +19,7 @@
     "    tools/benchmark/sweeps/llama3_8b_v7x_baseline_full.service"
   ],
   "case_file": "../cases/v7x/llama3_8b/prefill_heavy.workload",
+  "kernel_registry": "../cases/v7x/llama3_8b/production.kernel",
   "sweep_name": "baseline_full",
 
   "timeout_seconds": 1800,
@@ -31,15 +30,11 @@
 
   "coupled_axes": [],
 
-  "_block_sizes_source": "tmp/log/tuning_winners_20260505_070350.txt (page=128, llama3_8b_v7x)",
-
   "fixed": {
     "LONG_PREFILL_TOKEN_THRESHOLD": 0,
     "MAX_NUM_SEQS":                 128,
     "MAX_MODEL_LEN":                8192,
     "BLOCK_SIZE":                   128,
-    "NUM_PROMPTS":                  1000,
-    "RPA_D_BLOCK_SIZES":            "1,4096,1,1024",
-    "RPA_M_BLOCK_SIZES":            "64,512,64,256"
+    "NUM_PROMPTS":                  1000
   }
 }
