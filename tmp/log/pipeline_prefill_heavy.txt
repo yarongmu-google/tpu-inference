@@ -1,95 +1,107 @@
 === Layer 1: Hardware Tuning ===
 Runlog: tmp/log/tune_all_prefill_heavy.txt
-===== 2026-05-05 15:23:33 Starting full kernel tune for prefill_heavy =====
+===== 2026-05-05 17:20:48 Starting full kernel tune for prefill_heavy =====
 Cases: decode -> prefill -> mixed
 Branch: rpa3
-Git commit: 7d26554cf55849b446a345715c3f2811c7d1501b
+Git commit: 9f8e45709f64a614f977490d9fa3fefd5d1f9ab4
 
 
-===== 2026-05-05 15:23:33 Tuning decode (case_set_id=prefill_heavy_decode_20260505_152333) =====
+===== 2026-05-05 17:20:48 Tuning decode (case_set_id=prefill_heavy_decode_20260505_172048) =====
 WARNING:absl:Tensorflow library not found, tensorflow.io.gfile operations will use native shim calls. GCS paths (i.e. 'gs://...') cannot be accessed.
 INFO:numexpr.utils:Note: detected 224 virtual cores but NumExpr set to maximum of 64, check "NUMEXPR_MAX_THREADS" environment variable.
 INFO:numexpr.utils:Note: NumExpr detected 224 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
 INFO:numexpr.utils:NumExpr defaulting to 16 threads.
-INFO 05-05 15:23:38 [__init__.py:59] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
-I0505 15:23:38.681641 135485978916800 kernel_tuner_runner.py:104] Using case_set_id: prefill_heavy_decode_20260505_152333, run_id: 0, case_set_desc: prefill_heavy decode kernel tune 2026-05-05 for this tuning run.
-I0505 15:23:38.681809 135485978916800 local_db_manager.py:53] Database initialized at /tmp/kernel_tuner_run_2026_05_05_15_23_38
-I0505 15:23:38.681946 135485978916800 rpa_v3_kernel_tuner.py:192] Loaded 3 completed TuningKeys from tools/benchmark/cases/v7x/llama3_8b/production.kernel
-I0505 15:23:38.681985 135485978916800 rpa_v3_kernel_tuner.py:244] SMOKE_TEST=1 detected: Truncating tuner search space to minimum.
-I0505 15:23:38.682008 135485978916800 kernel_tuner_runner.py:123] Running in locally mode. Skipping Buildkite pipeline generation and running tuning jobs directly.
-I0505 15:23:38.682095 135485978916800 local_db_manager.py:90] Initialized case set: {'ID': 'prefill_heavy_decode_20260505_152333', 'Description': 'prefill_heavy decode kernel tune 2026-05-05', 'Status': 'CREATING', 'ScanSpace': 0}
-I0505 15:23:38.682194 135485978916800 kernel_tuner_base.py:141] Initialized new CaseSet with ID: prefill_heavy_decode_20260505_152333 and description: prefill_heavy decode kernel tune 2026-05-05
-I0505 15:23:38.682299 135485978916800 rpa_v3_kernel_tuner.py:358] [Debug] Generated 0 cases
-I0505 15:23:38.682479 135485978916800 local_db_manager.py:124] Finished case set: ID=prefill_heavy_decode_20260505_152333, valid=0, invalid=0, duration=0.0s
-I0505 15:23:38.682508 135485978916800 kernel_tuner_base.py:196] 
-Complete Generate Tuning Cases for prefill_heavy_decode_20260505_152333, Valid Cases: 0 | Duration: 0s
-I0505 15:23:38.682528 135485978916800 local_db_manager.py:285] Database at /tmp/kernel_tuner_run_2026_05_05_15_23_38 finalized with 0 cases, 0 invalid cases.
-I0505 15:23:38.682566 135485978916800 local_db_manager.py:291] Final DB file: /tmp/kernel_tuner_run_2026_05_05_15_23_38/CaseSet.json
-===== 2026-05-05 15:23:39 decode done in 6s =====
+INFO 05-05 17:20:53 [__init__.py:59] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+I0505 17:20:53.611845 135623675889600 kernel_tuner_runner.py:104] Using case_set_id: prefill_heavy_decode_20260505_172048, run_id: 0, case_set_desc: prefill_heavy decode kernel tune 2026-05-05 for this tuning run.
+I0505 17:20:53.612020 135623675889600 local_db_manager.py:53] Database initialized at /tmp/kernel_tuner_run_2026_05_05_17_20_53
+I0505 17:20:53.612171 135623675889600 rpa_v3_kernel_tuner.py:207] Loaded 3 completed TuningKeys from tools/benchmark/cases/v7x/llama3_8b/production.kernel
+I0505 17:20:53.612225 135623675889600 rpa_v3_kernel_tuner.py:259] SMOKE_TEST=1 detected: Truncating tuner search space to minimum.
+I0505 17:20:53.612258 135623675889600 kernel_tuner_runner.py:123] Running in locally mode. Skipping Buildkite pipeline generation and running tuning jobs directly.
+I0505 17:20:53.612359 135623675889600 local_db_manager.py:90] Initialized case set: {'ID': 'prefill_heavy_decode_20260505_172048', 'Description': 'prefill_heavy decode kernel tune 2026-05-05', 'Status': 'CREATING', 'ScanSpace': 0}
+I0505 17:20:53.612386 135623675889600 kernel_tuner_base.py:141] Initialized new CaseSet with ID: prefill_heavy_decode_20260505_172048 and description: prefill_heavy decode kernel tune 2026-05-05
+I0505 17:20:53.612494 135623675889600 rpa_v3_kernel_tuner.py:386] [Debug] Generated 0 cases
+I0505 17:20:53.612688 135623675889600 local_db_manager.py:124] Finished case set: ID=prefill_heavy_decode_20260505_172048, valid=0, invalid=0, duration=0.0s
+I0505 17:20:53.612716 135623675889600 kernel_tuner_base.py:196] 
+Complete Generate Tuning Cases for prefill_heavy_decode_20260505_172048, Valid Cases: 0 | Duration: 0s
+I0505 17:20:53.612735 135623675889600 local_db_manager.py:285] Database at /tmp/kernel_tuner_run_2026_05_05_17_20_53 finalized with 0 cases, 0 invalid cases.
+I0505 17:20:53.612774 135623675889600 local_db_manager.py:291] Final DB file: /tmp/kernel_tuner_run_2026_05_05_17_20_53/CaseSet.json
+===== 2026-05-05 17:20:54 decode done in 6s =====
+[rpa3 263fc438ad] [Kernel-Tune] progress: decode done (prefill_heavy 20260505_172048)
+ 1 file changed, 26 insertions(+)
+To github.com:yarongmu-google/tpu-inference.git
+   9f8e45709f..263fc438ad  rpa3 -> rpa3
 
-===== 2026-05-05 15:23:39 Tuning prefill (case_set_id=prefill_heavy_prefill_20260505_152333) =====
+===== 2026-05-05 17:21:00 Tuning prefill (case_set_id=prefill_heavy_prefill_20260505_172048) =====
 WARNING:absl:Tensorflow library not found, tensorflow.io.gfile operations will use native shim calls. GCS paths (i.e. 'gs://...') cannot be accessed.
 INFO:numexpr.utils:Note: detected 224 virtual cores but NumExpr set to maximum of 64, check "NUMEXPR_MAX_THREADS" environment variable.
 INFO:numexpr.utils:Note: NumExpr detected 224 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
 INFO:numexpr.utils:NumExpr defaulting to 16 threads.
-INFO 05-05 15:23:44 [__init__.py:59] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
-I0505 15:23:44.997300 135440413788096 kernel_tuner_runner.py:104] Using case_set_id: prefill_heavy_prefill_20260505_152333, run_id: 0, case_set_desc: prefill_heavy prefill kernel tune 2026-05-05 for this tuning run.
-I0505 15:23:44.997445 135440413788096 local_db_manager.py:53] Database initialized at /tmp/kernel_tuner_run_2026_05_05_15_23_44
-I0505 15:23:44.997572 135440413788096 rpa_v3_kernel_tuner.py:192] Loaded 3 completed TuningKeys from tools/benchmark/cases/v7x/llama3_8b/production.kernel
-I0505 15:23:44.997616 135440413788096 rpa_v3_kernel_tuner.py:244] SMOKE_TEST=1 detected: Truncating tuner search space to minimum.
-I0505 15:23:44.997642 135440413788096 kernel_tuner_runner.py:123] Running in locally mode. Skipping Buildkite pipeline generation and running tuning jobs directly.
-I0505 15:23:44.997735 135440413788096 local_db_manager.py:90] Initialized case set: {'ID': 'prefill_heavy_prefill_20260505_152333', 'Description': 'prefill_heavy prefill kernel tune 2026-05-05', 'Status': 'CREATING', 'ScanSpace': 0}
-I0505 15:23:44.997760 135440413788096 kernel_tuner_base.py:141] Initialized new CaseSet with ID: prefill_heavy_prefill_20260505_152333 and description: prefill_heavy prefill kernel tune 2026-05-05
-I0505 15:23:44.997859 135440413788096 rpa_v3_kernel_tuner.py:358] [Debug] Generated 0 cases
-I0505 15:23:44.998031 135440413788096 local_db_manager.py:124] Finished case set: ID=prefill_heavy_prefill_20260505_152333, valid=0, invalid=0, duration=0.0s
-I0505 15:23:44.998056 135440413788096 kernel_tuner_base.py:196] 
-Complete Generate Tuning Cases for prefill_heavy_prefill_20260505_152333, Valid Cases: 0 | Duration: 0s
-I0505 15:23:44.998078 135440413788096 local_db_manager.py:285] Database at /tmp/kernel_tuner_run_2026_05_05_15_23_44 finalized with 0 cases, 0 invalid cases.
-I0505 15:23:44.998126 135440413788096 local_db_manager.py:291] Final DB file: /tmp/kernel_tuner_run_2026_05_05_15_23_44/CaseSet.json
-===== 2026-05-05 15:23:45 prefill done in 6s =====
+INFO 05-05 17:21:05 [__init__.py:59] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+I0505 17:21:06.088043 123437699008448 kernel_tuner_runner.py:104] Using case_set_id: prefill_heavy_prefill_20260505_172048, run_id: 0, case_set_desc: prefill_heavy prefill kernel tune 2026-05-05 for this tuning run.
+I0505 17:21:06.088217 123437699008448 local_db_manager.py:53] Database initialized at /tmp/kernel_tuner_run_2026_05_05_17_21_06
+I0505 17:21:06.088367 123437699008448 rpa_v3_kernel_tuner.py:207] Loaded 3 completed TuningKeys from tools/benchmark/cases/v7x/llama3_8b/production.kernel
+I0505 17:21:06.088416 123437699008448 rpa_v3_kernel_tuner.py:259] SMOKE_TEST=1 detected: Truncating tuner search space to minimum.
+I0505 17:21:06.088449 123437699008448 kernel_tuner_runner.py:123] Running in locally mode. Skipping Buildkite pipeline generation and running tuning jobs directly.
+I0505 17:21:06.088559 123437699008448 local_db_manager.py:90] Initialized case set: {'ID': 'prefill_heavy_prefill_20260505_172048', 'Description': 'prefill_heavy prefill kernel tune 2026-05-05', 'Status': 'CREATING', 'ScanSpace': 0}
+I0505 17:21:06.088588 123437699008448 kernel_tuner_base.py:141] Initialized new CaseSet with ID: prefill_heavy_prefill_20260505_172048 and description: prefill_heavy prefill kernel tune 2026-05-05
+I0505 17:21:06.088703 123437699008448 rpa_v3_kernel_tuner.py:386] [Debug] Generated 0 cases
+I0505 17:21:06.088913 123437699008448 local_db_manager.py:124] Finished case set: ID=prefill_heavy_prefill_20260505_172048, valid=0, invalid=0, duration=0.0s
+I0505 17:21:06.088944 123437699008448 kernel_tuner_base.py:196] 
+Complete Generate Tuning Cases for prefill_heavy_prefill_20260505_172048, Valid Cases: 0 | Duration: 0s
+I0505 17:21:06.088969 123437699008448 local_db_manager.py:285] Database at /tmp/kernel_tuner_run_2026_05_05_17_21_06 finalized with 0 cases, 0 invalid cases.
+I0505 17:21:06.089010 123437699008448 local_db_manager.py:291] Final DB file: /tmp/kernel_tuner_run_2026_05_05_17_21_06/CaseSet.json
+===== 2026-05-05 17:21:06 prefill done in 6s =====
+[rpa3 460d9adb72] [Kernel-Tune] progress: prefill done (prefill_heavy 20260505_172048)
+ 1 file changed, 21 insertions(+)
+To github.com:yarongmu-google/tpu-inference.git
+   263fc438ad..460d9adb72  rpa3 -> rpa3
 
-===== 2026-05-05 15:23:45 Tuning mixed (case_set_id=prefill_heavy_mixed_20260505_152333) =====
+===== 2026-05-05 17:21:13 Tuning mixed (case_set_id=prefill_heavy_mixed_20260505_172048) =====
 WARNING:absl:Tensorflow library not found, tensorflow.io.gfile operations will use native shim calls. GCS paths (i.e. 'gs://...') cannot be accessed.
 INFO:numexpr.utils:Note: detected 224 virtual cores but NumExpr set to maximum of 64, check "NUMEXPR_MAX_THREADS" environment variable.
 INFO:numexpr.utils:Note: NumExpr detected 224 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
 INFO:numexpr.utils:NumExpr defaulting to 16 threads.
-INFO 05-05 15:23:51 [__init__.py:59] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
-I0505 15:23:51.222882 138909934008256 kernel_tuner_runner.py:104] Using case_set_id: prefill_heavy_mixed_20260505_152333, run_id: 0, case_set_desc: prefill_heavy mixed kernel tune 2026-05-05 for this tuning run.
-I0505 15:23:51.223036 138909934008256 local_db_manager.py:53] Database initialized at /tmp/kernel_tuner_run_2026_05_05_15_23_51
-I0505 15:23:51.223175 138909934008256 rpa_v3_kernel_tuner.py:192] Loaded 3 completed TuningKeys from tools/benchmark/cases/v7x/llama3_8b/production.kernel
-I0505 15:23:51.223217 138909934008256 rpa_v3_kernel_tuner.py:244] SMOKE_TEST=1 detected: Truncating tuner search space to minimum.
-I0505 15:23:51.223243 138909934008256 kernel_tuner_runner.py:123] Running in locally mode. Skipping Buildkite pipeline generation and running tuning jobs directly.
-I0505 15:23:51.223337 138909934008256 local_db_manager.py:90] Initialized case set: {'ID': 'prefill_heavy_mixed_20260505_152333', 'Description': 'prefill_heavy mixed kernel tune 2026-05-05', 'Status': 'CREATING', 'ScanSpace': 0}
-I0505 15:23:51.223366 138909934008256 kernel_tuner_base.py:141] Initialized new CaseSet with ID: prefill_heavy_mixed_20260505_152333 and description: prefill_heavy mixed kernel tune 2026-05-05
-I0505 15:23:51.223464 138909934008256 rpa_v3_kernel_tuner.py:358] [Debug] Generated 0 cases
-I0505 15:23:51.223638 138909934008256 local_db_manager.py:124] Finished case set: ID=prefill_heavy_mixed_20260505_152333, valid=0, invalid=0, duration=0.0s
-I0505 15:23:51.223663 138909934008256 kernel_tuner_base.py:196] 
-Complete Generate Tuning Cases for prefill_heavy_mixed_20260505_152333, Valid Cases: 0 | Duration: 0s
-I0505 15:23:51.223686 138909934008256 local_db_manager.py:285] Database at /tmp/kernel_tuner_run_2026_05_05_15_23_51 finalized with 0 cases, 0 invalid cases.
-I0505 15:23:51.223722 138909934008256 local_db_manager.py:291] Final DB file: /tmp/kernel_tuner_run_2026_05_05_15_23_51/CaseSet.json
-===== 2026-05-05 15:23:51 mixed done in 6s =====
+INFO 05-05 17:21:18 [__init__.py:59] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+I0505 17:21:18.806919 138558255757248 kernel_tuner_runner.py:104] Using case_set_id: prefill_heavy_mixed_20260505_172048, run_id: 0, case_set_desc: prefill_heavy mixed kernel tune 2026-05-05 for this tuning run.
+I0505 17:21:18.807085 138558255757248 local_db_manager.py:53] Database initialized at /tmp/kernel_tuner_run_2026_05_05_17_21_18
+I0505 17:21:18.807228 138558255757248 rpa_v3_kernel_tuner.py:207] Loaded 3 completed TuningKeys from tools/benchmark/cases/v7x/llama3_8b/production.kernel
+I0505 17:21:18.807271 138558255757248 rpa_v3_kernel_tuner.py:259] SMOKE_TEST=1 detected: Truncating tuner search space to minimum.
+I0505 17:21:18.807299 138558255757248 kernel_tuner_runner.py:123] Running in locally mode. Skipping Buildkite pipeline generation and running tuning jobs directly.
+I0505 17:21:18.807393 138558255757248 local_db_manager.py:90] Initialized case set: {'ID': 'prefill_heavy_mixed_20260505_172048', 'Description': 'prefill_heavy mixed kernel tune 2026-05-05', 'Status': 'CREATING', 'ScanSpace': 0}
+I0505 17:21:18.807420 138558255757248 kernel_tuner_base.py:141] Initialized new CaseSet with ID: prefill_heavy_mixed_20260505_172048 and description: prefill_heavy mixed kernel tune 2026-05-05
+I0505 17:21:18.807522 138558255757248 rpa_v3_kernel_tuner.py:386] [Debug] Generated 0 cases
+I0505 17:21:18.807675 138558255757248 local_db_manager.py:124] Finished case set: ID=prefill_heavy_mixed_20260505_172048, valid=0, invalid=0, duration=0.0s
+I0505 17:21:18.807702 138558255757248 kernel_tuner_base.py:196] 
+Complete Generate Tuning Cases for prefill_heavy_mixed_20260505_172048, Valid Cases: 0 | Duration: 0s
+I0505 17:21:18.807722 138558255757248 local_db_manager.py:285] Database at /tmp/kernel_tuner_run_2026_05_05_17_21_18 finalized with 0 cases, 0 invalid cases.
+I0505 17:21:18.807759 138558255757248 local_db_manager.py:291] Final DB file: /tmp/kernel_tuner_run_2026_05_05_17_21_18/CaseSet.json
+===== 2026-05-05 17:21:19 mixed done in 6s =====
+[rpa3 2cdc6aa78c] [Kernel-Tune] progress: mixed done (prefill_heavy 20260505_172048)
+ 1 file changed, 21 insertions(+)
+To github.com:yarongmu-google/tpu-inference.git
+   460d9adb72..2cdc6aa78c  rpa3 -> rpa3
 
-===== 2026-05-05 15:23:51 ALL CASES DONE =====
+===== 2026-05-05 17:21:25 ALL CASES DONE =====
 
-Local DB: /tmp/kernel_tuner_run_2026_05_05_15_23_51
+Local DB: /tmp/kernel_tuner_run_2026_05_05_17_21_18
 
 Inspector commands to extract winners (run on the same TPU VM):
   python3 -m tools.kernel.tuner.v1.inspect_result_cli \
-      --source=local --db-path=/tmp/kernel_tuner_run_2026_05_05_15_23_51 \
+      --source=local --db-path=/tmp/kernel_tuner_run_2026_05_05_17_21_18 \
       query_min_latency \
-      --case_set_id=prefill_heavy_decode_20260505_152333 --run_id=0
+      --case_set_id=prefill_heavy_decode_20260505_172048 --run_id=0
   python3 -m tools.kernel.tuner.v1.inspect_result_cli \
-      --source=local --db-path=/tmp/kernel_tuner_run_2026_05_05_15_23_51 \
+      --source=local --db-path=/tmp/kernel_tuner_run_2026_05_05_17_21_18 \
       query_min_latency \
-      --case_set_id=prefill_heavy_prefill_20260505_152333 --run_id=0
+      --case_set_id=prefill_heavy_prefill_20260505_172048 --run_id=0
   python3 -m tools.kernel.tuner.v1.inspect_result_cli \
-      --source=local --db-path=/tmp/kernel_tuner_run_2026_05_05_15_23_51 \
+      --source=local --db-path=/tmp/kernel_tuner_run_2026_05_05_17_21_18 \
       query_min_latency \
-      --case_set_id=prefill_heavy_mixed_20260505_152333 --run_id=0
-[rpa3 b19140fc13] [Bench] Auto-commit all done (prefill_heavy)
- 1 file changed, 58 insertions(+), 58 deletions(-)
+      --case_set_id=prefill_heavy_mixed_20260505_172048 --run_id=0
+[rpa3 65d196e690] [Kernel-Tune] progress: all done (prefill_heavy 20260505_172048)
+ 1 file changed, 18 insertions(+)
 To github.com:yarongmu-google/tpu-inference.git
-   7c6c468fd8..b19140fc13  rpa3 -> rpa3
+   2cdc6aa78c..65d196e690  rpa3 -> rpa3
 
 === Layer 1: Building Kernel Registry ===
 === Executing build_kernel_registry.py ===
@@ -97,22 +109,27 @@ Reading runlog: tmp/log/tune_all_prefill_heavy.txt
 Extracting decode from /tmp/kernel_tuner_run_2026_05_05_15_23_38
 Extracting prefill from /tmp/kernel_tuner_run_2026_05_05_15_23_44
 Extracting mixed from /tmp/kernel_tuner_run_2026_05_05_15_23_51
+Extracting decode from /tmp/kernel_tuner_run_2026_05_05_17_20_53
+Extracting prefill from /tmp/kernel_tuner_run_2026_05_05_17_21_06
+Extracting mixed from /tmp/kernel_tuner_run_2026_05_05_17_21_18
 
 Wrote (Accumulated): tools/benchmark/cases/v7x/llama3_8b/production.kernel
-[rpa3 f420e720cc] [Kernel-Tune] Winners extracted to production.kernel
+[rpa3 5083c60af9] [Kernel-Tune] Winners extracted to production.kernel
  1 file changed, 1 insertion(+), 1 deletion(-)
 To github.com:yarongmu-google/tpu-inference.git
-   b19140fc13..f420e720cc  rpa3 -> rpa3
-[rpa3 26d8e7d6e4] [Logs] Update build_kernel_registry script log for prefill_heavy
- 1 file changed, 5 insertions(+), 5 deletions(-)
+   65d196e690..5083c60af9  rpa3 -> rpa3
+[rpa3 c96efd2d99] [Logs] Update build_kernel_registry script log for prefill_heavy
+ 1 file changed, 5 insertions(+), 2 deletions(-)
 Kernel Registry updated at tools/benchmark/cases/v7x/llama3_8b/production.kernel.
 
 === Layer 2: Service Sweeping ===
 Runlog: tmp/log/sweep_llama3_8b_v7x_optimized_full.txt
 SMOKE_TEST=1 detected: Truncating service sweep space to 1 combo.
 [1/1] c1113c9a7462 skipped_resumed (—)  tmp/bench_prefill_heavy_optimized_full/c1113c9a7462
-git_commit_paths: nothing staged for ['tmp/bench_prefill_heavy_optimized_full/c1113c9a7462/metrics.txt', 'tmp/bench_prefill_heavy_optimized_full/c1113c9a7462/meta.txt', 'tmp/log/sweep_llama3_8b_v7x_optimized_full.txt']
-WARN: auto-commit/push failed at 1/1
+[rpa3 a8c980924e] [Bench] Auto-commit sweep progress 1/1
+ 1 file changed, 1 deletion(-)
+To github.com:yarongmu-google/tpu-inference.git
+   5083c60af9..a8c980924e  rpa3 -> rpa3
 
 === Layer 3: Building Production Configuration ===
 | case          | MNB  | MNS | MML  | page | K   | p_blk           | rate | req/s | out_tok/s | ttft_mean | ttft_p99  | itl_mean | itl_p99 | dur_s | id           |
