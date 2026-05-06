@@ -110,13 +110,6 @@ def load_spec(path: str | os.PathLike) -> dict[str, Any]:
         except Exception as e:
             raise SpecError(f"failed to load kernel_registry: {e}") from e
 
-    if os.environ.get("SMOKE_TEST") == "1":
-        print("SMOKE_TEST=1 detected: Truncating service sweep space to 1 combo.", file=sys.stderr)
-        if "sweep_axes" in spec:
-            for k in spec["sweep_axes"]:
-                spec["sweep_axes"][k] = spec["sweep_axes"][k][:1]
-        if "coupled_axes" in spec and spec["coupled_axes"]:
-            spec["coupled_axes"] = spec["coupled_axes"][:1]
 
     return spec
 
@@ -205,6 +198,111 @@ def _validate_spec(spec: dict[str, Any]) -> None:
 # ----- Enumeration ---------------------------------------------------------
 
 
+def apply_smoke_truncation_in_place(spec: dict[str, Any]) -> None:
+    """Truncate sweep_axes/coupled_axes to the first value when
+    SMOKE_TEST=1 in the environment. Mutates the spec dict in place.
+
+    Kept separate from load_spec so the loader stays pure: a pure
+    loader that conditionally rewrites the spec on a global env var
+    surprises callers. This helper is what run_sweep + main() invoke
+    explicitly when smoke mode is desired.
+    """
+    if os.environ.get("SMOKE_TEST") != "1":
+        return
+    print("SMOKE_TEST=1 detected: truncating service sweep space to 1 combo.",
+          file=sys.stderr)
+    if "sweep_axes" in spec:
+        for k in spec["sweep_axes"]:
+            spec["sweep_axes"][k] = spec["sweep_axes"][k][:1]
+    if spec.get("coupled_axes"):
+        spec["coupled_axes"] = spec["coupled_axes"][:1]
+
+
+def _registry_lookup(
+    registry: dict[str, Any],
+    case_name: str,
+    target_page_size: int,
+    target_k: int,
+) -> dict[str, int] | None:
+    """Look up tunable_params in a .kernel registry by (case, page_size, K).
+
+    Registry shape: registry["results"][case_name] = [
+        {"tuning_key": {"page_size": <int>, ..., "chunk_prefill_size": <int>}},
+         "tunable_params": {"bq_sz": ..., "bkv_sz": ..., ...}, ...},
+        ...
+    ]
+
+    Returns the FIRST entry whose tuning_key matches (page_size +
+    chunk_prefill_size for prefill / page_size for decode-mixed). Today
+    the registry is pre-pruned to one winner per key by
+    build_kernel_registry.py's accumulation logic, so "first match" is
+    "the winner". If a future change starts storing multiple entries
+    per key, callers should rank explicitly.
+    """
+    for entry in registry.get("results", {}).get(case_name, []):
+        tk = entry.get("tuning_key", {})
+        if tk.get("page_size") != target_page_size:
+            continue
+        if case_name == "prefill":
+            if tk.get("chunk_prefill_size") != target_k:
+                continue
+        return entry.get("tunable_params")
+    return None
+
+
+def _apply_auto_link(
+    combo: dict[str, str],
+    registry: dict[str, Any],
+) -> None:
+    """Populate RPA_D/M/P_BLOCK_SIZES on `combo` from `registry`.
+
+    Mutates `combo` in place. Honors user overrides (existing
+    RPA_*_BLOCK_SIZES values are kept). Raises SpecError if the
+    registry is missing an entry the combo would need (so the failure
+    is caught at spec-load, not after a kernel-default OOM at runtime).
+    """
+    page_size = int(combo.get("BLOCK_SIZE", "128"))
+    k = int(combo.get("LONG_PREFILL_TOKEN_THRESHOLD", "0"))
+
+    def fmt(p: dict[str, int]) -> str:
+        return f"{p['bq_sz']},{p['bkv_sz']},{p['bq_csz']},{p['bkv_csz']}"
+
+    if "RPA_D_BLOCK_SIZES" not in combo:
+        d_params = _registry_lookup(registry, "decode", page_size, 0)
+        if d_params is None:
+            raise SpecError(
+                f"kernel_registry has no DECODE entry at "
+                f"page_size={page_size}. Either populate the registry "
+                f"by re-running kernel tuning, or set RPA_D_BLOCK_SIZES "
+                f"manually in the spec.")
+        combo["RPA_D_BLOCK_SIZES"] = fmt(d_params)
+
+    if "RPA_M_BLOCK_SIZES" not in combo:
+        m_params = _registry_lookup(registry, "mixed", page_size, 0)
+        if m_params is None:
+            raise SpecError(
+                f"kernel_registry has no MIXED entry at "
+                f"page_size={page_size}. Either populate the registry "
+                f"by re-running kernel tuning, or set RPA_M_BLOCK_SIZES "
+                f"manually in the spec.")
+        combo["RPA_M_BLOCK_SIZES"] = fmt(m_params)
+
+    # PREFILL block sizes are K-dependent. K=0 means chunk-prefill OFF
+    # (the request_distribution stays [D, D, T] and the kernel skips
+    # its PREFILL pass entirely), so no PREFILL block lookup is
+    # needed; documented here because it is otherwise non-obvious why
+    # K=0 is the only K not present in the kernel registry.
+    if k > 0 and "RPA_P_BLOCK_SIZES" not in combo:
+        p_params = _registry_lookup(registry, "prefill", page_size, k)
+        if p_params is None:
+            raise SpecError(
+                f"kernel_registry has no PREFILL entry at "
+                f"(page_size={page_size}, K={k}). Either re-run kernel "
+                f"tuning to populate this K, or set RPA_P_BLOCK_SIZES "
+                f"manually for this combo.")
+        combo["RPA_P_BLOCK_SIZES"] = fmt(p_params)
+
+
 def enumerate_combos(spec: dict[str, Any]) -> list[dict[str, str]]:
     """Yield the cartesian × coupled product of `spec`, merged with `fixed`.
 
@@ -244,68 +342,7 @@ def enumerate_combos(spec: dict[str, Any]) -> list[dict[str, str]]:
             combo = {k: str(v) for k, v in env.items()}
 
             if "_loaded_kernel_registry" in spec:
-                registry = spec["_loaded_kernel_registry"]
-                results = registry.get("results", {})
-
-                # Default to 128 if not strictly in combo, to match common TPU v7x pages.
-                page_size = int(combo.get("BLOCK_SIZE", "128"))
-                k = int(combo.get("LONG_PREFILL_TOKEN_THRESHOLD", "0"))
-
-                def find_best(case_name, target_k, target_page_size):
-                    if case_name not in results: return None
-                    for entry in results[case_name]:
-                        tk = entry.get("tuning_key", {})
-                        if tk.get("page_size") == target_page_size:
-                            if case_name == "prefill":
-                                if tk.get("chunk_prefill_size") == target_k:
-                                    return entry.get("tunable_params")
-                            else:
-                                return entry.get("tunable_params")
-                    return None
-
-                def fmt(p):
-                    return f"{p['bq_sz']},{p['bkv_sz']},{p['bq_csz']},{p['bkv_csz']}"
-
-                # For each block-size key the kernel needs, either:
-                #   - the user provided it manually in fixed/coupled (we
-                #     respect that override), OR
-                #   - the registry must have a winner for the matching
-                #     (case, page_size, K).
-                # If neither is true, the kernel would silently fall back
-                # to compiled defaults at run time — which we already know
-                # OOM on v7x for MIXED at MAX_NUM_BATCHED_TOKENS=2048.
-                # Raise here so the misconfiguration is caught at spec-
-                # load time, before any TPU cycles are spent.
-                if "RPA_D_BLOCK_SIZES" not in combo:
-                    d_params = find_best("decode", 0, page_size)
-                    if d_params is None:
-                        raise SpecError(
-                            f"kernel_registry has no DECODE entry at "
-                            f"page_size={page_size}. Either populate the "
-                            f"registry by re-running kernel tuning, or set "
-                            f"RPA_D_BLOCK_SIZES manually in the spec.")
-                    combo["RPA_D_BLOCK_SIZES"] = fmt(d_params)
-
-                if "RPA_M_BLOCK_SIZES" not in combo:
-                    m_params = find_best("mixed", 0, page_size)
-                    if m_params is None:
-                        raise SpecError(
-                            f"kernel_registry has no MIXED entry at "
-                            f"page_size={page_size}. Either populate the "
-                            f"registry by re-running kernel tuning, or set "
-                            f"RPA_M_BLOCK_SIZES manually in the spec.")
-                    combo["RPA_M_BLOCK_SIZES"] = fmt(m_params)
-
-                if k > 0 and "RPA_P_BLOCK_SIZES" not in combo:
-                    p_params = find_best("prefill", k, page_size)
-                    if p_params is None:
-                        raise SpecError(
-                            f"kernel_registry has no PREFILL entry at "
-                            f"(page_size={page_size}, K={k}). Either "
-                            f"re-run kernel tuning to populate this K, "
-                            f"or set RPA_P_BLOCK_SIZES manually for this "
-                            f"combo.")
-                    combo["RPA_P_BLOCK_SIZES"] = fmt(p_params)
+                _apply_auto_link(combo, spec["_loaded_kernel_registry"])
 
             combos.append(combo)
     return combos
@@ -544,6 +581,7 @@ def run_sweep(
     do not abort the sweep — the next combo runs.
     """
     spec = load_spec(spec_path)
+    apply_smoke_truncation_in_place(spec)
     combos = enumerate_combos(spec)
     results: list[RunResult] = []
     for i, combo in enumerate(combos):
