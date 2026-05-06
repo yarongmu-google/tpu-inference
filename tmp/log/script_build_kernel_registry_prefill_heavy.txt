@@ -9,9 +9,19 @@ Extracting mixed from /tmp/kernel_tuner_run_2026_05_05_17_21_18
 Extracting decode from /tmp/kernel_tuner_run_2026_05_05_17_41_07
 Extracting prefill from /tmp/kernel_tuner_run_2026_05_05_17_41_20
 Extracting mixed from /tmp/kernel_tuner_run_2026_05_05_17_41_33
+Extracting decode from /tmp/kernel_tuner_run_2026_05_05_17_54_15
+Extracting prefill from /tmp/kernel_tuner_run_2026_05_05_17_57_20
+Extracting mixed from /tmp/kernel_tuner_run_2026_05_06_04_32_16
 
 Wrote (Accumulated): tools/benchmark/cases/v7x/llama3_8b/production.kernel
-[rpa3 cf3c91bb5f] [Kernel-Tune] Winners extracted to production.kernel
- 1 file changed, 1 insertion(+), 1 deletion(-)
+[rpa3 e7c8ae4e13] [Kernel-Tune] Winners extracted to production.kernel
+ 1 file changed, 553 insertions(+), 1 deletion(-)
 To github.com:yarongmu-google/tpu-inference.git
-   de06f2ca11..cf3c91bb5f  rpa3 -> rpa3
+ ! [rejected]              rpa3 -> rpa3 (fetch first)
+error: failed to push some refs to 'github.com:yarongmu-google/tpu-inference.git'
+hint: Updates were rejected because the remote contains work that you do not
+hint: have locally. This is usually caused by another repository pushing to
+hint: the same ref. If you want to integrate the remote changes, use
+hint: 'git pull' before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+WARN: push failed; commit is local only
