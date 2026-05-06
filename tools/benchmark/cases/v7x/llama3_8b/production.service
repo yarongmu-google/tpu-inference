@@ -1,0 +1,35 @@
+{
+  "best_configs_by_workload": {
+    "rpa_v3__vllm__meta-llama/Meta-Llama-3-8B-Instruct__tp1__8191_in_1_out": {
+      "kernel_id": "rpa_v3",
+      "service_id": "vllm",
+      "model": "meta-llama/Meta-Llama-3-8B-Instruct",
+      "tensor_parallel_size": "1",
+      "MAX_NUM_SEQS": "128",
+      "MAX_NUM_BATCHED_TOKENS": "2048",
+      "MAX_MODEL_LEN": "8192",
+      "BLOCK_SIZE": "128",
+      "LONG_PREFILL_TOKEN_THRESHOLD": "256",
+      "RPA_P_BLOCK_SIZES": "256,2048,256,512",
+      "RPA_D_BLOCK_SIZES": "1,512,1,256",
+      "RPA_M_BLOCK_SIZES": "128,512,128,256",
+      "metrics": {
+        "MeanTTFT": "106259.65",
+        "MedianTTFT": "106412.53",
+        "P99TTFT": "208639.28",
+        "MeanTPOT": "0.00",
+        "MedianTPOT": "0.00",
+        "P99TPOT": "0.00",
+        "MeanITL": "0.00",
+        "MedianITL": "0.00",
+        "P99ITL": "0.00",
+        "MeanE2EL": "106259.65",
+        "MedianE2EL": "106412.53",
+        "P99E2EL": "208639.28",
+        "RequestThroughput": "4.75",
+        "OutputTokenThroughput": "4.75",
+        "TotalTokenThroughput": ""
+      }
+    }
+  }
+}
