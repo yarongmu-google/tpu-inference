@@ -206,10 +206,10 @@ You do not need to run the tuner, extractor, and sweeper manually. Use the maste
 
 ```bash
 # Usage:
-tools/run_pipeline.sh [--smoke] <path/to/.workload> <path/to/.service>
+tools/run_pipeline.sh [--smoke] <path/to/.service>
 
 # Example:
-tools/run_pipeline.sh tools/benchmark/cases/v7x/llama3_8b/prefill_heavy.workload tools/benchmark/sweeps/llama3_8b_v7x_optimized_full.service
+tools/run_pipeline.sh tools/benchmark/sweeps/llama3_8b_v7x_optimized_full.service
 ```
 
 **The orchestrator automatically:**
