@@ -32,20 +32,45 @@ def main():
         print(f"Runlog not found: {runlog}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Reading runlog: {runlog}")
-    with open(runlog) as f:
-        content = f.read()
+    # Prefer the JSON sidecar manifest produced by tune_all_cases.sh —
+    # the runlogs prose is intended for humans and could change without
+    # notice. The manifest is the machine-readable source of truth:
+    # tmp/log/tune_all_<label>.manifest.json with entries
+    # [{"case": "...", "case_set_id": "...", "db_path": "..."}, ...].
+    # Fall back to runlog regex if the manifest is absent (legacy runs).
+    manifest_path = runlog.replace(".txt", ".manifest.json")
+    phases = []  # list of (case, case_set_id, db_path) tuples
+    if os.path.isfile(manifest_path):
+        print(f"Reading manifest: {manifest_path}")
+        try:
+            with open(manifest_path) as f:
+                manifest = json.load(f)
+            for entry in manifest:
+                phases.append(
+                    (entry["case"], entry["case_set_id"], entry["db_path"]))
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            print(f"WARN: manifest unreadable ({e}); falling back to runlog regex.",
+                  file=sys.stderr)
+            phases = []
 
-    case_matches = list(re.finditer(r"Tuning ([a-z]+) \(case_set_id=([^)]+)\)", content))
-    db_matches = list(re.finditer(r"Database initialized at (/tmp/kernel_tuner_run_[^\s]+)", content))
-
-    if len(case_matches) != len(db_matches):
-        print(f"Mismatch: {len(case_matches)} case headers vs {len(db_matches)} DB paths.", file=sys.stderr)
-        sys.exit(1)
-
-    if not case_matches:
-        print("No phases found in runlog.", file=sys.stderr)
-        sys.exit(1)
+    if not phases:
+        print(f"Reading runlog (regex fallback): {runlog}")
+        with open(runlog) as f:
+            content = f.read()
+        case_matches = list(re.finditer(
+            r"Tuning ([a-z]+) \(case_set_id=([^)]+)\)", content))
+        db_matches = list(re.finditer(
+            r"Database initialized at (/tmp/kernel_tuner_run_[^\s]+)", content))
+        if len(case_matches) != len(db_matches):
+            print(f"Mismatch: {len(case_matches)} case headers vs "
+                  f"{len(db_matches)} DB paths.", file=sys.stderr)
+            sys.exit(1)
+        if not case_matches:
+            print("No phases found in runlog.", file=sys.stderr)
+            sys.exit(1)
+        for case_m, db_m in zip(case_matches, db_matches):
+            phases.append(
+                (case_m.group(1), case_m.group(2), db_m.group(1)))
 
     # Structure:
     # {
@@ -82,10 +107,7 @@ def main():
         except Exception as e:
             print(f"WARN: Could not read existing {out_path}, starting fresh. ({e})", file=sys.stderr)
 
-    for case_m, db_m in zip(case_matches, db_matches):
-        case = case_m.group(1)
-        case_set_id = case_m.group(2)
-        db_path = db_m.group(1)
+    for case, case_set_id, db_path in phases:
         print(f"Extracting {case} from {db_path}")
 
         try:

@@ -87,6 +87,18 @@ mkdir -p tmp/log
 RUNLOG="tmp/log/tune_all_${LABEL}.txt"
 echo "Runlog: $RUNLOG"
 
+# Sidecar manifest: machine-readable list of per-case (case_set_id, db_path)
+# pairs. build_kernel_registry.py prefers this over regex-scraping the
+# runlog — the runlogs prose ("Tuning <case> (case_set_id=...)" /
+# "Database initialized at ...") is intended for humans and could change
+# without notice. The manifest is the source of truth.
+#
+# Path mirrors the runlog basename so consumers can derive one from the
+# other. Overwritten per-run (matches the ephemeral-log convention).
+MANIFEST="tmp/log/tune_all_${LABEL}.manifest.json"
+: > "$MANIFEST"
+echo "[]" > "$MANIFEST"
+
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 
 commit_progress() {
@@ -142,6 +154,24 @@ for CASE in decode prefill mixed; do
         DUR=$(( $(date +%s) - START_S ))
         echo "===== $(date '+%F %T') $CASE done in ${DUR}s ====="
     } 2>&1 | tee -a "$RUNLOG"
+
+    # Append (case, case_set_id, db_path) to the sidecar manifest.
+    # LocalDbManager creates a fresh /tmp/kernel_tuner_run_<timestamp>/
+    # per python invocation, so the latest mtime under that prefix is
+    # the DB this case just wrote. Captured AFTER the tee so the file
+    # exists; build_kernel_registry.py reads this manifest in
+    # preference to runlog regex.
+    DB_PATH=$(ls -td /tmp/kernel_tuner_run_* 2>/dev/null | head -1)
+    python3 -c "
+import json, sys
+path = sys.argv[1]
+entry = {'case': sys.argv[2], 'case_set_id': sys.argv[3], 'db_path': sys.argv[4]}
+with open(path) as f:
+    data = json.load(f)
+data.append(entry)
+with open(path, 'w') as f:
+    json.dump(data, f, indent=2)
+" "$MANIFEST" "$CASE" "$CASE_SET_ID" "$DB_PATH"
 
     commit_progress "$CASE done ($LABEL $DATE)"
 done
