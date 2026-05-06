@@ -1,0 +1,5 @@
+| case          | MNB  | MNS | MML  | page | K | p_blk   | rate | req/s | out_tok/s | ttft_mean | ttft_p99  | itl_mean | itl_p99 | dur_s | id           |
+|:--------------|:-----|:----|:-----|:-----|:--|:--------|:-----|:------|:----------|:----------|:----------|:---------|:--------|:------|:-------------|
+| prefill_heavy | 2048 | 128 | 8192 | 128  | 0 | default | inf  | 4.53  | 4.53      | 110815.86 | 218603.27 | 0.00     | 0.00    | 236   | dac00b05e6bf |
+
+Exported absolute best configuration to: tools/benchmark/cases/v7x/llama3_8b/production.service
