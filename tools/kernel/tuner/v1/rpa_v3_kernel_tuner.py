@@ -14,6 +14,7 @@
 
 import dataclasses
 import itertools
+import json
 import logging
 import os
 import time
@@ -91,6 +92,30 @@ def get_simplified_raw_key(
 VMEM_LIMIT_BYTES = 60 * 1024 * 1024
 SMEM_LIMIT_BYTES = 0.9 * 1024 * 1024
 jax.config.parse_flags_with_absl()
+
+
+def estimate_vmem_for_combo(
+    num_kv_heads, num_q_heads, head_dim, bq_sz, bkv_sz,
+    q_dtype, kv_dtype,
+) -> int:
+    """Compute the per-iter VMEM footprint for a (model, block-sizes) combo.
+
+    Single source of truth: previously the same call+threshold check
+    was duplicated in `generate_cases` (pre-flight pruning, kwargs form)
+    and `measure_one` (runtime check, positional form using TuningKey
+    + TunableParams attributes). Two copies are easy to drift —
+    one update for a model-arch knob, the other forgotten. Funnel both
+    through this helper.
+    """
+    return get_vmem_estimate_bytes(
+        actual_num_kv_heads=num_kv_heads,
+        actual_num_q_heads_per_kv_head=num_q_heads // num_kv_heads,
+        actual_head_dim=head_dim,
+        bq_sz=bq_sz,
+        bkv_sz=bkv_sz,
+        q_dtype=q_dtype,
+        kv_dtype=kv_dtype,
+    )
 
 
 def get_decode_only_example(actual_num_seqs, max_model_len):
@@ -196,14 +221,20 @@ class RpaV3KernelTuner(KernelTunerBase):
         registry_path = os.environ.get("RPA_V3_KERNEL_REGISTRY")
         if registry_path and os.path.exists(registry_path):
             try:
-                import json
                 with open(registry_path, "r") as f:
                     registry_data = json.load(f)
-                    for case_name, results in registry_data.get("results", {}).items():
-                        for entry in results:
-                            tk_dict = entry.get("tuning_key", {})
-                            tk_hash = json.dumps(tk_dict, sort_keys=True)
-                            self.completed_tuning_keys.add(tk_hash)
+                for case_name, results in registry_data.get("results", {}).items():
+                    for entry in results:
+                        tk_dict = entry.get("tuning_key", {})
+                        # Skip malformed/empty entries — without this an
+                        # entry whose tuning_key is missing (e.g. {} from
+                        # a pre-rename schema or an incomplete write)
+                        # would absorb its hash ('{}') into the skip set
+                        # and silently make EVERY un-keyed combo a no-op.
+                        if not tk_dict:
+                            continue
+                        tk_hash = json.dumps(tk_dict, sort_keys=True)
+                        self.completed_tuning_keys.add(tk_hash)
                 logger.info(f"Loaded {len(self.completed_tuning_keys)} completed TuningKeys from {registry_path}")
             except Exception as e:
                 logger.warning(f"Failed to read existing kernel registry: {e}")
@@ -214,11 +245,19 @@ class RpaV3KernelTuner(KernelTunerBase):
         self.max_model_len = int(os.environ["MAX_MODEL_LEN"])
         self.max_num_seqs = int(os.environ["MAX_NUM_SEQS"])
 
-        # Sized for max_model_len/page_size pages_per_seq × max_num_seqs.
-        self.total_num_pages = 4096
-
         # Model shape.
         self.page_size = [64, 128, 256]
+
+        # Synthetic KV-cache shape needs enough pages for the WORST-case
+        # tuning workload: smallest swept page_size + full max_model_len
+        # × max_num_seqs. Hard-coding 4096 was correct only at the
+        # original (max_num_seqs=32, max_model_len=8192, page_size=64)
+        # = 32 * 128 = 4096 fit. At max_num_seqs=128 the requirement
+        # is 16384, and the under-allocated cache made page indices
+        # wrap silently. Compute it from the actual sweep parameters.
+        smallest_page = min(self.page_size)
+        worst_pages_per_seq = cdiv(self.max_model_len, smallest_page)
+        self.total_num_pages = worst_pages_per_seq * self.max_num_seqs
         self.q_dtype = jnp.bfloat16
         # Switch to [jnp.float8_e4m3fn] if serving with quantized KV cache.
         self.kv_dtype = [jnp.bfloat16]
@@ -344,16 +383,10 @@ class RpaV3KernelTuner(KernelTunerBase):
                 # should be auto-detected (e.g. via
                 # `pltpu.get_tpu_info().vmem_capacity_bytes`) or set
                 # device-specifically. Today the constant is hardcoded.
-                # For GQA, num_q_heads_per_kv_head is nq // nk
-                num_q_heads_per_kv_head = nq // nk
-                vmem_estimate = get_vmem_estimate_bytes(
-                    actual_num_kv_heads=nk,
-                    actual_num_q_heads_per_kv_head=num_q_heads_per_kv_head,
-                    actual_head_dim=hd,
-                    bq_sz=bq_sz,
-                    bkv_sz=bkv_sz,
-                    q_dtype=qd,
-                    kv_dtype=kd,
+                vmem_estimate = estimate_vmem_for_combo(
+                    num_kv_heads=nk, num_q_heads=nq, head_dim=hd,
+                    bq_sz=bq_sz, bkv_sz=bkv_sz,
+                    q_dtype=qd, kv_dtype=kd,
                 )
                 if vmem_estimate > VMEM_LIMIT_BYTES:
                     continue
@@ -372,7 +405,6 @@ class RpaV3KernelTuner(KernelTunerBase):
                 )
 
                 # Skip if we already successfully tuned this exact environment shape
-                import json
                 tk_dict = dataclasses.asdict(tuning_key)
                 tk_hash = json.dumps(tk_dict, sort_keys=True)
                 if tk_hash in self.completed_tuning_keys:
@@ -546,14 +578,14 @@ class RpaV3KernelTuner(KernelTunerBase):
             logger.info(f"[Debug] Validate failed: {err=}")
             return TuningStatus.UNKNOWN_ERROR, float("inf"), float("inf")
 
-        vmem_estimate = get_vmem_estimate_bytes(
-            tuning_key.num_kv_heads,
-            tuning_key.num_q_heads // tuning_key.num_kv_heads,
-            tuning_key.head_dim,
-            tunable_params.bq_sz,
-            tunable_params.bkv_sz,
-            tuning_key.q_dtype,
-            tuning_key.kv_dtype,
+        vmem_estimate = estimate_vmem_for_combo(
+            num_kv_heads=tuning_key.num_kv_heads,
+            num_q_heads=tuning_key.num_q_heads,
+            head_dim=tuning_key.head_dim,
+            bq_sz=tunable_params.bq_sz,
+            bkv_sz=tunable_params.bkv_sz,
+            q_dtype=tuning_key.q_dtype,
+            kv_dtype=tuning_key.kv_dtype,
         )
         if vmem_estimate > VMEM_LIMIT_BYTES:
             logger.info(f"[Debug] Skip ({tunable_params=}): "
