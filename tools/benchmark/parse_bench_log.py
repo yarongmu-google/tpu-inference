@@ -38,11 +38,13 @@ from typing import Iterable, Mapping
 #      to sys.path — NOT the repo root — so the package-style import
 #      below would fail with ModuleNotFoundError.
 #
-# Add the repo root (parent of `tools/`) to sys.path if not already
-# present, so the package import works in both cases.
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+# Gate the sys.path manipulation behind `__name__ == "__main__"` so it
+# only fires on direct invocation. Test runs (which import this module
+# under its package name) skip the mutation entirely.
+if __name__ == "__main__":
+    _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+    if str(_REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(_REPO_ROOT))
 
 from tools.benchmark._schema import THROUGHPUT_METRIC  # noqa: E402
 

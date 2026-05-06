@@ -61,10 +61,26 @@ RECIPES: dict[tuple[str, str], dict[str, Any]] = {
     ("rpa_v3", "vllm"): {
         "sweep_axes": {
             # vllm scheduler knobs (orthogonal to kernel; swept end-to-end).
+            #
+            # MAX_NUM_BATCHED_TOKENS values:
+            #   2048 — minimum that fits one full single-prompt prefill
+            #          for the prefill_heavy workload (8K input, K=2048).
+            #   4096, 8192 — power-of-two steps for headroom/throughput
+            #          scaling.
+            #   10275 — bm-infras (QC repo) v7x default for the standard
+            #          sonnet 1024/1024 workload; included for apples-to-
+            #          apples comparison against their dashboards.
             "MAX_NUM_BATCHED_TOKENS":       [2048, 4096, 8192, 10275],
+            # MAX_NUM_SEQS values:
+            #   128 — bm-infra v6e/v7x default; the floor.
+            #   1000 — saturate concurrency on v7xs HBM-backed capacity;
+            #          vllm auto-caps the actual concurrency to whatever
+            #          fits, so 1000 is "use as much as you can".
             "MAX_NUM_SEQS":                 [128, 1000],
             # K=0 folds the baseline (chunk-prefill OFF) into the same
             # sweep — the highest-throughput row wins regardless of K.
+            # Powers-of-two from 128 up to MAX_MODEL_LEN cover the K
+            # values the kernel tuner already produces winners for.
             "LONG_PREFILL_TOKEN_THRESHOLD": [0, 128, 256, 512, 1024, 2048],
         },
         "fixed": {

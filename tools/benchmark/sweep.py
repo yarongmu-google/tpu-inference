@@ -26,8 +26,17 @@ Spec shape:
       "sweep_axes":      {"VAR_A": [a1, a2], "VAR_B": [b1]},     // cartesian
       "coupled_axes":    [{"VAR_X": x1, "VAR_Y": y1}, ...],       // each entry = one combo
       "fixed":           {"VAR_C": "c"},                          // applied to every combo
-      "timeout_seconds": 3600                                     // optional, per-combo cap
+      "timeout_seconds": 3600,                                    // optional, per-combo cap
+      "kernel_registry": "<path to .kernel JSON>"                 // optional; enables auto-link
     }
+
+When `kernel_registry` is set, enumerate_combos auto-links
+RPA_D/M/P_BLOCK_SIZES into each combo by looking up the registry on
+(case, page_size, K). Note K=0 (chunk-prefill OFF) is treated as "no
+PREFILL pass" and produces NO RPA_P_BLOCK_SIZES injection — the
+registry is not expected to carry a K=0 entry for the PREFILL flavor.
+DECODE and MIXED entries (K=0 by convention in the registry) are
+still injected for every combo regardless of LONG_PREFILL_TOKEN_THRESHOLD.
 
 Keys must be **disjoint** across `sweep_axes`, `coupled_axes` (entry
 keyset), and `fixed`. Coupled entries must all share the same key set.
@@ -745,9 +754,13 @@ def _make_auto_commit_callback(
         n = idx + 1
         is_last = (n == total)
         if (n % every == 0) or is_last:
-            sweep_dir = result.result_dir.parent
-            paths: list = sorted(sweep_dir.glob(f"*/{METRICS_FILENAME}")) \
-                  + sorted(sweep_dir.glob(f"*/{META_FILENAME}"))
+            # Local var renamed from `sweep_dir` to `combo_parent_dir`
+            # because `sweep_dir` shadows the module-level function of
+            # the same name, which is a footgun if a future caller in
+            # this closure ever needs the function.
+            combo_parent_dir = result.result_dir.parent
+            paths: list = sorted(combo_parent_dir.glob(f"*/{METRICS_FILENAME}")) \
+                  + sorted(combo_parent_dir.glob(f"*/{META_FILENAME}"))
             if runlog_path is not None and runlog_path.is_file():
                 paths.append(runlog_path)
             ok = git_fn(paths, message=(
