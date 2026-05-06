@@ -137,7 +137,10 @@ echo ""
     SWEEP_DIR="tmp/bench_${WORKLOAD_BASENAME}_${SWEEP_NAME}"
 
     {
-        python3 -m tools.benchmark.build_service_registry "$SWEEP_DIR" --export-production "$PROD_SERVICE"
+        python3 -m tools.benchmark.build_service_registry "$SWEEP_DIR" \
+            --export-production "$PROD_SERVICE" \
+            --kernel-id "$KERNEL_ID" \
+            --service-id "$SERVICE_ID"
     } 2>&1 | tee "$SERVICE_LOG"
 
     echo ""

@@ -20,9 +20,11 @@ to show the winner per unique value of a meta-field axis (e.g., per K).
 """
 
 import argparse
+import json
 import math
 import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -299,63 +301,138 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="Path to export the absolute best configuration as a .service JSON file "
                         "(e.g., tools/benchmark/cases/v7x/llama3_8b/production.service). "
                         "If the file exists, it will accumulate the new workload shape.")
+    p.add_argument("--kernel-id", default="unknown",
+                   help="Kernel identifier baked into the workload_key so "
+                        "results from different kernels do not collide in "
+                        "the production.service file (default: unknown).")
+    p.add_argument("--service-id", default="unknown",
+                   help="Service identifier baked into the workload_key "
+                        "(default: unknown).")
     return p
 
 
-def export_production_registry(best_result: dict[str, Any], output_path: str | os.PathLike) -> None:
-    """Export the best combo into an accumulated production .service JSON."""
-    import json
-    
+def _make_workload_key(meta: dict[str, str],
+                       kernel_id: str = "unknown",
+                       service_id: str = "unknown") -> str:
+    """Compose a workload-shape key that does not collide across kernels,
+    services, models, or TP sizes.
+
+    Earlier this was just `f"{input_len}_in_{output_len}_out"`. The
+    moment a second kernel (e.g. RPA v4) or a second service (SGLang)
+    landed, results from the second sweep silently overwrote the first
+    because their (in,out) shapes happened to match. Key on the full
+    shape now so each (kernel, service, model, TP, in, out) tuple gets
+    its own slot.
+    """
+    return (
+        f"{kernel_id}__{service_id}__"
+        f"{meta.get('model', 'unknown')}__"
+        f"tp{meta.get('tensor_parallel_size', '1')}__"
+        f"{meta.get('input_len', 'unknown')}_in_"
+        f"{meta.get('output_len', 'unknown')}_out"
+    )
+
+
+def export_production_registry(
+    best_result: dict[str, Any],
+    output_path: str | os.PathLike,
+    kernel_id: str = "unknown",
+    service_id: str = "unknown",
+) -> None:
+    """Export the best combo into an accumulated production .service JSON.
+
+    Three data-loss hazards the earlier implementation tripped on:
+
+      1. `except Exception: pass` on the existing-file load silently
+         dropped weeks of accumulated best-configs whenever the prior
+         file was corrupt or partial. We now log the failure loudly
+         AND refuse to overwrite a non-empty existing file we could
+         not parse — better to fail than to nuke history.
+      2. `open(out_path, "w")` truncates the file immediately; a crash
+         mid-`json.dump` left a corrupt artifact. Now: write to a
+         sibling tmp file, fsync, and `os.replace` (atomic on POSIX).
+      3. `_to_float(...) or 0.0` treated a legitimate 0.0 as "missing"
+         (`0.0 or 0.0` -> 0.0; same as None or non-numeric). The
+         comparison `new_tp > 0.0` then over-eagerly accepted any
+         positive value over a true 0.0 baseline. Now: explicit
+         `is None` check, fall back to "no-existing-data so accept new"
+         only when the existing entry has no parseable metric.
+    """
     out_path = Path(output_path)
-    data = {}
+    data: dict[str, Any] = {}
     if out_path.is_file():
         try:
             with open(out_path) as f:
                 data = json.load(f)
-        except Exception:
-            pass
+        except Exception as e:
+            print(
+                f"ERROR: existing {out_path} is unreadable ({e}). "
+                "Refusing to overwrite — back up the file and re-run, "
+                "or delete it manually if the loss is acceptable.",
+                file=sys.stderr)
+            raise
 
     meta = best_result.get("meta", {})
     metrics = best_result.get("metrics", {})
 
-    model = meta.get("model", "unknown")
-    tp = meta.get("tensor_parallel_size", "1")
-    input_len = meta.get("input_len", "unknown")
-    output_len = meta.get("output_len", "unknown")
-    
-    workload_key = f"{input_len}_in_{output_len}_out"
+    workload_key = _make_workload_key(meta, kernel_id, service_id)
 
-    if "model" not in data:
-        data["model"] = model
-    if "tensor_parallel_size" not in data:
-        data["tensor_parallel_size"] = tp
     if "best_configs_by_workload" not in data:
         data["best_configs_by_workload"] = {}
 
     entry = {
+        "kernel_id": kernel_id,
+        "service_id": service_id,
+        "model": meta.get("model"),
+        "tensor_parallel_size": meta.get("tensor_parallel_size"),
         "MAX_NUM_SEQS": meta.get("max_num_seqs"),
         "MAX_NUM_BATCHED_TOKENS": meta.get("max_num_batched_tokens"),
+        "MAX_MODEL_LEN": meta.get("max_model_len"),
         "BLOCK_SIZE": meta.get("block_size"),
         "LONG_PREFILL_TOKEN_THRESHOLD": meta.get("long_prefill_token_threshold"),
         "RPA_P_BLOCK_SIZES": meta.get("rpa_p_block_sizes"),
         "RPA_D_BLOCK_SIZES": meta.get("rpa_d_block_sizes"),
         "RPA_M_BLOCK_SIZES": meta.get("rpa_m_block_sizes"),
-        "metrics": metrics
+        "metrics": metrics,
     }
 
-    # Only overwrite if new throughput is better
+    # Only overwrite if new throughput is strictly better. Use explicit
+    # `is None` instead of `or 0.0` so a real 0.0 doesnt round-trip
+    # through the falsy-mask and look like missing data.
     existing = data["best_configs_by_workload"].get(workload_key)
-    if existing:
-        old_tp = _to_float(existing.get("metrics", {}).get(DEFAULT_METRIC)) or 0.0
-        new_tp = _to_float(metrics.get(DEFAULT_METRIC)) or 0.0
-        if new_tp > old_tp:
-            data["best_configs_by_workload"][workload_key] = entry
-    else:
+    should_write = True
+    if existing is not None:
+        old_tp = _to_float(existing.get("metrics", {}).get(DEFAULT_METRIC))
+        new_tp = _to_float(metrics.get(DEFAULT_METRIC))
+        if new_tp is None:
+            # New result has no parseable metric — never overwrite a
+            # known-good entry with a missing one.
+            should_write = False
+        elif old_tp is not None and new_tp <= old_tp:
+            should_write = False
+    if should_write:
         data["best_configs_by_workload"][workload_key] = entry
 
+    # Atomic write: stage to a sibling tmp file, then os.replace.
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, "w") as f:
-        json.dump(data, f, indent=2)
+    fd, tmp_path = tempfile.mkstemp(
+        prefix=out_path.name + ".",
+        suffix=".tmp",
+        dir=str(out_path.parent),
+    )
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, out_path)
+    except Exception:
+        # Best-effort cleanup of the staging file; reraise the original.
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
     print(f"\nExported absolute best configuration to: {out_path}")
 
 
@@ -380,7 +457,12 @@ def main(argv: list[str] | None = None) -> int:
     print(format_markdown_table(results_to_print, columns))
 
     if args.export_production and results_to_print:
-        export_production_registry(results_to_print[0], args.export_production)
+        export_production_registry(
+            results_to_print[0],
+            args.export_production,
+            kernel_id=args.kernel_id,
+            service_id=args.service_id,
+        )
 
     return 0
 
