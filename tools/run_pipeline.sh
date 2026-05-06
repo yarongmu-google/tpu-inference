@@ -52,6 +52,7 @@ export SMOKE_TEST=$SMOKE
 WORKLOAD_BASENAME=$(basename "$WORKLOAD" .workload)
 MODEL_DIR=$(dirname "$WORKLOAD")
 PROD_KERNEL="${MODEL_DIR}/production.kernel"
+PROD_SERVICE="${MODEL_DIR}/production.service"
 
 mkdir -p tmp/log
 
@@ -73,12 +74,22 @@ SWEEP_NAME=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['sw
 PIPELINE_LOG="tmp/log/pipeline_${WORKLOAD_BASENAME}.txt"
 SERVICE_LOG="tmp/log/script_build_service_registry_${SWEEP_NAME}.txt"
 
-# Guarantee logs are committed even if a python script crashes (set -e)
+# Guarantee logs and the production.service artifact are committed
+# even if a python script crashes (set -e). production.service is the
+# whole point of the pipeline; without committing it, a remote reader
+# only sees the kernel registry + log breadcrumbs and has to re-run
+# locally to reconstruct the winner.
 commit_logs() {
     if [ -f "$SERVICE_LOG" ]; then
         git add -f "$SERVICE_LOG"
         if ! git diff --cached --quiet; then
             git commit -m "[Logs] Update build_service_registry script log for $SWEEP_NAME" || true
+        fi
+    fi
+    if [ -f "$PROD_SERVICE" ]; then
+        git add -f "$PROD_SERVICE"
+        if ! git diff --cached --quiet; then
+            git commit -m "[Pipeline] Update production.service for $WORKLOAD_BASENAME" || true
         fi
     fi
     if [ -f "$PIPELINE_LOG" ]; then
@@ -124,16 +135,15 @@ echo ""
     echo ""
     echo "=== Layer 3: Building Production Configuration ==="
     SWEEP_DIR="tmp/bench_${WORKLOAD_BASENAME}_${SWEEP_NAME}"
-    PROD_FILE="${MODEL_DIR}/production.service"
 
     {
-        python3 -m tools.benchmark.build_service_registry "$SWEEP_DIR" --export-production "$PROD_FILE"
+        python3 -m tools.benchmark.build_service_registry "$SWEEP_DIR" --export-production "$PROD_SERVICE"
     } 2>&1 | tee "$SERVICE_LOG"
 
     echo ""
     echo "=========================================================="
     echo " Pipeline Complete."
     echo " Final production configuration saved to:"
-    echo " $PROD_FILE"
+    echo " $PROD_SERVICE"
     echo "=========================================================="
 } 2>&1 | tee "$PIPELINE_LOG"

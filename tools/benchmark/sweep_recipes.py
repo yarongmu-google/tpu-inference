@@ -111,6 +111,19 @@ def synthesize_service_spec(
     workload_basename = os.path.basename(workload_path).replace(
         ".workload", "")
 
+    # sweep_name is the SECOND component of the bench result dir
+    # template (run_benchmark.sh: tmp/bench_${CASE_NAME}_${TAG}, where
+    # CASE_NAME = workload basename and TAG = sweep_name). Including
+    # the workload basename here would double it (e.g.
+    # tmp/bench_prefill_heavy_prefill_heavy_rpa_v3_vllm/). Use just
+    # kernel+service as the suffix; the bench dir naturally becomes
+    # tmp/bench_<workload>_<kernel>_<service>/ which reads cleanly.
+    #
+    # Tradeoff: per-workload log files derived from sweep_name (e.g.
+    # script_build_service_registry_<sweep_name>.txt) now collide
+    # across workloads that share a (kernel, service) pair. Acceptable
+    # under the existing "no concurrent pipelines" constraint; the
+    # log overwrites on each run.
     spec = {
         "_comment": [
             f"Synthesized from {workload_path}",
@@ -121,7 +134,7 @@ def synthesize_service_spec(
         ],
         "case_file": workload_path,
         "kernel_registry": os.path.join(workload_dir, "production.kernel"),
-        "sweep_name": f"{workload_basename}_{kernel_id}_{service_id}",
+        "sweep_name": f"{kernel_id}_{service_id}",
         "timeout_seconds": recipe["timeout_seconds"],
         "sweep_axes": {k: list(v) for k, v in recipe["sweep_axes"].items()},
         "coupled_axes": [],
