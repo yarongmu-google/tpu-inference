@@ -190,6 +190,25 @@ echo ""
     echo "=== Layer 3: Building Production Configuration ==="
     SWEEP_DIR="tmp/bench_${WORKLOAD_BASENAME}_${SWEEP_NAME}"
 
+    # Pre-flight: SWEEP_DIR is the per-combo result dir parent that
+    # run_benchmark.sh writes to (tmp/bench_${CASE_NAME}_${TAG}/<combo_id>/).
+    # If sweep.py / run_benchmark.sh ever change the naming convention,
+    # build_service_registry would walk an empty/absent directory,
+    # produce zero results, and silently exit without writing
+    # production.service — the user would think Layer 3 succeeded but
+    # find no winner. Fail-fast here with the expected path.
+    if [ ! -d "$SWEEP_DIR" ]; then
+        echo "Error: SWEEP_DIR does not exist after Layer 2: $SWEEP_DIR" >&2
+        echo "Expected layout: tmp/bench_<workload>_<sweep_name>/<combo_id>/" >&2
+        echo "Either Layer 2 failed silently, or run_benchmark.sh changed its RESULT_DIR template." >&2
+        exit 1
+    fi
+    if [ -z "$(ls -A "$SWEEP_DIR" 2>/dev/null)" ]; then
+        echo "Error: SWEEP_DIR is empty: $SWEEP_DIR" >&2
+        echo "Layer 2 ran but produced no combo dirs." >&2
+        exit 1
+    fi
+
     {
         python3 -m tools.benchmark.build_service_registry "$SWEEP_DIR" \
             --export-production "$PROD_SERVICE" \
