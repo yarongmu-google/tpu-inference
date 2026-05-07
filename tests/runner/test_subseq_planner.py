@@ -20,6 +20,7 @@ Wire-up correctness (planner output -> kernel prefetch arrays) is out of
 scope here; that lands in the follow-up PR with its own integration tests.
 """
 
+import dataclasses
 import importlib.util
 import os
 import unittest
@@ -50,6 +51,8 @@ SMEM_LIMIT_BYTES = _mod.SMEM_LIMIT_BYTES
 compute_smem_bytes = _mod.compute_smem_bytes
 validate_smem_fits = _mod.validate_smem_fits
 max_M_under_smem = _mod.max_M_under_smem
+DecoupledKConfig = _mod.DecoupledKConfig
+evaluate_decoupled_k_config = _mod.evaluate_decoupled_k_config
 
 
 class TestPlanStepDecodeOnly(unittest.TestCase):
@@ -387,6 +390,138 @@ class TestSmemBudget(unittest.TestCase):
             validate_smem_fits(max_num_subseqs=0, pages_per_seq=64)
         with self.assertRaises(ValueError):
             validate_smem_fits(max_num_subseqs=128, pages_per_seq=0)
+
+
+class TestEvaluateDecoupledKConfig(unittest.TestCase):
+    """Tests for the runner-init resolution of the decoupled-K config.
+
+    The function is the single place where K_sched/K_kernel/SMEM-budget
+    inputs are validated and turned into a DecoupledKConfig. The runner
+    plumbing just calls it; these tests cover the math without requiring
+    the JAX/TPU stack."""
+
+    def _8b_8k_inputs(self, *, K_kernel=256, K_sched=2048,
+                       max_num_batched_tokens=8192, max_num_seqs=128,
+                       max_model_len=8192, page_size=128):
+        # Standard 8B/8K shape that today comfortably fits SMEM.
+        return dict(K_kernel=K_kernel, K_sched=K_sched,
+                    max_num_batched_tokens=max_num_batched_tokens,
+                    max_num_seqs=max_num_seqs, max_model_len=max_model_len,
+                    page_size=page_size)
+
+    def test_typical_8b_8k_fits(self):
+        # K_sched=2048, K_kernel=256 -> requested_M=8.
+        # max_num_seqs=128, pages_per_seq=64 -> achievable_M ~26.
+        cfg = evaluate_decoupled_k_config(**self._8b_8k_inputs())
+        self.assertEqual(cfg.requested_M, 8)
+        self.assertGreaterEqual(cfg.achievable_M, 8)
+        self.assertEqual(cfg.effective_M, 8)
+        self.assertEqual(cfg.effective_K_sched_cap, 2048)
+        self.assertEqual(cfg.pages_per_seq, 64)
+        self.assertFalse(cfg.requested_exceeds_achievable)
+
+    def test_clamps_when_K_sched_exceeds_achievable(self):
+        # Force K_sched=K_kernel*64 -> requested_M=64 > achievable_M~26 at
+        # 8B/8K MNS=128. Should clamp to achievable.
+        cfg = evaluate_decoupled_k_config(
+            **self._8b_8k_inputs(K_sched=256 * 64))
+        self.assertEqual(cfg.requested_M, 64)
+        self.assertLess(cfg.achievable_M, 64)
+        self.assertEqual(cfg.effective_M, cfg.achievable_M)
+        self.assertEqual(cfg.effective_K_sched_cap,
+                         cfg.achievable_M * 256)
+        self.assertTrue(cfg.requested_exceeds_achievable)
+
+    def test_K_sched_zero_falls_back_to_max_num_batched_tokens(self):
+        # K_sched=0 (vLLM default for "no per-request cap"): bound by
+        # MNB=8192. requested_M = ceil(8192/256) = 32.
+        cfg = evaluate_decoupled_k_config(
+            **self._8b_8k_inputs(K_sched=0))
+        self.assertEqual(cfg.requested_M, 32)
+        # 8B/8K: achievable_M is in mid-20s, so 32 should clamp.
+        self.assertEqual(cfg.effective_M, cfg.achievable_M)
+        self.assertEqual(cfg.effective_K_sched_cap,
+                         cfg.achievable_M * 256)
+
+    def test_k_sched_below_k_kernel_yields_M_1(self):
+        # K_sched=100 < K_kernel=256 -> requested_M = ceil(100/256) = 1.
+        # Effectively no chunking benefit, but valid.
+        cfg = evaluate_decoupled_k_config(
+            **self._8b_8k_inputs(K_sched=100))
+        self.assertEqual(cfg.requested_M, 1)
+        self.assertEqual(cfg.effective_M, 1)
+        self.assertEqual(cfg.effective_K_sched_cap, 256)
+
+    def test_70b_32k_mns128_achievable_M_low(self):
+        # 70B/32K with MNS=128 has very tight SMEM (pages_per_seq=256).
+        cfg = evaluate_decoupled_k_config(
+            K_kernel=256, K_sched=4096, max_num_batched_tokens=8192,
+            max_num_seqs=128, max_model_len=32768, page_size=128)
+        self.assertEqual(cfg.requested_M, 16)
+        # SMEM budget caps achievable_M at ~6 here.
+        self.assertGreaterEqual(cfg.achievable_M, 4)
+        self.assertLessEqual(cfg.achievable_M, 7)
+        self.assertEqual(cfg.effective_M, cfg.achievable_M)
+        self.assertTrue(cfg.requested_exceeds_achievable)
+
+    def test_pages_per_seq_ceiling(self):
+        # max_model_len=8193 with page_size=128 -> 65 pages (ceiling).
+        cfg = evaluate_decoupled_k_config(
+            K_kernel=256, K_sched=512, max_num_batched_tokens=8192,
+            max_num_seqs=4, max_model_len=8193, page_size=128)
+        self.assertEqual(cfg.pages_per_seq, 65)
+
+    def test_smem_budget_argument_changes_achievable(self):
+        # Smaller SMEM budget -> smaller achievable_M.
+        small = evaluate_decoupled_k_config(
+            **self._8b_8k_inputs(), smem_budget=128 * 1024)  # 128 KB
+        large = evaluate_decoupled_k_config(
+            **self._8b_8k_inputs(), smem_budget=900 * 1024)  # ~900 KB
+        self.assertLess(small.achievable_M, large.achievable_M)
+
+    def test_hard_guard_M1_does_not_fit_raises(self):
+        # Force a config where even M=1 (no chunking) fails SMEM:
+        # huge max_num_seqs * huge pages_per_seq.
+        with self.assertRaisesRegex(ValueError, "SMEM budget exceeded"):
+            evaluate_decoupled_k_config(
+                K_kernel=256, K_sched=512, max_num_batched_tokens=8192,
+                max_num_seqs=1000, max_model_len=131072, page_size=128)
+
+    def test_invalid_inputs_raise(self):
+        for bad in ({"K_kernel": 0}, {"K_kernel": 1},
+                    {"max_num_batched_tokens": 0},
+                    {"max_num_seqs": 0},
+                    {"max_model_len": 0},
+                    {"page_size": 0}):
+            with self.subTest(bad=bad):
+                inputs = self._8b_8k_inputs()
+                inputs.update(bad)
+                with self.assertRaises(ValueError):
+                    evaluate_decoupled_k_config(**inputs)
+
+
+class TestDecoupledKConfigDataclass(unittest.TestCase):
+
+    def test_requested_exceeds_achievable_property(self):
+        cfg = DecoupledKConfig(
+            requested_M=10, achievable_M=4, effective_M=4,
+            effective_K_sched_cap=1024, smem_budget=900 * 1024,
+            pages_per_seq=64)
+        self.assertTrue(cfg.requested_exceeds_achievable)
+
+        cfg = DecoupledKConfig(
+            requested_M=4, achievable_M=10, effective_M=4,
+            effective_K_sched_cap=1024, smem_budget=900 * 1024,
+            pages_per_seq=64)
+        self.assertFalse(cfg.requested_exceeds_achievable)
+
+    def test_frozen(self):
+        cfg = DecoupledKConfig(
+            requested_M=8, achievable_M=8, effective_M=8,
+            effective_K_sched_cap=2048, smem_budget=900 * 1024,
+            pages_per_seq=64)
+        with self.assertRaises(dataclasses.FrozenInstanceError):
+            cfg.requested_M = 99   # type: ignore[misc]
 
 
 if __name__ == "__main__":

@@ -474,3 +474,125 @@ def max_M_under_smem(*, max_num_seqs: int, pages_per_seq: int,
         # loop on a misconfigured smem_limit_bytes.
         if M > 1024:
             return M - 1
+
+
+@dataclasses.dataclass(frozen=True)
+class DecoupledKConfig:
+    """Resolved configuration for the decoupled-K runner path.
+
+    Produced by ``evaluate_decoupled_k_config()`` from the raw
+    K_sched / K_kernel / SMEM budget inputs.
+
+    Attributes:
+      requested_M: ``ceil(K_sched_effective / K_kernel)``  — the
+        chunks-per-request-per-step the user asked for.
+      achievable_M: largest M that fits in SMEM at the given workload
+        geometry. Computed by ``max_M_under_smem()``.
+      effective_M: ``min(requested_M, achievable_M)``. The runner caps
+        sub-chunk count per request at this value per step. When
+        achievable_M < requested_M, the user receives a warning at
+        init.
+      effective_K_sched_cap: ``effective_M * K_kernel``. The maximum
+        per-request-per-step token count the runner will actually
+        process in chunked form. If vLLM hands us more than this
+        (because its own LONG_PREFILL_TOKEN_THRESHOLD is higher), the
+        excess goes to MIXED.
+      smem_budget: the SMEM ceiling used for this evaluation. Either
+        from the runtime API (``pltpu.get_tpu_info().smem_capacity_bytes
+        - reserve``) or the conservative default
+        (``SMEM_LIMIT_BYTES``).
+      pages_per_seq: ``ceil(max_model_len / page_size)`` carried over so
+        downstream prefetch-array sizing is consistent.
+    """
+    requested_M: int
+    achievable_M: int
+    effective_M: int
+    effective_K_sched_cap: int
+    smem_budget: int
+    pages_per_seq: int
+
+    @property
+    def requested_exceeds_achievable(self) -> bool:
+        """True when SMEM forces clamping to a lower M than requested."""
+        return self.requested_M > self.achievable_M
+
+
+def evaluate_decoupled_k_config(
+    *,
+    K_kernel: int,
+    K_sched: int,
+    max_num_batched_tokens: int,
+    max_num_seqs: int,
+    max_model_len: int,
+    page_size: int,
+    smem_budget: int = SMEM_LIMIT_BYTES,
+) -> DecoupledKConfig:
+    """Validate and resolve the decoupled-K config at runner init.
+
+    Inputs come from vLLM scheduler/cache config plus the runtime SMEM
+    budget. Output is a DecoupledKConfig the runner stores and uses
+    when building per-step prefetch arrays.
+
+    Semantics:
+      - K_sched == 0 (vLLM default for "no per-request cap"): use
+        max_num_batched_tokens as the worst-case per-request bound,
+        since vLLM could in principle hand a single request the full
+        MNB budget.
+      - K_sched > 0: use that as the per-request cap.
+
+    Always-on hard guard: even at M=1 (no chunking), the prefetch
+    arrays must fit in SMEM. If not, the (max_num_seqs, max_model_len,
+    page_size) triple is fundamentally incompatible with this hardware
+    and the runner should fail loudly rather than silently truncate.
+
+    Returns:
+      DecoupledKConfig with resolved effective_M, effective_K_sched_cap,
+      and the inputs carried through.
+
+    Raises:
+      ValueError: K_kernel <= 1, K_kernel does not divide cleanly into
+        a useful range, or even M=1 fails the SMEM budget.
+    """
+    if K_kernel <= 1:
+        raise ValueError(f"K_kernel must be > 1; got {K_kernel}")
+    if max_num_batched_tokens <= 0:
+        raise ValueError(
+            f"max_num_batched_tokens must be > 0; got {max_num_batched_tokens}")
+    if max_num_seqs <= 0:
+        raise ValueError(f"max_num_seqs must be > 0; got {max_num_seqs}")
+    if max_model_len <= 0:
+        raise ValueError(f"max_model_len must be > 0; got {max_model_len}")
+    if page_size <= 0:
+        raise ValueError(f"page_size must be > 0; got {page_size}")
+
+    # ceiling(max_model_len / page_size)
+    pages_per_seq = (max_model_len + page_size - 1) // page_size
+
+    # Hard guard: M=1 (no chunking) must fit. If not, the workload
+    # geometry is unsupported regardless of K_sched.
+    validate_smem_fits(
+        max_num_subseqs=required_max_num_subseqs(
+            max_num_seqs=max_num_seqs, K_sched_cap=K_kernel,
+            K_kernel=K_kernel),
+        pages_per_seq=pages_per_seq,
+        smem_limit_bytes=smem_budget)
+
+    # K_sched=0 in vLLM means "no per-request cap" — bound by MNB.
+    K_sched_effective = K_sched if K_sched > 0 else max_num_batched_tokens
+    requested_M = (K_sched_effective + K_kernel - 1) // K_kernel
+
+    achievable_M = max_M_under_smem(max_num_seqs=max_num_seqs,
+                                    pages_per_seq=pages_per_seq,
+                                    smem_limit_bytes=smem_budget)
+
+    effective_M = min(requested_M, achievable_M)
+    effective_K_sched_cap = effective_M * K_kernel
+
+    return DecoupledKConfig(
+        requested_M=requested_M,
+        achievable_M=achievable_M,
+        effective_M=effective_M,
+        effective_K_sched_cap=effective_K_sched_cap,
+        smem_budget=smem_budget,
+        pages_per_seq=pages_per_seq,
+    )

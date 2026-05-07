@@ -399,6 +399,61 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
         self.is_pooling_model: bool = self.model_config.runner_type == "pooling"
         """Generative model or pooling model select different computations."""
 
+    def _evaluate_decoupled_k(self, scheduler_config, model_config,
+                              cache_config):
+        """Evaluate the decoupled-K config (RPA_KERNEL_K) at runner init.
+
+        Queries the runtime SMEM capacity, falls back to the conservative
+        SMEM_LIMIT_BYTES default if unavailable, then delegates the math
+        to subseq_planner.evaluate_decoupled_k_config.
+
+        Returns a DecoupledKConfig stored on the runner for later use by
+        the per-step prefetch-array building code.
+        """
+        from tpu_inference.runner.subseq_planner import (
+            SMEM_LIMIT_BYTES, evaluate_decoupled_k_config)
+        try:
+            from jax.experimental.pallas import tpu as pltpu
+            hw_smem = pltpu.get_tpu_info().smem_capacity_bytes
+            # Reserve 32 KiB for kernel internals (matches the pattern in
+            # tpu_inference/kernels/experimental/batched_rpa/configs.py).
+            smem_budget = hw_smem - 32 * 1024
+        except Exception as e:
+            smem_budget = SMEM_LIMIT_BYTES
+            logger.warning(
+                "Could not query pltpu.get_tpu_info().smem_capacity_bytes "
+                "(%s); falling back to conservative SMEM_LIMIT_BYTES=%d.",
+                e, smem_budget)
+
+        cfg = evaluate_decoupled_k_config(
+            K_kernel=envs.RPA_KERNEL_K,
+            K_sched=scheduler_config.long_prefill_token_threshold,
+            max_num_batched_tokens=scheduler_config.max_num_batched_tokens,
+            max_num_seqs=scheduler_config.max_num_seqs,
+            max_model_len=model_config.max_model_len,
+            page_size=cache_config.block_size,
+            smem_budget=smem_budget,
+        )
+        if cfg.requested_exceeds_achievable:
+            logger.warning(
+                "Decoupled-K: requested up to %d sub-chunks per request "
+                "(K_sched_effective=%d, K_kernel=%d) but SMEM only fits "
+                "%d at this geometry (max_num_seqs=%d, pages_per_seq=%d, "
+                "smem_budget=%d). Effective K_sched_cap clamped to %d.",
+                cfg.requested_M, cfg.effective_M * envs.RPA_KERNEL_K
+                    if cfg.requested_M == cfg.effective_M else
+                    cfg.requested_M * envs.RPA_KERNEL_K,
+                envs.RPA_KERNEL_K, cfg.achievable_M,
+                scheduler_config.max_num_seqs, cfg.pages_per_seq,
+                cfg.smem_budget, cfg.effective_K_sched_cap)
+        logger.info(
+            "Decoupled K config: K_kernel=%d, K_sched=%d, effective_M=%d, "
+            "K_sched_cap=%d, SMEM_budget=%d.",
+            envs.RPA_KERNEL_K,
+            scheduler_config.long_prefill_token_threshold,
+            cfg.effective_M, cfg.effective_K_sched_cap, cfg.smem_budget)
+        return cfg
+
     def _init_random(self):
         if self.model_config.seed is None:
             self.model_config.seed = 0
@@ -547,6 +602,18 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
         self.block_size = cache_config.block_size
         self.max_model_len = model_config.max_model_len
         self.max_num_blocks_per_req = cdiv(self.max_model_len, self.block_size)
+        # When K_sched (LONG_PREFILL_TOKEN_THRESHOLD) is decoupled from
+        # K_kernel (RPA_KERNEL_K) and K_sched > K_kernel, each scheduler-
+        # given chunk gets split into ceil(K_sched/K_kernel) sub-chunks
+        # by the runner. SMEMs page_indices_ref dominates the prefetch-
+        # array footprint, so we validate at init that the worst-case
+        # max_num_subseqs fits the actual hardware SMEM. Skip when
+        # K_kernel is unset (todays coupled-K path; no inflation).
+        if envs.RPA_KERNEL_K is not None:
+            self._decoupled_k_config = self._evaluate_decoupled_k(
+                scheduler_config, model_config, cache_config)
+        else:
+            self._decoupled_k_config = None   # todays coupled-K behaviour
         # InputBatch needs to work with sampling tensors greater than padding
         # to avoid dynamic shapes. Also, avoid suboptimal alignment.
         # The total number of requests is dp_size * max_num_seqs
