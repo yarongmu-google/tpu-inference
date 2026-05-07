@@ -308,9 +308,10 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # K_kernel override; integer, must be > 1. None = use vLLMs
     # LONG_PREFILL_TOKEN_THRESHOLD (todays coupled K behaviour).
     # See subseq_planner.py for chunking semantics.
+    # Walrus form matches the file convention (cf. lines 235-247).
     "RPA_KERNEL_K":
-    lambda: int(os.getenv("RPA_KERNEL_K"))
-        if os.getenv("RPA_KERNEL_K") else None,
+    lambda: int(v) if (v := os.getenv("RPA_KERNEL_K")) is not None and v != ""
+        else None,
 }
 
 

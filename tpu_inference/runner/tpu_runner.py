@@ -73,6 +73,11 @@ from tpu_inference.runner.input_batch import CachedRequestState, InputBatch
 from tpu_inference.runner.kv_cache_manager import KVCacheManager
 from tpu_inference.runner.lora_utils import LoraUtils
 from tpu_inference.runner.multimodal_manager import MultiModalManager
+from tpu_inference.runner.subseq_planner import (
+    SMEM_LIMIT_BYTES,
+    SMEM_RESERVE_BYTES,
+    evaluate_decoupled_k_config,
+)
 from tpu_inference.runner.persistent_batch_manager import \
     PersistentBatchManager
 from tpu_inference.runner.speculative_decoding_manager import (
@@ -421,20 +426,23 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
         Returns a DecoupledKConfig stored on the runner for later use by
         the per-step prefetch-array building code.
         """
-        from tpu_inference.runner.subseq_planner import (
-            SMEM_LIMIT_BYTES, evaluate_decoupled_k_config)
+        # pltpu must stay function-local — its on the JAX critical
+        # import path and we want to defer it until a TPU runtime
+        # actually needs it.
         try:
             from jax.experimental.pallas import tpu as pltpu
             hw_smem = pltpu.get_tpu_info().smem_capacity_bytes
-            # Reserve 32 KiB for kernel internals (matches the pattern in
-            # tpu_inference/kernels/experimental/batched_rpa/configs.py).
-            smem_budget = hw_smem - 32 * 1024
-        except Exception as e:
+            smem_budget = hw_smem - SMEM_RESERVE_BYTES
+        except (ImportError, AttributeError, RuntimeError) as e:
+            # Narrow exception set: ImportError if pltpu is missing
+            # (non-TPU dev box), AttributeError if the API has moved,
+            # RuntimeError if pltpu raises on TPU info access. Other
+            # exception types are unexpected and should propagate.
             smem_budget = SMEM_LIMIT_BYTES
             logger.warning(
                 "Could not query pltpu.get_tpu_info().smem_capacity_bytes "
-                "(%s); falling back to conservative SMEM_LIMIT_BYTES=%d.",
-                e, smem_budget)
+                "(%s: %s); falling back to conservative SMEM_LIMIT_BYTES=%d.",
+                type(e).__name__, e, smem_budget)
 
         cfg = evaluate_decoupled_k_config(
             K_kernel=envs.RPA_KERNEL_K,
@@ -451,18 +459,37 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
                 "(K_sched_effective=%d, K_kernel=%d) but SMEM only fits "
                 "%d at this geometry (max_num_seqs=%d, pages_per_seq=%d, "
                 "smem_budget=%d). Effective K_sched_cap clamped to %d.",
-                cfg.requested_M, cfg.effective_M * envs.RPA_KERNEL_K
-                    if cfg.requested_M == cfg.effective_M else
-                    cfg.requested_M * envs.RPA_KERNEL_K,
-                envs.RPA_KERNEL_K, cfg.achievable_M,
-                scheduler_config.max_num_seqs, cfg.pages_per_seq,
-                cfg.smem_budget, cfg.effective_K_sched_cap)
+                cfg.requested_M, cfg.K_sched_effective, cfg.K_kernel,
+                cfg.achievable_M, scheduler_config.max_num_seqs,
+                cfg.pages_per_seq, cfg.smem_budget,
+                cfg.effective_K_sched_cap)
         logger.info(
-            "Decoupled K config: K_kernel=%d, K_sched=%d, effective_M=%d, "
-            "K_sched_cap=%d, SMEM_budget=%d.",
-            envs.RPA_KERNEL_K,
+            "Decoupled K config: K_kernel=%d, K_sched=%d (effective=%d), "
+            "effective_M=%d, K_sched_cap=%d, SMEM_budget=%d.",
+            cfg.K_kernel,
             scheduler_config.long_prefill_token_threshold,
-            cfg.effective_M, cfg.effective_K_sched_cap, cfg.smem_budget)
+            cfg.K_sched_effective, cfg.effective_M,
+            cfg.effective_K_sched_cap, cfg.smem_budget)
+        # Footgun guard: pre-C4 (the prefetch-array wire-up that actually
+        # consumes the StepPlan), the bucketer at
+        # persistent_batch_manager._reorder_batch:108 still uses
+        # nst[req_id] == K_kernel for the PREFILL bucket. If the user
+        # sets RPA_KERNEL_K != LONG_PREFILL_TOKEN_THRESHOLD before C4
+        # has landed, every multi-token request lands in MIXED instead
+        # of PREFILL — silent throughput collapse. Warn loudly when
+        # the values disagree until C4 lands and removes this comment.
+        if cfg.K_kernel != scheduler_config.long_prefill_token_threshold:
+            logger.warning(
+                "RPA_KERNEL_K (%d) != LONG_PREFILL_TOKEN_THRESHOLD (%d). "
+                "Until the per-step prefetch-array construction (C4) "
+                "lands, the bucketer still requires q_len == K_kernel "
+                "exactly for PREFILL routing — mismatched values will "
+                "send every prefill through MIXED with no warning. "
+                "If you are intentionally testing the decoupled path, "
+                "ensure the C4 commit has landed before relying on "
+                "performance numbers.",
+                cfg.K_kernel,
+                scheduler_config.long_prefill_token_threshold)
         return cfg
 
     def _init_random(self):

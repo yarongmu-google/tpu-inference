@@ -71,7 +71,8 @@ from __future__ import annotations
 
 import dataclasses
 import enum
-from typing import Iterable
+import warnings
+from collections.abc import Iterable
 
 
 class SubSeqKind(enum.Enum):
@@ -277,6 +278,14 @@ def required_max_num_subseqs(*, max_num_seqs: int, K_sched_cap: int,
         n_R when not a multiple of K_kernel, or the whole thing when
         n_R < K_kernel).
 
+    The +max_num_seqs MIXED slack is a worst-case bound; when
+    ``K_sched_cap % K_kernel == 0`` AND every request always produces a
+    multiple-of-K_kernel scheduled token count, no remainder is ever
+    produced and the slack is wasted. We over-allocate rather than
+    track the actual case at runtime — prefetch-array sizes are tiny
+    (KB-scale) so the slack is cheap, and a tighter bound would risk
+    a silent overflow on the rare workload that produces remainders.
+
     DECODE sub-seqs are bounded by max_num_seqs but are mutually exclusive
     with PREFILL/MIXED sub-seqs of the same real request (a request is in
     decode OR prefill, not both, in any given step). So decode capacity is
@@ -324,11 +333,41 @@ def required_max_num_subseqs(*, max_num_seqs: int, K_sched_cap: int,
 SMEM_LIMIT_BYTES: int = int(0.9 * 1024 * 1024)
 
 
+# Reserve carved out of the SMEM hardware capacity for kernel internals
+# (sem id arrays, distribution_ref, etc.) when the runtime API is used
+# instead of the conservative SMEM_LIMIT_BYTES default. Single
+# definition so the runner and any other caller agree.
+# Matches the pattern in tpu_inference/kernels/experimental/
+# batched_rpa/configs.py:181.
+SMEM_RESERVE_BYTES: int = 32 * 1024
+
+
 # Sub-chunks of the same real request currently DUPLICATE that requests
 # pages_per_seq slots into page_indices_ref under todays kernel
 # (kernel.py:568 indexes via seq_idx directly: page_indices_offset =
 # seq_idx * pages_per_seq + kv_p_start). For sub-chunks of one request,
 # every duplicated row holds identical contents — pure waste.
+#
+# Correctness note (read carefully if you wire this up): the kernel is
+# unaware that the duplicated rows alias the same physical pages. It
+# faithfully runs its full bkv loop for every seq_idx and writes new
+# K/V at the offset implied by ``kv_q_gap = kv_lens_ref[seq_idx] -
+# (cu_q_lens_ref[seq_idx+1] - cu_q_lens_ref[seq_idx])``. So duplicating
+# page_indices alone is NOT enough — the runner MUST set kv_lens_ref
+# and cu_q_lens_ref per sub-seq such that consecutive chunks of the
+# same real request write to disjoint offset ranges within the shared
+# pages. Concretely, for chunks 0, 1, 2 of a request R with K_kernel
+# tokens each, prior_kv_len=p:
+#   kv_lens_ref     = [p+K, p+2K, p+3K, ...]
+#   cu_q_lens_ref   = [..., x, x+K, x+2K, x+3K, ...]   (q boundaries)
+# Then chunk 0 writes [p, p+K), chunk 1 writes [p+K, p+2K), chunk 2
+# writes [p+2K, p+3K). Get this wrong and the kernel silently corrupts
+# KV cache.
+#
+# StepPlan emits this per-sub-seq metadata (q_offset_in_real_req +
+# q_len + kv_len_at_end on each SubSeqEntry), so the planner already
+# anticipates the constraint; the prefetch-array construction code
+# (next commits) is where it has to land.
 #
 # A small kernel change unblocks much higher M_max:
 #
@@ -462,6 +501,7 @@ def max_M_under_smem(*, max_num_seqs: int, pages_per_seq: int,
     # plus 1 MIXED remainder slot per real request — same formula as
     # required_max_num_subseqs.
     M = 0
+    SAFETY_CAP = 1024
     while True:
         candidate = max_num_seqs * (M + 1)
         bytes_used = compute_smem_bytes(max_num_seqs=candidate,
@@ -470,10 +510,21 @@ def max_M_under_smem(*, max_num_seqs: int, pages_per_seq: int,
             return max(M - 1, 0)
         M += 1
         # Safety bound: M cannot exceed K_sched_cap / K_kernel for any
-        # reasonable config; cap the search at 1024 to avoid a runaway
-        # loop on a misconfigured smem_limit_bytes.
-        if M > 1024:
-            return M - 1
+        # reasonable config; cap the search to avoid a runaway loop on
+        # a misconfigured smem_limit_bytes (e.g. someone passes
+        # sys.maxsize). If we hit the cap, warn — at this point either
+        # the budget is wrong or the workload geometry is unusual
+        # enough that the caller should be aware.
+        if M >= SAFETY_CAP:
+            warnings.warn(
+                f"max_M_under_smem hit safety cap of {SAFETY_CAP} "
+                f"at max_num_seqs={max_num_seqs}, "
+                f"pages_per_seq={pages_per_seq}, "
+                f"smem_limit_bytes={smem_limit_bytes}. Likely a "
+                f"misconfigured smem_limit_bytes; the cap is "
+                f"intentionally well above any plausible real M.",
+                stacklevel=2)
+            return SAFETY_CAP - 1
 
 
 @dataclasses.dataclass(frozen=True)
@@ -489,14 +540,26 @@ class DecoupledKConfig:
         AttentionMetadata builders) can reach it from a single
         DecoupledKConfig handle without reading envs.RPA_KERNEL_K
         again.
+      K_sched_effective: the actual per-request-per-step token budget
+        used to compute requested_M. Equals
+        ``min(K_sched, max_num_batched_tokens) if K_sched > 0 else
+        max_num_batched_tokens``. Clamping by MNB matters because vLLM
+        cannot hand a single request more tokens than its total
+        per-step budget — without the clamp, requested_M overestimates
+        and the diagnostic warning misreports the effective scheduler
+        cap.
       requested_M: ``ceil(K_sched_effective / K_kernel)``  — the
         chunks-per-request-per-step the user asked for.
       achievable_M: largest M that fits in SMEM at the given workload
         geometry. Computed by ``max_M_under_smem()``.
       effective_M: ``min(requested_M, achievable_M)``. The runner caps
         sub-chunk count per request at this value per step. When
-        achievable_M < requested_M, the user receives a warning at
-        init.
+        ``requested_exceeds_achievable`` is True (achievable_M <
+        requested_M), the **caller** is expected to log a warning;
+        this dataclass merely flags the condition via the property.
+        ``evaluate_decoupled_k_config`` does not warn directly because
+        consumers may want to format the message with their own
+        context (workload name, log level, etc.).
       effective_K_sched_cap: ``effective_M * K_kernel``. The maximum
         per-request-per-step token count the runner will actually
         process in chunked form. If vLLM hands us more than this
@@ -510,6 +573,7 @@ class DecoupledKConfig:
         downstream prefetch-array sizing is consistent.
     """
     K_kernel: int
+    K_sched_effective: int
     requested_M: int
     achievable_M: int
     effective_M: int
@@ -575,16 +639,36 @@ def evaluate_decoupled_k_config(
     pages_per_seq = (max_model_len + page_size - 1) // page_size
 
     # Hard guard: M=1 (no chunking) must fit. If not, the workload
-    # geometry is unsupported regardless of K_sched.
-    validate_smem_fits(
-        max_num_subseqs=required_max_num_subseqs(
-            max_num_seqs=max_num_seqs, K_sched_cap=K_kernel,
-            K_kernel=K_kernel),
-        pages_per_seq=pages_per_seq,
-        smem_limit_bytes=smem_budget)
+    # geometry is unsupported regardless of K_sched. Wrap the generic
+    # SMEM error with a more actionable message — at M=1, lowering
+    # K_sched_cap (which is the underlying validate_smem_fits message)
+    # cannot help since were already at the minimum.
+    try:
+        validate_smem_fits(
+            max_num_subseqs=required_max_num_subseqs(
+                max_num_seqs=max_num_seqs, K_sched_cap=K_kernel,
+                K_kernel=K_kernel),
+            pages_per_seq=pages_per_seq,
+            smem_limit_bytes=smem_budget)
+    except ValueError as e:
+        raise ValueError(
+            f"Workload geometry incompatible with hardware SMEM: even "
+            f"M=1 (no sub-chunk inflation) overflows the SMEM budget. "
+            f"max_num_seqs={max_num_seqs}, max_model_len={max_model_len}, "
+            f"page_size={page_size}, pages_per_seq={pages_per_seq}, "
+            f"smem_budget={smem_budget}. Actionable knobs: reduce "
+            f"max_num_seqs, increase page_size (smaller pages_per_seq), "
+            f"or reduce max_model_len. Reducing K_sched does NOT help "
+            f"at this regime. Underlying: {e}") from e
 
     # K_sched=0 in vLLM means "no per-request cap" — bound by MNB.
-    K_sched_effective = K_sched if K_sched > 0 else max_num_batched_tokens
+    # When K_sched > MNB, vLLM cant actually grant the user-requested
+    # cap (per-step token budget is bounded by MNB across all reqs and
+    # certainly bounded by it for any single req), so clamp.
+    if K_sched > 0:
+        K_sched_effective = min(K_sched, max_num_batched_tokens)
+    else:
+        K_sched_effective = max_num_batched_tokens
     requested_M = (K_sched_effective + K_kernel - 1) // K_kernel
 
     achievable_M = max_M_under_smem(max_num_seqs=max_num_seqs,
@@ -596,6 +680,7 @@ def evaluate_decoupled_k_config(
 
     return DecoupledKConfig(
         K_kernel=K_kernel,
+        K_sched_effective=K_sched_effective,
         requested_M=requested_M,
         achievable_M=achievable_M,
         effective_M=effective_M,
