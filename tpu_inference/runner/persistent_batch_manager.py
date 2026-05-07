@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict
+from typing import Any, Dict
 
 import jax
 from vllm.v1.core.sched.output import SchedulerOutput as VllmSchedulerOutput
@@ -33,7 +33,7 @@ class PersistentBatchManager:
                  model_config,
                  is_last_rank: bool,
                  chunk_prefill_size: int | None = None,
-                 decoupled_k_config: 'Any | None' = None):
+                 decoupled_k_config: Any | None = None):
         self.requests = requests
         self.input_batch = input_batch
         self.encoder_cache = encoder_cache
@@ -58,7 +58,7 @@ class PersistentBatchManager:
         # Downstream consumers (next commits) read this to build the
         # per-iter prefetch arrays for the kernel. Lazily imported to
         # keep top-level import light.
-        self.last_step_plan: 'Any | None' = None
+        self.last_step_plan: Any | None = None
 
     def _reorder_batch(self, scheduler_output: "VllmSchedulerOutput") -> int:
         """Reorder the scheduled requests into the RPA kernel's 3-bucket
@@ -331,7 +331,7 @@ class PersistentBatchManager:
 
     def compute_step_plan(
             self,
-            scheduler_output: "VllmSchedulerOutput") -> 'Any | None':
+            scheduler_output: "VllmSchedulerOutput") -> Any | None:
         """Compute the per-step sub-seq plan when decoupled-K is active.
 
         Returns a subseq_planner.StepPlan describing the iter ordering
@@ -347,10 +347,11 @@ class PersistentBatchManager:
         """
         if self.decoupled_k_config is None:
             return None
-        # Lazy import: subseq_planner is pure stdlib but importing it
-        # from the package triggers tpu_inference/__init__.py which
-        # transitively imports vllm/jax — fine in production, expensive
-        # in import-cycle tests. Keep the import local.
+        # Local import: subseq_planner is pure stdlib, but importing
+        # it from the package triggers tpu_inference/__init__.py side
+        # effects (vllm/jax/torch chain). Keeping this local means
+        # offline tests of helpers that touch the planner directly
+        # arent forced to pay that cost.
         from tpu_inference.runner.subseq_planner import plan_step
 
         # Build prior_kv_lens snapshot from input_batchs CPU mirror,
@@ -368,6 +369,9 @@ class PersistentBatchManager:
             prior_kv_lens[req_id] = int(
                 self.input_batch.num_computed_tokens_cpu[req_index])
 
+        # dict(num_scheduled) is a shallow copy — paranoia against
+        # plan_step or downstream consumers mutating what is otherwise
+        # a vLLM-owned dict. Cheap (small ints), removes the question.
         return plan_step(
             num_scheduled_tokens=dict(num_scheduled),
             prior_kv_lens=prior_kv_lens,
