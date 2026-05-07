@@ -371,8 +371,18 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
         cp_threshold = self.scheduler_config.long_prefill_token_threshold
         if envs.RPA_KERNEL_K is not None:
             self.chunk_prefill_size = envs.RPA_KERNEL_K
+            # SMEM-aware validation + DecoupledKConfig resolution. This
+            # MUST happen before PersistentBatchManager is constructed
+            # because the manager stores the config for per-step
+            # plan_step() invocation. Sources max_model_len /
+            # max_num_seqs / max_num_batched_tokens / page_size from the
+            # vLLM configs directly (not self.*) since most of those
+            # self.* fields are populated later in this __init__.
+            self._decoupled_k_config = self._evaluate_decoupled_k(
+                self.scheduler_config, self.model_config, self.cache_config)
         else:
             self.chunk_prefill_size = cp_threshold if cp_threshold > 0 else None
+            self._decoupled_k_config = None
         # chunk_prefill_size now flows via AttentionMetadata.chunk_prefill_size
         # (set on every metadata constructed in build_attn) — no module-
         # global setter to call.
@@ -380,7 +390,8 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
         self.persistent_batch_manager = PersistentBatchManager(
             self.requests, self.input_batch, self.encoder_cache,
             self.uses_mrope, self.model_config, self.is_last_rank,
-            chunk_prefill_size=self.chunk_prefill_size)
+            chunk_prefill_size=self.chunk_prefill_size,
+            decoupled_k_config=self._decoupled_k_config)
         self.lora_utils = LoraUtils(self)
 
         cache_dtype = self.cache_config.cache_dtype
@@ -602,18 +613,8 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
         self.block_size = cache_config.block_size
         self.max_model_len = model_config.max_model_len
         self.max_num_blocks_per_req = cdiv(self.max_model_len, self.block_size)
-        # When K_sched (LONG_PREFILL_TOKEN_THRESHOLD) is decoupled from
-        # K_kernel (RPA_KERNEL_K) and K_sched > K_kernel, each scheduler-
-        # given chunk gets split into ceil(K_sched/K_kernel) sub-chunks
-        # by the runner. SMEMs page_indices_ref dominates the prefetch-
-        # array footprint, so we validate at init that the worst-case
-        # max_num_subseqs fits the actual hardware SMEM. Skip when
-        # K_kernel is unset (todays coupled-K path; no inflation).
-        if envs.RPA_KERNEL_K is not None:
-            self._decoupled_k_config = self._evaluate_decoupled_k(
-                scheduler_config, model_config, cache_config)
-        else:
-            self._decoupled_k_config = None   # todays coupled-K behaviour
+        # Decoupled-K validation already ran above (right after
+        # chunk_prefill_size resolution); see self._decoupled_k_config.
         # InputBatch needs to work with sampling tensors greater than padding
         # to avoid dynamic shapes. Also, avoid suboptimal alignment.
         # The total number of requests is dp_size * max_num_seqs

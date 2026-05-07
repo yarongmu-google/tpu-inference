@@ -32,7 +32,8 @@ class PersistentBatchManager:
                  uses_mrope: bool,
                  model_config,
                  is_last_rank: bool,
-                 chunk_prefill_size: int | None = None):
+                 chunk_prefill_size: int | None = None,
+                 decoupled_k_config: 'Any | None' = None):
         self.requests = requests
         self.input_batch = input_batch
         self.encoder_cache = encoder_cache
@@ -44,6 +45,20 @@ class PersistentBatchManager:
         # scheduled tokens (uniform PREFILL bucket). When None, falls back
         # to today's [D, D, T] (everything non-decode goes to MIXED).
         self.chunk_prefill_size = chunk_prefill_size
+        # Decoupled-K config (subseq_planner.DecoupledKConfig) when
+        # RPA_KERNEL_K is set. None for todays coupled-K path. When set,
+        # update_states() ALSO computes a per-step StepPlan via
+        # subseq_planner.plan_step(); the plan is consumed by the
+        # prefetch-array construction code (next commit) to build per-iter
+        # cu_q_lens, kv_lens, page_indices, and real_seq_idx_per_iter.
+        self.decoupled_k_config = decoupled_k_config
+        # Cached per-step output of plan_step(). Set by
+        # compute_step_plan() during update_states() when
+        # decoupled_k_config is active. None on todays coupled-K path.
+        # Downstream consumers (next commits) read this to build the
+        # per-iter prefetch arrays for the kernel. Lazily imported to
+        # keep top-level import light.
+        self.last_step_plan: 'Any | None' = None
 
     def _reorder_batch(self, scheduler_output: "VllmSchedulerOutput") -> int:
         """Reorder the scheduled requests into the RPA kernel's 3-bucket
@@ -305,4 +320,57 @@ class PersistentBatchManager:
         batch_changed = len(unscheduled_req_ids) > 0 or len(req_ids_to_add) > 0
         # TODO(jevinjiang): I assume we do not need to set batch_changed to true if just swapping requests.
         self._reorder_batch(scheduler_output)
+        # Decoupled-K: compute the per-step sub-seq plan after reordering
+        # so the plans iter ordering matches the persistent batchs
+        # post-reorder ordering. Stored on self.last_step_plan; consumed
+        # by the prefetch-array construction code (next commit). On the
+        # coupled-K path (decoupled_k_config is None) this is a no-op
+        # and last_step_plan stays None.
+        self.last_step_plan = self.compute_step_plan(scheduler_output)
         return batch_changed
+
+    def compute_step_plan(
+            self,
+            scheduler_output: "VllmSchedulerOutput") -> 'Any | None':
+        """Compute the per-step sub-seq plan when decoupled-K is active.
+
+        Returns a subseq_planner.StepPlan describing the iter ordering
+        (DECODE -> PREFILL chunks -> MIXED remainders) and per-iter
+        metadata (q_offset_in_real_req, q_len, kv_len_at_end). The
+        prefetch-array construction code (next commit) materialises this
+        into the kernels cu_q_lens / kv_lens / page_indices /
+        real_seq_idx_per_iter arrays.
+
+        Returns None when self.decoupled_k_config is None (todays
+        coupled-K path; no chunking happens, the existing
+        request_distribution from _reorder_batch is sufficient).
+        """
+        if self.decoupled_k_config is None:
+            return None
+        # Lazy import: subseq_planner is pure stdlib but importing it
+        # from the package triggers tpu_inference/__init__.py which
+        # transitively imports vllm/jax — fine in production, expensive
+        # in import-cycle tests. Keep the import local.
+        from tpu_inference.runner.subseq_planner import plan_step
+
+        # Build prior_kv_lens snapshot from input_batchs CPU mirror,
+        # using the post-reorder req_ids ordering so the plan visits
+        # requests in the same order the kernel will encounter them.
+        req_ids_in_order = list(self.input_batch.req_ids)
+        num_scheduled = scheduler_output.num_scheduled_tokens
+        prior_kv_lens = {}
+        for req_id in req_ids_in_order:
+            if req_id not in num_scheduled or num_scheduled[req_id] <= 0:
+                continue
+            req_index = self.input_batch.req_id_to_index.get(req_id)
+            if req_index is None:
+                continue
+            prior_kv_lens[req_id] = int(
+                self.input_batch.num_computed_tokens_cpu[req_index])
+
+        return plan_step(
+            num_scheduled_tokens=dict(num_scheduled),
+            prior_kv_lens=prior_kv_lens,
+            req_id_order=req_ids_in_order,
+            K_kernel=self.decoupled_k_config.K_kernel,
+        )

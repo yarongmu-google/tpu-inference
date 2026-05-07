@@ -484,6 +484,11 @@ class DecoupledKConfig:
     K_sched / K_kernel / SMEM budget inputs.
 
     Attributes:
+      K_kernel: the static-q-len of the PREFILL kernel pass. Carried
+        over from the input so consumers (PersistentBatchManager,
+        AttentionMetadata builders) can reach it from a single
+        DecoupledKConfig handle without reading envs.RPA_KERNEL_K
+        again.
       requested_M: ``ceil(K_sched_effective / K_kernel)``  — the
         chunks-per-request-per-step the user asked for.
       achievable_M: largest M that fits in SMEM at the given workload
@@ -504,6 +509,7 @@ class DecoupledKConfig:
       pages_per_seq: ``ceil(max_model_len / page_size)`` carried over so
         downstream prefetch-array sizing is consistent.
     """
+    K_kernel: int
     requested_M: int
     achievable_M: int
     effective_M: int
@@ -589,6 +595,7 @@ def evaluate_decoupled_k_config(
     effective_K_sched_cap = effective_M * K_kernel
 
     return DecoupledKConfig(
+        K_kernel=K_kernel,
         requested_M=requested_M,
         achievable_M=achievable_M,
         effective_M=effective_M,

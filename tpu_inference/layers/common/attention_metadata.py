@@ -28,6 +28,14 @@ import jax
         "query_start_loc",
         "request_distribution",
         "mamba_state_indices",
+        # Decoupled-K (RPA_KERNEL_K) sub-chunk indirection. None when
+        # decoupling is off (todays coupled-K path) — kernel skips the
+        # extra dereference and uses seq_idx directly. When set, the
+        # kernel uses real_seq_idx_per_iter[seq_idx] to look up the
+        # real-request slot for page_indices_ref. See
+        # tpu_inference/runner/subseq_planner.py for the per-step
+        # chunking semantics and the SMEM accounting.
+        "real_seq_idx_per_iter",
     ],
     meta_fields=[
         # Static Python int (or None) — captured into the JIT trace as
@@ -62,6 +70,18 @@ class AttentionMetadata(object):
     # None for models without mamba layers; pure-mamba models would also
     # use this field, only hybrid models exercise it today.
     mamba_state_indices: jax.Array | None = None
+    # (max_num_subseqs,) i32 — under decoupled-K, maps each loop iteration
+    # (sub-seq slot) to its real-request slot in the persistent batch.
+    # Length of this array sets the kernels iteration count; values are
+    # in [0, max_num_real_seqs). Multiple sub-seqs of the same real
+    # request hold the SAME real-seq slot value, so they share the
+    # corresponding row of page_indices_ref — eliminating the SMEM
+    # blow-up that naive duplication would cause. See
+    # subseq_planner.py for the chunking semantics, kernel.py for the
+    # consumer (added in a follow-up commit, not yet wired).
+    # None when RPA_KERNEL_K is unset (todays coupled-K path); the
+    # kernel falls back to seq_idx as the page_indices selector.
+    real_seq_idx_per_iter: jax.Array | None = None
     # Static (Python int) — when None, ragged_paged_attention skips its
     # PREFILL pass (decode-only + mixed). When set to K > 0, sequences
     # in the request_distribution[0]:request_distribution[1] slice are

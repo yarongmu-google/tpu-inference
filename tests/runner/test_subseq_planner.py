@@ -504,12 +504,14 @@ class TestDecoupledKConfigDataclass(unittest.TestCase):
 
     def test_requested_exceeds_achievable_property(self):
         cfg = DecoupledKConfig(
+            K_kernel=256,
             requested_M=10, achievable_M=4, effective_M=4,
             effective_K_sched_cap=1024, smem_budget=900 * 1024,
             pages_per_seq=64)
         self.assertTrue(cfg.requested_exceeds_achievable)
 
         cfg = DecoupledKConfig(
+            K_kernel=256,
             requested_M=4, achievable_M=10, effective_M=4,
             effective_K_sched_cap=1024, smem_budget=900 * 1024,
             pages_per_seq=64)
@@ -517,6 +519,7 @@ class TestDecoupledKConfigDataclass(unittest.TestCase):
 
     def test_frozen(self):
         cfg = DecoupledKConfig(
+            K_kernel=256,
             requested_M=8, achievable_M=8, effective_M=8,
             effective_K_sched_cap=2048, smem_budget=900 * 1024,
             pages_per_seq=64)
