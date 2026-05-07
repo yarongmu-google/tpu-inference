@@ -350,13 +350,29 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
             self.structured_decoding_manager = StructuredDecodingManager(self)
         self.kv_cache_manager = KVCacheManager(self)
         self.mm_manager = MultiModalManager(self)
-        # K for the static-q-len PREFILL kernel flavor. Sourced from vLLM's
-        # chunked-prefill knob: the scheduler caps each chunk at this value,
-        # so most chunks land at exactly K — those go through PREFILL,
-        # remainders fall to MIXED. 0/disabled => keep today's [D, D, T]
-        # bucketing and skip the PREFILL pass.
+        # K for the static-q-len PREFILL kernel flavor. Two sources:
+        #
+        # 1. Default (todays behaviour, K_sched == K_kernel): sourced
+        #    from vLLMs chunked-prefill knob LONG_PREFILL_TOKEN_THRESHOLD.
+        #    The scheduler caps each requests step at this value, so
+        #    PREFILL-bucket entries land at exactly K. Remainders fall to
+        #    MIXED. 0/disabled => keep todays [D, D, T] bucketing and
+        #    skip the PREFILL pass.
+        #
+        # 2. Override (decoupled mode): RPA_KERNEL_K env var. When set,
+        #    the kernels static K is independent of the schedulers K.
+        #    The runner internally splits each scheduled n_R into
+        #    floor(n_R / K_kernel) PREFILL chunks plus a MIXED remainder.
+        #    See subseq_planner.py for the per-step chunking plan and
+        #    PR2 commits for the wire-up. Until C3 lands, RPA_KERNEL_K
+        #    only affects what value AttentionMetadata.chunk_prefill_size
+        #    holds — the bucketing path still requires q_len == K_kernel
+        #    for a request to reach the PREFILL bucket.
         cp_threshold = self.scheduler_config.long_prefill_token_threshold
-        self.chunk_prefill_size = cp_threshold if cp_threshold > 0 else None
+        if envs.RPA_KERNEL_K is not None:
+            self.chunk_prefill_size = envs.RPA_KERNEL_K
+        else:
+            self.chunk_prefill_size = cp_threshold if cp_threshold > 0 else None
         # chunk_prefill_size now flows via AttentionMetadata.chunk_prefill_size
         # (set on every metadata constructed in build_attn) — no module-
         # global setter to call.

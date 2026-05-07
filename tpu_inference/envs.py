@@ -54,6 +54,16 @@ if TYPE_CHECKING:
     RPA_D_BLOCK_SIZES: str | None = None
     RPA_P_BLOCK_SIZES: str | None = None
     RPA_M_BLOCK_SIZES: str | None = None
+    # K_kernel: static-q-len of the PREFILL kernel pass. When set,
+    # decouples the kernel-side K from vLLMs scheduler-side K
+    # (LONG_PREFILL_TOKEN_THRESHOLD). Lets the runner internally split
+    # each requests scheduled n_R tokens into floor(n_R / K_kernel)
+    # K_kernel-sized PREFILL chunks plus a single MIXED remainder. When
+    # unset (None), the runner uses LONG_PREFILL_TOKEN_THRESHOLD as both
+    # the scheduler-cap and the kernel-K (todays behaviour).
+    # See tpu_inference/runner/subseq_planner.py for the chunking
+    # semantics.
+    RPA_KERNEL_K: int | None = None
 
 
 def env_with_choices(
@@ -295,6 +305,12 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # e.g. RPA_M_BLOCK_SIZES="32,4096,32,256"
     "RPA_M_BLOCK_SIZES":
     lambda: os.getenv("RPA_M_BLOCK_SIZES", None),
+    # K_kernel override; integer, must be > 1. None = use vLLMs
+    # LONG_PREFILL_TOKEN_THRESHOLD (todays coupled K behaviour).
+    # See subseq_planner.py for chunking semantics.
+    "RPA_KERNEL_K":
+    lambda: int(os.getenv("RPA_KERNEL_K"))
+        if os.getenv("RPA_KERNEL_K") else None,
 }
 
 
