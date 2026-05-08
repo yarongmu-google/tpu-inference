@@ -1,0 +1,45 @@
+case_file=/home/ymu_google_com/tpu-inference/tools/benchmark/cases/v7x/llama3_8b/prefill_heavy_latency.workload
+case_name=prefill_heavy_latency
+model=meta-llama/Meta-Llama-3-8B-Instruct
+max_num_seqs=1
+max_num_batched_tokens=2048
+tensor_parallel_size=1
+max_model_len=8192
+dataset=sonnet
+input_len=8191
+output_len=1
+num_prompts=1
+request_rate=inf
+block_size=128
+long_prefill_token_threshold=0
+rpa_d_block_sizes=1,512,1,256
+rpa_p_block_sizes=default
+rpa_m_block_sizes=128,512,128,256
+git_commit=ab13698df8dcfdb3cf08a2f5c307e40986ed6b6f
+git_branch=rpa3_2
+vllm_commit=c51df43005726a09c6eb7348e8c1b00501c70a8e
+timestamp=20260508_153927
+----
+Results: /home/ymu_google_com/tpu-inference/tmp/bench_prefill_heavy_latency_rpa_v3_vllm_latency/693492191b0c
+Starting vllm server (log: /home/ymu_google_com/tpu-inference/tmp/bench_prefill_heavy_latency_rpa_v3_vllm_latency/693492191b0c/vllm.log) ...
+Waiting up to 1200s for server startup ...
+  ready after 90s
+Running benchmark (stdout: /home/ymu_google_com/tpu-inference/tmp/bench_prefill_heavy_latency_rpa_v3_vllm_latency/693492191b0c/bench.log, stderr: /home/ymu_google_com/tpu-inference/tmp/bench_prefill_heavy_latency_rpa_v3_vllm_latency/693492191b0c/bench.log.stderr) ...
+==== Summary ====
+Request throughput (req/s):              1.67      
+Output token throughput (tok/s):         1.67      
+Mean TTFT (ms):                          597.28    
+Median TTFT (ms):                        597.28    
+P99 TTFT (ms):                           597.28    
+Mean TPOT (ms):                          0.00      
+Median TPOT (ms):                        0.00      
+P99 TPOT (ms):                           0.00      
+Mean ITL (ms):                           0.00      
+Median ITL (ms):                         0.00      
+P99 ITL (ms):                            0.00      
+Mean E2EL (ms):                          597.28    
+Median E2EL (ms):                        597.28    
+P99 E2EL (ms):                           597.28    
+====
+Saved metrics to /home/ymu_google_com/tpu-inference/tmp/bench_prefill_heavy_latency_rpa_v3_vllm_latency/693492191b0c/metrics.txt
+[1/6] 693492191b0c completed_fresh (95.3s)  tmp/bench_prefill_heavy_latency_rpa_v3_vllm_latency/693492191b0c
