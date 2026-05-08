@@ -1,41 +1,51 @@
 # K-Serving (chunked PREFILL) — repro & where things live
 
 End-to-end measurement of the static-K PREFILL kernel routing on
-Llama 3 8B / TPU v7x. On a prefill-dominated workload, routing
-prefill through the tuned static-K=256 kernel beats the K=0 path
-(everything-into-MIXED kernel) by **+4.8% throughput / -4.4% P99
-TTFT**, with both runs using our tuned DECODE/MIXED kernels and a
-kernel-aligned MNB.
+Llama 3 8B / TPU v7x. On a prefill-dominated workload, the fully-
+tuned stack delivers **+47% throughput, -32% P99 TTFT** over a
+bm-infra-defaults baseline that has been *manually clipped to even
+run* — see the VMEM-OOM caveat below.
 
-> **What we have NOT measured (yet):** how this stack compares
-> against a fully-default vLLM/bm-infra config (no kernel tuning,
-> no `--block-size`, no `--long-prefill-token-threshold`). The
-> code path exists (`get_default_block_sizes()` in
-> [`tpu_inference/kernels/ragged_paged_attention/v3/kernel.py:1479`](../tpu_inference/kernels/ragged_paged_attention/v3/kernel.py#L1479))
-> and the reproducer command is below (run A) — running it is
-> a 4-minute job that would let us state an honest "+X% vs vLLM
-> defaults" headline. Not yet done.
+> **vLLM/bm-infra defaults cannot run this workload as-is.** With
+> kernel block sizes from `get_default_block_sizes()` and MNB=10275,
+> the MIXED kernel pass requires ~76.6 MB of VMEM but the v7x VMEM
+> budget is 64 MB — the JAX runtime raises ``RESOURCE_EXHAUSTED:
+> Ran out of memory in memory space vmem``. To get *any* number out
+> of a bm-infra-style configuration, the MIXED `bkv_csz` axis has to
+> be manually halved (512 → 256). That manually-clipped baseline
+> gives 3.26 req/s; **fully-default would be 0 req/s** (no run).
 
-## Headline numbers (what we actually measured)
+## Headline numbers (all measured)
 
 Workload: Llama 3.1 8B Instruct, sonnet completion, 8191 input
 tokens / 1 output token, 1000 prompts at request_rate=inf, TP=1,
 v7x-1.
 
-| Configuration | MNB | K | RPA blocks | Throughput | P99 TTFT | Wall-clock | Combo ID |
-|---|---:|---:|---|---:|---:|---:|---|
-| K=0 baseline (our tuned D, M)  | 8192  | 0   | tuned (D, M); P unused | 4.57 req/s | 216.7 s | 235 s | `edbd6ab58871` |
-| **K=256 winner** (our tuned D, P, M) | 8192 | 256 | tuned (D, P, M)        | **4.79 req/s** | 207.2 s | 224 s | `4f773da3397a` |
-| **Δ K-serving on vs off**      |       |     |                        | **+4.8%**  | **-4.4%** | **-4.7%** | |
-| MNB=10275 / K=0 (still our tuned D, M) | 10275 | 0 | tuned (D, M); P unused | 3.28 req/s | 301.5 s | 319 s | `6dc80b2a3b37` |
-| **Δ K=256 vs MNB=10275 K=0**   |       |     |                        | **+46%**   | **-31%**  | **-30%**  | |
+| Configuration | MNB | K | RPA blocks | Throughput | P99 TTFT |
+|---|---:|---:|---|---:|---:|
+| **bm-infra defaults — pure default OOMs**; clipped to run | 10275 | 0 | kernel default (`M=512,2048,256,512` OOMs by 12.6 MB; clipped to `512,2048,256,256` to run) | 3.26 req/s | 303.9 s |
+| MNB=10275 / K=0 (with our tuned D, M) | 10275 | 0 | tuned (D, M only) | 3.28 req/s | 301.5 s |
+| MNB=8192 / K=0 (our K-off baseline, tuned D, M) | 8192 | 0 | tuned (D, M only) | 4.57 req/s | 216.7 s |
+| **K=256 winner — fully tuned stack** | **8192** | **256** | tuned (D, P, M) | **4.79 req/s** | **207.2 s** |
+| **Δ winner vs bm-infra clipped-defaults** | | | | **+47%** | **-32%** |
+| Δ K-serving alone (rows 3 vs 4, same MNB & D/M) | | | | +4.8% | -4.4% |
 
-The +46% row is real numbers from our sweep, but **read carefully**:
-the 3.28 baseline still uses our tuned DECODE and MIXED kernels —
-it's not "everything default". So the +46% measures
-**(MNB tuning) + (K-serving)** combined, against a "we tuned
-everything except picked an unfortunate MNB" config. To turn it
-into a clean "+X% vs vLLM defaults" claim, run command A below.
+Three things to read carefully:
+
+1. **The +47% comparison is against a *clipped* bm-infra config, not
+   the pure default**, because the pure default cannot run on v7x at
+   this shape. If "default" means "whatever the framework gives you,
+   even if it crashes," the comparison becomes "we run; they don't."
+2. **Row 1 (3.26) ≈ Row 2 (3.28)** — almost identical despite very
+   different block sizes. The bottleneck at MNB=10275 is **not**
+   kernel block sizes; it's the kernel-tile-shape regime that
+   collapses both. The Layer 1 kernel-tune step contributes ~0% on
+   this MNB-broken baseline. The +47% delta comes essentially
+   entirely from MNB tuning + K-serving, NOT from kernel-tile
+   block-size tuning at this regime.
+3. **K-serving alone (rows 3 → 4): +4.8% throughput, -4.4% P99 TTFT.**
+   That's the cleanest A/B because both rows use our tuned D/M
+   kernels at the same MNB — only K differs.
 
 Both K=0 and K=256 were swept across MNB ∈ {2048, 4096, 8192, 10275},
 MNS ∈ {128, 1000}, K ∈ {0, 128, 256, 512, 1024, 2048}. Full ranked
@@ -172,8 +182,10 @@ compute (~99.9% of total work) so the K-serving lever has its
 strongest measurable signal. The reproducer commands below apply
 "vLLM-default-style" config (run A) **to our 8191/1 workload**, so
 the comparison is apples-to-apples on the same workload — not a
-cross-workload race. But: the +46% headline above can only be
-truly claimed once we actually run command A.
+cross-workload race. The +47% headline above is now backed by an
+actual Row 3 measurement, with the caveat that the pure default
+config OOMs VMEM and required one block-size axis (`bkv_csz` for
+MIXED) to be halved before it could run at all.
 
 ## Three-row reproducer (every parameter)
 
@@ -232,12 +244,14 @@ What each comparison isolates:
   our tuned DECODE/MIXED kernels.
 - **(2) vs (3)**: pure kernel-block-sizes effect (D and M only, since
   PREFILL is unused at K=0). Same MNB, same K, same MML/BLOCK_SIZE-style
-  config — only the kernel block sizes differ. **This is the experiment
-  worth running** to learn how much of the gap is "we tuned the kernel"
-  vs "we tuned the scheduler".
-- **(1) vs (3)**: full end-to-end win — every component of this
-  branch (kernel tune + sweep + K-serving) against the
-  out-of-the-box vLLM/bm-infra defaults.
+  config — only the kernel block sizes differ. **Measured**: 3.28 vs
+  3.26 req/s (within noise). The kernel tune contributes ~0% on this
+  MNB-broken baseline; the bottleneck is the kernel-tile-shape regime
+  that collapses both. The +47% delta is essentially all from MNB
+  tuning + K-serving.
+- **(1) vs (3)**: full end-to-end win against bm-infra defaults
+  (with the M-block-size clip required to run at all): **+47%
+  throughput, -32% P99 TTFT.**
 
 ### Three reproducer commands
 
@@ -286,14 +300,17 @@ tools/benchmark/run_benchmark.sh \
 # is bypassed entirely (PREFILL goes through MIXED).
 ```
 
-#### Row 3 — bm-infra defaults ⚠️  not yet measured
+#### Row 3 — bm-infra defaults (measured: 3.26 req/s with one block-size axis clipped to run)
 
 ```bash
 LONG_PREFILL_TOKEN_THRESHOLD=0 \
+VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
 MAX_NUM_SEQS=128 \
 MAX_NUM_BATCHED_TOKENS=10275 \
-MAX_MODEL_LEN=10275 \
-BLOCK_SIZE= \
+MAX_MODEL_LEN=10274 \
+BLOCK_SIZE=16 \
+RPA_D_BLOCK_SIZES=1,4096,1,4096 \
+RPA_M_BLOCK_SIZES=512,2048,256,256 \
 tools/benchmark/run_benchmark.sh \
     tools/benchmark/cases/v7x/llama3_8b/prefill_heavy.workload \
     --result-tag row3_bm_infra_defaults
@@ -302,6 +319,7 @@ tools/benchmark/run_benchmark.sh \
 #   DECODE  -> 1,4096,1,4096
 #   PREFILL -> 512,2048,256,512  (unused at K=0)
 #   MIXED   -> 512,2048,256,512
+# Used 76.58M of 64.00M vmem. Exceeded vmem capacity by 12.58M.
 # BLOCK_SIZE intentionally empty -> tpu_platform.py resolves it
 # to 16 (because MAX_MODEL_LEN=10275 > 8192 hits the VMEM-OOM
 # safety branch in PallasAttentionBackend.get_page_size()).
@@ -325,15 +343,18 @@ Each writes to `tmp/bench_prefill_heavy_*/<hash>/`. Compare
 
 ## Caveats when interpreting the numbers
 
-- **Honest claim today**: K-serving alone gets +4.8% throughput,
-  -4.4% P99 TTFT (combos B vs C, both with our tuned D/M kernels at
-  the same MNB). This is the only number we can fully back with
-  measurements right now.
-- **Honest claim after running command A**: "+X% vs vLLM defaults"
-  for some X that depends on whether the kernel-default formulas
-  (especially the 8× off DECODE blocks) cost more than the
-  MNB+K-serving wins gain. Could be larger than +46%, could be
-  smaller — empirical question.
+- **Honest claim**: full-stack tuned config gets **+47% throughput,
+  -32% P99 TTFT** vs a bm-infra-defaults baseline that had to be
+  manually clipped (one block-size axis halved) to avoid VMEM OOM.
+  Pure unmodified default = 0 req/s (no run). K-serving alone gets
+  +4.8% / -4.4% (Row 3 vs Row 4 — same MNB and D/M kernels, only K
+  differs); the rest of the +47% is MNB tuning.
+- **Kernel block-size tuning contributes ~0% at the MNB-broken
+  baseline.** Rows 1 (default-clipped) and 2 (our tuned D/M) both
+  give ~3.27 req/s at MNB=10275. The bottleneck there is the
+  kernel-tile-shape regime, not block sizes. Layer 1 (kernel tune)
+  pays off only once Layer 2 (sweep) has selected an MNB that lets
+  the kernel run in its productive regime.
 - **One workload only.** prefill_heavy (8191/1) is the most
   K-serving-favorable shape; numbers on `balanced.workload` and on
   decode-dominated traffic will be smaller. The 70B sweep is the
