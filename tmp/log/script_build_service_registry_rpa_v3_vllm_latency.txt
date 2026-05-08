@@ -1,0 +1,10 @@
+| case                  | MNB   | MNS | MML  | page | K | p_blk   | rate | req/s | out_tok/s | ttft_mean | ttft_p99 | itl_mean | itl_p99 | dur_s | id           |
+|:----------------------|:------|:----|:-----|:-----|:--|:--------|:-----|:------|:----------|:----------|:---------|:---------|:--------|:------|:-------------|
+| prefill_heavy_latency | 8192  | 1   | 8192 | 128  | 0 | default | inf  | 2.57  | 2.57      | 388.18    | 388.18   | 0.00     | 0.00    | 9     | 6a5c259a0359 |
+| prefill_heavy_latency | 32768 | 1   | 8192 | 128  | 0 | default | inf  | 2.56  | 2.56      | 390.51    | 390.51   | 0.00     | 0.00    | 9     | 2411c36a5129 |
+| prefill_heavy_latency | 16384 | 1   | 8192 | 128  | 0 | default | inf  | 2.53  | 2.53      | 394.81    | 394.81   | 0.00     | 0.00    | 9     | 7d895f992dbf |
+| prefill_heavy_latency | 65536 | 1   | 8192 | 128  | 0 | default | inf  | 2.46  | 2.46      | 405.65    | 405.65   | 0.00     | 0.00    | 9     | 0545d2b18d96 |
+| prefill_heavy_latency | 4096  | 1   | 8192 | 128  | 0 | default | inf  | 1.89  | 1.89      | 529.35    | 529.35   | 0.00     | 0.00    | 9     | dc3c124b1241 |
+| prefill_heavy_latency | 2048  | 1   | 8192 | 128  | 0 | default | inf  | 1.67  | 1.67      | 597.28    | 597.28   | 0.00     | 0.00    | 10    | 693492191b0c |
+
+Exported absolute best configuration to: tools/benchmark/cases/v7x/llama3_8b/production.service
