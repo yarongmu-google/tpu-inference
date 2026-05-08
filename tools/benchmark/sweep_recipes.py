@@ -128,14 +128,26 @@ RECIPES: dict[tuple[str, str], dict[str, Any]] = {
     #   - Per-combo timeout halved (600s) — single-prompt benches
     #     finish in seconds, not minutes; 600s catches a hung server.
     #
-    # MAX_NUM_BATCHED_TOKENS axis is the only meaningful sweep dim:
-    # at INPUT_LEN=8K the question is "does fitting the prefill in
-    # one MIXED call beat chunking it into 2/4/8 calls?". Larger MNB
-    # = fewer chunks = lower launch overhead but bigger VMEM tile;
-    # the sweep finds the floor.
+    # MAX_NUM_BATCHED_TOKENS axis covers the chunking lever: with
+    # vLLM V1 chunked-prefill on (default), MNB < INPUT_LEN forces the
+    # prefill to span multiple scheduler steps -> multiple MIXED kernel
+    # calls. The axis must include values BELOW the workload's
+    # INPUT_LEN to actually exercise chunking; values >= INPUT_LEN
+    # collapse to a single MIXED call.
+    #
+    # For the canonical workloads this recipe consumes:
+    #   8B  / INPUT_LEN=8191 : chunking happens at MNB <= 8191, so 2048
+    #                          and 4096 are the two interesting points.
+    #   32B / INPUT_LEN=8191 : same as 8B.
+    #   70B / INPUT_LEN=32767: 2048->16 chunks, 4096->8, 8192->4,
+    #                          16384->2, 32768/65536->1 (single call).
+    # The axis below covers both: 2048 and 4096 chunk all three;
+    # 8192/16384 chunk only 70B; 32768/65536 are one-shot for all.
     ("rpa_v3", "vllm_latency"): {
         "sweep_axes": {
-            "MAX_NUM_BATCHED_TOKENS": [8192, 16384, 32768, 65536],
+            "MAX_NUM_BATCHED_TOKENS": [
+                2048, 4096, 8192, 16384, 32768, 65536,
+            ],
         },
         "fixed": {
             "BLOCK_SIZE": 128,

@@ -35,6 +35,19 @@ from tools.benchmark._schema import (
 
 DEFAULT_METRIC = THROUGHPUT_METRIC
 
+
+def _normalize_metric(metric: str) -> str:
+    """Strip a leading "metrics." prefix.
+
+    Recipe convention (sweep_recipes.py) and the rendered-table column
+    convention both use the qualified form ("metrics.MeanTTFT"). The
+    parse_bench_log.py output, however, keys the metrics dict on the
+    bare name ("MeanTTFT"). Normalize once at the CLI boundary so every
+    downstream consumer (rank_by, best_per_axis, export_production_registry)
+    can use bare names without each having to remember to strip.
+    """
+    return metric.split(".", 1)[1] if metric.startswith("metrics.") else metric
+
 # Default columns for the rendered table. Each entry is
 # ('<section>.<field>' or 'combo_id'/'result_dir', <header label>).
 DEFAULT_COLUMNS: list[tuple[str, str]] = [
@@ -334,14 +347,23 @@ def _make_workload_key(meta: dict[str, str],
 
 
 def export_production_registry(
-    best_result: dict[str, Any],
+    results: list[dict[str, Any]],
     output_path: str | os.PathLike,
-    kernel_id: str = "unknown",
-    service_id: str = "unknown",
+    *,
     metric: str = DEFAULT_METRIC,
     descending: bool = True,
+    kernel_id: str = "unknown",
+    service_id: str = "unknown",
 ) -> None:
     """Export the best combo into an accumulated production .service JSON.
+
+    Picks the winner from `results` itself using (metric, descending),
+    rather than trusting the caller to have pre-sorted. Removing that
+    implicit contract closes a class of "caller forgot to sort" bugs
+    where main() and export drift apart on ranking direction.
+
+    `metric` is the bare metric name (caller normalizes via
+    _normalize_metric at the CLI boundary).
 
     Three data-loss hazards the earlier implementation tripped on:
 
@@ -360,6 +382,22 @@ def export_production_registry(
          `is None` check, fall back to "no-existing-data so accept new"
          only when the existing entry has no parseable metric.
     """
+    if not results:
+        return
+    ranked = rank_by(results, metric, descending=descending)
+    if not ranked:
+        return
+    best_result = ranked[0]
+    if _to_float(best_result.get("metrics", {}).get(metric)) is None:
+        # Top-ranked combo has no parseable metric; the whole sweep is
+        # uninformative. Skip the export rather than freezing a bogus
+        # winner into production.service.
+        print(
+            f"WARN: no result has a parseable metric={metric!r}; "
+            f"skipping export to {output_path}.",
+            file=sys.stderr)
+        return
+
     out_path = Path(output_path)
     data: dict[str, Any] = {}
     if out_path.is_file():
@@ -402,16 +440,11 @@ def export_production_registry(
     # direction (throughput descending; latency ascending). Use explicit
     # `is None` instead of `or 0.0` so a real 0.0 doesnt round-trip
     # through the falsy-mask and look like missing data.
-    #
-    # Strip the "metrics." prefix if present — callers pass the spec-
-    # form ("metrics.MeanTTFT") but the metrics dict is keyed on the
-    # bare name ("MeanTTFT"). Be permissive: accept both.
-    metric_key = metric.split(".", 1)[1] if metric.startswith("metrics.") else metric
     existing = data["best_configs_by_workload"].get(workload_key)
     should_write = True
     if existing is not None:
-        old_v = _to_float(existing.get("metrics", {}).get(metric_key))
-        new_v = _to_float(metrics.get(metric_key))
+        old_v = _to_float(existing.get("metrics", {}).get(metric))
+        new_v = _to_float(metrics.get(metric))
         if new_v is None:
             # New result has no parseable metric — never overwrite a
             # known-good entry with a missing one.
@@ -457,25 +490,36 @@ def main(argv: list[str] | None = None) -> int:
 
     columns = _columns_from_arg(args.columns)
     descending = not args.ascending
+    # Normalize the metric ONCE at the CLI boundary. Recipe convention
+    # (sweep_recipes.py) and DEFAULT_COLUMNS use the qualified form
+    # ("metrics.MeanTTFT") for table-rendering symmetry; the metrics
+    # dict is keyed bare. Stripping here lets rank_by, best_per_axis,
+    # and export_production_registry all consume the bare name without
+    # each having to re-strip — which was the source of a silent
+    # wrong-winner bug when only export_production_registry stripped.
+    metric = _normalize_metric(args.metric)
 
     if args.best_per is not None:
         best = best_per_axis(results, axis_key=args.best_per,
-                             metric=args.metric, descending=descending)
+                             metric=metric, descending=descending)
         ordered = [best[k] for k in _sort_axis_keys(list(best.keys()))]
         results_to_print = ordered
     else:
-        results_to_print = rank_by(results, args.metric, descending=descending)
+        results_to_print = rank_by(results, metric, descending=descending)
 
     print(format_markdown_table(results_to_print, columns))
 
-    if args.export_production and results_to_print:
+    if args.export_production:
+        # Pass the full results list — export picks the winner internally
+        # using (metric, descending). main()'s sort order does not affect
+        # which combo is exported.
         export_production_registry(
-            results_to_print[0],
+            results,
             args.export_production,
+            metric=metric,
+            descending=descending,
             kernel_id=args.kernel_id,
             service_id=args.service_id,
-            metric=args.metric,
-            descending=descending,
         )
 
     return 0
