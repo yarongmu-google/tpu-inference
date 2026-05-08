@@ -1,7 +1,7 @@
 {
   "metadata": {
-    "last_updated_from_runlog": "tmp/log/tune_all_prefill_heavy.txt",
-    "last_updated_at": "2026-05-06T06:38:35.707622"
+    "last_updated_from_runlog": "tmp/log/tune_all_prefill_heavy_latency.txt",
+    "last_updated_at": "2026-05-08T15:39:27.637425"
   },
   "results": {
     "decode": [
