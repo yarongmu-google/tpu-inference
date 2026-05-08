@@ -73,6 +73,18 @@ import dataclasses
 import enum
 import warnings
 from collections.abc import Iterable
+from typing import Protocol
+
+
+class _IntIndexable(Protocol):
+    """Anything indexable by int returning a value coercible to int.
+
+    Production use case is ``input_batch.num_computed_tokens_cpu`` (a
+    numpy int32 array). Tests pass plain lists. The Protocol exists so
+    consumers can substitute either without an ``Any`` annotation
+    swallowing legitimate type errors.
+    """
+    def __getitem__(self, idx: int) -> int | float: ...
 
 
 class SubSeqKind(enum.Enum):
@@ -268,7 +280,7 @@ def build_prior_kv_lens(
     req_ids_in_order: Iterable[str],
     num_scheduled_tokens: dict[str, int],
     req_id_to_index: dict[str, int],
-    num_computed_tokens_cpu,
+    num_computed_tokens_cpu: _IntIndexable,
 ) -> dict[str, int]:
     """Build the per-step ``prior_kv_lens`` snapshot for ``plan_step``.
 
@@ -286,17 +298,33 @@ def build_prior_kv_lens(
       num_computed_tokens_cpu: array-like indexable by slot index that
         returns the requests num_computed_tokens at the START of this
         step. Typically ``input_batch.num_computed_tokens_cpu`` (a
-        numpy array). Anything indexable with int -> int works for
-        testability.
+        numpy int32 array). The return is coerced to ``int`` so plain
+        Python lists also work for offline tests.
 
     Returns:
       ``{req_id: prior_kv_len}`` for every req with a positive
-      scheduled-tokens count and a known persistent-batch slot. Reqs
-      with zero (or absent) scheduled tokens, or with an unknown slot
-      (race against the persistent-batch update), are skipped — the
-      same reqs that ``plan_step`` would itself skip on the n_R<=0
-      branch, so the resulting dict matches plan_steps expected
-      input contract exactly.
+      scheduled-tokens count and a known persistent-batch slot.
+
+    Skipping rules — note these diverge slightly from ``plan_step``s
+    contract on missing-from-scheduled, intentionally as belt-and-
+    suspenders:
+
+      - n_R == 0 in num_scheduled_tokens: skipped here (matches
+        plan_step, which also skips n_R <= 0).
+      - n_R missing from num_scheduled_tokens (req_id absent): SKIPPED
+        here, but plan_step **raises ValueError** when it sees an absent
+        req_id in req_id_order. In production both calls share the
+        same num_scheduled_tokens dict, so this branch is unreachable
+        — defensive code that documents the asymmetry rather than
+        propagating a corner-case bug.
+      - req_id missing from req_id_to_index (race against the
+        persistent-batch update during update_states): skipped here
+        rather than IndexErroring downstream.
+
+    The defensive skips mean a malformed call wont crash inside
+    plan_step with a confusing error — it produces a smaller prior_kv_lens
+    dict, and plan_step will raise on its own input-validation pass with
+    a clearer message.
     """
     prior: dict[str, int] = {}
     for req_id in req_ids_in_order:

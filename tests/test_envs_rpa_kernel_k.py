@@ -82,9 +82,12 @@ class TestRpaKernelKEnvVar(unittest.TestCase):
 
     def test_negative_int_passes_through(self):
         # The env-var parser does not validate signs — that responsibility
-        # is on the consumer (evaluate_decoupled_k_config rejects K<=1).
-        # Lock in the parser contract so downstream tests can assume
-        # the value reached the validator unchanged.
+        # is on the consumer (evaluate_decoupled_k_config in
+        # subseq_planner.py rejects K_kernel <= 1 with ValueError, so
+        # negatives are caught at runner init, not silently routed to
+        # the kernel). Lock in the parser/validator separation so a
+        # future reader doesnt mistake "negative passes through" for
+        # "negative reaches the kernel".
         os.environ["RPA_KERNEL_K"] = "-5"
         mod = _load_envs_module()
         self.assertEqual(mod.RPA_KERNEL_K, -5)

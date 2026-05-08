@@ -357,11 +357,12 @@ class PersistentBatchManager:
 
         # Use the post-reorder req_ids ordering so the plan visits
         # requests in the same order the kernel will encounter them.
-        # The marshalling (prior_kv_lens dict construction) is delegated
-        # to a pure-Python helper for direct unit-test coverage.
-        # dict(num_scheduled) is a shallow copy — paranoia against
-        # plan_step or downstream consumers mutating what is otherwise
-        # a vLLM-owned dict. Cheap (small ints), removes the question.
+        # The prior_kv_lens marshalling is delegated to a pure-Python
+        # helper in subseq_planner for direct unit-test coverage.
+        # The ``dict(...)`` wrap on num_scheduled_tokens below is a
+        # shallow copy — paranoia against plan_step or downstream
+        # consumers mutating what is otherwise a vLLM-owned dict.
+        # Cheap (small ints), removes the question.
         req_ids_in_order = list(self.input_batch.req_ids)
         return plan_step(
             num_scheduled_tokens=dict(scheduler_output.num_scheduled_tokens),
