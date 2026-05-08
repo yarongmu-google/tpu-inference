@@ -363,7 +363,11 @@ def export_production_registry(
     where main() and export drift apart on ranking direction.
 
     `metric` is the bare metric name (caller normalizes via
-    _normalize_metric at the CLI boundary).
+    _normalize_metric at the CLI boundary). The qualified form
+    "metrics.X" is rejected with an AssertionError rather than silently
+    mis-ranking — the prefix-bug fix moved normalization to a single
+    point and this assert keeps it that way if the API grows new
+    callers.
 
     Three data-loss hazards the earlier implementation tripped on:
 
@@ -382,6 +386,10 @@ def export_production_registry(
          `is None` check, fall back to "no-existing-data so accept new"
          only when the existing entry has no parseable metric.
     """
+    assert not metric.startswith("metrics."), (
+        f"export_production_registry expects a bare metric name; got {metric!r}. "
+        "Normalize via _normalize_metric() at the CLI boundary first."
+    )
     if not results:
         return
     ranked = rank_by(results, metric, descending=descending)

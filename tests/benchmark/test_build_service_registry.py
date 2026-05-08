@@ -219,12 +219,12 @@ class TestExportProductionRegistry(unittest.TestCase):
         entry = list(data["best_configs_by_workload"].values())[0]
         self.assertEqual(entry["MAX_NUM_SEQS"], "B")  # TTFT=10.0
 
-    def test_export_accepts_qualified_metric_form(self):
-        # Belt-and-suspenders: even though main() normalizes, calling
-        # export directly with the qualified "metrics.X" form must not
-        # silently mis-rank. This is the regression for the bug where
-        # rank_by saw "metrics.MeanTTFT", failed to find it on every
-        # result, and returned them in collect-order.
+    def test_export_agrees_on_bare_and_pre_normalized_qualified_form(self):
+        # Both inputs to export must map to the same winner: a literal
+        # bare metric name "MeanTTFT", and the qualified recipe-form
+        # "metrics.MeanTTFT" once it has gone through _normalize_metric
+        # (the canonical CLI-boundary normalization). This locks the
+        # round-trip identity that the prefix-bug fix relies on.
         results = [
             _result(ttft="100.0", max_num_seqs="A"),
             _result(ttft="10.0",  max_num_seqs="B"),
@@ -237,7 +237,7 @@ class TestExportProductionRegistry(unittest.TestCase):
         with open(self.out_path) as f:
             entry_bare = list(json.load(f)["best_configs_by_workload"].values())[0]
         self.out_path.unlink()
-        # Qualified form via the same _normalize_metric callers should use:
+        # Qualified form, post-normalize (same value main() would pass):
         export_production_registry(
             results, self.out_path,
             metric=_normalize_metric("metrics.MeanTTFT"), descending=False,
@@ -246,6 +246,18 @@ class TestExportProductionRegistry(unittest.TestCase):
             entry_qual = list(json.load(f)["best_configs_by_workload"].values())[0]
         self.assertEqual(entry_bare["MAX_NUM_SEQS"], entry_qual["MAX_NUM_SEQS"])
         self.assertEqual(entry_bare["MAX_NUM_SEQS"], "B")
+
+    def test_export_rejects_qualified_metric_form_loudly(self):
+        # If a future caller forgets to normalize at the CLI boundary
+        # and passes the recipe-form metric in directly, fail with an
+        # actionable message instead of silently mis-ranking. This is
+        # the loud-failure backstop for the bare-name contract.
+        results = [_result(ttft="10.0")]
+        with self.assertRaisesRegex(AssertionError, "bare metric name"):
+            export_production_registry(
+                results, self.out_path,
+                metric="metrics.MeanTTFT", descending=False,
+                kernel_id="rpa_v3", service_id="vllm_latency")
 
     def test_export_skips_when_no_parseable_metric(self):
         # All combos missing the requested metric: export must NOT
