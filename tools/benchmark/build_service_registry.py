@@ -338,6 +338,8 @@ def export_production_registry(
     output_path: str | os.PathLike,
     kernel_id: str = "unknown",
     service_id: str = "unknown",
+    metric: str = DEFAULT_METRIC,
+    descending: bool = True,
 ) -> None:
     """Export the best combo into an accumulated production .service JSON.
 
@@ -396,20 +398,30 @@ def export_production_registry(
         "metrics": metrics,
     }
 
-    # Only overwrite if new throughput is strictly better. Use explicit
+    # Only overwrite if new is strictly better along the chosen metric +
+    # direction (throughput descending; latency ascending). Use explicit
     # `is None` instead of `or 0.0` so a real 0.0 doesnt round-trip
     # through the falsy-mask and look like missing data.
+    #
+    # Strip the "metrics." prefix if present — callers pass the spec-
+    # form ("metrics.MeanTTFT") but the metrics dict is keyed on the
+    # bare name ("MeanTTFT"). Be permissive: accept both.
+    metric_key = metric.split(".", 1)[1] if metric.startswith("metrics.") else metric
     existing = data["best_configs_by_workload"].get(workload_key)
     should_write = True
     if existing is not None:
-        old_tp = _to_float(existing.get("metrics", {}).get(DEFAULT_METRIC))
-        new_tp = _to_float(metrics.get(DEFAULT_METRIC))
-        if new_tp is None:
+        old_v = _to_float(existing.get("metrics", {}).get(metric_key))
+        new_v = _to_float(metrics.get(metric_key))
+        if new_v is None:
             # New result has no parseable metric — never overwrite a
             # known-good entry with a missing one.
             should_write = False
-        elif old_tp is not None and new_tp <= old_tp:
-            should_write = False
+        elif old_v is not None:
+            # descending=True (throughput): new must be > old to win.
+            # descending=False (latency):   new must be < old to win.
+            new_is_better = new_v > old_v if descending else new_v < old_v
+            if not new_is_better:
+                should_write = False
     if should_write:
         data["best_configs_by_workload"][workload_key] = entry
 
@@ -462,6 +474,8 @@ def main(argv: list[str] | None = None) -> int:
             args.export_production,
             kernel_id=args.kernel_id,
             service_id=args.service_id,
+            metric=args.metric,
+            descending=descending,
         )
 
     return 0

@@ -51,6 +51,11 @@ from typing import Any
 # `sweep_axes`     — knobs the orchestrator varies via cartesian product.
 # `fixed`          — knobs the orchestrator pins for every combo.
 # `timeout_seconds`— per-combo budget passed to sweep.py.
+# `rank_metric`    — optional; metric the orchestrator passes as
+#                    --metric to build_service_registry (default
+#                    metrics.RequestThroughput).
+# `rank_descending`— optional; direction (default True). False = "smaller
+#                    is better" (latency).
 #
 # Block sizes (RPA_D/P/M_BLOCK_SIZES) are NOT in the recipe — they are
 # auto-linked from `production.kernel` per (case, page_size, K) by
@@ -106,6 +111,40 @@ RECIPES: dict[tuple[str, str], dict[str, Any]] = {
             "BLOCK_SIZE": 128,
         },
         "timeout_seconds": 1800,
+        # Default rank: best throughput. Stated explicitly so a future
+        # diff that flips the default in build_service_registry does
+        # not silently change which row this recipe selects.
+        "rank_metric": "metrics.RequestThroughput",
+        "rank_descending": True,
+    },
+    # Single-prompt / low-concurrency LATENCY recipe. MIXED-only routing
+    # (no static-K PREFILL kernel) — the .workload pairs that consume
+    # this recipe are *_latency.workload with NUM_PROMPTS=1.
+    #
+    # Differences from ("rpa_v3", "vllm"):
+    #   - LONG_PREFILL_TOKEN_THRESHOLD pinned to 0 (MIXED-only).
+    #   - MAX_NUM_SEQS pinned to 1 (single in-flight sequence).
+    #   - Rank by Mean TTFT, ascending (smaller wins).
+    #   - Per-combo timeout halved (600s) — single-prompt benches
+    #     finish in seconds, not minutes; 600s catches a hung server.
+    #
+    # MAX_NUM_BATCHED_TOKENS axis is the only meaningful sweep dim:
+    # at INPUT_LEN=8K the question is "does fitting the prefill in
+    # one MIXED call beat chunking it into 2/4/8 calls?". Larger MNB
+    # = fewer chunks = lower launch overhead but bigger VMEM tile;
+    # the sweep finds the floor.
+    ("rpa_v3", "vllm_latency"): {
+        "sweep_axes": {
+            "MAX_NUM_BATCHED_TOKENS": [8192, 16384, 32768, 65536],
+        },
+        "fixed": {
+            "BLOCK_SIZE": 128,
+            "MAX_NUM_SEQS": 1,
+            "LONG_PREFILL_TOKEN_THRESHOLD": 0,
+        },
+        "timeout_seconds": 600,
+        "rank_metric": "metrics.MeanTTFT",
+        "rank_descending": False,
     },
 }
 
@@ -172,6 +211,12 @@ def synthesize_service_spec(
         "sweep_axes": {k: list(v) for k, v in recipe["sweep_axes"].items()},
         "coupled_axes": [],
         "fixed": dict(recipe["fixed"]),
+        # Rank fields are sweep.py-irrelevant (sweep.py only enumerates
+        # combos), so the validator there ignores them. The orchestrator
+        # reads them back out to drive build_service_registry — same
+        # source-of-truth as the rest of the recipe.
+        "rank_metric": recipe.get("rank_metric", "metrics.RequestThroughput"),
+        "rank_descending": recipe.get("rank_descending", True),
     }
     return spec
 

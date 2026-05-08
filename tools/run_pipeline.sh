@@ -110,6 +110,12 @@ python3 -m tools.benchmark.sweep_recipes \
 # output dir naming; defined inside the synthesized spec).
 SWEEP_NAME=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['sweep_name'])" "$SERVICE")
 
+# Rank fields (Layer 3 ranker direction). Both have throughput-style
+# defaults so older recipes that predate the field continue to behave
+# exactly as before.
+RANK_METRIC=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('rank_metric','metrics.RequestThroughput'))" "$SERVICE")
+RANK_DESCENDING=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('rank_descending', True))" "$SERVICE")
+
 PIPELINE_LOG="tmp/log/pipeline_${WORKLOAD_BASENAME}.txt"
 SERVICE_LOG="tmp/log/script_build_service_registry_${SWEEP_NAME}.txt"
 
@@ -214,8 +220,17 @@ echo ""
         exit 1
     fi
 
+    # Compose the optional --ascending flag. build_service_registry's
+    # default direction is descending (throughput); pass --ascending iff
+    # the recipe asked for ascending order (latency).
+    ASCENDING_FLAG=()
+    if [ "$RANK_DESCENDING" = "False" ]; then
+        ASCENDING_FLAG=(--ascending)
+    fi
     {
         python3 -m tools.benchmark.build_service_registry "$SWEEP_DIR" \
+            --metric "$RANK_METRIC" \
+            "${ASCENDING_FLAG[@]}" \
             --export-production "$PROD_SERVICE" \
             --kernel-id "$KERNEL_ID" \
             --service-id "$SERVICE_ID"

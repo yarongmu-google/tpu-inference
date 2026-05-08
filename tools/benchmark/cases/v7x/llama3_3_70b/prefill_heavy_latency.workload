@@ -1,0 +1,44 @@
+# Llama 3.3 70B on TPU v7x (TP=8) — single-prompt PREFILL-MIXED latency.
+#
+# Latency twin of prefill_heavy.workload:
+#   (a) NUM_PROMPTS=1  — one in-flight sequence, no batching.
+#   (b) LONG_PREFILL_TOKEN_THRESHOLD=0 (K=0) — bypass static-K PREFILL;
+#       route the whole 32767-token prefill through MIXED.
+#   (c) MAX_NUM_BATCHED_TOKENS=32768 — fits the entire prefill into
+#       one scheduler step → one MIXED kernel invocation. (vs the
+#       throughput sibling which uses MNB=8192 = 4-step chunked.)
+#
+# Goal: rule out HBM/VMEM/VReg OOM at large q_total on the 70B kernel
+# and observe the floor TTFT for one full 32K prefill in a single
+# MIXED call. If the kernel cannot accept q_total=32768 in one shot
+# under any block-size combo (VMEM saturates), drop MAX_NUM_BATCHED_TOKENS
+# to 16384 (2 steps) or 8192 (4 steps) and document which step count
+# is the actual floor.
+#
+# Sizing math at TP=8 v7x (per chip):
+#   Weights        : 70B * 2B / 8 = 17.5 GB
+#   KV per token   : 2 * 8 * 128 * 2 * 80 = 320 KB (all layers)
+#   KV per request : 32K * 320 KB = 10.5 GB total / 1.3 GB / chip
+#   1 seq HBM      : trivial (~0.7% of v7x's 192 GB/chip)
+#
+# RPA_*_BLOCK_SIZES intentionally unset. Production tune for 70B+32K
+# was sized for batched workloads; single-seq full-prefill MIXED is a
+# new shape that needs its own kernel sweep.
+
+: "${MODEL:=meta-llama/Llama-3.3-70B-Instruct}"
+: "${TENSOR_PARALLEL_SIZE:=8}"
+: "${NUM_Q_HEADS:=64}"
+: "${NUM_KV_HEADS:=8}"
+: "${HEAD_DIM:=128}"
+
+: "${MAX_NUM_SEQS:=1}"
+: "${MAX_NUM_BATCHED_TOKENS:=32768}"
+: "${MAX_MODEL_LEN:=32768}"
+: "${LONG_PREFILL_TOKEN_THRESHOLD:=0}"
+
+: "${BLOCK_SIZE:=128}"
+
+: "${DATASET:=sonnet}"
+: "${INPUT_LEN:=32767}"
+: "${OUTPUT_LEN:=1}"
+: "${NUM_PROMPTS:=1}"

@@ -58,6 +58,15 @@ class TestRecipes(unittest.TestCase):
             self.assertIsInstance(recipe["sweep_axes"], dict, msg=key)
             self.assertIsInstance(recipe["fixed"], dict, msg=key)
             self.assertIsInstance(recipe["timeout_seconds"], int, msg=key)
+            # rank_metric / rank_descending are optional but, if present,
+            # must be well-typed. The orchestrator forwards them to
+            # build_service_registry; a typo'd type here would surface
+            # as a CLI parse error mid-pipeline.
+            if "rank_metric" in recipe:
+                self.assertIsInstance(recipe["rank_metric"], str, msg=key)
+            if "rank_descending" in recipe:
+                self.assertIsInstance(recipe["rank_descending"], bool,
+                                      msg=key)
 
     def test_no_block_sizes_hardcoded_in_fixed(self):
         # RPA_*_BLOCK_SIZES come from production.kernel via auto-link.
@@ -155,6 +164,52 @@ class TestSynthesizeFromRealWorkload(unittest.TestCase):
             synthesize_service_spec(
                 str(self.workload),
                 kernel_id="nonexistent_kernel", service_id="vllm")
+
+    def test_synthesize_for_rpa_v3_vllm_latency(self):
+        # The latency recipe pins LONG_PREFILL_TOKEN_THRESHOLD=0
+        # (MIXED-only) and MAX_NUM_SEQS=1 in `fixed`, sweeps only
+        # MAX_NUM_BATCHED_TOKENS, and ranks ascending by Mean TTFT.
+        # Lock those invariants — they are the contract the workload
+        # files (cases/v7x/*/*_latency.workload) depend on.
+        latency_workload = (
+            WORKLOAD_DIR / "v7x" / "llama3_8b" / "prefill_heavy_latency.workload")
+        self.assertTrue(latency_workload.is_file(),
+                        f"Sanity: {latency_workload} should exist")
+        spec = synthesize_service_spec(
+            str(latency_workload),
+            kernel_id="rpa_v3", service_id="vllm_latency")
+        self.assertEqual(spec["fixed"]["LONG_PREFILL_TOKEN_THRESHOLD"], 0)
+        self.assertEqual(spec["fixed"]["MAX_NUM_SEQS"], 1)
+        self.assertNotIn("LONG_PREFILL_TOKEN_THRESHOLD", spec["sweep_axes"])
+        self.assertNotIn("MAX_NUM_SEQS", spec["sweep_axes"])
+        self.assertIn("MAX_NUM_BATCHED_TOKENS", spec["sweep_axes"])
+        self.assertEqual(spec["rank_metric"], "metrics.MeanTTFT")
+        self.assertFalse(spec["rank_descending"])
+
+    def test_default_rank_fields_when_recipe_omits_them(self):
+        # synthesize_service_spec must default rank_metric /
+        # rank_descending to throughput-style values when a recipe
+        # leaves them unset. Otherwise older recipes (or new ones the
+        # author forgot to annotate) would silently break the
+        # orchestrator's --metric forwarding.
+        from tools.benchmark import sweep_recipes as sr
+        original = sr.RECIPES
+        try:
+            sr.RECIPES = {
+                ("dummy_kernel", "dummy_service"): {
+                    "sweep_axes": {"MAX_NUM_BATCHED_TOKENS": [8192]},
+                    "fixed": {"BLOCK_SIZE": 128},
+                    "timeout_seconds": 600,
+                    # rank_metric / rank_descending intentionally omitted.
+                },
+            }
+            spec = sr.synthesize_service_spec(
+                str(self.workload),
+                kernel_id="dummy_kernel", service_id="dummy_service")
+            self.assertEqual(spec["rank_metric"], "metrics.RequestThroughput")
+            self.assertTrue(spec["rank_descending"])
+        finally:
+            sr.RECIPES = original
 
 
 if __name__ == "__main__":
