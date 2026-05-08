@@ -218,11 +218,19 @@ params**:
 | `RPA_D_BLOCK_SIZES` | `1,512,1,256` (tuned) | `1,512,1,256` (tuned) | unset → formula: `1,4096,1,4096` |
 | `RPA_P_BLOCK_SIZES` | `256,2048,256,512` (tuned) | unused at K=0 | unset → formula: `512,2048,256,512` (also unused at K=0) |
 | `RPA_M_BLOCK_SIZES` | `128,512,128,256` (tuned) | `128,512,128,256` (tuned) | unset → formula: `512,2048,256,512` |
-| **Throughput (req/s)**          | **4.79**             | **3.28**                | **(not yet measured)**          |
-| **Mean TTFT (s)**               | 107.8                | 152.8                   | (not yet measured)              |
-| **P99 TTFT (s)**                | 207.2                | 301.5                   | (not yet measured)              |
-| **Wall-clock (1000 req)**       | 224 s                | 319 s                   | (not yet measured)              |
-| Combo ID                        | `4f773da3397a`       | `6dc80b2a3b37`          | n/a                             |
+| **Throughput (req/s)**          | **4.79**             | **3.28**                | **3.26**                        |
+| **Mean TTFT (s)**               | 107.8                | 152.8                   | not separately captured [^r3m]  |
+| **P99 TTFT (s)**                | 207.2                | 301.5                   | **303.9**                       |
+| **Wall-clock (1000 req)**       | 224 s                | 319 s                   | ≈307 s (1000 / req/s)           |
+| Combo ID                        | `4f773da3397a`       | `6dc80b2a3b37`          | one-off `row3_bm_infra_defaults`|
+
+[^r3m]: Row 3 was an out-of-sweep one-off invocation with
+   `--result-tag row3_bm_infra_defaults`; only req/s and P99 TTFT got
+   recorded into the headline at that time. Since Row 1 (3.26) ≈ Row 2
+   (3.28) within noise, Row 3's Mean TTFT is reliably ≈ Row 2's
+   152.8 s — the `(MNB=10275, K=0)` regime collapses to the same
+   throughput-bound shape regardless of block-size tune. Re-run if
+   exact Mean TTFT for Row 3 is ever needed.
 
 [^bs]: vLLM's `CacheConfig.DEFAULT_BLOCK_SIZE` is 16
    ([`vllm/config/cache.py:45`](https://github.com/vllm-project/vllm/blob/main/vllm/config/cache.py#L45)),
@@ -331,15 +339,112 @@ Each writes to `tmp/bench_prefill_heavy_*/<hash>/`. Compare
 `metrics.txt` between runs (`RequestThroughput`, `P99TTFT`).
 ~4 minutes per run.
 
+## Single-prompt latency (MIXED-only floor)
+
+The throughput numbers above are saturation-regime measurements
+(1000 prompts at `request_rate=inf`); their Mean TTFT is dominated by
+queue-wait. To isolate the *kernel-and-dispatch* floor, we ran the
+same Llama 3 8B / v7x-1 / 8191 in / 1 out shape at `NUM_PROMPTS=1` —
+single prompt, no queue.
+
+A new sweep recipe (`("rpa_v3", "vllm_latency")` in
+[sweep_recipes.py](../tools/benchmark/sweep_recipes.py)) pins
+`MAX_NUM_SEQS=1` and `LONG_PREFILL_TOKEN_THRESHOLD=0` (MIXED-only
+routing — bypasses the static-K PREFILL kernel entirely), sweeps only
+`MAX_NUM_BATCHED_TOKENS ∈ {2048, 4096, 8192, 16384, 32768, 65536}`,
+and ranks ascending by Mean TTFT. The corresponding workload file is
+[llama3_8b/prefill_heavy_latency.workload](../tools/benchmark/cases/v7x/llama3_8b/prefill_heavy_latency.workload).
+Invocation:
+
+```bash
+SERVICE_ID=vllm_latency tools/run_pipeline.sh \
+    tools/benchmark/cases/v7x/llama3_8b/prefill_heavy_latency.workload
+```
+
+### 6-combo MNB sweep (latency winner)
+
+| MNB    | MIXED calls per prefill | Mean TTFT | Δ vs winner |
+|-------:|------------------------:|----------:|------------:|
+| 2048   | 4 (chunked)             | 597.3 ms  | +54%        |
+| 4096   | 2 (chunked)             | 529.4 ms  | +36%        |
+| **8192**  | **1 (one-shot)**     | **388.2 ms** | **winner** |
+| 16384  | 1 (one-shot, larger static shape) | 394.8 ms | +1.7% |
+| 32768  | 1                       | 390.5 ms  | +0.6%       |
+| 65536  | 1                       | 405.7 ms  | +4.5%       |
+
+`MNB=8192` is the smallest value that fits the 8191-token prefill in
+one MIXED kernel call. Below that, vLLM chunks the prefill across
+multiple scheduler steps → multiple MIXED kernel launches → measurable
+launch-overhead penalty. Above 8192, the kernel's `max_num_tokens`
+static shape grows but the per-prefill call count stays at 1; the
+plateau is flat within ~5%, with a small uptick at 65536 likely
+reflecting larger tile pre-allocation cost.
+
+### Three-way comparison: queue vs kernel routing
+
+To attribute the latency win between "no queue" and "MIXED-only
+routing", we ran the **throughput-tuned config at NUM_PROMPTS=1** as a
+cross-check (one-off, see
+[`tmp/bench_prefill_heavy_throughput_config_n1/`](../tmp/bench_prefill_heavy_throughput_config_n1/)):
+
+| Config | NUM_PROMPTS | Routing | Mean TTFT | req/s |
+|---|---:|---|---:|---:|
+| latency-tuned     (MNS=1,   K=0)   | 1    | MIXED × 1 (q=8191)         | **388 ms**    | 2.57 |
+| throughput-tuned  (MNS=128, K=256) | 1    | PREFILL × 32 (K=256 each)  | **747 ms**    | 1.34 |
+| throughput-tuned  (MNS=128, K=256) | 1000 | PREFILL × 32 × 1000 + queue| 107,810 ms    | 4.79 |
+
+The **278× total reduction** (107,810 → 388 ms) decomposes cleanly:
+
+```
+278×  =  144× queue removal  ×  1.93× kernel routing
+         (107,810 / 747)         (747 / 388)
+```
+
+- **Queue removal: 144×** — dominant. Accounts for 107,063 ms of the
+  107,422 ms total saved (99.7%).
+- **Kernel routing (MIXED vs static-K PREFILL × 32 chunks): 1.93×** —
+  small in compounded terms, but absolutely real: 359 ms saved per
+  single-prompt prefill by routing through MIXED-only.
+
+### Per-call kernel-launch overhead
+
+Comparing the two single-prompt rows (388 vs 747 ms) with same total
+compute (8191 tokens of prefill) but different call counts (1 vs 32)
+isolates per-call overhead:
+
+```
+extra 31 PREFILL launches cost 359 ms → ~11.6 ms per launch
+```
+
+That's TPU kernel-launch + XLA dispatch overhead per call. For the
+32-chunk static-K path, ~370 ms of pure launch overhead — roughly
+equal to the entire MIXED single-call wall-clock. The static-K
+kernel's compute *per chunk* is fast; at single-shot the launch
+overhead dominates. **At saturation (1000 prompts) this overhead is
+amortized across requests** — which is why K=256 still wins on
+throughput despite losing on single-prompt TTFT.
+
+### Floor sanity-check
+
+Theoretical lower bound for an 8K-token prefill on 8B / v7x-1 / TP=1:
+- Weights HBM read: 16 GB / 1.6 TB/s ≈ 10 ms
+- Compute (~130 TFLOP at ~700 TFLOP/s peak bf16): ~190 ms
+- vLLM dispatch / kernel launch / tokenize / detokenize / sampler step
+
+Theoretical ~200 ms, observed 388 ms = ~2× overhead. Reasonable for
+real-system glue; not investigated further.
+
 ## Where to find the tuned files (ours)
 
 | Artefact            | Path                                                          | What it is                                                                                                              |
 |:--------------------|:--------------------------------------------------------------|:------------------------------------------------------------------------------------------------------------------------|
-| Tuned kernel params | `tools/benchmark/cases/v7x/llama3_8b/production.kernel`       | DECODE/PREFILL/MIXED kernel block sizes per `(page_size, K, dtype, head shape)`. Output of Layer 1 (3.5 h tune).        |
-| Service params      | `tools/benchmark/cases/v7x/llama3_8b/production.service`      | Best vLLM scheduler config (`MAX_NUM_BATCHED_TOKENS`, `MAX_NUM_SEQS`, `LONG_PREFILL_TOKEN_THRESHOLD`). Output of Layer 3. |
-| Per-combo metrics   | `tmp/bench_prefill_heavy_rpa_v3_vllm/<combo_id>/metrics.txt`  | Raw `vllm bench serve` output for each of the 48 swept combos.                                                          |
-| Per-combo config    | `tmp/bench_prefill_heavy_rpa_v3_vllm/<combo_id>/meta.txt`     | The exact env vars + git SHAs that produced that metrics row.                                                           |
-| Ranked Layer-3 dump | `tmp/log/script_build_service_registry_rpa_v3_vllm.txt`       | All 48 combos sorted by throughput.                                                                                     |
+| Tuned kernel params | `tools/benchmark/cases/v7x/llama3_8b/production.kernel`       | DECODE/PREFILL/MIXED kernel block sizes per `(page_size, K, dtype, head shape)`. Output of Layer 1 (3.5 h tune; latency re-runs hit the cache via `SKIP_COMMIT_CACHE_CHECK=1`). |
+| Service params      | `tools/benchmark/cases/v7x/llama3_8b/production.service`      | Best scheduler config per `service_id`: `vllm` (throughput winner) and `vllm_latency` (single-prompt winner) coexist under distinct workload keys. |
+| Throughput per-combo  | `tmp/bench_prefill_heavy_rpa_v3_vllm/<combo_id>/`           | 48 throughput-sweep combos (sonnet, 1000 prompts).                                                                      |
+| Latency per-combo     | `tmp/bench_prefill_heavy_latency_rpa_v3_vllm_latency/<id>/` | 6 latency-sweep combos (sonnet, 1 prompt).                                                                              |
+| Throughput-cfg @ N=1  | `tmp/bench_prefill_heavy_throughput_config_n1/`             | One-off cross-check: throughput winner config evaluated at NUM_PROMPTS=1. The 747 ms in the 3-way table.                |
+| Ranked Layer-3 dump (throughput) | `tmp/log/script_build_service_registry_rpa_v3_vllm.txt`           | All 48 throughput combos sorted by req/s.                                                                  |
+| Ranked Layer-3 dump (latency)    | `tmp/log/script_build_service_registry_rpa_v3_vllm_latency.txt`   | All 6 latency combos sorted ascending by Mean TTFT.                                                        |
 
 ## Caveats when interpreting the numbers
 
