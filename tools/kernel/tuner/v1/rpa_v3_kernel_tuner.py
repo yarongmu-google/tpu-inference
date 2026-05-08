@@ -501,6 +501,26 @@ class RpaV3KernelTuner(KernelTunerBase):
                      tuning_key.max_model_len, tuning_key.sliding_window)
         if getattr(self, "_INPUT_CACHE_KEY", None) == cache_key:
             return self._KERNEL_INPUTS_CACHE
+        # Cache miss = switching to a different shape. Explicitly release
+        # the previous keys HBM buffers BEFORE we start allocating the
+        # new ones, otherwise peak HBM = old_buffers + new_buffers
+        # transiently, which OOMs at 70B / 32K (kv_cache test buffer
+        # alone is ~8 GB before sharding). JAX does not auto-free a
+        # buffer on Python refcount drop — the device-allocators
+        # release pass lags. ``jax.Array.delete()`` releases device
+        # memory immediately. The cache only ever holds one keys
+        # buffers, so this delete is safe.
+        old_cache = getattr(self, "_KERNEL_INPUTS_CACHE", None)
+        if old_cache is not None:
+            for arr in old_cache.values():
+                if hasattr(arr, "delete"):
+                    try:
+                        arr.delete()
+                    except Exception:
+                        # Already deleted (e.g. donated to a kernel call
+                        # earlier and not refreshed) — fine, nothing to do.
+                        pass
+            self._KERNEL_INPUTS_CACHE = None
         self._INPUT_CACHE_KEY = cache_key
 
         cu_q_lens, kv_lens, decode_end, prefill_end, actual_num_seqs = (
