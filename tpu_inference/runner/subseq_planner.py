@@ -263,6 +263,53 @@ def plan_step(
     )
 
 
+def build_prior_kv_lens(
+    *,
+    req_ids_in_order: Iterable[str],
+    num_scheduled_tokens: dict[str, int],
+    req_id_to_index: dict[str, int],
+    num_computed_tokens_cpu,
+) -> dict[str, int]:
+    """Build the per-step ``prior_kv_lens`` snapshot for ``plan_step``.
+
+    Pure-Python helper extracted from
+    PersistentBatchManager.compute_step_plan so the data-marshalling
+    logic is testable without importing the vLLM/JAX runtime stack.
+
+    Args:
+      req_ids_in_order: post-reorder ordering of request ids in the
+        persistent batch (typically ``input_batch.req_ids``).
+      num_scheduled_tokens: vLLMs per-request scheduled-tokens dict for
+        this step.
+      req_id_to_index: maps request id -> persistent-batch slot index
+        (typically ``input_batch.req_id_to_index``).
+      num_computed_tokens_cpu: array-like indexable by slot index that
+        returns the requests num_computed_tokens at the START of this
+        step. Typically ``input_batch.num_computed_tokens_cpu`` (a
+        numpy array). Anything indexable with int -> int works for
+        testability.
+
+    Returns:
+      ``{req_id: prior_kv_len}`` for every req with a positive
+      scheduled-tokens count and a known persistent-batch slot. Reqs
+      with zero (or absent) scheduled tokens, or with an unknown slot
+      (race against the persistent-batch update), are skipped — the
+      same reqs that ``plan_step`` would itself skip on the n_R<=0
+      branch, so the resulting dict matches plan_steps expected
+      input contract exactly.
+    """
+    prior: dict[str, int] = {}
+    for req_id in req_ids_in_order:
+        n = num_scheduled_tokens.get(req_id, 0)
+        if n <= 0:
+            continue
+        idx = req_id_to_index.get(req_id)
+        if idx is None:
+            continue
+        prior[req_id] = int(num_computed_tokens_cpu[idx])
+    return prior
+
+
 def required_max_num_subseqs(*, max_num_seqs: int, K_sched_cap: int,
                              K_kernel: int) -> int:
     """Compute the prefetch-array sizing bound at runner init.

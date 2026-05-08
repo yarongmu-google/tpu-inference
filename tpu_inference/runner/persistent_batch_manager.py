@@ -352,29 +352,25 @@ class PersistentBatchManager:
         # effects (vllm/jax/torch chain). Keeping this local means
         # offline tests of helpers that touch the planner directly
         # arent forced to pay that cost.
-        from tpu_inference.runner.subseq_planner import plan_step
+        from tpu_inference.runner.subseq_planner import (
+            build_prior_kv_lens, plan_step)
 
-        # Build prior_kv_lens snapshot from input_batchs CPU mirror,
-        # using the post-reorder req_ids ordering so the plan visits
+        # Use the post-reorder req_ids ordering so the plan visits
         # requests in the same order the kernel will encounter them.
-        req_ids_in_order = list(self.input_batch.req_ids)
-        num_scheduled = scheduler_output.num_scheduled_tokens
-        prior_kv_lens = {}
-        for req_id in req_ids_in_order:
-            if req_id not in num_scheduled or num_scheduled[req_id] <= 0:
-                continue
-            req_index = self.input_batch.req_id_to_index.get(req_id)
-            if req_index is None:
-                continue
-            prior_kv_lens[req_id] = int(
-                self.input_batch.num_computed_tokens_cpu[req_index])
-
+        # The marshalling (prior_kv_lens dict construction) is delegated
+        # to a pure-Python helper for direct unit-test coverage.
         # dict(num_scheduled) is a shallow copy — paranoia against
         # plan_step or downstream consumers mutating what is otherwise
         # a vLLM-owned dict. Cheap (small ints), removes the question.
+        req_ids_in_order = list(self.input_batch.req_ids)
         return plan_step(
-            num_scheduled_tokens=dict(num_scheduled),
-            prior_kv_lens=prior_kv_lens,
+            num_scheduled_tokens=dict(scheduler_output.num_scheduled_tokens),
+            prior_kv_lens=build_prior_kv_lens(
+                req_ids_in_order=req_ids_in_order,
+                num_scheduled_tokens=scheduler_output.num_scheduled_tokens,
+                req_id_to_index=self.input_batch.req_id_to_index,
+                num_computed_tokens_cpu=self.input_batch.num_computed_tokens_cpu,
+            ),
             req_id_order=req_ids_in_order,
             K_kernel=self.decoupled_k_config.K_kernel,
         )

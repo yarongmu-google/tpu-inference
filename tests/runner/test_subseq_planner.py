@@ -53,6 +53,7 @@ validate_smem_fits = _mod.validate_smem_fits
 max_M_under_smem = _mod.max_M_under_smem
 DecoupledKConfig = _mod.DecoupledKConfig
 evaluate_decoupled_k_config = _mod.evaluate_decoupled_k_config
+build_prior_kv_lens = _mod.build_prior_kv_lens
 
 
 class TestPlanStepDecodeOnly(unittest.TestCase):
@@ -393,6 +394,23 @@ class TestSmemBudget(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_smem_fits(max_num_subseqs=128, pages_per_seq=0)
 
+    def test_max_M_under_smem_safety_cap_warns(self):
+        # If someone passes a huge smem_limit_bytes (e.g. sys.maxsize or
+        # otherwise-misconfigured), the linear search would never find
+        # the bytes_used > limit terminator. The safety cap stops the
+        # search at 1024 and emits a warning. Verify both behaviours.
+        import warnings as _warnings
+        with _warnings.catch_warnings(record=True) as caught:
+            _warnings.simplefilter("always")
+            M = max_M_under_smem(max_num_seqs=128, pages_per_seq=64,
+                                 smem_limit_bytes=10**18)
+        # Should hit the cap and return cap - 1.
+        self.assertEqual(M, 1023)
+        self.assertTrue(any("safety cap" in str(w.message)
+                            for w in caught),
+                        f"Expected 'safety cap' warning; got: "
+                        f"{[str(w.message) for w in caught]}")
+
 
 class TestEvaluateDecoupledKConfig(unittest.TestCase):
     """Tests for the runner-init resolution of the decoupled-K config.
@@ -532,6 +550,113 @@ class TestEvaluateDecoupledKConfig(unittest.TestCase):
                 inputs.update(bad)
                 with self.assertRaises(ValueError):
                     evaluate_decoupled_k_config(**inputs)
+
+
+class TestBuildPriorKvLens(unittest.TestCase):
+    """Tests for the data-marshalling helper extracted from
+    PersistentBatchManager.compute_step_plan. The helper takes the
+    inputs that come from the runtime stack (input_batch + scheduler
+    output) and produces the prior_kv_lens dict plan_step expects.
+
+    Inputs are deliberately stdlib types (dict, list, list-as-int-array)
+    so this is fully testable without the JAX/vLLM stack."""
+
+    def test_basic_three_reqs(self):
+        prior = build_prior_kv_lens(
+            req_ids_in_order=["R1", "R2", "R3"],
+            num_scheduled_tokens={"R1": 256, "R2": 1, "R3": 800},
+            req_id_to_index={"R1": 0, "R2": 1, "R3": 2},
+            num_computed_tokens_cpu=[100, 200, 300],
+        )
+        self.assertEqual(prior, {"R1": 100, "R2": 200, "R3": 300})
+
+    def test_skips_zero_scheduled(self):
+        # Reqs with n_R == 0 must not appear (they wouldnt produce
+        # sub-seqs anyway; their absence keeps plan_steps prior_kv_lens
+        # contract — every key in num_scheduled_tokens with n_R > 0
+        # has a corresponding key here).
+        prior = build_prior_kv_lens(
+            req_ids_in_order=["R1", "R2"],
+            num_scheduled_tokens={"R1": 256, "R2": 0},
+            req_id_to_index={"R1": 0, "R2": 1},
+            num_computed_tokens_cpu=[100, 200],
+        )
+        self.assertEqual(prior, {"R1": 100})
+
+    def test_skips_negative_scheduled(self):
+        # Defensive: negative n_R never reaches us in practice but the
+        # helper treats it as "skip" rather than crashing.
+        prior = build_prior_kv_lens(
+            req_ids_in_order=["R1"],
+            num_scheduled_tokens={"R1": -5},
+            req_id_to_index={"R1": 0},
+            num_computed_tokens_cpu=[100],
+        )
+        self.assertEqual(prior, {})
+
+    def test_skips_missing_in_scheduled(self):
+        # req_ids_in_order may contain reqs not present in
+        # scheduler_output.num_scheduled_tokens (race during update_states).
+        # We skip them rather than KeyError.
+        prior = build_prior_kv_lens(
+            req_ids_in_order=["R1", "R2"],
+            num_scheduled_tokens={"R1": 256},
+            req_id_to_index={"R1": 0, "R2": 1},
+            num_computed_tokens_cpu=[100, 200],
+        )
+        self.assertEqual(prior, {"R1": 100})
+
+    def test_skips_unknown_index(self):
+        # req_id_to_index race: a req in req_ids_in_order may not yet be
+        # registered. Skip rather than IndexError downstream.
+        prior = build_prior_kv_lens(
+            req_ids_in_order=["R1", "R_new"],
+            num_scheduled_tokens={"R1": 256, "R_new": 256},
+            req_id_to_index={"R1": 0},                # R_new not yet here
+            num_computed_tokens_cpu=[100],
+        )
+        self.assertEqual(prior, {"R1": 100})
+
+    def test_int_conversion(self):
+        # num_computed_tokens_cpu is typically a numpy array of int32;
+        # the helper converts to Python int so plan_step gets clean
+        # integers for arithmetic. Test with a non-int input to verify
+        # the conversion happens.
+        class FakeIndexable:
+            def __getitem__(self, idx):
+                # Returns a "numpy-int-like" — int() should coerce.
+                return float(100 + idx * 50)
+        prior = build_prior_kv_lens(
+            req_ids_in_order=["R1", "R2"],
+            num_scheduled_tokens={"R1": 256, "R2": 256},
+            req_id_to_index={"R1": 0, "R2": 1},
+            num_computed_tokens_cpu=FakeIndexable(),
+        )
+        self.assertEqual(prior, {"R1": 100, "R2": 150})
+        # And the values must be int (plan_step does arithmetic on them).
+        self.assertIsInstance(prior["R1"], int)
+
+    def test_ordering_preserved_in_dict_keys(self):
+        # Pythons dicts preserve insertion order; the helper iterates
+        # req_ids_in_order, so the resulting dicts key order should
+        # match. plan_step uses req_id_order separately for ordering,
+        # but downstream consumers might iterate the dict directly.
+        prior = build_prior_kv_lens(
+            req_ids_in_order=["Z", "A", "M"],
+            num_scheduled_tokens={"A": 1, "Z": 1, "M": 1},
+            req_id_to_index={"A": 1, "Z": 0, "M": 2},
+            num_computed_tokens_cpu=[10, 20, 30],
+        )
+        self.assertEqual(list(prior.keys()), ["Z", "A", "M"])
+
+    def test_empty_inputs(self):
+        prior = build_prior_kv_lens(
+            req_ids_in_order=[],
+            num_scheduled_tokens={},
+            req_id_to_index={},
+            num_computed_tokens_cpu=[],
+        )
+        self.assertEqual(prior, {})
 
 
 class TestDecoupledKConfigDataclass(unittest.TestCase):
