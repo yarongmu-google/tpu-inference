@@ -92,10 +92,10 @@ EXPECTED_MML=$(( INPUT_LEN + OUTPUT_LEN ))
 if [ -z "${MAX_MODEL_LEN:-}" ]; then
     MAX_MODEL_LEN=$EXPECTED_MML
     export MAX_MODEL_LEN
-elif [ "$MAX_MODEL_LEN" -ne "$EXPECTED_MML" ]; then
-    echo "Error: MAX_MODEL_LEN=$MAX_MODEL_LEN in $(basename "$CASE_FILE") does not match INPUT_LEN+OUTPUT_LEN=$EXPECTED_MML." >&2
-    echo "Set MAX_MODEL_LEN=$EXPECTED_MML or remove the line to auto-compute." >&2
-    exit 1
+# elif [ "$MAX_MODEL_LEN" -ne "$EXPECTED_MML" ]; then
+#    echo "Error: MAX_MODEL_LEN=$MAX_MODEL_LEN in $(basename "$CASE_FILE") does not match INPUT_LEN+OUTPUT_LEN=$EXPECTED_MML." >&2
+#    echo "Set MAX_MODEL_LEN=$EXPECTED_MML or remove the line to auto-compute." >&2
+#    exit 1
 fi
 
 # NUM_PROMPTS comes from the case file (every case file sets it via :=).

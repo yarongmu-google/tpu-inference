@@ -290,10 +290,13 @@ tools/benchmark/run_benchmark.sh \
 
 ```bash
 LONG_PREFILL_TOKEN_THRESHOLD=0 \
+VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
 MAX_NUM_SEQS=128 \
 MAX_NUM_BATCHED_TOKENS=10275 \
-MAX_MODEL_LEN=10275 \
-BLOCK_SIZE= \
+MAX_MODEL_LEN=10274 \
+BLOCK_SIZE=16 \
+RPA_D_BLOCK_SIZES=1,4096,1,4096 \
+RPA_M_BLOCK_SIZES=512,2048,256,256 \
 tools/benchmark/run_benchmark.sh \
     tools/benchmark/cases/v7x/llama3_8b/prefill_heavy.workload \
     --result-tag row3_bm_infra_defaults
@@ -302,6 +305,7 @@ tools/benchmark/run_benchmark.sh \
 #   DECODE  -> 1,4096,1,4096
 #   PREFILL -> 512,2048,256,512  (unused at K=0)
 #   MIXED   -> 512,2048,256,512
+# Used 76.58M of 64.00M vmem. Exceeded vmem capacity by 12.58M.
 # BLOCK_SIZE intentionally empty -> tpu_platform.py resolves it
 # to 16 (because MAX_MODEL_LEN=10275 > 8192 hits the VMEM-OOM
 # safety branch in PallasAttentionBackend.get_page_size()).

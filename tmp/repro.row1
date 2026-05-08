@@ -1,0 +1,44 @@
+case_file=/home/ymu_google_com/tpu-inference/tools/benchmark/cases/v7x/llama3_8b/prefill_heavy.workload
+case_name=prefill_heavy
+model=meta-llama/Meta-Llama-3-8B-Instruct
+max_num_seqs=128
+max_num_batched_tokens=8192
+tensor_parallel_size=1
+max_model_len=8192
+dataset=sonnet
+input_len=8191
+output_len=1
+num_prompts=1000
+request_rate=inf
+block_size=128
+long_prefill_token_threshold=256
+rpa_d_block_sizes=1,512,1,256
+rpa_p_block_sizes=256,2048,256,512
+rpa_m_block_sizes=128,512,128,256
+git_commit=f3d61b7d587a75dcf76728c6515dbdb3befbd8ae
+git_branch=rpa3
+vllm_commit=c51df43005726a09c6eb7348e8c1b00501c70a8e
+timestamp=20260507_104833
+----
+Results: /home/ymu_google_com/tpu-inference/tmp/bench_prefill_heavy_row1_k256_winner
+Starting vllm server (log: /home/ymu_google_com/tpu-inference/tmp/bench_prefill_heavy_row1_k256_winner/vllm.log) ...
+Waiting up to 1200s for server startup ...
+  ready after 100s
+Running benchmark (stdout: /home/ymu_google_com/tpu-inference/tmp/bench_prefill_heavy_row1_k256_winner/bench.log, stderr: /home/ymu_google_com/tpu-inference/tmp/bench_prefill_heavy_row1_k256_winner/bench.log.stderr) ...
+==== Summary ====
+Request throughput (req/s):              4.79      
+Output token throughput (tok/s):         4.79      
+Mean TTFT (ms):                          107857.16 
+Median TTFT (ms):                        107435.54 
+P99 TTFT (ms):                           207386.24 
+Mean TPOT (ms):                          0.00      
+Median TPOT (ms):                        0.00      
+P99 TPOT (ms):                           0.00      
+Mean ITL (ms):                           0.00      
+Median ITL (ms):                         0.00      
+P99 ITL (ms):                            0.00      
+Mean E2EL (ms):                          107857.16 
+Median E2EL (ms):                        107435.54 
+P99 E2EL (ms):                           207386.24 
+====
+Saved metrics to /home/ymu_google_com/tpu-inference/tmp/bench_prefill_heavy_row1_k256_winner/metrics.txt
