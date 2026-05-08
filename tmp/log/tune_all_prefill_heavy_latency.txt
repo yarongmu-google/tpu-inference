@@ -1504,3 +1504,25 @@ Complete Generate Tuning Cases for prefill_heavy_latency_decode_20260508_153904,
 I0508 15:39:09.821857 139126457374656 local_db_manager.py:285] Database at /tmp/kernel_tuner_run_prefill_heavy_latency_decode_20260508_153904 finalized with 0 cases, 0 invalid cases.
 I0508 15:39:09.821907 139126457374656 local_db_manager.py:291] Final DB file: /tmp/kernel_tuner_run_prefill_heavy_latency_decode_20260508_153904/CaseSet.json
 ===== 2026-05-08 15:39:10 decode done in 6s =====
+
+===== 2026-05-08 15:39:11 Tuning prefill (case_set_id=prefill_heavy_latency_prefill_20260508_153904) =====
+DB path: /tmp/kernel_tuner_run_prefill_heavy_latency_prefill_20260508_153904
+WARNING:absl:Tensorflow library not found, tensorflow.io.gfile operations will use native shim calls. GCS paths (i.e. 'gs://...') cannot be accessed.
+INFO:numexpr.utils:Note: detected 224 virtual cores but NumExpr set to maximum of 64, check "NUMEXPR_MAX_THREADS" environment variable.
+INFO:numexpr.utils:Note: NumExpr detected 224 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+INFO:numexpr.utils:NumExpr defaulting to 16 threads.
+INFO 05-08 15:39:17 [__init__.py:59] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+I0508 15:39:17.335354 135894890956736 kernel_tuner_runner.py:115] Using case_set_id: prefill_heavy_latency_prefill_20260508_153904, run_id: 0, case_set_desc: prefill_heavy_latency prefill kernel tune 2026-05-08 for this tuning run.
+I0508 15:39:17.335520 135894890956736 local_db_manager.py:53] Database initialized at /tmp/kernel_tuner_run_prefill_heavy_latency_prefill_20260508_153904
+W0508 15:39:17.340050 135894890956736 rpa_v3_kernel_tuner.py:248] SKIP_COMMIT_CACHE_CHECK=1: code_revision will be ignored when checking idempotency; entries from older commits will be reused.
+I0508 15:39:17.340416 135894890956736 rpa_v3_kernel_tuner.py:289] Loaded 27 completed TuningKeys from tools/benchmark/cases/v7x/llama3_8b/production.kernel
+I0508 15:39:17.340481 135894890956736 kernel_tuner_runner.py:135] Running in locally mode. Skipping Buildkite pipeline generation and running tuning jobs directly.
+I0508 15:39:17.340672 135894890956736 local_db_manager.py:90] Initialized case set: {'ID': 'prefill_heavy_latency_prefill_20260508_153904', 'Description': 'prefill_heavy_latency prefill kernel tune 2026-05-08', 'Status': 'CREATING', 'ScanSpace': 0}
+I0508 15:39:17.340703 135894890956736 kernel_tuner_base.py:141] Initialized new CaseSet with ID: prefill_heavy_latency_prefill_20260508_153904 and description: prefill_heavy_latency prefill kernel tune 2026-05-08
+I0508 15:39:17.406238 135894890956736 rpa_v3_kernel_tuner.py:472] [Debug] Generated 0 cases
+I0508 15:39:17.406479 135894890956736 local_db_manager.py:124] Finished case set: ID=prefill_heavy_latency_prefill_20260508_153904, valid=0, invalid=0, duration=0.0s
+I0508 15:39:17.406518 135894890956736 kernel_tuner_base.py:196] 
+Complete Generate Tuning Cases for prefill_heavy_latency_prefill_20260508_153904, Valid Cases: 0 | Duration: 0s
+I0508 15:39:17.406543 135894890956736 local_db_manager.py:285] Database at /tmp/kernel_tuner_run_prefill_heavy_latency_prefill_20260508_153904 finalized with 0 cases, 0 invalid cases.
+I0508 15:39:17.406585 135894890956736 local_db_manager.py:291] Final DB file: /tmp/kernel_tuner_run_prefill_heavy_latency_prefill_20260508_153904/CaseSet.json
+===== 2026-05-08 15:39:18 prefill done in 7s =====
