@@ -1548,3 +1548,19 @@ Complete Generate Tuning Cases for prefill_heavy_latency_mixed_20260508_153904, 
 I0508 15:39:24.712301 126309196646336 local_db_manager.py:285] Database at /tmp/kernel_tuner_run_prefill_heavy_latency_mixed_20260508_153904 finalized with 0 cases, 0 invalid cases.
 I0508 15:39:24.712341 126309196646336 local_db_manager.py:291] Final DB file: /tmp/kernel_tuner_run_prefill_heavy_latency_mixed_20260508_153904/CaseSet.json
 ===== 2026-05-08 15:39:25 mixed done in 6s =====
+
+===== 2026-05-08 15:39:26 ALL CASES DONE =====
+
+Inspector commands to extract winners (run on the same TPU VM):
+  python3 -m tools.kernel.tuner.v1.inspect_result_cli \
+      --source=local --db-path=/tmp/kernel_tuner_run_prefill_heavy_latency_decode_20260508_153904 \
+      query_min_latency \
+      --case_set_id=prefill_heavy_latency_decode_20260508_153904 --run_id=0
+  python3 -m tools.kernel.tuner.v1.inspect_result_cli \
+      --source=local --db-path=/tmp/kernel_tuner_run_prefill_heavy_latency_prefill_20260508_153904 \
+      query_min_latency \
+      --case_set_id=prefill_heavy_latency_prefill_20260508_153904 --run_id=0
+  python3 -m tools.kernel.tuner.v1.inspect_result_cli \
+      --source=local --db-path=/tmp/kernel_tuner_run_prefill_heavy_latency_mixed_20260508_153904 \
+      query_min_latency \
+      --case_set_id=prefill_heavy_latency_mixed_20260508_153904 --run_id=0
