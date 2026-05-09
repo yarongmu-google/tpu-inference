@@ -38,15 +38,10 @@ class RpaCase(Enum):
   - DECODE: Sequences are in decode-only mode (q_len = 1).
   - PREFILL: Sequences are in prefill-only mode (q_len > 1, static).
   - MIXED: Sequences can be a mix of prefill and decode (q_len > 1, dynamic).
-  - LOGICAL: Decoupled-K PREFILL. Multiple sub-seqs per physical seq via
-    real_seq_idx_per_iter / q_offset_per_iter indirection. q_len per
-    sub-seq is static (= K_kernel). See §6.2 / §6.4 in
-    docs/rpa_v3_decoupled_k_kernel_design.md.
   """
     DECODE = 0
     PREFILL = 1
     MIXED = 2
-    LOGICAL = 3
 
     @property
     def symbol(self):
@@ -54,7 +49,6 @@ class RpaCase(Enum):
             RpaCase.DECODE: "d",
             RpaCase.PREFILL: "p",
             RpaCase.MIXED: "m",
-            RpaCase.LOGICAL: "l",
         }[self]
 
     def get_range(self, distribution):
@@ -65,13 +59,6 @@ class RpaCase(Enum):
             return distribution[0], distribution[1]
         elif self == RpaCase.MIXED:
             return distribution[1], distribution[2]
-        elif self == RpaCase.LOGICAL:
-            # LOGICAL replaces the PREFILL bucket position in distribution.
-            # A step still has D / L / M sub-buckets (just like D / P / M
-            # today); LOGICAL just lets multiple sub-seqs per phys seq fit
-            # in the L bucket via the iter-keyed prefetches. So
-            # distribution = (D_end, L_end, M_end) under decoupled-K.
-            return distribution[0], distribution[1]
         else:
             raise ValueError(f"Unsupported RPA case: {self}")
 
@@ -218,200 +205,6 @@ def ref_ragged_paged_attention(
     return result, kv_cache
 
 
-def ref_ragged_paged_attention_logical(
-    queries: jax.
-    Array,  # [max_num_tokens, actual_num_q_heads, actual_head_dim]
-    keys: jax.Array,  # [max_num_tokens, actual_num_kv_heads, actual_head_dim]
-    values: jax.
-    Array,  # [max_num_tokens, actual_num_kv_heads, actual_head_dim]
-    kv_cache: jax.
-    Array,  # [total_num_pages, page_size, num_kv_heads_x2 // kv_packing, kv_packing, head_dim]
-    kv_lens: jax.Array,  # i32[max_num_seqs]                 PHYSICAL
-    page_indices: jax.Array,  # i32[max_num_seqs * pages_per_seq] PHYSICAL
-    cu_q_lens: jax.Array,  # i32[max_num_seqs + 1]              PHYSICAL
-    real_seq_idx_per_iter: jax.Array,  # i32[max_num_subseqs]   LOGICAL -> PHYS
-    q_offset_per_iter: jax.Array,  # i32[max_num_subseqs]       LOGICAL chunk-pos
-    distribution: jax.Array,  # i32[3]; for LOGICAL pallas_call all iters are LOGICAL
-    *,
-    static_q_len: int,  # K_kernel: per-iter q_len
-    use_causal_mask: bool = True,
-    skip_kv_mask: bool = False,
-    sm_scale: float = 1.0,
-    sliding_window: int | None = None,
-    soft_cap: float | None = None,
-    out_dtype: Any = None,
-    mask_value: float | None = None,
-    q_scale: float | None = None,
-    k_scale: float | None = None,
-    v_scale: float | None = None,
-):
-    """Pure-JAX reference for the LOGICAL (decoupled-K PREFILL) kernel.
-
-    Differs from `ref_ragged_paged_attention` in two ways:
-
-      1. Iterates over LOGICAL sub-seqs (range `[0, distribution[-1])`), not
-         over physical seqs. Each sub-seq is identified by
-         `(real_seq_idx_per_iter[i], q_offset_per_iter[i])` — multiple
-         sub-seqs may share a single phys seq under decoupled-K.
-
-      2. Implements §6.4 Option A from the decoupled-K design doc: in-step
-         KV reads are sourced from the input `keys`/`values` tensors (via
-         `merge_kv`), NOT from `kv_cache`. The cache is read only for
-         genuinely-pre-step content (positions < `phys_prior_kv_len`). This
-         mirrors the LOGICAL kernel's `_fetch_bkv` formula
-         `kv_left_frm_cache = max(kv_left - (q_offset + q_len), 0)`.
-
-    The cache is still WRITTEN per iter (for cross-step / cross-pallas_call
-    persistence). Tests can pre-corrupt `kv_cache` at the offsets a sub-seq
-    writes, and verify that LATER sub-seqs of the same phys seq don't read
-    the corrupted cells — they read from `keys`/`values` instead. See §11.2
-    KV-read source routing checklist in
-    `docs/rpa_v3_decoupled_k_kernel_design.md`.
-
-    `static_q_len` is K_kernel (the per-iter q_len). For LOGICAL pallas_call,
-    all `distribution[-1]` iters are LOGICAL — there are no DECODE / PREFILL
-    / MIXED case-bucket sub-ranges within a LOGICAL invocation.
-
-    Note: this is an EAGER-mode reference (uses Python `range` over a
-    concrete `distribution[-1]`). Not intended to be jitted; tests call it
-    on small fixtures and compare against the kernel's output.
-    """
-    if out_dtype is None:
-        out_dtype = jnp.float32 if queries.dtype == jnp.float32 else jnp.bfloat16
-    if mask_value is None:
-        mask_value = jnp.finfo(out_dtype).min
-
-    actual_head_dim = queries.shape[2]
-    actual_num_q_heads = queries.shape[1]
-    actual_num_kv_heads = keys.shape[1]
-    merged_kv = merge_kv(keys, values)
-    assert merged_kv.shape[-3:] == kv_cache.shape[-3:]
-
-    _, page_size, num_kv_heads_x2_per_kv_packing, kv_packing, head_dim = (
-        kv_cache.shape)
-    num_kv_heads_x2 = num_kv_heads_x2_per_kv_packing * kv_packing
-    assert num_kv_heads_x2 % 2 == 0
-    assert actual_num_q_heads % actual_num_kv_heads == 0
-    assert head_dim % 128 == 0
-    assert get_dtype_packing(kv_cache.dtype) == kv_packing
-    assert num_kv_heads_x2 == align_to(actual_num_kv_heads * 2, kv_packing)
-    actual_num_q_heads_per_kv_head = actual_num_q_heads // actual_num_kv_heads
-    max_num_seqs = kv_lens.shape[0]
-    num_page_indices = page_indices.shape[0]
-    assert num_page_indices % max_num_seqs == 0
-    pages_per_seq = num_page_indices // max_num_seqs
-    max_num_subseqs = real_seq_idx_per_iter.shape[0]
-    assert q_offset_per_iter.shape[0] == max_num_subseqs
-
-    outputs = []
-    for iter_idx in range(int(distribution[-1])):
-        real_seq_idx = real_seq_idx_per_iter[iter_idx]
-        q_offset = q_offset_per_iter[iter_idx]
-
-        # Phys-keyed reads (§6.2 derivation block, mirrored from the kernel).
-        phys_q_start = cu_q_lens[real_seq_idx]
-        phys_q_end = cu_q_lens[real_seq_idx + 1]
-        phys_q_len = phys_q_end - phys_q_start
-        phys_kv_end = kv_lens[real_seq_idx]
-        phys_prior_kv_len = phys_kv_end - phys_q_len
-
-        # Per-iter (LOGICAL: q_len is static_q_len = K_kernel)
-        iter_q_len = static_q_len
-        iter_q_start = phys_q_start + q_offset
-        iter_q_end = iter_q_start + iter_q_len
-        iter_kv_q_gap = phys_prior_kv_len + q_offset
-        iter_kv_len = iter_kv_q_gap + iter_q_len
-
-        # Gather pages covering [0, iter_kv_len).
-        indices_start = real_seq_idx * pages_per_seq
-        indices_end = indices_start + cdiv(iter_kv_len, page_size)
-        indices = page_indices[indices_start:indices_end]
-        gathered_kv = kv_cache[indices]
-        gathered_shape = gathered_kv.shape
-        gathered_kv = gathered_kv.reshape(-1, *gathered_shape[-3:])
-
-        # §6.4 Option A: build the KV view by overlaying ALL of this phys
-        # seq's in-step content from `merged_kv`. The cache state at offsets
-        # [phys_prior_kv_len, iter_kv_len) is IGNORED (the cache may have
-        # been written by earlier iters of THIS pallas_call, but those
-        # writes are not the source of truth this iter sees — `merged_kv`
-        # is, since it was populated by upstream Wk/Wv before the kernel
-        # started and is read-only this step).
-        in_step_count = q_offset + iter_q_len  # = iter_kv_len - phys_prior_kv_len
-        kv_view = gathered_kv.at[
-            phys_prior_kv_len:phys_prior_kv_len + in_step_count
-        ].set(merged_kv[phys_q_start:phys_q_start + in_step_count])
-
-        # Compute attention against [0, iter_kv_len).
-        q = queries[iter_q_start:iter_q_end, :, :actual_head_dim]
-        kv = kv_view.reshape(
-            -1, num_kv_heads_x2,
-            head_dim)[:, :actual_num_kv_heads * 2, :].reshape(
-                -1, actual_num_kv_heads, head_dim * 2)
-        k = kv[:iter_kv_len, :, :head_dim][:, :, :actual_head_dim]
-        v = kv[:iter_kv_len, :, head_dim:][:, :, :actual_head_dim]
-        k = jnp.repeat(k, actual_num_q_heads_per_kv_head, axis=1)
-        v = jnp.repeat(v, actual_num_q_heads_per_kv_head, axis=1)
-
-        if q_scale is not None:
-            q = q / q_scale
-            if jnp.issubdtype(k.dtype, jnp.floating):
-                dtype_info = jnp.finfo(k.dtype)
-                minval = float(dtype_info.min)
-                maxval = float(dtype_info.max)
-                q = jnp.clip(q, min=minval, max=maxval)
-            q = q.astype(k.dtype)
-
-        attn = jnp.einsum("qhd,khd->hqk",
-                          q,
-                          k,
-                          preferred_element_type=jnp.float32).astype(out_dtype)
-        attn *= sm_scale
-        if k_scale is not None:
-            attn *= k_scale
-        if q_scale is not None:
-            attn *= q_scale
-        if soft_cap is not None:
-            attn = soft_cap * jnp.tanh(attn / soft_cap)
-
-        if use_causal_mask:
-            # q_span: absolute KV position of each query token within the
-            # full sequence = iter_kv_q_gap + relative-q-offset.
-            q_span = iter_kv_q_gap + jax.lax.broadcasted_iota(
-                jnp.int32, attn.shape, 1)
-            kv_span = jax.lax.broadcasted_iota(jnp.int32, attn.shape, 2)
-            mask = q_span >= kv_span
-            if sliding_window is not None:
-                mask = jnp.logical_and(mask, q_span < kv_span + sliding_window)
-            attn = jnp.where(mask, attn, mask_value)
-        attn = jax.nn.softmax(attn, axis=-1).astype(v.dtype)
-
-        out = jnp.einsum("hqk,khd->qhd", attn, v).astype(out_dtype)
-        if v_scale is not None:
-            out *= v_scale
-
-        outputs.append(out)
-
-        # Cross-step persistence: write iter's OWN K, V to kv_cache. Earlier
-        # sub-seqs of this phys seq wrote their slices in their own iter
-        # passes; later sub-seqs will write theirs. Within ONE LOGICAL
-        # pallas_call, the cumulative effect is the same as writing all
-        # sub-seqs' slices once at the end — but per-iter writes match the
-        # kernel's `_update_kv_cache` async-DMA structure.
-        cache_write_view = gathered_kv.at[iter_kv_q_gap:iter_kv_len].set(
-            merged_kv[iter_q_start:iter_q_end])
-        kv_cache = kv_cache.at[indices].set(
-            cache_write_view.reshape(gathered_shape))
-
-    # Outputs are appended in iter order. Per §6.3 invariant 2 (runner emits
-    # iters of the same phys seq contiguously) and the iter-major linearity
-    # of `iter_q_start = phys_q_start + q_offset`, iter-order in `outputs`
-    # corresponds to monotonically increasing `iter_q_start`, so concat
-    # produces the correct queries-buffer-order output.
-    result = jnp.concatenate(outputs, axis=0)
-    return result, kv_cache
-
-
 def get_smem_estimate_bytes(max_num_seqs, pages_per_seq):
     total_bits = (
         # kv_lens_ref: i32[max_num_seqs]
@@ -498,16 +291,9 @@ def _ragged_paged_attention_kernel(*args, **kwargs):
 def _ragged_paged_attention_kernel_loop(
     seq_idx,
     # Prefetch
-    kv_lens_ref,  # [max_num_seqs]                     PHYSICAL
-    page_indices_ref,  # [max_num_seqs * pages_per_seq]   PHYSICAL
-    cu_q_lens_ref,  # [max_num_seqs + 1]                  PHYSICAL
-    # NEW: iter-keyed prefetches for LOGICAL (decoupled-K). For other cases,
-    # the kernel body does NOT read these (Python-static branch dead-codes
-    # them at trace time). Coupled-mode runners may pass any data; convention
-    # is `arange(max_num_seqs)` and `zeros(max_num_seqs)` for explicit
-    # identity. See §1.3, §6.2 in docs/rpa_v3_decoupled_k_kernel_design.md.
-    real_seq_idx_per_iter_ref,  # [max_num_subseqs]    LOGICAL → PHYSICAL map
-    q_offset_per_iter_ref,  # [max_num_subseqs]        LOGICAL chunk position
+    kv_lens_ref,  # [max_num_seqs]
+    page_indices_ref,  # [max_num_seqs * pages_per_seq]
+    cu_q_lens_ref,  # [max_num_seqs + 1]
     # TODO(jevinjiang): merge these into one so we can save SMEM.
     distribution_ref,  # [3] (decode_end, prefill_end, mixed_end)
     sem_ids_ref,  # [3] (bq_sem_idx, bkv_sem_idx, bo_sem_idx)
@@ -590,35 +376,11 @@ def _ragged_paged_attention_kernel_loop(
     start_seq_idx, end_seq_idx = case.get_range(distribution_ref)
     num_seqs = end_seq_idx - start_seq_idx
 
-    # Per-iter derivation. Static-pruned at trace time for case != LOGICAL
-    # (the LOGICAL branch is dead code, never enters jaxpr). For LOGICAL,
-    # apply the §6.2 derivation: iter_idx → (real_seq_idx, q_offset) →
-    # iter-specific q/kv ranges. See §6.2 in
-    # docs/rpa_v3_decoupled_k_kernel_design.md.
-    if case == RpaCase.LOGICAL:
-        real_seq_idx = real_seq_idx_per_iter_ref[seq_idx]
-        q_offset = q_offset_per_iter_ref[seq_idx]
-        phys_q_start = cu_q_lens_ref[real_seq_idx]
-        phys_q_end = cu_q_lens_ref[real_seq_idx + 1]
-        phys_q_len = phys_q_end - phys_q_start
-        phys_kv_end = kv_lens_ref[real_seq_idx]
-        phys_prior_kv_len = phys_kv_end - phys_q_len
-        q_start = phys_q_start + q_offset
-        q_len = static_q_len  # = K_kernel
-        q_end = q_start + q_len
-        kv_q_gap = phys_prior_kv_len + q_offset
-        kv_len = kv_q_gap + q_len
-    else:
-        # Today's behavior, byte-for-byte. real_seq_idx is a Python alias
-        # for seq_idx; q_offset is Python int 0. Both fold away at trace
-        # time so D/P/M traces are unaffected by Phase 2a.
-        real_seq_idx = seq_idx
-        q_offset = 0
-        q_start = cu_q_lens_ref[seq_idx]
-        q_end = cu_q_lens_ref[seq_idx + 1]
-        q_len = q_end - q_start
-        kv_len = kv_lens_ref[seq_idx]
-        kv_q_gap = kv_len - q_len
+    q_start = cu_q_lens_ref[seq_idx]
+    q_end = cu_q_lens_ref[seq_idx + 1]
+    q_len = q_end - q_start
+    kv_len = kv_lens_ref[seq_idx]
+    kv_q_gap = kv_len - q_len
     cur_seq_start_bkv_idx = 0
     next_seq_start_bkv_idx = 0
 
@@ -627,21 +389,11 @@ def _ragged_paged_attention_kernel_loop(
         cur_seq_start_bkv_idx = jnp.maximum(kv_q_gap - sliding_window,
                                             0) // bkv_sz
         next_seq_idx = jnp.minimum(seq_idx + 1, end_seq_idx - 1)
-        if case == RpaCase.LOGICAL:
-            next_real_seq_idx = real_seq_idx_per_iter_ref[next_seq_idx]
-            next_q_offset = q_offset_per_iter_ref[next_seq_idx]
-            next_phys_q_start = cu_q_lens_ref[next_real_seq_idx]
-            next_phys_q_end = cu_q_lens_ref[next_real_seq_idx + 1]
-            next_phys_q_len = next_phys_q_end - next_phys_q_start
-            next_phys_kv_end = kv_lens_ref[next_real_seq_idx]
-            next_phys_prior_kv_len = next_phys_kv_end - next_phys_q_len
-            next_kv_q_gap = next_phys_prior_kv_len + next_q_offset
-        else:
-            next_q_start = cu_q_lens_ref[next_seq_idx]
-            next_q_end = cu_q_lens_ref[next_seq_idx + 1]
-            next_q_len = next_q_end - next_q_start
-            next_kv_len = kv_lens_ref[next_seq_idx]
-            next_kv_q_gap = next_kv_len - next_q_len
+        next_q_start = cu_q_lens_ref[next_seq_idx]
+        next_q_end = cu_q_lens_ref[next_seq_idx + 1]
+        next_q_len = next_q_end - next_q_start
+        next_kv_len = kv_lens_ref[next_seq_idx]
+        next_kv_q_gap = next_kv_len - next_q_len
         next_seq_start_bkv_idx = (
             jnp.maximum(next_kv_q_gap - sliding_window, 0) // bkv_sz)
 
@@ -799,59 +551,21 @@ def _ragged_paged_attention_kernel_loop(
         cache_hbm_shape = kv_cache_hbm_ref.shape
         cache_hbm_ref = kv_cache_hbm_ref.reshape(
             cache_hbm_shape[0] * cache_hbm_shape[1], *cache_hbm_shape[2:])
+        kv_len = kv_lens_ref[seq_idx]
         kv_len_start = bkv_idx * bkv_sz
         kv_p_start = bkv_idx * bkv_p
-
-        # Per-iter derivation. Static-pruned for case != LOGICAL.
-        if case == RpaCase.LOGICAL:
-            real_seq_idx = real_seq_idx_per_iter_ref[seq_idx]
-            q_offset = q_offset_per_iter_ref[seq_idx]
-            phys_q_start = cu_q_lens_ref[real_seq_idx]
-            phys_q_end = cu_q_lens_ref[real_seq_idx + 1]
-            phys_q_len = phys_q_end - phys_q_start
-            phys_kv_end = kv_lens_ref[real_seq_idx]
-            phys_prior_kv_len = phys_kv_end - phys_q_len
-            q_start = phys_q_start + q_offset
-            q_len = static_q_len  # = K_kernel
-            q_end = q_start + q_len
-            kv_len = phys_prior_kv_len + q_offset + q_len
-        else:
-            real_seq_idx = seq_idx
-            q_offset = 0
-            q_start = cu_q_lens_ref[seq_idx]
-            q_end = cu_q_lens_ref[seq_idx + 1]
-            q_len = q_end - q_start
-            kv_len = kv_lens_ref[seq_idx]
+        q_start = cu_q_lens_ref[seq_idx]
+        q_end = cu_q_lens_ref[seq_idx + 1]
+        q_len = q_end - q_start
 
         kv_left = kv_len - kv_len_start
+        kv_left_frm_cache = jnp.maximum(kv_left - q_len, 0)
+        kv_left_frm_new = kv_left - kv_left_frm_cache
 
-        # §6.4 Option A — READ split: in-step content (this phys seq's
-        # tokens this step, cumulative across iters) is sourced from
-        # kv_hbm_ref, NOT kv_cache_hbm_ref. Avoids same-pallas_call
-        # cross-iter read-after-write race on kv_cache_hbm_ref. In
-        # coupled-K (q_offset=0 Python int → folded to 0 at trace time),
-        # this reduces to today's max(kv_left - q_len, 0) — byte-identical
-        # in lowering. See §6.4 in docs/rpa_v3_decoupled_k_kernel_design.md.
-        kv_left_frm_cache_read = jnp.maximum(kv_left - (q_offset + q_len), 0)
-        kv_left_frm_new_read = kv_left - kv_left_frm_cache_read
-        bkv_sz_frm_cache_read = jnp.minimum(kv_left_frm_cache_read, bkv_sz)
-        bkv_sz_frm_new_read = jnp.minimum(bkv_sz - bkv_sz_frm_cache_read,
-                                          kv_left_frm_new_read)
-
-        # WRITE extent (today's formula): only iter's OWN chunk goes back to
-        # kv_cache_hbm_ref via _update_kv_cache. Earlier iters' chunks were
-        # written by their own iter passes; future iters will write theirs.
-        # In coupled-K (q_offset=0), this matches the read split exactly.
-        # In LOGICAL, the read split is wider but the write extent stays
-        # narrow — preserves O(N) total writes (vs O(N²) if we wrote the
-        # cumulative range).
-        kv_left_frm_cache_write = jnp.maximum(kv_left - q_len, 0)
-        kv_left_frm_new_write = kv_left - kv_left_frm_cache_write
-        bkv_sz_frm_cache_write = jnp.minimum(kv_left_frm_cache_write, bkv_sz)
-        bkv_sz_frm_new_write = jnp.minimum(bkv_sz - bkv_sz_frm_cache_write,
-                                           kv_left_frm_new_write)
-
-        page_indices_offset = real_seq_idx * pages_per_seq + kv_p_start
+        bkv_sz_frm_cache = jnp.minimum(kv_left_frm_cache, bkv_sz)
+        bkv_sz_frm_new = jnp.minimum(bkv_sz - bkv_sz_frm_cache,
+                                     kv_left_frm_new)
+        page_indices_offset = seq_idx * pages_per_seq + kv_p_start
 
         debug_print(
             "[RPA debug]"
@@ -862,15 +576,10 @@ def _ragged_paged_attention_kernel_loop(
         debug_print("[RPA debug] kv_len_start={}", kv_len_start)
         debug_print("[RPA debug] kv_p_start={}", kv_p_start)
         debug_print("[RPA debug] kv_left={}", kv_left)
-        debug_print("[RPA debug] kv_left_frm_cache_read={}",
-                    kv_left_frm_cache_read)
-        debug_print("[RPA debug] kv_left_frm_new_read={}", kv_left_frm_new_read)
-        debug_print("[RPA debug] bkv_sz_frm_cache_read={}",
-                    bkv_sz_frm_cache_read)
-        debug_print("[RPA debug] bkv_sz_frm_new_read={}", bkv_sz_frm_new_read)
-        debug_print("[RPA debug] bkv_sz_frm_cache_write={}",
-                    bkv_sz_frm_cache_write)
-        debug_print("[RPA debug] bkv_sz_frm_new_write={}", bkv_sz_frm_new_write)
+        debug_print("[RPA debug] kv_left_frm_cache={}", kv_left_frm_cache)
+        debug_print("[RPA debug] kv_left_frm_new={}", kv_left_frm_new)
+        debug_print("[RPA debug] bkv_sz_frm_cache={}", bkv_sz_frm_cache)
+        debug_print("[RPA debug] bkv_sz_frm_new={}", bkv_sz_frm_new)
         debug_print("[RPA debug] page_indices_offset={}", page_indices_offset)
 
         if not wait:
@@ -878,13 +587,10 @@ def _ragged_paged_attention_kernel_loop(
             wait_update_kv_cache(bkv_sem_idx)
 
             # Fetch effective kv from kv cache. To pipeline multiple DMA calls, we
-            # utilize static for loop instead of dynamic for loop. Use the READ
-            # split (cumulative): under LOGICAL this is a smaller cache portion;
-            # under D/P/M (q_offset=0), reduces to today's split.
+            # utilize static for loop instead of dynamic for loop.
             for i in range(bkv_p):
                 # Ensure only effective kvs are copied.
-                sz = jnp.clip(kv_left_frm_cache_read - i * page_size, 0,
-                              page_size)
+                sz = jnp.clip(kv_left_frm_cache - i * page_size, 0, page_size)
                 # If the page index is out of bound, we set page_idx to the last page.
                 # And there will be no copy since sz will be 0.
                 page_idx = jnp.minimum(page_indices_offset + i,
@@ -898,28 +604,23 @@ def _ragged_paged_attention_kernel_loop(
                 )
                 debug_print("[RPA debug] loop_body i={}, sz={}", i, sz)
 
-            new_kv_len_start = q_end - kv_left_frm_new_read
+            new_kv_len_start = q_end - kv_left_frm_new
             debug_print("[RPA debug] new_kv_len_start={}", new_kv_len_start)
             _async_copy(
-                kv_hbm_ref.at[pl.ds(new_kv_len_start, bkv_sz_frm_new_read)],
-                vmem_ref.at[pl.ds(bkv_sz_frm_cache_read, bkv_sz_frm_new_read)],
+                kv_hbm_ref.at[pl.ds(new_kv_len_start, bkv_sz_frm_new)],
+                vmem_ref.at[pl.ds(bkv_sz_frm_cache, bkv_sz_frm_new)],
                 sem,
                 wait,
             )
         else:
-            dst = vmem_ref.at[pl.ds(
-                0, bkv_sz_frm_cache_read + bkv_sz_frm_new_read)]
+            dst = vmem_ref.at[pl.ds(0, bkv_sz_frm_cache + bkv_sz_frm_new)]
             _async_copy(
                 src=dst,
                 dst=dst,
                 sem=sem,
                 wait=True,
             )
-        # Return the WRITE extent — only iter's OWN chunk gets persisted to
-        # kv_cache_hbm_ref via _update_kv_cache. In coupled-K, _write equals
-        # _read; in LOGICAL, _write is narrower (no redundant cross-iter
-        # writeback).
-        return kv_len_start + bkv_sz_frm_cache_write, bkv_sz_frm_new_write
+        return kv_len_start + bkv_sz_frm_cache, bkv_sz_frm_new
 
     def _update_kv_cache(seq_idx,
                          bkv_sem_idx,
@@ -935,13 +636,7 @@ def _ragged_paged_attention_kernel_loop(
         kv_p_end = cdiv(offset + update_sz, page_size)
         ignore = offset % page_size
         p_ignore = kv_p_start - bkv_id * bkv_p
-        # Map iter_idx → real_seq_idx for paged lookup. Static-pruned for
-        # case != LOGICAL.
-        if case == RpaCase.LOGICAL:
-            real_seq_idx = real_seq_idx_per_iter_ref[seq_idx]
-        else:
-            real_seq_idx = seq_idx
-        page_indices_offset = real_seq_idx * pages_per_seq + kv_p_start
+        page_indices_offset = seq_idx * pages_per_seq + kv_p_start
 
         cache_hbm_shape = updated_kv_cache_hbm_ref.shape
         cache_hbm_ref = updated_kv_cache_hbm_ref.reshape(
@@ -1882,8 +1577,6 @@ def ragged_paged_attention(
     page_indices: jax.Array,  # i32[max_num_seqs * pages_per_seq]
     cu_q_lens: jax.Array,  # i32[max_num_seqs + 1]
     distribution: jax.Array,  # i32[3]
-    real_seq_idx_per_iter: jax.Array | None = None,  # i32[max_num_subseqs]
-    q_offset_per_iter: jax.Array | None = None,  # i32[max_num_subseqs]
     *,
     use_causal_mask: bool = True,
     skip_kv_mask: bool = False,
@@ -2014,15 +1707,6 @@ def ragged_paged_attention(
     pages_per_seq = num_page_indices // max_num_seqs
     num_q_heads_per_kv_head = num_q_heads_per_kv_head_per_q_packing * q_packing
 
-    # Default the iter→phys prefetches to identity for coupled-K (D/P/M).
-    # Caller may pass real arrays for LOGICAL invocations. The kernel's
-    # Python-static branch (case == RpaCase.LOGICAL) decides whether these
-    # are read; under D/P/M they're never referenced in the traced jaxpr.
-    if real_seq_idx_per_iter is None:
-        real_seq_idx_per_iter = jnp.arange(max_num_seqs, dtype=jnp.int32)
-    if q_offset_per_iter is None:
-        q_offset_per_iter = jnp.zeros(max_num_seqs, dtype=jnp.int32)
-
     # (bq_sem_idx, bkv_sem_idx, bo_sem_idx)
     init_sem_ids = jnp.zeros((3, ), jnp.int32)
     # (bo_sem_0_seq_idx, bo_sem_1_seq_idx, bo_sem_0_bo_idx, bo_sem_1_bo_idx)
@@ -2096,12 +1780,6 @@ def ragged_paged_attention(
             # TODO(jevinjiang): can we use ragged page_indices to save some smem?
             page_indices,
             cu_q_lens,
-            # NEW: iter-keyed prefetches for LOGICAL. For D/P/M, the kernel's
-            # Python-static branch never reads them — but they must be in the
-            # tuple anyway (Pallas signature is fixed). Caller passes identity
-            # (`arange`/`zeros`) for D/P/M; real values for LOGICAL.
-            real_seq_idx_per_iter,
-            q_offset_per_iter,
             distribution,
             init_sem_ids,
             init_bo_ids,
@@ -2159,11 +1837,8 @@ def ragged_paged_attention(
                                      dtype=kv_cache.dtype),
             ],
             input_output_aliases={
-                # Two new prefetches added before `q`/`kv`/`kv_cache`
-                # positional args, so each shifts by +2 from the prior
-                # (7, 9) layout.
-                9: 0,    # q -> output 0
-                11: 1,   # kv_cache -> output 1
+                7: 0,
+                9: 1
             },
             name=scope_name,
         )
@@ -2206,13 +1881,6 @@ def ragged_paged_attention(
             "bkv_csz": block_sizes[3],
         }
 
-    # Decoupled-K (LOGICAL) is gated on the caller passing iter-keyed
-    # prefetches via a non-identity shape. Identity-shape prefetches
-    # (default) mean coupled-K — D/P/M dispatch as today. When LOGICAL
-    # is selected, it REPLACES the PREFILL pass (the static-K kernel);
-    # DECODE and MIXED still run.
-    use_logical_prefill = (real_seq_idx_per_iter.shape[0] != max_num_seqs)
-
     # Decode-only
     q, kv_cache = run_rpa_kernel(
         q,
@@ -2222,25 +1890,14 @@ def ragged_paged_attention(
         case=RpaCase.DECODE,
     )
     if chunk_prefill_size is not None:
-        if use_logical_prefill:
-            # LOGICAL replaces PREFILL: same K-static block-size sweet spot,
-            # but iters are LOGICAL sub-seqs (decoupled K_sched / K_kernel).
-            q, kv_cache = run_rpa_kernel(
-                q,
-                kv_cache,
-                **_prepare_block_sizes(p_block_sizes, RpaCase.LOGICAL),
-                static_q_len=chunk_prefill_size,
-                case=RpaCase.LOGICAL,
-            )
-        else:
-            # Prefill-only (today's coupled-K path).
-            q, kv_cache = run_rpa_kernel(
-                q,
-                kv_cache,
-                **_prepare_block_sizes(p_block_sizes, RpaCase.PREFILL),
-                static_q_len=chunk_prefill_size,
-                case=RpaCase.PREFILL,
-            )
+        # Prefill-only
+        q, kv_cache = run_rpa_kernel(
+            q,
+            kv_cache,
+            **_prepare_block_sizes(p_block_sizes, RpaCase.PREFILL),
+            static_q_len=chunk_prefill_size,
+            case=RpaCase.PREFILL,
+        )
     # Mixed
     q, kv_cache = run_rpa_kernel(
         q,
