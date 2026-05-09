@@ -66,10 +66,12 @@ class RpaCase(Enum):
         elif self == RpaCase.MIXED:
             return distribution[1], distribution[2]
         elif self == RpaCase.LOGICAL:
-            # LOGICAL pallas_call iterates ALL sub-seqs — no decode/prefill/
-            # mixed sub-buckets within a LOGICAL invocation. Convention:
-            # distribution = (0, 0, max_num_subseqs).
-            return 0, distribution[2]
+            # LOGICAL replaces the PREFILL bucket position in distribution.
+            # A step still has D / L / M sub-buckets (just like D / P / M
+            # today); LOGICAL just lets multiple sub-seqs per phys seq fit
+            # in the L bucket via the iter-keyed prefetches. So
+            # distribution = (D_end, L_end, M_end) under decoupled-K.
+            return distribution[0], distribution[1]
         else:
             raise ValueError(f"Unsupported RPA case: {self}")
 
