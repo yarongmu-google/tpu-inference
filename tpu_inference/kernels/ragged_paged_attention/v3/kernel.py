@@ -205,6 +205,200 @@ def ref_ragged_paged_attention(
     return result, kv_cache
 
 
+def ref_ragged_paged_attention_logical(
+    queries: jax.
+    Array,  # [max_num_tokens, actual_num_q_heads, actual_head_dim]
+    keys: jax.Array,  # [max_num_tokens, actual_num_kv_heads, actual_head_dim]
+    values: jax.
+    Array,  # [max_num_tokens, actual_num_kv_heads, actual_head_dim]
+    kv_cache: jax.
+    Array,  # [total_num_pages, page_size, num_kv_heads_x2 // kv_packing, kv_packing, head_dim]
+    kv_lens: jax.Array,  # i32[max_num_seqs]                 PHYSICAL
+    page_indices: jax.Array,  # i32[max_num_seqs * pages_per_seq] PHYSICAL
+    cu_q_lens: jax.Array,  # i32[max_num_seqs + 1]              PHYSICAL
+    real_seq_idx_per_iter: jax.Array,  # i32[max_num_subseqs]   LOGICAL -> PHYS
+    q_offset_per_iter: jax.Array,  # i32[max_num_subseqs]       LOGICAL chunk-pos
+    distribution: jax.Array,  # i32[3]; for LOGICAL pallas_call all iters are LOGICAL
+    *,
+    static_q_len: int,  # K_kernel: per-iter q_len
+    use_causal_mask: bool = True,
+    skip_kv_mask: bool = False,
+    sm_scale: float = 1.0,
+    sliding_window: int | None = None,
+    soft_cap: float | None = None,
+    out_dtype: Any = None,
+    mask_value: float | None = None,
+    q_scale: float | None = None,
+    k_scale: float | None = None,
+    v_scale: float | None = None,
+):
+    """Pure-JAX reference for the LOGICAL (decoupled-K PREFILL) kernel.
+
+    Differs from `ref_ragged_paged_attention` in two ways:
+
+      1. Iterates over LOGICAL sub-seqs (range `[0, distribution[-1])`), not
+         over physical seqs. Each sub-seq is identified by
+         `(real_seq_idx_per_iter[i], q_offset_per_iter[i])` — multiple
+         sub-seqs may share a single phys seq under decoupled-K.
+
+      2. Implements §6.4 Option A from the decoupled-K design doc: in-step
+         KV reads are sourced from the input `keys`/`values` tensors (via
+         `merge_kv`), NOT from `kv_cache`. The cache is read only for
+         genuinely-pre-step content (positions < `phys_prior_kv_len`). This
+         mirrors the LOGICAL kernel's `_fetch_bkv` formula
+         `kv_left_frm_cache = max(kv_left - (q_offset + q_len), 0)`.
+
+    The cache is still WRITTEN per iter (for cross-step / cross-pallas_call
+    persistence). Tests can pre-corrupt `kv_cache` at the offsets a sub-seq
+    writes, and verify that LATER sub-seqs of the same phys seq don't read
+    the corrupted cells — they read from `keys`/`values` instead. See §11.2
+    KV-read source routing checklist in
+    `docs/rpa_v3_decoupled_k_kernel_design.md`.
+
+    `static_q_len` is K_kernel (the per-iter q_len). For LOGICAL pallas_call,
+    all `distribution[-1]` iters are LOGICAL — there are no DECODE / PREFILL
+    / MIXED case-bucket sub-ranges within a LOGICAL invocation.
+
+    Note: this is an EAGER-mode reference (uses Python `range` over a
+    concrete `distribution[-1]`). Not intended to be jitted; tests call it
+    on small fixtures and compare against the kernel's output.
+    """
+    if out_dtype is None:
+        out_dtype = jnp.float32 if queries.dtype == jnp.float32 else jnp.bfloat16
+    if mask_value is None:
+        mask_value = jnp.finfo(out_dtype).min
+
+    actual_head_dim = queries.shape[2]
+    actual_num_q_heads = queries.shape[1]
+    actual_num_kv_heads = keys.shape[1]
+    merged_kv = merge_kv(keys, values)
+    assert merged_kv.shape[-3:] == kv_cache.shape[-3:]
+
+    _, page_size, num_kv_heads_x2_per_kv_packing, kv_packing, head_dim = (
+        kv_cache.shape)
+    num_kv_heads_x2 = num_kv_heads_x2_per_kv_packing * kv_packing
+    assert num_kv_heads_x2 % 2 == 0
+    assert actual_num_q_heads % actual_num_kv_heads == 0
+    assert head_dim % 128 == 0
+    assert get_dtype_packing(kv_cache.dtype) == kv_packing
+    assert num_kv_heads_x2 == align_to(actual_num_kv_heads * 2, kv_packing)
+    actual_num_q_heads_per_kv_head = actual_num_q_heads // actual_num_kv_heads
+    max_num_seqs = kv_lens.shape[0]
+    num_page_indices = page_indices.shape[0]
+    assert num_page_indices % max_num_seqs == 0
+    pages_per_seq = num_page_indices // max_num_seqs
+    max_num_subseqs = real_seq_idx_per_iter.shape[0]
+    assert q_offset_per_iter.shape[0] == max_num_subseqs
+
+    outputs = []
+    for iter_idx in range(int(distribution[-1])):
+        real_seq_idx = real_seq_idx_per_iter[iter_idx]
+        q_offset = q_offset_per_iter[iter_idx]
+
+        # Phys-keyed reads (§6.2 derivation block, mirrored from the kernel).
+        phys_q_start = cu_q_lens[real_seq_idx]
+        phys_q_end = cu_q_lens[real_seq_idx + 1]
+        phys_q_len = phys_q_end - phys_q_start
+        phys_kv_end = kv_lens[real_seq_idx]
+        phys_prior_kv_len = phys_kv_end - phys_q_len
+
+        # Per-iter (LOGICAL: q_len is static_q_len = K_kernel)
+        iter_q_len = static_q_len
+        iter_q_start = phys_q_start + q_offset
+        iter_q_end = iter_q_start + iter_q_len
+        iter_kv_q_gap = phys_prior_kv_len + q_offset
+        iter_kv_len = iter_kv_q_gap + iter_q_len
+
+        # Gather pages covering [0, iter_kv_len).
+        indices_start = real_seq_idx * pages_per_seq
+        indices_end = indices_start + cdiv(iter_kv_len, page_size)
+        indices = page_indices[indices_start:indices_end]
+        gathered_kv = kv_cache[indices]
+        gathered_shape = gathered_kv.shape
+        gathered_kv = gathered_kv.reshape(-1, *gathered_shape[-3:])
+
+        # §6.4 Option A: build the KV view by overlaying ALL of this phys
+        # seq's in-step content from `merged_kv`. The cache state at offsets
+        # [phys_prior_kv_len, iter_kv_len) is IGNORED (the cache may have
+        # been written by earlier iters of THIS pallas_call, but those
+        # writes are not the source of truth this iter sees — `merged_kv`
+        # is, since it was populated by upstream Wk/Wv before the kernel
+        # started and is read-only this step).
+        in_step_count = q_offset + iter_q_len  # = iter_kv_len - phys_prior_kv_len
+        kv_view = gathered_kv.at[
+            phys_prior_kv_len:phys_prior_kv_len + in_step_count
+        ].set(merged_kv[phys_q_start:phys_q_start + in_step_count])
+
+        # Compute attention against [0, iter_kv_len).
+        q = queries[iter_q_start:iter_q_end, :, :actual_head_dim]
+        kv = kv_view.reshape(
+            -1, num_kv_heads_x2,
+            head_dim)[:, :actual_num_kv_heads * 2, :].reshape(
+                -1, actual_num_kv_heads, head_dim * 2)
+        k = kv[:iter_kv_len, :, :head_dim][:, :, :actual_head_dim]
+        v = kv[:iter_kv_len, :, head_dim:][:, :, :actual_head_dim]
+        k = jnp.repeat(k, actual_num_q_heads_per_kv_head, axis=1)
+        v = jnp.repeat(v, actual_num_q_heads_per_kv_head, axis=1)
+
+        if q_scale is not None:
+            q = q / q_scale
+            if jnp.issubdtype(k.dtype, jnp.floating):
+                dtype_info = jnp.finfo(k.dtype)
+                minval = float(dtype_info.min)
+                maxval = float(dtype_info.max)
+                q = jnp.clip(q, min=minval, max=maxval)
+            q = q.astype(k.dtype)
+
+        attn = jnp.einsum("qhd,khd->hqk",
+                          q,
+                          k,
+                          preferred_element_type=jnp.float32).astype(out_dtype)
+        attn *= sm_scale
+        if k_scale is not None:
+            attn *= k_scale
+        if q_scale is not None:
+            attn *= q_scale
+        if soft_cap is not None:
+            attn = soft_cap * jnp.tanh(attn / soft_cap)
+
+        if use_causal_mask:
+            # q_span: absolute KV position of each query token within the
+            # full sequence = iter_kv_q_gap + relative-q-offset.
+            q_span = iter_kv_q_gap + jax.lax.broadcasted_iota(
+                jnp.int32, attn.shape, 1)
+            kv_span = jax.lax.broadcasted_iota(jnp.int32, attn.shape, 2)
+            mask = q_span >= kv_span
+            if sliding_window is not None:
+                mask = jnp.logical_and(mask, q_span < kv_span + sliding_window)
+            attn = jnp.where(mask, attn, mask_value)
+        attn = jax.nn.softmax(attn, axis=-1).astype(v.dtype)
+
+        out = jnp.einsum("hqk,khd->qhd", attn, v).astype(out_dtype)
+        if v_scale is not None:
+            out *= v_scale
+
+        outputs.append(out)
+
+        # Cross-step persistence: write iter's OWN K, V to kv_cache. Earlier
+        # sub-seqs of this phys seq wrote their slices in their own iter
+        # passes; later sub-seqs will write theirs. Within ONE LOGICAL
+        # pallas_call, the cumulative effect is the same as writing all
+        # sub-seqs' slices once at the end — but per-iter writes match the
+        # kernel's `_update_kv_cache` async-DMA structure.
+        cache_write_view = gathered_kv.at[iter_kv_q_gap:iter_kv_len].set(
+            merged_kv[iter_q_start:iter_q_end])
+        kv_cache = kv_cache.at[indices].set(
+            cache_write_view.reshape(gathered_shape))
+
+    # Outputs are appended in iter order. Per §6.3 invariant 2 (runner emits
+    # iters of the same phys seq contiguously) and the iter-major linearity
+    # of `iter_q_start = phys_q_start + q_offset`, iter-order in `outputs`
+    # corresponds to monotonically increasing `iter_q_start`, so concat
+    # produces the correct queries-buffer-order output.
+    result = jnp.concatenate(outputs, axis=0)
+    return result, kv_cache
+
+
 def get_smem_estimate_bytes(max_num_seqs, pages_per_seq):
     total_bits = (
         # kv_lens_ref: i32[max_num_seqs]
