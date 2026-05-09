@@ -440,25 +440,22 @@ For our worked example:
 | 2 | 512 | 512 | 256            | 768 | 5512 | 5768 |
 | 3 | 768 | 768 |  32 (leftover) | 800 | 5768 | 5800 |
 
-### 6.3 KV-write correctness invariant (Path C version)
+### 6.3 KV-write correctness invariant: disjoint tiling per phys seq
 
-KV writes compose into disjoint, contiguous ranges within R0's
-physical pages **only because** the per-iter derivation above
+KV writes compose into disjoint, contiguous ranges within each phys
+seq's physical pages **only because** the per-iter derivation above
 produces non-overlapping `[iter_kv_q_gap, iter_kv_len)` ranges that
 tile `[phys_prior_kv_len, phys_kv_end)`. The invariant relies on:
 
-  1. **Sequential `@pl.loop` ordering** — iter N+1 reads what iter
-     N wrote (single-Megacore today; `input_output_aliases` aliases
-     `kv_cache_hbm_ref` to itself, so the writes are visible
-     in-place).
-  2. **Runner-side correctness of `q_offset_per_iter`** — must be
+  1. **Runner-side correctness of `q_offset_per_iter`** — must be
      monotonically increasing across consecutive iters of the same
      phys seq, with `q_offset = 0` at the first iter of each phys
      seq. Specifically: for iters belonging to phys `R`,
      `q_offset[i+1] = q_offset[i] + iter_q_len[i]`.
-  3. **`real_seq_idx_per_iter` correctness** — must group iters of
-     the same phys seq contiguously in iter-order (so `@pl.loop`'s
-     sequential write-then-read property holds).
+  2. **`real_seq_idx_per_iter` correctness** — must group iters of
+     the same phys seq contiguously in iter-order, so successive
+     `_update_kv_cache` calls for the same seq write monotonically
+     advancing offsets.
 
 If `q_offset_per_iter` is wrong (e.g. all zeros for R0's chunks
 instead of `[0, 256, 512, 768]`), every iter writes at the same
@@ -470,6 +467,143 @@ The runner-side `subseq_planner.plan_step` already enforces both
 invariants (chunks of one real req are emitted contiguously,
 `q_offset` is monotonic). Verify this in the implementation tests
 (see §11 for the strict-verification checklist).
+
+This section covers WRITES only — that the per-iter writes don't
+collide with each other. The orthogonal concern (one iter's READ
+racing against an EARLIER iter's WRITE on the same `kv_cache_hbm_ref`
+cells) is handled in §6.4.
+
+### 6.4 Same-call cross-iter KV read ordering: route in-step reads through `kv_hbm_ref`
+
+Decoupled-K introduces a NEW concern that coupled-K never had: each
+iter's KV READ may want cells that an EARLIER iter just wrote.
+
+For R0 with 800 prefill tokens at K_kernel=256 (3 PREFILL chunks):
+
+  - Iter 0 writes R0's chunk-0 K/V to `kv_cache_hbm_ref` at offsets
+    `[prior_kv_len, prior_kv_len + 256)` via `_update_kv_cache`.
+  - Iter 1's Q attends against `KV[0, prior_kv_len + 512)`. Today's
+    `_fetch_bkv` formula
+    (`kv_left_frm_cache = max(kv_left - q_len, 0)`) routes cells
+    `[prior_kv_len, prior_kv_len + 256)` through `kv_cache_hbm_ref`
+    — i.e., reads what iter 0 just wrote.
+
+The `_update_kv_cache` write is async on `sems.at[3, bkv_sem_idx]`;
+the `_fetch_bkv` read is async on `sems.at[0, bkv_sem_idx]`. **Different
+semaphore groups, no cross-sync.** Race.
+
+#### Why coupled-K is safe and decoupled-K is not
+
+Today's pallas_call has no read-after-write hazard at the `@pl.loop`
+level not because of any sync primitive, but because **no two iters
+of one pallas_call read or write overlapping `kv_cache_hbm_ref`
+cells**. Different phys seqs at different bucket positions; their
+page lists don't overlap. Cross-pallas_call ordering (DECODE →
+PREFILL → MIXED, and step → step) is enforced by the pallas_call's
+drain-on-exit semantics (within a `@jax.jit`) and the @jax.jit
+boundary itself (across calls).
+
+Decoupled-K removes the "different phys seqs at different positions"
+property: multiple iters of one pallas_call now touch the SAME phys
+seq's `kv_cache_hbm_ref` cells. The same `@jax.jit` and pallas_call
+boundaries still hold; only the @pl.loop level is exposed.
+
+`input_output_aliases` does NOT help — it makes the kv_cache write
+in-place on HBM, but in-place ≠ ordered. Adding a per-iter
+`wait_update_kv_cache` would serialize the writeback against the
+next iter's read and kill async-DMA pipelining (the very property
+that makes the kernel fast).
+
+#### The fix: source in-step reads from `kv_hbm_ref`, not `kv_cache_hbm_ref`
+
+`kv_hbm_ref` is the kernel's per-step input from upstream Wk/Wv
+layers (`kernel.py:1182`, `prepare_inputs`). It is:
+
+  - Populated BEFORE the kernel runs.
+  - Read-only inside the kernel — never written, never aliased.
+  - Holds R0's full 800 new K/V tokens at
+    `[phys_q_start, phys_q_end)` for the entire pallas_call.
+
+So iter 0's K/V exists in TWO HBM locations at the time iter 1 runs:
+
+  - `kv_cache_hbm_ref` at `[prior_kv_len, prior_kv_len + 256)` —
+    racy (iter 0's writeback may be in flight).
+  - `kv_hbm_ref` at `[phys_q_start, phys_q_start + 256)` —
+    race-free (read-only, populated by upstream before kernel start).
+
+Routing iter 1's read of iter 0's chunk to `kv_hbm_ref` eliminates
+the race architecturally. No semaphore, no wait, no extra VMEM. The
+property becomes structural: `kv_cache_hbm_ref` is effectively
+write-only within a single pallas_call (writes for cross-step
+persistence), and read-only for genuinely-pre-step content.
+
+#### The formula change
+
+Today's `_fetch_bkv` split (`kernel.py:561-567`):
+
+```python
+kv_left = kv_len - kv_len_start
+kv_left_frm_cache = jnp.maximum(kv_left - q_len, 0)
+kv_left_frm_new   = kv_left - kv_left_frm_cache
+```
+
+Reads "the last `q_len` cells of `kv_left` from `kv_hbm_ref`; the
+rest from `kv_cache_hbm_ref`." Under coupled-K, `q_len = phys_q_len`
+— all of this seq's step contribution gets routed through
+`kv_hbm_ref`. No in-step `kv_cache_hbm_ref` reads. Safe.
+
+Under Path C decoupled-K with the §9.2 rename, `q_len` becomes
+`iter_q_len` (per-iter, e.g. K_kernel=256 for PREFILL). The formula
+now routes only iter i's OWN chunk through `kv_hbm_ref`; earlier
+iters' chunks fall into `kv_left_frm_cache` and get sourced from
+`kv_cache_hbm_ref`. **That's the race.**
+
+The fix: read "the last `q_offset + iter_q_len` cells from new"
+— i.e., all of THIS PHYS SEQ's tokens this step (cumulative across
+iters), not just this iter's:
+
+```python
+kv_left = kv_len - kv_len_start
+kv_left_frm_cache = jnp.maximum(kv_left - (q_offset + q_len), 0)
+kv_left_frm_new   = kv_left - kv_left_frm_cache
+```
+
+In coupled mode, `q_offset = 0` and `q_len = phys_q_len` — the
+formula reduces to today's. Byte-identical behaviour.
+
+In decoupled mode, `q_offset + q_len` correctly tracks "how many
+of this phys seq's tokens are now in `kv_hbm_ref` and ready for
+read". For iter i of phys seq R: cells
+`[phys_prior_kv_len, phys_prior_kv_len + q_offset + iter_q_len)` are
+sourced from `kv_hbm_ref` at offsets
+`[phys_q_start, phys_q_start + q_offset + iter_q_len)`. The
+`new_kv_len_start` formula at `kernel.py:607`
+(`q_end - kv_left_frm_new`) lands at the correct kv_hbm_ref offset
+because `q_end` under §9.2 is
+`phys_q_start + q_offset + iter_q_len`.
+
+#### What stays the same
+
+  - `_update_kv_cache` (the writeback) is still needed for cross-step
+    persistence — the next scheduler step's `_fetch_bkv` sees this
+    step's new tokens in `kv_cache_hbm_ref` as "history". The
+    pallas_call's drain-on-exit ensures writes complete before the
+    next pallas_call runs. Cross-pallas_call ordering: unchanged.
+  - All existing async-DMA pipelining: unchanged.
+  - `bkv_x2_ref` double-buffering: unchanged.
+  - No new VMEM allocation, no new semaphore, no new wait.
+
+#### Reference: the general pattern from `emit_pipeline`
+
+The Pallas TPU team's `emit_pipeline.Scheduler.wait_out`-on-`prev_indices`
+pattern (jax-ml/jax `mosaic/pipeline.py:1370-1378`) is the GENERAL
+solution for inter-iter HBM ordering: "drain the previous iter's
+copy_out at the start of the next iter that reads the same window."
+Option A sidesteps the need for it because, for our specific access
+shape, there's a read-only HBM mirror (`kv_hbm_ref`) of the cells
+that would otherwise need synchronization. If a future case lacks
+such a mirror, the `wait_out`-on-`prev_indices` pattern is the
+fallback.
 
 ---
 
@@ -900,6 +1034,38 @@ finding.
   This is best verified by a numerical comparison against a pure-JAX
   reference attention impl: run the same workload through both and
   assert `allclose`.
+
+#### KV-read source routing (the §6.4 fix verification)
+
+  Confirms iter 1's read of iter 0's chunk is sourced from `kv_hbm_ref`,
+  NOT from `kv_cache_hbm_ref`. Without this property, the kernel hits
+  a same-call cross-iter read-after-write race that depends on async-DMA
+  timing — passes locally most of the time, fails sporadically under
+  load.
+
+  The "evil" test: same 2-iter split workload, but BEFORE invoking the
+  kernel, deliberately corrupt `kv_cache_hbm_ref` at the offsets where
+  iter 0 will write its chunk. With Option A in place, the kernel will
+  never read those cells (it sources iter 0's chunk from `kv_hbm_ref`),
+  so the corruption is invisible to the output.
+
+  - [ ] Build pre-corrupted `kv_cache_hbm_ref`: zero-init the cache, then
+        write garbage (e.g., NaN, or large random values) into the page
+        slots that map to KV positions `[prior, prior+512)` for R0. Leave
+        positions `[0, prior)` (genuine pre-step content) intact.
+  - [ ] Run the 2-iter split. Compare output against the pure-JAX
+        reference. With §6.4's fix in place, output `allclose(reference)`.
+        Without the fix, output is corrupted because iter 1 reads the
+        garbage from `kv_cache_hbm_ref` instead of `kv_hbm_ref`.
+  - [ ] Verify the same property at the formula level by reading the
+        kernel at `_fetch_bkv` (post-§6.4 edit) and grepping for
+        `kv_left_frm_cache`. Confirm it uses `(q_offset + q_len)`, not
+        bare `q_len`. File:line citation in the test docstring.
+
+  This test also acts as a regression for Path C as a whole — if a
+  future change accidentally re-introduces the `bare q_len` formula, the
+  evil test fires immediately rather than waiting for an under-load
+  numerical-equivalence flake.
 
 #### Same-pages, no-replication invariant
 
