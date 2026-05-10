@@ -64,6 +64,14 @@ if TYPE_CHECKING:
     # See tpu_inference/runner/subseq_planner.py for the chunking
     # semantics.
     RPA_KERNEL_K: int | None = None
+    # Decoupled-K LOGICAL prefetch-array sizing bound. When set, the
+    # runner uses this value instead of computing the formula bound
+    # via subseq_planner.required_max_num_subseqs(). Intended to be
+    # set by the orchestrator (sweep.py / build_service_registry.py)
+    # from the LOGICAL winner in production.kernel — same pattern as
+    # the RPA_*_BLOCK_SIZES env vars. Only consulted when
+    # RPA_KERNEL_K is also set.
+    RPA_MAX_NUM_SUBSEQS: int | None = None
 
 
 def env_with_choices(
@@ -311,6 +319,12 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Walrus form matches the file convention (cf. lines 235-247).
     "RPA_KERNEL_K":
     lambda: int(v) if (v := os.getenv("RPA_KERNEL_K")) is not None and v != ""
+        else None,
+    # Decoupled-K LOGICAL prefetch-array sizing bound override; integer,
+    # must be > 0. None = compute via subseq_planner.required_max_num_subseqs.
+    # See approach A in the design doc and the rpa_v3 kernel tuner.
+    "RPA_MAX_NUM_SUBSEQS":
+    lambda: int(v) if (v := os.getenv("RPA_MAX_NUM_SUBSEQS")) is not None and v != ""
         else None,
 }
 

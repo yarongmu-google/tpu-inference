@@ -418,11 +418,38 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
                 is_eagle3_drafter=isinstance(self.drafter, Eagle3Proposer),
                 total_dp_size=self.vllm_config.sharding_config.total_dp_size,
             )
-            self._max_num_subseqs = required_max_num_subseqs(
-                max_num_seqs=self.scheduler_config.max_num_seqs,
-                K_sched_cap=self._decoupled_k_config.effective_K_sched_cap,
-                K_kernel=self._decoupled_k_config.K_kernel,
-            )
+            # Prefer the orchestrator-supplied tuned value (set from the
+            # production.kernel LOGICAL winner — see approach A in the
+            # design doc and tools/kernel/tuner/v1/rpa_v3_kernel_tuner.py).
+            # Fall back to the formula when no tuned value is available
+            # (e.g. dev machines without a populated registry, or
+            # workloads not yet covered by the LOGICAL sweep). The
+            # formula is conservative; a tuned value is typically smaller
+            # and lets bigger block-size combos fit in SMEM.
+            tuned_mns = envs.RPA_MAX_NUM_SUBSEQS
+            if tuned_mns is not None:
+                if tuned_mns <= 0:
+                    raise ValueError(
+                        f"RPA_MAX_NUM_SUBSEQS={tuned_mns} must be > 0.")
+                if tuned_mns < self.scheduler_config.max_num_seqs:
+                    raise ValueError(
+                        f"RPA_MAX_NUM_SUBSEQS={tuned_mns} must be >= "
+                        f"max_num_seqs={self.scheduler_config.max_num_seqs} "
+                        "(at least one prefetch slot per phys req).")
+                self._max_num_subseqs = tuned_mns
+                logger.info(
+                    "Decoupled-K: using RPA_MAX_NUM_SUBSEQS=%d (tuned)",
+                    tuned_mns)
+            else:
+                self._max_num_subseqs = required_max_num_subseqs(
+                    max_num_seqs=self.scheduler_config.max_num_seqs,
+                    K_sched_cap=self._decoupled_k_config.effective_K_sched_cap,
+                    K_kernel=self._decoupled_k_config.K_kernel,
+                )
+                logger.info(
+                    "Decoupled-K: using max_num_subseqs=%d (formula; set "
+                    "RPA_MAX_NUM_SUBSEQS to override)",
+                    self._max_num_subseqs)
         else:
             self._max_num_subseqs = None
 
