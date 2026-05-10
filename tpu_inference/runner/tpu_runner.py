@@ -76,7 +76,9 @@ from tpu_inference.runner.multimodal_manager import MultiModalManager
 from tpu_inference.runner.subseq_planner import (
     SMEM_LIMIT_BYTES,
     SMEM_RESERVE_BYTES,
+    build_iter_prefetches,
     evaluate_decoupled_k_config,
+    required_max_num_subseqs,
 )
 from tpu_inference.runner.persistent_batch_manager import \
     PersistentBatchManager
@@ -391,6 +393,28 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
         # chunk_prefill_size now flows via AttentionMetadata.chunk_prefill_size
         # (set on every metadata constructed in build_attn) — no module-
         # global setter to call.
+
+        # Cache the prefetch-array sizing bound so build_iter_prefetches /
+        # the device-buffer reservation logic dont recompute it every step.
+        # None on the coupled-K path (decoupled_k_config is None); the
+        # iter-keyed prefetches arent allocated and their AttentionMetadata
+        # fields stay None so the kernel takes its coupled branch.
+        if self._decoupled_k_config is not None:
+            dp_size = self.vllm_config.sharding_config.total_dp_size
+            if dp_size > 1:
+                raise NotImplementedError(
+                    "Decoupled-K (RPA_KERNEL_K) with attention DP > 1 is not "
+                    f"yet supported (got total_dp_size={dp_size}). The "
+                    "iter-keyed prefetch construction assumes a single DP "
+                    "shard per step. Disable RPA_KERNEL_K or run with "
+                    "total_dp_size=1 until the DP-aware planner lands.")
+            self._max_num_subseqs = required_max_num_subseqs(
+                max_num_seqs=self.scheduler_config.max_num_seqs,
+                K_sched_cap=self._decoupled_k_config.effective_K_sched_cap,
+                K_kernel=self._decoupled_k_config.K_kernel,
+            )
+        else:
+            self._max_num_subseqs = None
 
         self.persistent_batch_manager = PersistentBatchManager(
             self.requests, self.input_batch, self.encoder_cache,
@@ -1671,6 +1695,27 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
                 num_scheduled_tokens_per_req)
             seq_lens_cpu[_num_reqs:] = 0
 
+        # Decoupled-K iter-keyed prefetches. Materialise the StepPlan that
+        # update_states() stashed on the persistent batch manager into the
+        # (phys_seq_indices, q_offsets) arrays the LOGICAL kernel reads.
+        # Skipped on the coupled-K path; the AttentionMetadata fields stay
+        # None and the kernel takes its coupled branch.
+        if self._decoupled_k_config is not None:
+            iter_pf = build_iter_prefetches(
+                plan=self.persistent_batch_manager.last_step_plan,
+                req_id_to_index=self.input_batch.req_id_to_index,
+                max_num_seqs=self.scheduler_config.max_num_seqs,
+                max_num_subseqs=self._max_num_subseqs,
+                static_q_len=self._decoupled_k_config.K_kernel,
+                num_scheduled_tokens=scheduler_output.num_scheduled_tokens,
+            )
+            phys_seq_indices_view = self.device_buffer.get_view(
+                (self._max_num_subseqs, ), key="phys_seq_indices")
+            q_offsets_view = self.device_buffer.get_view(
+                (self._max_num_subseqs, ), key="q_offsets")
+            phys_seq_indices_view[:] = iter_pf.phys_seq_indices
+            q_offsets_view[:] = iter_pf.q_offsets
+
         # populate logits_indices
         for dp_rank in range(dp_size):
             req_offset = dp_rank * padded_num_reqs_per_dp_rank
@@ -1810,6 +1855,14 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
         query_start_loc = metadata["query_start_loc"]
         seq_lens = metadata["seq_lens"]
         logits_indices = metadata["logits_indices"]
+        # Decoupled-K iter-keyed prefetches; None on the coupled-K path so
+        # the kernel falls back to its coupled branch.
+        if self._decoupled_k_config is not None:
+            phys_seq_indices = metadata["phys_seq_indices"]
+            q_offsets = metadata["q_offsets"]
+        else:
+            phys_seq_indices = None
+            q_offsets = None
 
         def build_attn(block_tables: jax.Array | None) -> AttentionMetadata:
             attention_metadata_gid = AttentionMetadata(
@@ -1820,6 +1873,8 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
                 request_distribution=request_distribution,
                 mamba_state_indices=mamba_state_indices,
                 chunk_prefill_size=self.chunk_prefill_size,
+                phys_seq_indices=phys_seq_indices,
+                q_offsets=q_offsets,
             )
 
             # This is for making these cpu buffers hidden during tracing
@@ -2012,6 +2067,24 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
             num_scheduled_tokens_per_req)
         seq_lens_view[num_reqs:] = 0
 
+        # Decoupled-K iter-keyed prefetches (matches the main forward path
+        # in _prepare_inputs_dp). Skipped on the coupled-K path.
+        if self._decoupled_k_config is not None:
+            iter_pf = build_iter_prefetches(
+                plan=self.persistent_batch_manager.last_step_plan,
+                req_id_to_index=self.input_batch.req_id_to_index,
+                max_num_seqs=self.scheduler_config.max_num_seqs,
+                max_num_subseqs=self._max_num_subseqs,
+                static_q_len=self._decoupled_k_config.K_kernel,
+                num_scheduled_tokens=scheduler_output.num_scheduled_tokens,
+            )
+            phys_seq_indices_view = self.device_buffer.get_view(
+                (self._max_num_subseqs, ), key="phys_seq_indices")
+            q_offsets_view = self.device_buffer.get_view(
+                (self._max_num_subseqs, ), key="q_offsets")
+            phys_seq_indices_view[:] = iter_pf.phys_seq_indices
+            q_offsets_view[:] = iter_pf.q_offsets
+
         positions = self.positions_cpu[:padded_total_num_scheduled_tokens]
         mrope_positions = self.mrope_positions_cpu[:, :
                                                    padded_total_num_scheduled_tokens]
@@ -2099,6 +2172,13 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
         query_start_loc = metadata["query_start_loc"]
         seq_lens = metadata["seq_lens"]
         logits_indices = metadata["logits_indices"]
+        # Decoupled-K iter-keyed prefetches; None on the coupled-K path.
+        if self._decoupled_k_config is not None:
+            phys_seq_indices = metadata["phys_seq_indices"]
+            q_offsets = metadata["q_offsets"]
+        else:
+            phys_seq_indices = None
+            q_offsets = None
 
         def build_attn(block_tables: jax.Array | None) -> AttentionMetadata:
             attention_metadata_gid = AttentionMetadata(
@@ -2109,6 +2189,8 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
                 request_distribution=request_distribution,
                 mamba_state_indices=mamba_state_indices,
                 chunk_prefill_size=self.chunk_prefill_size,
+                phys_seq_indices=phys_seq_indices,
+                q_offsets=q_offsets,
             )
             # This is for making these cpu buffers hidden during tracing
             attention_metadata_gid.query_start_loc_cpu = query_start_loc_view

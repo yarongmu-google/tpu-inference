@@ -210,6 +210,23 @@ class CompilationManager:
         else:
             mamba_state_indices = None
 
+        # Dummy iter-keyed prefetches for compile-cache pre-tracing under
+        # decoupled-K. The JIT trace must match the runtime call signature
+        # so the cached HLO is reused; passing None at compile time and a
+        # real array at runtime would force a recompile on first step.
+        if self.runner._decoupled_k_config is not None:
+            phys_seq_indices = device_array(
+                self.runner.mesh,
+                np.zeros(self.runner._max_num_subseqs, dtype=np.int32),
+                sharding=dp_sharding)
+            q_offsets = device_array(
+                self.runner.mesh,
+                np.zeros(self.runner._max_num_subseqs, dtype=np.int32),
+                sharding=dp_sharding)
+        else:
+            phys_seq_indices = None
+            q_offsets = None
+
         def build_block_table(kv_cache_gid: int) -> jax.Array:
             block_table_obj = self.runner.input_batch.block_table[kv_cache_gid]
             shape = (self.runner.max_num_reqs,
@@ -230,6 +247,8 @@ class CompilationManager:
                 request_distribution=request_distribution,
                 mamba_state_indices=mamba_state_indices,
                 chunk_prefill_size=self.runner.chunk_prefill_size,
+                phys_seq_indices=phys_seq_indices,
+                q_offsets=q_offsets,
             )
             return attention_metadata_gid
 
@@ -794,6 +813,25 @@ class CompilationManager:
         else:
             eagle3_mamba_state_indices = None
 
+        # Dummy iter-keyed prefetches under decoupled-K so the eagle3
+        # compile-cache HLO matches the runtime call signature. Eagle3 +
+        # decoupled-K isnt exercised today; the dummy is cheap insurance
+        # against a recompile when that integration lands.
+        if self.runner._decoupled_k_config is not None:
+            eagle3_dp_sharding = NamedSharding(
+                self.runner.mesh, PartitionSpec(ShardingAxisName.ATTN_DATA, ))
+            eagle3_phys_seq_indices = device_array(
+                self.runner.mesh,
+                np.zeros(self.runner._max_num_subseqs, dtype=np.int32),
+                sharding=eagle3_dp_sharding)
+            eagle3_q_offsets = device_array(
+                self.runner.mesh,
+                np.zeros(self.runner._max_num_subseqs, dtype=np.int32),
+                sharding=eagle3_dp_sharding)
+        else:
+            eagle3_phys_seq_indices = None
+            eagle3_q_offsets = None
+
         for num_reqs_padding in self.runner.num_reqs_paddings:
             for i in range(1, self.runner.drafter.num_speculative_tokens + 1):
                 draft_token_ids_list = [
@@ -849,6 +887,8 @@ class CompilationManager:
                 request_distribution=request_distribution,
                 mamba_state_indices=eagle3_mamba_state_indices,
                 chunk_prefill_size=self.runner.chunk_prefill_size,
+                phys_seq_indices=eagle3_phys_seq_indices,
+                q_offsets=eagle3_q_offsets,
             )
 
             def filter_token_and_prepare_initial_inputs_wrapper(
