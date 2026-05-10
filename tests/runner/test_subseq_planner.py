@@ -54,6 +54,8 @@ max_M_under_smem = _mod.max_M_under_smem
 DecoupledKConfig = _mod.DecoupledKConfig
 evaluate_decoupled_k_config = _mod.evaluate_decoupled_k_config
 build_prior_kv_lens = _mod.build_prior_kv_lens
+build_iter_prefetches = _mod.build_iter_prefetches
+IterPrefetches = _mod.IterPrefetches
 
 
 class TestPlanStepDecodeOnly(unittest.TestCase):
@@ -687,6 +689,218 @@ class TestDecoupledKConfigDataclass(unittest.TestCase):
             pages_per_seq=64)
         with self.assertRaises(dataclasses.FrozenInstanceError):
             cfg.requested_M = 99   # type: ignore[misc]
+
+
+class TestBuildIterPrefetches(unittest.TestCase):
+    """Tests for the iter-keyed prefetch builder. Pairs a StepPlan with
+    the persistent batchs req_id_to_index and emits the
+    (phys_seq_indices, q_offsets) lists the kernel reads on the LOGICAL
+    dispatch."""
+
+    def test_decode_plus_chunked_prefill_happy_path(self):
+        # Two reqs: R1 is decoding (1 token), R2 has 12 prefill tokens
+        # at K_kernel=4, so 3 PREFILL chunks (q_offsets 0, 4, 8).
+        # Persistent-batch ordering puts R2 in slot 0 and R1 in slot 1
+        # to verify phys_seq_indices is NOT just identity.
+        plan = plan_step(
+            num_scheduled_tokens={"R1": 1, "R2": 12},
+            prior_kv_lens={"R1": 256, "R2": 0},
+            req_id_order=["R2", "R1"],
+            K_kernel=4,
+        )
+        self.assertEqual(plan.num_decode, 1)
+        self.assertEqual(plan.num_prefill, 3)
+        self.assertEqual(plan.num_mixed, 0)
+
+        out = build_iter_prefetches(
+            plan=plan,
+            req_id_to_index={"R2": 0, "R1": 1},
+            max_num_seqs=4,
+            max_num_subseqs=8,
+            static_q_len=4,
+            num_scheduled_tokens={"R1": 1, "R2": 12},
+        )
+        # Iter order: DECODE (R1) -> PREFILL (R2 x3).
+        self.assertEqual(out.phys_seq_indices[:4], [1, 0, 0, 0])
+        self.assertEqual(out.q_offsets[:4], [0, 0, 4, 8])
+        # Tail beyond num_total is zero-padded; never read by kernel.
+        self.assertEqual(out.phys_seq_indices[4:], [0, 0, 0, 0])
+        self.assertEqual(out.q_offsets[4:], [0, 0, 0, 0])
+
+    def test_returns_iter_prefetches_with_correct_lengths(self):
+        plan = plan_step(
+            num_scheduled_tokens={"R1": 1},
+            prior_kv_lens={"R1": 0},
+            req_id_order=["R1"],
+            K_kernel=4,
+        )
+        out = build_iter_prefetches(
+            plan=plan,
+            req_id_to_index={"R1": 0},
+            max_num_seqs=2,
+            max_num_subseqs=16,
+            static_q_len=None,
+        )
+        self.assertIsInstance(out, IterPrefetches)
+        self.assertEqual(len(out.phys_seq_indices), 16)
+        self.assertEqual(len(out.q_offsets), 16)
+
+    def test_coupled_k_path_static_q_len_none_skips_bounds_check(self):
+        # On the coupled-K path the helper is still callable for the iter
+        # arrays alone — bounds-check is skipped, num_scheduled_tokens
+        # may be omitted.
+        plan = plan_step(
+            num_scheduled_tokens={"R1": 5},
+            prior_kv_lens={"R1": 0},
+            req_id_order=["R1"],
+            K_kernel=None,   # coupled-K: one MIXED per non-decode req
+        )
+        self.assertEqual(plan.num_mixed, 1)
+
+        out = build_iter_prefetches(
+            plan=plan,
+            req_id_to_index={"R1": 0},
+            max_num_seqs=2,
+            max_num_subseqs=4,
+            static_q_len=None,
+            num_scheduled_tokens=None,    # not required when static is None
+        )
+        self.assertEqual(out.phys_seq_indices[:1], [0])
+        self.assertEqual(out.q_offsets[:1], [0])
+
+    def test_empty_plan_returns_zero_padded(self):
+        plan = StepPlan(subseqs=(), num_decode=0, num_prefill=0,
+                        num_mixed=0)
+        out = build_iter_prefetches(
+            plan=plan,
+            req_id_to_index={},
+            max_num_seqs=4,
+            max_num_subseqs=8,
+            static_q_len=None,
+        )
+        self.assertEqual(out.phys_seq_indices, [0] * 8)
+        self.assertEqual(out.q_offsets, [0] * 8)
+
+    def test_oversized_plan_rejected(self):
+        # 5 sub-seqs but max_num_subseqs=4 — would silently overflow the
+        # prefetch arrays if not caught here. required_max_num_subseqs()
+        # is supposed to size for the worst case; under-sizing means
+        # the workload exceeded the runner-init bound and we should
+        # fail loud.
+        plan = plan_step(
+            num_scheduled_tokens={"R1": 10},
+            prior_kv_lens={"R1": 0},
+            req_id_order=["R1"],
+            K_kernel=2,   # 10 / 2 = 5 PREFILL chunks
+        )
+        self.assertEqual(plan.num_total, 5)
+        with self.assertRaisesRegex(ValueError, "max_num_subseqs"):
+            build_iter_prefetches(
+                plan=plan,
+                req_id_to_index={"R1": 0},
+                max_num_seqs=2,
+                max_num_subseqs=4,
+                static_q_len=2,
+                num_scheduled_tokens={"R1": 10},
+            )
+
+    def test_missing_req_id_rejected(self):
+        plan = plan_step(
+            num_scheduled_tokens={"R1": 1},
+            prior_kv_lens={"R1": 0},
+            req_id_order=["R1"],
+            K_kernel=4,
+        )
+        with self.assertRaisesRegex(ValueError, "out of sync"):
+            build_iter_prefetches(
+                plan=plan,
+                req_id_to_index={},   # R1 absent
+                max_num_seqs=4,
+                max_num_subseqs=4,
+                static_q_len=None,
+            )
+
+    def test_phys_index_out_of_range_rejected(self):
+        plan = plan_step(
+            num_scheduled_tokens={"R1": 1},
+            prior_kv_lens={"R1": 0},
+            req_id_order=["R1"],
+            K_kernel=4,
+        )
+        with self.assertRaisesRegex(ValueError, "outside"):
+            build_iter_prefetches(
+                plan=plan,
+                req_id_to_index={"R1": 5},   # max_num_seqs=4 → out of range
+                max_num_seqs=4,
+                max_num_subseqs=4,
+                static_q_len=None,
+            )
+
+    def test_negative_q_offset_rejected(self):
+        # plan_step never emits a negative q_offset, so we hand-build a
+        # corrupt SubSeqEntry to exercise the defensive guard.
+        bad_entry = SubSeqEntry(
+            real_req_id="R1",
+            kind=SubSeqKind.PREFILL,
+            q_offset_in_real_req=-1,
+            q_len=4,
+            kv_len_at_end=4,
+            prior_kv_len=0,
+        )
+        plan = StepPlan(subseqs=(bad_entry,), num_decode=0, num_prefill=1,
+                        num_mixed=0)
+        with self.assertRaisesRegex(ValueError, "negative q_offset"):
+            build_iter_prefetches(
+                plan=plan,
+                req_id_to_index={"R1": 0},
+                max_num_seqs=2,
+                max_num_subseqs=4,
+                static_q_len=4,
+                num_scheduled_tokens={"R1": 4},
+            )
+
+    def test_logical_bounds_check_rejects_overhang(self):
+        # PREFILL sub-seq with q_offset + static_q_len > n_R would let
+        # the kernel read past the phys reqs scheduled-token slice,
+        # producing silent garbage. Hand-build a corrupt plan
+        # (plan_step itself wouldnt emit this) to verify the guard
+        # fires here rather than at the kernel.
+        bad_entry = SubSeqEntry(
+            real_req_id="R1",
+            kind=SubSeqKind.PREFILL,
+            q_offset_in_real_req=0,
+            q_len=4,
+            kv_len_at_end=4,
+            prior_kv_len=0,
+        )
+        plan = StepPlan(subseqs=(bad_entry,), num_decode=0, num_prefill=1,
+                        num_mixed=0)
+        with self.assertRaisesRegex(ValueError, "would read past"):
+            build_iter_prefetches(
+                plan=plan,
+                req_id_to_index={"R1": 0},
+                max_num_seqs=2,
+                max_num_subseqs=4,
+                static_q_len=8,                       # 0 + 8 > n_R = 4
+                num_scheduled_tokens={"R1": 4},
+            )
+
+    def test_logical_requires_num_scheduled_when_static_set(self):
+        plan = plan_step(
+            num_scheduled_tokens={"R1": 4},
+            prior_kv_lens={"R1": 0},
+            req_id_order=["R1"],
+            K_kernel=4,
+        )
+        with self.assertRaisesRegex(ValueError, "num_scheduled_tokens"):
+            build_iter_prefetches(
+                plan=plan,
+                req_id_to_index={"R1": 0},
+                max_num_seqs=2,
+                max_num_subseqs=4,
+                static_q_len=4,
+                num_scheduled_tokens=None,   # required for LOGICAL bounds check
+            )
 
 
 if __name__ == "__main__":

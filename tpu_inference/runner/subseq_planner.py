@@ -338,6 +338,120 @@ def build_prior_kv_lens(
     return prior
 
 
+@dataclasses.dataclass(frozen=True)
+class IterPrefetches:
+    """Iter-keyed prefetch arrays for the LOGICAL kernel dispatch.
+
+    These pair with the existing phys-keyed cu_q_lens (= query_start_loc)
+    and kv_lens (= seq_lens) on AttentionMetadata. The kernel uses
+    phys_seq_indices[seq_idx] to map iter -> phys slot for cu_q_lens /
+    kv_lens / page_indices lookup, and q_offsets[seq_idx] together with
+    static_q_len to define this iters [q_start, q_end) inside the phys
+    reqs scheduled-token slice.
+
+    Both lists have len ``max_num_subseqs`` (sized by
+    ``required_max_num_subseqs``); plan.num_total <= max_num_subseqs is
+    enforced at build time. Slots [num_total, max_num_subseqs) are
+    zero-padded; the kernel never reads them since
+    request_distribution[2] = num_total caps the iter count.
+    """
+    phys_seq_indices: list[int]
+    q_offsets: list[int]
+
+
+def build_iter_prefetches(
+    *,
+    plan: StepPlan,
+    req_id_to_index: dict[str, int],
+    max_num_seqs: int,
+    max_num_subseqs: int,
+    static_q_len: int | None,
+    num_scheduled_tokens: dict[str, int] | None = None,
+) -> IterPrefetches:
+    """Materialise a StepPlan into the kernels iter-keyed prefetches.
+
+    Pure-stdlib. Caller (PersistentBatchManager) converts the int lists
+    to int32 numpy arrays / device buffers when packing into the
+    AttentionMetadata fields.
+
+    Args:
+      plan: StepPlan from plan_step() — its sub-seq order
+        (DECODE -> PREFILL -> MIXED) determines the iter dimension.
+      req_id_to_index: persistent-batchs slot mapping
+        (typically input_batch.req_id_to_index). Maps real_req_id ->
+        phys_seq_idx.
+      max_num_seqs: persistent-batch capacity. Phys indices must be in
+        [0, max_num_seqs).
+      max_num_subseqs: prefetch-array sizing bound (see
+        required_max_num_subseqs). plan.num_total must be <= this.
+      static_q_len: K_kernel when running the LOGICAL pass. None on
+        todays coupled-K path; the LOGICAL bounds check below is a
+        no-op in that case.
+      num_scheduled_tokens: per-req scheduled-token counts for this
+        step. Required when static_q_len is set, used to bounds-check
+        each PREFILL sub-seqs (q_offset + static_q_len) against the
+        phys reqs total scheduled tokens. Pass None on the coupled-K
+        path; the check is skipped.
+
+    Raises:
+      ValueError: on any of (the kernel cannot recover from these —
+      silent OOB / mis-routed reads — so the runner fails loud at
+      plan-materialisation time):
+        - plan.num_total > max_num_subseqs.
+        - sub-seqs real_req_id missing from req_id_to_index.
+        - phys index outside [0, max_num_seqs).
+        - negative q_offset.
+        - LOGICAL prefill iter would read past its phys reqs scheduled
+          q-slice (q_offset + static_q_len > n_R).
+    """
+    n_iters = plan.num_total
+    if n_iters > max_num_subseqs:
+        raise ValueError(
+            f"plan has {n_iters} sub-seqs but max_num_subseqs is "
+            f"{max_num_subseqs}; required_max_num_subseqs() "
+            "under-sized the prefetch arrays for this workload.")
+
+    phys_seq_indices = [0] * max_num_subseqs
+    q_offsets = [0] * max_num_subseqs
+
+    for i, entry in enumerate(plan.subseqs):
+        phys = req_id_to_index.get(entry.real_req_id)
+        if phys is None:
+            raise ValueError(
+                f"sub-seq #{i} real_req_id={entry.real_req_id!r} not in "
+                "req_id_to_index — persistent batch / plan are out of "
+                "sync.")
+        if not 0 <= phys < max_num_seqs:
+            raise ValueError(
+                f"sub-seq #{i} phys slot {phys} outside [0, "
+                f"{max_num_seqs}).")
+        if entry.q_offset_in_real_req < 0:
+            raise ValueError(
+                f"sub-seq #{i} has negative q_offset "
+                f"{entry.q_offset_in_real_req}.")
+
+        if (static_q_len is not None
+                and entry.kind is SubSeqKind.PREFILL):
+            if num_scheduled_tokens is None:
+                raise ValueError(
+                    "num_scheduled_tokens is required when static_q_len "
+                    "is set (LOGICAL bounds check).")
+            n_R = num_scheduled_tokens.get(entry.real_req_id, 0)
+            if entry.q_offset_in_real_req + static_q_len > n_R:
+                raise ValueError(
+                    f"sub-seq #{i} (PREFILL, real_req_id="
+                    f"{entry.real_req_id!r}) would read past its phys "
+                    f"reqs q-slice: q_offset="
+                    f"{entry.q_offset_in_real_req} + static_q_len="
+                    f"{static_q_len} > n_R={n_R}.")
+
+        phys_seq_indices[i] = phys
+        q_offsets[i] = entry.q_offset_in_real_req
+
+    return IterPrefetches(phys_seq_indices=phys_seq_indices,
+                          q_offsets=q_offsets)
+
+
 def required_max_num_subseqs(*, max_num_seqs: int, K_sched_cap: int,
                              K_kernel: int) -> int:
     """Compute the prefetch-array sizing bound at runner init.
