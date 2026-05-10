@@ -139,3 +139,66 @@ Inspector commands to extract winners (run on the same TPU VM):
       --source=local --db-path=tmp/log/kernel_tuner_run/prefill_heavy_logical \
       query_min_latency \
       --case_set_id=prefill_heavy_logical_20260510_114214 --run_id=0
+===== 2026-05-10 11:45:39 Starting full kernel tune for prefill_heavy =====
+Cases: decode -> prefill -> mixed
+Branch: rpa3_2
+Git commit: 7d3cd8799f087308f7fe43161077ab075e2d3961
+
+
+===== 2026-05-10 11:45:39 Tuning logical (case_set_id=prefill_heavy_logical) =====
+DB path: tmp/log/kernel_tuner_run/prefill_heavy_logical
+WARNING:absl:Tensorflow library not found, tensorflow.io.gfile operations will use native shim calls. GCS paths (i.e. 'gs://...') cannot be accessed.
+INFO:numexpr.utils:Note: detected 224 virtual cores but NumExpr set to maximum of 64, check "NUMEXPR_MAX_THREADS" environment variable.
+INFO:numexpr.utils:Note: NumExpr detected 224 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+INFO:numexpr.utils:NumExpr defaulting to 16 threads.
+INFO 05-10 11:45:44 [__init__.py:59] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+I0510 11:45:45.155784 125626248845248 kernel_tuner_runner.py:115] Using case_set_id: prefill_heavy_logical, run_id: 0, case_set_desc: prefill_heavy logical kernel tune for this tuning run.
+I0510 11:45:45.155924 125626248845248 local_db_manager.py:53] Database initialized at tmp/log/kernel_tuner_run/prefill_heavy_logical
+I0510 11:45:45.160688 125626248845248 rpa_v3_kernel_tuner.py:429] RPA_V3_BQ_SZ_LST override: [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192] -> [256]
+I0510 11:45:45.160749 125626248845248 rpa_v3_kernel_tuner.py:429] RPA_V3_BKV_SZ_LST override: [512, 1024, 2048, 4096, 8192] -> [2048]
+I0510 11:45:45.160772 125626248845248 rpa_v3_kernel_tuner.py:429] RPA_V3_BQ_CSZ_LST override: [32, 64, 128, 256, 512, 1024, 2048] -> [256]
+I0510 11:45:45.160794 125626248845248 rpa_v3_kernel_tuner.py:429] RPA_V3_BKV_CSZ_LST override: [128, 256, 512, 1024, 2048] -> [512]
+I0510 11:45:45.160814 125626248845248 rpa_v3_kernel_tuner.py:429] RPA_V3_K_LST override: [128, 256, 512, 1024, 2048, 4096, 8192] -> [256]
+I0510 11:45:45.160836 125626248845248 rpa_v3_kernel_tuner.py:429] RPA_V3_PAGE_SIZE_LST override: [64, 128, 256] -> [128]
+I0510 11:45:45.160859 125626248845248 kernel_tuner_runner.py:135] Running in locally mode. Skipping Buildkite pipeline generation and running tuning jobs directly.
+I0510 11:45:45.161028 125626248845248 local_db_manager.py:102] Initialized case set: {'ID': 'prefill_heavy_logical', 'Description': 'prefill_heavy logical kernel tune', 'Status': 'CREATING', 'ScanSpace': 0}
+I0510 11:45:45.161056 125626248845248 kernel_tuner_base.py:141] Initialized new CaseSet with ID: prefill_heavy_logical and description: prefill_heavy logical kernel tune
+I0510 11:45:45.161311 125626248845248 rpa_v3_kernel_tuner.py:612] [Debug] Generated 6 cases
+I0510 11:45:45.161512 125626248845248 local_db_manager.py:164] Flushed: wrote 6 cases to KernelTuningCases
+I0510 11:45:45.161737 125626248845248 local_db_manager.py:136] Finished case set: ID=prefill_heavy_logical, valid=6, invalid=0, duration=0.0s
+I0510 11:45:45.161764 125626248845248 kernel_tuner_base.py:196] 
+Complete Generate Tuning Cases for prefill_heavy_logical, Valid Cases: 6 | Duration: 0s
+I0510 11:45:45.161788 125626248845248 kernel_tuner_base.py:356] Worker [unknown] Claimed CaseSetId: prefill_heavy_logical, RunId: 0, Bucket 0 (0-6) for processing.
+I0510 11:45:45.161884 125626248845248 local_db_manager.py:236] Marked bucket as in progress: cs_id=prefill_heavy_logical, r_id=0, b_id=0, worker=None
+I0510 11:45:45.161979 125626248845248 rpa_v3_kernel_tuner.py:858] Running rpa_v3 case=logical K=256 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='logical', chunk_prefill_size=256, code_revision='7d3cd8799f08') params=TunableParams(bq_sz=256, bkv_sz=2048, bq_csz=256, bkv_csz=512, max_num_subseqs=256) iters=1
+I0510 11:46:06.705554 125626248845248 rpa_v3_kernel_tuner.py:774] [Debug] case=logical K=256 actual_num_seqs=40 distribution=Array([ 0, 40, 40], dtype=int32)
+I0510 11:46:12.789478 125626248845248 rpa_v3_kernel_tuner.py:858] Running rpa_v3 case=logical K=256 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='logical', chunk_prefill_size=256, code_revision='7d3cd8799f08') params=TunableParams(bq_sz=256, bkv_sz=2048, bq_csz=256, bkv_csz=512, max_num_subseqs=256) iters=10
+I0510 11:46:14.580951 125626248845248 rpa_v3_kernel_tuner.py:858] Running rpa_v3 case=logical K=256 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='logical', chunk_prefill_size=256, code_revision='7d3cd8799f08') params=TunableParams(bq_sz=256, bkv_sz=2048, bq_csz=256, bkv_csz=512, max_num_subseqs=384) iters=1
+I0510 11:46:28.730254 125626248845248 rpa_v3_kernel_tuner.py:774] [Debug] case=logical K=256 actual_num_seqs=20 distribution=Array([ 0, 40, 20], dtype=int32)
+I0510 11:46:28.795517 125626248845248 rpa_v3_kernel_tuner.py:882] [Debug] Validate failed: err=ValueError('Invalid distribution: distribution=Array([ 0, 40, 20], dtype=int32)')
+W0510 11:46:28.795649 125626248845248 kernel_tuner_base.py:389] Case 1 failed during warmup with status: TuningStatus.UNKNOWN_ERROR. Skipping to next case.
+I0510 11:46:28.795737 125626248845248 rpa_v3_kernel_tuner.py:858] Running rpa_v3 case=logical K=256 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='logical', chunk_prefill_size=256, code_revision='7d3cd8799f08') params=TunableParams(bq_sz=256, bkv_sz=2048, bq_csz=256, bkv_csz=512, max_num_subseqs=640) iters=1
+I0510 11:46:42.930700 125626248845248 rpa_v3_kernel_tuner.py:774] [Debug] case=logical K=256 actual_num_seqs=10 distribution=Array([ 0, 40, 10], dtype=int32)
+I0510 11:46:42.993061 125626248845248 rpa_v3_kernel_tuner.py:882] [Debug] Validate failed: err=ValueError('Invalid distribution: distribution=Array([ 0, 40, 10], dtype=int32)')
+W0510 11:46:42.993223 125626248845248 kernel_tuner_base.py:389] Case 2 failed during warmup with status: TuningStatus.UNKNOWN_ERROR. Skipping to next case.
+I0510 11:46:42.993313 125626248845248 rpa_v3_kernel_tuner.py:858] Running rpa_v3 case=logical K=256 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='logical', chunk_prefill_size=256, code_revision='7d3cd8799f08') params=TunableParams(bq_sz=256, bkv_sz=2048, bq_csz=256, bkv_csz=512, max_num_subseqs=1152) iters=1
+I0510 11:46:57.204943 125626248845248 rpa_v3_kernel_tuner.py:774] [Debug] case=logical K=256 actual_num_seqs=5 distribution=Array([ 0, 40,  5], dtype=int32)
+I0510 11:46:57.265411 125626248845248 rpa_v3_kernel_tuner.py:882] [Debug] Validate failed: err=ValueError('Invalid distribution: distribution=Array([ 0, 40,  5], dtype=int32)')
+W0510 11:46:57.265532 125626248845248 kernel_tuner_base.py:389] Case 3 failed during warmup with status: TuningStatus.UNKNOWN_ERROR. Skipping to next case.
+I0510 11:46:57.265622 125626248845248 rpa_v3_kernel_tuner.py:858] Running rpa_v3 case=logical K=256 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='logical', chunk_prefill_size=256, code_revision='7d3cd8799f08') params=TunableParams(bq_sz=256, bkv_sz=2048, bq_csz=256, bkv_csz=512, max_num_subseqs=2176) iters=1
+I0510 11:47:11.303285 125626248845248 rpa_v3_kernel_tuner.py:774] [Debug] case=logical K=256 actual_num_seqs=2 distribution=Array([ 0, 32,  2], dtype=int32)
+I0510 11:47:11.365899 125626248845248 rpa_v3_kernel_tuner.py:882] [Debug] Validate failed: err=ValueError('Invalid distribution: distribution=Array([ 0, 32,  2], dtype=int32)')
+W0510 11:47:11.366040 125626248845248 kernel_tuner_base.py:389] Case 4 failed during warmup with status: TuningStatus.UNKNOWN_ERROR. Skipping to next case.
+I0510 11:47:11.366154 125626248845248 rpa_v3_kernel_tuner.py:858] Running rpa_v3 case=logical K=256 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='logical', chunk_prefill_size=256, code_revision='7d3cd8799f08') params=TunableParams(bq_sz=256, bkv_sz=2048, bq_csz=256, bkv_csz=512, max_num_subseqs=4224) iters=1
+I0510 11:47:25.335329 125626248845248 rpa_v3_kernel_tuner.py:774] [Debug] case=logical K=256 actual_num_seqs=1 distribution=Array([ 0, 32,  1], dtype=int32)
+I0510 11:47:25.400145 125626248845248 rpa_v3_kernel_tuner.py:882] [Debug] Validate failed: err=ValueError('Invalid distribution: distribution=Array([ 0, 32,  1], dtype=int32)')
+W0510 11:47:25.400292 125626248845248 kernel_tuner_base.py:389] Case 5 failed during warmup with status: TuningStatus.UNKNOWN_ERROR. Skipping to next case.
+I0510 11:47:25.400668 125626248845248 local_db_manager.py:284] Saved 6 results to CaseResults
+I0510 11:47:25.401038 125626248845248 local_db_manager.py:252] Marked bucket as completed: cs_id=prefill_heavy_logical, r_id=0, b_id=0, tt_us=100238757
+I0510 11:47:25.401097 125626248845248 kernel_tuner_base.py:433] Worker [unknown] Completed Bucket 0 (0-6) for CaseSetId: prefill_heavy_logical, RunId: 0. Total time: 100.24s.
+I0510 11:47:25.401193 125626248845248 local_db_manager.py:297] Database at tmp/log/kernel_tuner_run/prefill_heavy_logical finalized with 6 cases, 0 invalid cases.
+I0510 11:47:25.401280 125626248845248 local_db_manager.py:303] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical/CaseSet.json
+I0510 11:47:25.401317 125626248845248 local_db_manager.py:303] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical/KernelTuningCases.json
+I0510 11:47:25.401343 125626248845248 local_db_manager.py:303] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical/WorkBuckets.json
+I0510 11:47:25.401365 125626248845248 local_db_manager.py:303] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical/CaseResults.json
+===== 2026-05-10 11:47:29 logical done in 110s =====
