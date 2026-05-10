@@ -1,8 +1,8 @@
 #!/bin/bash
 # Extract per-case kernel-tuning winners from a tune_all_cases.sh runlog
-# and write them to a .kernel JSON registry. PURE TOOL — no git side
-# effects. The orchestrator (run_pipeline.sh) is responsible for any
-# commit/push of the produced artifact.
+# and write them to a .kernel JSON registry. Auto-commits and pushes the
+# produced artifact, matching tune_all_cases.sh's progress-commit pattern.
+# Set KERNEL_TUNER_NO_PUSH=1 to skip the git step (tests, CI, dry-runs).
 #
 # Usage:
 #   build_kernel_registry.sh <runlog_path> [out_path]
@@ -15,13 +15,13 @@
 #                it. Without this, the pipeline writes to tmp/log but the
 #                sweep reads from cases/, and they never connect.
 #
-# Why pure: previously this script tee'd output to a SCRIPT_LOG,
-# git-add-committed-pushed both the .kernel file and the log, and
-# returned. Mixing artifact production with side effects made the tool
-# hard to test in isolation, awkward on rebase divergence (it would
-# emit a local-only commit + WARN), and impossible to dry-run from a
-# Python wrapper. Now the script just produces the artifact and
-# prints its path on stdout; the orchestrator stages it.
+# History note: this script was previously pure (no git) on the
+# theory that the orchestrator would commit the artifact. In practice
+# that left direct users (Phase 1 fast-track recipe) without an
+# auto-commit, while tune_all_cases.sh on the same path DID auto-commit
+# its runlog — inconsistent. The auto-commit lives here now; the
+# orchestrator's commit_logs trap is idempotent against an already-
+# committed file. Use KERNEL_TUNER_NO_PUSH=1 for testing/dry-runs.
 
 set -euo pipefail
 
@@ -60,3 +60,17 @@ fi
 # Print the produced path on stdout's last line so callers can capture
 # it via `OUT=$(build_kernel_registry.sh ... | tail -1)`.
 echo "$OUT"
+
+# Auto-commit + push the produced .kernel. Idempotent against
+# orchestrator's commit_logs trap (no-op if file is already committed).
+if [ "${KERNEL_TUNER_NO_PUSH:-0}" = "1" ]; then
+    exit 0
+fi
+
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+RUNLOG_BASENAME="$(basename "$RUNLOG" .txt)"
+git add -f -- "$OUT" 2>/dev/null || true
+if ! git diff --cached --quiet -- "$OUT"; then
+    git commit -m "[Kernel-Tune] Update $(basename "$OUT") from $RUNLOG_BASENAME" -- "$OUT" || true
+    git push origin "$BRANCH" || echo "WARN: push failed for $OUT" >&2
+fi
