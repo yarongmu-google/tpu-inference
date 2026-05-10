@@ -580,7 +580,11 @@ def get_kv_cache_shape(
 
 
 def _ragged_paged_attention_kernel(*args, **kwargs):
-    distribution_ref = args[3]
+    # `args` is the scalar_prefetches tuple in the order constructed by
+    # `run_rpa_kernel`. distribution_ref is at index 5 (after the 3
+    # phys-keyed prefetches and the 2 LOGICAL iter-keyed prefetches).
+    # If the prefetch tuple is reordered, this index must move in lockstep.
+    distribution_ref = args[5]
     start_seq_idx, end_seq_idx = kwargs["case"].get_range(distribution_ref)
 
     @pl.loop(start_seq_idx, end_seq_idx)
