@@ -404,6 +404,16 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
             # Gate unsupported combinations (DP > 1, eagle3 spec-decode).
             # Helper takes resolved booleans so the gate logic is unit-
             # testable without importing the JAX / vLLM runtime stack.
+            #
+            # Pre-condition: _init_speculative_decoding() has run and set
+            # self.drafter (to None, NgramProposer, or Eagle3Proposer).
+            # Without this, isinstance(self.drafter, ...) below would
+            # AttributeError instead of the helpful NotImplementedError —
+            # exactly the failure mode the gate exists to prevent. Cheap
+            # tripwire against a future refactor that re-orders __init__.
+            assert hasattr(self, "drafter"), (
+                "_init_speculative_decoding() must run before the "
+                "decoupled-K init gate; refactor changed __init__ ordering")
             validate_decoupled_k_runner_init(
                 is_eagle3_drafter=isinstance(self.drafter, Eagle3Proposer),
                 total_dp_size=self.vllm_config.sharding_config.total_dp_size,
