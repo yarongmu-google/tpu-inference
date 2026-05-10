@@ -18,7 +18,59 @@ Two user-facing paths:
 - **Prod**: `.workload` exists → tooling looks up `.service` → `.kernel` → runs vLLM with merged params. No human in the loop.
 - **Dev**: user sets env vars by hand. Tooling stays out of the way. Inconsistent values are the user's problem.
 
-## 2. Four files per workload
+## 2. Variable classification (three files)
+
+Every parameter lives in exactly one of three files. Both `.kernel` and `.service` are keyed on the `.workload`.
+
+- **`.workload`** — workload identity. The keys both kernel-tune and sweep look up by. Neither tuning nor sweep mutates these; changing any one creates a *different* workload.
+- **`.kernel`** — produced by kernel-tune. Keyed on the workload **plus any unpinned vars that affect kernel-tune outputs** (today: `mns`) — so the kernel-tune produces one row per `(workload, mns)`, and service-sweep can pick which `mns` (and thus which kernel row) wins per objective. Contains two kinds of fields:
+  - **Kernel vars** — the kernel-internal tunable params (block sizes, mnss, page_size, kernel_K). Tuner searches over these; the winner per workload is what's stored.
+  - **Pinned vars** — runtime env-var aliases / derivations of the kernel vars (LPTT, BLOCK_SIZE, RPA_KERNEL_K, RPA_*_BLOCK_SIZES, RPA_MAX_NUM_SUBSEQS). Sweep cannot modify either group; the server enforces consistency at runner init.
+- **`.service`** — produced by service-sweep. Contains the unpinned service vars (sweep dimensions and per-objective winners). MNB, DATASET shape, request rate, etc. — anything that's a free parameter at deploy time.
+
+At deploy: read `.workload` → look up `.service` by the workload keys → get unpinned service vars including the winning `mns` for the target objective → look up `.kernel` by `(workload, mns)` → get kernel vars + pinned vars → merge into env → launch vLLM. One source of truth per leg, no overlap.
+
+### `.workload` (keys)
+
+| Variable |
+|---|
+| `MODEL` |
+| `TENSOR_PARALLEL_SIZE` |
+| `NUM_Q_HEADS`, `NUM_KV_HEADS`, `HEAD_DIM` |
+| `q_dtype`, `kv_dtype` |
+| `MAX_MODEL_LEN` |
+| `sliding_window` |
+| Hardware (TPU topology; implicit via path) |
+| `code_revision` |
+
+### `.kernel` (kernel-tune outputs; immutable from sweep)
+
+| Variable | Pin |
+|---|---|
+| `page_size` | Kernel var |
+| `chunk_prefill_size` (`kernel_K`) | Kernel var |
+| `max_num_subseqs` (mnss) | Kernel var |
+| `bq_sz`, `bkv_sz`, `bq_csz`, `bkv_csz` | Kernel var |
+| `BLOCK_SIZE` | = `page_size` |
+| `RPA_KERNEL_K` | = `kernel_K` |
+| `RPA_MAX_NUM_SUBSEQS` | = `mnss` |
+| `LONG_PREFILL_TOKEN_THRESHOLD` | = `mnss × kernel_K` |
+| `RPA_D_BLOCK_SIZES`, `RPA_M_BLOCK_SIZES`, `RPA_P_BLOCK_SIZES` | = per-case block sizes |
+
+### `.service` (sweep dimensions)
+
+| Variable |
+|---|
+| `MAX_NUM_SEQS` (mns) |
+| `MAX_NUM_BATCHED_TOKENS` (MNB) |
+| `DATASET` |
+| `INPUT_LEN`, `OUTPUT_LEN` |
+| `NUM_PROMPTS`, `REQUEST_RATE` |
+| `--seed`, `--no-enable-prefix-caching`, other vLLM CLI flags |
+
+**Today vs proposed end-state.** Today, `page_size`, `chunk_prefill_size`, `RPA_KERNEL_K`, and `BLOCK_SIZE` straddle `.workload` (user-pinned) and `.kernel` (Pinned var). The refactor moves them cleanly into `.kernel`: the kernel tuner sweeps `page_size` and `kernel_K` as part of `tunable_params`, the registry returns ONE winner per workload, and `sweep.py:_apply_auto_link` sets `BLOCK_SIZE` and `RPA_KERNEL_K` from that winner. See §11 migration for the mechanics.
+
+## 3. Four files per workload
 
 ```
 tools/benchmark/cases/<topo>/<model>/<workload>.workload   (input)
@@ -36,15 +88,15 @@ tools/benchmark/cases/<topo>/<model>/<workload>.workload   (input)
   └──▶ <workload>.service       (latest winners, JSON; one entry per objective)
 ```
 
-- `.workload` — bash-variable file declaring `INPUT_LEN`, `OUTPUT_LEN`, `MAX_NUM_SEQS`, `MAX_MODEL_LEN`, `NUM_Q_HEADS`, `NUM_KV_HEADS`, `HEAD_DIM`. Today's format; documented contract (§9).
+- `.workload` — bash-variable file declaring `INPUT_LEN`, `OUTPUT_LEN`, `MAX_NUM_SEQS`, `MAX_MODEL_LEN`, `NUM_Q_HEADS`, `NUM_KV_HEADS`, `HEAD_DIM`. Today's format; documented contract (§10).
 - `.kernel.raw/` — append-only raw measurements, one file per `kernel.py` SHA. Each row: one `(tuning_key, tunable_params, latency_us)` measurement.
 - `.kernel` — projection of the most-recent `.kernel.raw/*.jsonl`. One winner per `tuning_key` (= per pin_key set: page_size, K_kernel, geometry).
 - `.service.raw/` — append-only raw measurements, one file per vLLM-service SHA. Each row: one `(combo, {ttft_ms, itl_ms, throughput_tps, p99_ms, …})`.
-- `.service` — projection of the most-recent `.service.raw/*.jsonl`. **Multiple winners per workload** — one per objective (`throughput_max`, `ttft_min`, `p99_min`, …) — see §4.
+- `.service` — projection of the most-recent `.service.raw/*.jsonl`. **Multiple winners per workload** — one per objective (`throughput_max`, `ttft_min`, `p99_min`, …) — see §5.
 
-`.kernel.raw/*.jsonl` and `.service.raw/*.jsonl` live under git for review and rollback. The active store during a run is operational-only (SQLite, gitignored — §3).
+`.kernel.raw/*.jsonl` and `.service.raw/*.jsonl` live under git for review and rollback. The active store during a run is operational-only (SQLite, gitignored — §4).
 
-## 3. Storage: append-only JSONL
+## 4. Storage: append-only JSONL
 
 Each tuning or sweep run writes its results to **one** file: a JSONL under `<workload>.{kernel,service}.raw/<sha>.jsonl`. One row per result, appended at the moment of measurement:
 
@@ -66,7 +118,7 @@ Resume is just "open the file, read every row, build a set of `(tuning_key, tuna
 
 If files ever exceed 50 MB each (very unlikely at our scale), `gzip` per-shard. Git stores `.jsonl.gz`; `zless` / `zcat` work fine for inspection. Don't switch to a binary format.
 
-## 4. `.kernel` is single-objective; `.service` is multi-objective
+## 5. `.kernel` is single-objective; `.service` is multi-objective
 
 `.kernel.raw` rows carry one metric: per-iter latency. The projection picks `min(latency)` per pin_key — one winner.
 
@@ -92,7 +144,7 @@ The projection picks **one winner per objective**. `.service` schema:
 
 Adding a new objective is additive (extend the `winners` dict). Default objective at deploy time is `throughput_max` (safe for benchmarking).
 
-## 5. Two lookup directions
+## 6. Two lookup directions
 
 ### Prod (look down)
 
@@ -129,7 +181,7 @@ Given a service combo:
 
 → same shape. The git-tracked text files make every cross-cutting query a `grep -r`.
 
-## 6. Resumability: append-only raw + skip-on-hit
+## 7. Resumability: append-only raw + skip-on-hit
 
 Tuning and sweeping both follow the same pattern:
 
@@ -146,7 +198,7 @@ Tuning and sweeping both follow the same pattern:
 
 **Schema-evolution friendliness.** `TunableParams` field additions (e.g. adding `max_num_subseqs` for the LOGICAL case in commit 2536219e) come with a `kernel.py` change, hence a new kernel SHA, hence a fresh `.raw/<new_sha>.jsonl`. Old SHAs' rows stay isolated — no hash collisions in the skip-set, no schema migration. The TTL=2 prune retires the prior schema's data after one more SHA bump. Same property holds for `.service.raw` against vLLM/runner SHA changes.
 
-## 7. Projection: pure-CPU, idempotent
+## 8. Projection: pure-CPU, idempotent
 
 `.raw → .kernel` and `.raw → .service` are both pure functions. Inputs: the latest `.raw/*.jsonl` (and the current pinning policy). Outputs: a single JSON file. No side effects, no networking, no GPU/TPU.
 
@@ -157,7 +209,7 @@ This means:
 - Different teams can ship **different projection logic** (different "best for throughput" definitions) and they all see the same `.raw`. The `.kernel` / `.service` files change; the history stays.
 - **Kill any time**, restart any time. The projection is deterministic given inputs.
 
-## 8. Manual / dev path
+## 9. Manual / dev path
 
 Dev users set env vars directly:
 
@@ -181,7 +233,7 @@ Inconsistency is on the user; loudness is on the runner. No registry lookup, no 
 
 The prod and dev paths share the runner. The runner reads env vars; it doesn't know whether they came from a registry lookup or `export` on a shell.
 
-## 9. `.workload` schema (today's contract, documented)
+## 10. `.workload` schema (today's contract, documented)
 
 A `.workload` is a bash file sourced into the env via `set -a; source <file>; set +a`. Variables, grouped by what consumes them:
 
@@ -227,7 +279,7 @@ NUM_PROMPTS=1000          # bench duration / sample count
 
 **Adding a field.** Append it. New fields default to "use today's behavior" until a tuning sweep explicitly varies them.
 
-## 10. Migration from today's stack
+## 11. Migration from today's stack
 
 Phased; no flag day. Each step lands as its own commit and is independently reversible.
 
