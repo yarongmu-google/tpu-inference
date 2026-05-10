@@ -44,19 +44,27 @@ tools/benchmark/cases/<topo>/<model>/<workload>.workload   (input)
 
 `.kernel.raw/*.jsonl` and `.service.raw/*.jsonl` live under git for review and rollback. The active store during a run is operational-only (SQLite, gitignored — §3).
 
-## 3. Storage layers: operational vs archived
+## 3. Storage: append-only JSONL
 
-Each tuning or sweep run uses **two** stores:
+Each tuning or sweep run writes its results to **one** file: a JSONL under `<workload>.{kernel,service}.raw/<sha>.jsonl`. One row per result, appended at the moment of measurement:
 
-| | Operational (during run) | Archived (after run) |
-|---|---|---|
-| Format | SQLite at `tmp/log/{kernel_tuner_run,sweep_run}/<workload>.db` | JSONL files under `<workload>.{kernel,service}.raw/` |
-| Lifecycle | Created at run start, written per-result, gitignored | Written at run end (or periodically), git-tracked |
-| Why | Atomic transactions, fast random access, in-flight resume | Human-reviewable diffs, durable across machine teardowns, git history |
+```python
+with open(raw_path, "a") as f:
+    f.write(json.dumps(row) + "\n")
+```
 
-The active SQLite handles the hot path: per-result writes during a 24h+ tune, per-combo skip lookups during resume. JSONL handles the cold path: archival, PR review, rollback, cross-machine sharing via git.
+That's the entire write path. The file IS the live store AND the archive — there is no separate operational layer. A kill at any point (Ctrl-C, OOM, ssh drop, VM teardown) leaves the file intact through the last completed row.
 
-Promotion (operational → archived) is a CPU-only step: open the SQLite, dump rows into a JSONL named after the kernel-or-service SHA, prune old `.raw/` files past the TTL (§6), recompute the `.kernel` / `.service` projection.
+Why this works at our scale:
+
+- **Atomicity is free.** POSIX guarantees atomic writes under `PIPE_BUF` (~4 KB); our rows are ~200 bytes each. No partial-row corruption is possible. Reads at restart see exactly the rows that finished writing — no recovery logic.
+- **No archive step.** The file is git-trackable as-is. `git add` it when ready.
+- **JSONL > JSON.** Human-readable diffs in PR review; `grep`-able for ad-hoc queries ("which workloads use K=128?"); schema-flexible (new fields are additive). Protobuf would optimize for size and parse-speed, but at ~1 MB per tune file with ~thousands of rows, neither matters.
+- **Speed is adequate.** Building the skip-set at run start = parse the file once. ~1 MB / ms. Negligible.
+
+Resume is just "open the file, read every row, build a set of `(tuning_key, tunable_params)` pairs, skip those, continue." No SQLite, no archive promotion, no two-store synchronization.
+
+If files ever exceed 50 MB each (very unlikely at our scale), `gzip` per-shard. Git stores `.jsonl.gz`; `zless` / `zcat` work fine for inspection. Don't switch to a binary format.
 
 ## 4. `.kernel` is single-objective; `.service` is multi-objective
 
@@ -125,14 +133,14 @@ Given a service combo:
 
 Tuning and sweeping both follow the same pattern:
 
-1. **At start**: read the operational SQLite (creates if absent). Build a skip-set of every `(tuning_key, tunable_params)` (or sweep `combo`) already recorded with status SUCCESS.
-2. **For each work unit**: if in skip-set, skip. Otherwise run, append row to SQLite.
-3. **On kill** (any reason — kernel OOM, ssh disconnect, reboot, OOM-killer): SQLite has the partial state on disk. Restart re-reads it; the skip-set is already populated.
-4. **At completion**: archive SQLite → JSONL under `.raw/<sha>.jsonl`. Prune `.raw/*.jsonl` past the TTL.
+1. **At start**: read `<workload>.{kernel,service}.raw/<current_sha>.jsonl` (create if absent). Build a skip-set of every `(tuning_key, tunable_params)` (or sweep `combo`) already in it with status SUCCESS.
+2. **For each work unit**: if in skip-set, skip. Otherwise run, append row to the file.
+3. **On kill** (any reason — kernel OOM, ssh disconnect, reboot, OOM-killer): the file already has every row up to the last completed unit. Restart re-reads it; the skip-set is already populated.
+4. **At completion** (or any safe point): `git add` + `git commit` the `.raw/<sha>.jsonl`. Prune older `.raw/*.jsonl` past the TTL.
 
 **TTL = 2.** Keep the 2 most-recent kernel (or service) SHA's `.raw` files. Older ones are pruned. This survives one rollback (current → previous) without losing data.
 
-**Crash-atomic writes** (§ already in `local_db_manager.py` after [P0 fix](#)): SQLite handles this natively. JSONL is append-only with one row per `write()`, atomic for short rows on POSIX.
+**Crash-atomic writes** are inherent to append-only JSONL on POSIX. One row per `write()` call; rows are ~200 bytes (well under PIPE_BUF). No torn rows, no recovery logic at restart.
 
 **Concurrency** is single-machine-per-workload by assumption. Two TPU VMs working on different workloads don't interact. If we ever need multi-machine on one workload, shard by pin_keys (range-partition the search space across VMs); not in scope today.
 
@@ -142,7 +150,7 @@ Tuning and sweeping both follow the same pattern:
 
 This means:
 
-- The projection runs on a **laptop** as readily as on the TPU VM. After pulling the SQLite + archived JSONL from the VM, the projection runs locally.
+- The projection runs on a **laptop** as readily as on the TPU VM. After pulling (or `git pull`-ing) the JSONL from the VM, the projection runs locally.
 - **CI** can re-run the projection on every PR to validate it picks the same winners (regression guard against projection-logic changes).
 - Different teams can ship **different projection logic** (different "best for throughput" definitions) and they all see the same `.raw`. The `.kernel` / `.service` files change; the history stays.
 - **Kill any time**, restart any time. The projection is deterministic given inputs.
@@ -190,14 +198,14 @@ Adding a field to `.workload`: append it. No migration; new fields default to "u
 
 Phased; no flag day. Each step lands as its own commit and is independently reversible.
 
-1. **SQLite operational store** (P1 in the resumability memory). Replaces `local_db_manager.py`'s JSON-file backend with SQLite. Keeps the same `StorageManager` interface; the existing tuner code is unchanged. *Resume gets faster + crash-atomic.*
-2. **Archive step** for kernel tuning. New `archive_kernel.py`: opens the SQLite, dumps to `<workload>.kernel.raw/<kernel_sha>.jsonl`, prunes past TTL=2, projects winners to `<workload>.kernel`. Run at the end of a tune; can also run on demand. *Today's `build_kernel_registry.py` becomes a thin wrapper.*
-3. **`.service.raw/` + archive step for sweeps**. Sweep currently writes per-combo metrics.txt + meta.txt. New code path: also append a row to a SQLite at `tmp/log/sweep_run/<workload>.db`. Archive script analogous to (2). *Sweeps become resumable and produce a single durable file.*
-4. **`.service` multi-objective winners file**. Projection logic for "best per objective". *Replaces today's informal `.service` files.*
-5. **Lookup tooling unification**. `tools/benchmark/lookup.py <workload> <objective>` returns the merged env-var set. `sweep.py:_apply_auto_link` rewires to use this. *Deploy spec gets simpler; manual env-var setting still works.*
-6. **`.workload` schema doc + validator**. A small script that loads a `.workload` and asserts the required vars are set. *Catches typos at spec-load time.*
+1. **`.kernel.raw/` JSONL store for kernel tuning**. Replaces `local_db_manager.py`'s 4-JSON-file directory with one append-only `<workload>.kernel.raw/<kernel_sha>.jsonl`. Resume reads the file at start, builds the skip-set, continues. *Existing `tmp/log/kernel_tuner_run/<id>/` becomes a fallback for legacy DBs; new tunes write to `.raw/`.*
+2. **`.kernel` projection update**. `build_kernel_registry.py` already projects raw measurements to a winners JSON; rewire its input from the JSON-files to the new JSONL. Add TTL=2 pruning. *Today's `production.kernel` becomes the new `.kernel`; same content, same field names.*
+3. **`.service.raw/` JSONL for sweeps**. Sweep currently writes per-combo `metrics.txt` + `meta.txt` in scattered dirs. Add one extra append to `<workload>.service.raw/<service_sha>.jsonl` at the moment metrics are recorded. *Sweeps become resumable; pre-existing per-combo dirs untouched.*
+4. **`.service` multi-objective winners file**. New projection step: read `.service.raw/<latest_sha>.jsonl`, group by pin_keys, pick winners per objective, write `<workload>.service`. *Replaces today's informal `.service` files.*
+5. **Lookup tooling unification**. `tools/benchmark/lookup.py <workload> <objective>` returns the merged env-var set (vLLM flags from `.service`, kernel knobs from `.kernel`). `sweep.py:_apply_auto_link` rewires to use this. *Deploy spec gets simpler; manual env-var setting still works.*
+6. **`.workload` schema validator**. A small script that loads a `.workload` and asserts the required vars are set. *Catches typos at spec-load time.*
 
-Each step is small enough to ship and review independently. Total work: ~2-3 weeks of focused effort. Order matters: (1) is a prerequisite for (2); (3) and (4) are independent of (1)-(2).
+Each step is small enough to ship and review independently. Total work: ~1-2 weeks of focused effort (substantially less than the dual-store version, since SQLite + archive promotion are both eliminated). Order matters: (1) is a prerequisite for (2); (3) is a prerequisite for (4); (5) requires (4).
 
 ---
 
