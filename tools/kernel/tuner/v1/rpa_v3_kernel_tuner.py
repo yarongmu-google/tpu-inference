@@ -29,6 +29,8 @@ from tools.kernel.tuner.v1.cache_key_utils import (
 from tools.kernel.tuner.v1.common.kernel_tuner_base import (KernelTunerBase,
                                                             TuningCase,
                                                             TuningStatus)
+from tools.kernel.tuner.v1.logical_workload_sizing import (
+    size_logical_workload)
 from tpu_inference.kernels.ragged_paged_attention.v3.kernel import (
     dynamic_validate_inputs, get_kv_cache_shape, get_smem_estimate_bytes,
     get_vmem_estimate_bytes, ragged_paged_attention)
@@ -522,23 +524,16 @@ class RpaV3KernelTuner(KernelTunerBase):
                 if bkv_sz // ps > pages_per_seq:
                     continue
 
-                # LOGICAL combo-specific bounds:
+                # LOGICAL combo-specific bounds: route through the same
+                # sizing helper that _build_inputs uses, so the
+                # pre-flight check and the workload construction stay
+                # in lockstep. See logical_workload_sizing.py.
                 if case == CASE_LOGICAL:
-                    # max_num_subseqs must accommodate at least one slot
-                    # per phys req (the formulas +max_num_seqs slack term).
-                    if mns < self.max_num_seqs:
-                        continue
-                    # The synthetic LOGICAL workload uses M_per_phys =
-                    # (mns // max_num_seqs) - 1 chunks per phys at K
-                    # tokens each. If even ONE phys cant fit the
-                    # max_num_tokens budget at this (K, M_per_phys),
-                    # skip — there's no meaningful workload to tune.
-                    # (The actual workload size is scaled down inside
-                    # _build_inputs to `min(max_num_tokens // per_phys_q,
-                    # max_num_seqs)`, mirroring PREFILLs sizing.)
-                    M_per_phys = max(1, mns // self.max_num_seqs - 1)
-                    per_phys_q = K * M_per_phys
-                    if per_phys_q > self.max_num_tokens:
+                    sizing = size_logical_workload(
+                        max_num_seqs=self.max_num_seqs,
+                        max_num_tokens=self.max_num_tokens,
+                        K=K, max_num_subseqs=mns)
+                    if not sizing.valid:
                         continue
 
                 # ---- Hybrid VMEM-Aware Tuning Pruning (Theoretical bounds) ----
@@ -645,28 +640,20 @@ class RpaV3KernelTuner(KernelTunerBase):
                 f"set, got {tunable_params=}")
             K = tuning_key.chunk_prefill_size
             assert K > 0
-            mns = tunable_params.max_num_subseqs
-            # M_per_phys derives from the formula
-            # `max_num_subseqs = max_num_seqs * (M + 1)` -> M = mns/N - 1.
-            # Floor at 1 so the workload always has at least one chunk
-            # per phys; generate_cases ensures the resulting per_phys_q
-            # fits at least one phys reqs q-budget.
-            M_per_phys = max(1, mns // max_num_seqs - 1)
-            per_phys_q = K * M_per_phys
-            # Scale actual_num_seqs to fit max_num_tokens, mirroring
-            # PREFILLs sizing. Without this, the synthetic workload
-            # would try to fit max_num_seqs * per_phys_q tokens which
-            # at MNS=128, K=256, MNB=10275 is 128*256=32768 — way over
-            # MNB. Result: all combos get rejected and the tune
-            # produces zero cases. The runtimes max_num_subseqs is
-            # SMEM-driven (set from envs.RPA_MAX_NUM_SUBSEQS at deploy
-            # time), independent of how many phys reqs the synthetic
-            # tune workload happens to use.
-            actual_num_seqs = max(
-                1, min(self.max_num_tokens // per_phys_q, max_num_seqs))
+            sizing = size_logical_workload(
+                max_num_seqs=max_num_seqs,
+                max_num_tokens=self.max_num_tokens,
+                K=K,
+                max_num_subseqs=tunable_params.max_num_subseqs)
+            assert sizing.valid, (
+                "LOGICAL combo passed generate_cases pre-flight but "
+                f"failed at _build_inputs sizing. {tuning_key=} "
+                f"{tunable_params=} max_num_seqs={max_num_seqs} "
+                f"max_num_tokens={self.max_num_tokens}. This is a "
+                "logic bug — both call sites must use size_logical_workload.")
             return get_logical_only_example(
-                actual_num_seqs, K, M_per_phys,
-                tuning_key.max_model_len) + (actual_num_seqs, )
+                sizing.actual_num_seqs, K, sizing.m_per_phys,
+                tuning_key.max_model_len) + (sizing.actual_num_seqs, )
         actual_num_seqs = min(8, max_num_seqs)
         return get_mixed_example(actual_num_seqs, self.max_num_tokens,
                                  tuning_key.max_model_len) + (
