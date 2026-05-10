@@ -1,7 +1,7 @@
 {
   "metadata": {
-    "last_updated_from_runlog": "tmp/log/tune_all_prefill_heavy_latency.txt",
-    "last_updated_at": "2026-05-08T15:39:27.637425"
+    "last_updated_from_runlog": "tmp/log/tune_all_prefill_heavy.txt",
+    "last_updated_at": "2026-05-10T11:36:42.187732"
   },
   "results": {
     "decode": [
@@ -702,6 +702,7 @@
         "WarmupTime": 1872199,
         "CaseId": 0
       }
-    ]
+    ],
+    "logical": []
   }
 }
