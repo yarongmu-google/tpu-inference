@@ -138,7 +138,13 @@ export PYTHONUNBUFFERED=1
 # be a single big tee around the whole loop, but then commit_progress
 # inside the tee subshell can't see runlog disk state and per-case
 # commits wouldn't actually capture per-case progress.
-for CASE in decode prefill mixed; do
+: "${CASES_TO_TUNE:=decode prefill mixed}"
+# CASES_TO_TUNE env var (space-separated) overrides the default case
+# loop. Useful for tuning a subset (e.g. CASES_TO_TUNE="logical" to
+# extend an existing decode/prefill/mixed kernel registry with the
+# decoupled-K LOGICAL winners). The CI default is unchanged so existing
+# pipelines see no behaviour difference.
+for CASE in $CASES_TO_TUNE; do
     CASE_SET_ID="${LABEL}_${CASE}_${DATE}"
     # Authoritative DB path: bash decides where the runner writes,
     # rather than the runner generating a timestamped path that bash
@@ -192,7 +198,7 @@ done
     echo "===== $(date '+%F %T') ALL CASES DONE ====="
     echo ""
     echo "Inspector commands to extract winners (run on the same TPU VM):"
-    for CASE in decode prefill mixed; do
+    for CASE in $CASES_TO_TUNE; do
         CASE_DB="/tmp/kernel_tuner_run_${LABEL}_${CASE}_${DATE}"
         echo "  python3 -m tools.kernel.tuner.v1.inspect_result_cli \\"
         echo "      --source=local --db-path=$CASE_DB \\"

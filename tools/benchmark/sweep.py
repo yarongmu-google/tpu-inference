@@ -252,7 +252,10 @@ def _registry_lookup(
         tk = entry.get("tuning_key", {})
         if tk.get("page_size") != target_page_size:
             continue
-        if case_name == "prefill":
+        # PREFILL and LOGICAL winners are both K-keyed (LOGICAL stores
+        # K_kernel in chunk_prefill_size, same field). DECODE / MIXED
+        # store chunk_prefill_size = 0 by convention.
+        if case_name in ("prefill", "logical"):
             if tk.get("chunk_prefill_size") != target_k:
                 continue
         return entry.get("tunable_params")
@@ -272,6 +275,14 @@ def _apply_auto_link(
     """
     page_size = int(combo.get("BLOCK_SIZE", "128"))
     k = int(combo.get("LONG_PREFILL_TOKEN_THRESHOLD", "0"))
+    # Decoupled-K is signaled by RPA_KERNEL_K in the combo. When set,
+    # the kernels P/L pass runs the LOGICAL branch instead of PREFILL,
+    # so we route RPA_P_BLOCK_SIZES from the LOGICAL winner and also
+    # auto-link RPA_MAX_NUM_SUBSEQS from its tunable_params. RPA_KERNEL_K
+    # value is the K_kernel; chunk_prefill_size in the LOGICAL tuning_key
+    # equals K_kernel (the tuner stores it in the same field as PREFILL).
+    rpa_kernel_k = int(combo.get("RPA_KERNEL_K", "0"))
+    decoupled_k_active = rpa_kernel_k > 0
 
     def fmt(p: dict[str, int]) -> str:
         return f"{p['bq_sz']},{p['bkv_sz']},{p['bq_csz']},{p['bkv_csz']}"
@@ -296,12 +307,34 @@ def _apply_auto_link(
                 f"manually in the spec.")
         combo["RPA_M_BLOCK_SIZES"] = fmt(m_params)
 
-    # PREFILL block sizes are K-dependent. K=0 means chunk-prefill OFF
-    # (the request_distribution stays [D, D, T] and the kernel skips
-    # its PREFILL pass entirely), so no PREFILL block lookup is
-    # needed; documented here because it is otherwise non-obvious why
-    # K=0 is the only K not present in the kernel registry.
-    if k > 0 and "RPA_P_BLOCK_SIZES" not in combo:
+    # PREFILL / LOGICAL block sizes are K-dependent. K=0 means
+    # chunk-prefill OFF (the request_distribution stays [D, D, T] and
+    # the kernel skips its PREFILL/LOGICAL pass entirely), so no
+    # block-size lookup is needed.
+    if decoupled_k_active and "RPA_P_BLOCK_SIZES" not in combo:
+        # Decoupled-K: pull from the LOGICAL winner, keyed by
+        # K=K_kernel (the chunk size the kernel actually runs).
+        l_params = _registry_lookup(registry, "logical", page_size,
+                                    rpa_kernel_k)
+        if l_params is None:
+            raise SpecError(
+                f"kernel_registry has no LOGICAL entry at "
+                f"(page_size={page_size}, K_kernel={rpa_kernel_k}). "
+                f"Either re-run kernel tuning with "
+                f"RPA_V3_TUNER_CASES=logical to populate this K, or "
+                f"set RPA_P_BLOCK_SIZES manually for this combo.")
+        combo["RPA_P_BLOCK_SIZES"] = fmt(l_params)
+        if "RPA_MAX_NUM_SUBSEQS" not in combo:
+            mns = l_params.get("max_num_subseqs")
+            if mns is None:
+                raise SpecError(
+                    f"kernel_registry LOGICAL entry at "
+                    f"(page_size={page_size}, K_kernel={rpa_kernel_k}) "
+                    f"is missing max_num_subseqs in tunable_params. "
+                    f"Re-run with the post-A.1 tuner, or set "
+                    f"RPA_MAX_NUM_SUBSEQS manually for this combo.")
+            combo["RPA_MAX_NUM_SUBSEQS"] = str(mns)
+    elif k > 0 and "RPA_P_BLOCK_SIZES" not in combo:
         p_params = _registry_lookup(registry, "prefill", page_size, k)
         if p_params is None:
             raise SpecError(
