@@ -254,11 +254,27 @@ class LocalDbManager(StorageManager):
         )
 
     def get_already_processed_ids(self, cs_id, r_id, start, end):
+        # Resume policy by status:
+        #   SUCCESS    — skip (re-running wastes time).
+        #   FAILED_OOM — skip (hard memory ceiling; retrying re-fails).
+        #   SKIPPED    — skip (pre-flight VMEM/SMEM reject; retrying re-fails
+        #                identically).
+        #   UNKNOWN_ERROR — RETRY. Catch-all for "something else broke" —
+        #                most commonly a code bug that may have been
+        #                fixed since the row was written (e.g. the
+        #                LOGICAL distribution[2] bug in commit 779edf5f
+        #                left several UNKNOWN_ERROR rows that should
+        #                re-tune cleanly under the fixed kernel).
+        # save_results_batch uses insert-or-update semantics keyed by
+        # (id, run_id, case_id), so a retry that succeeds overwrites
+        # the prior UNKNOWN_ERROR row cleanly.
+        PERMANENT_STATUSES = {"SUCCESS", "FAILED_OOM", "SKIPPED"}
         table = self._read_table('CaseResults')
         return {
             row['CaseId']
             for row in table if row['ID'] == cs_id and row['RunId'] == r_id
             and start <= row['CaseId'] <= end
+            and row.get('ProcessedStatus') in PERMANENT_STATUSES
         }
 
     def save_results_batch(self, results):
