@@ -63,3 +63,11 @@ I0510 11:38:18.587254 126686677653440 kernel_tuner_base.py:134] CaseSetId prefil
 I0510 11:38:18.587296 126686677653440 local_db_manager.py:297] Database at tmp/log/kernel_tuner_run/prefill_heavy_logical finalized with 0 cases, 0 invalid cases.
 I0510 11:38:18.587340 126686677653440 local_db_manager.py:303] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical/CaseSet.json
 ===== 2026-05-10 11:38:19 logical done in 7s =====
+
+===== 2026-05-10 11:38:20 ALL CASES DONE =====
+
+Inspector commands to extract winners (run on the same TPU VM):
+  python3 -m tools.kernel.tuner.v1.inspect_result_cli \
+      --source=local --db-path=tmp/log/kernel_tuner_run/prefill_heavy_logical \
+      query_min_latency \
+      --case_set_id=prefill_heavy_logical_20260510_113812 --run_id=0
