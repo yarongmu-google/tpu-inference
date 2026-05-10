@@ -1701,13 +1701,31 @@ def dynamic_validate_inputs(
     if not (i <= j <= k):
         raise ValueError(f"Invalid distribution: {distribution=}")
 
-    if k > max_num_seqs:
-        raise ValueError(f"num_seqs={k} must be <= {max_num_seqs=}")
+    # Under LOGICAL (decoupled-K), k = num_total iters but cu_q_lens /
+    # kv_lens / page_indices are PHYS-keyed (length max_num_seqs+1 /
+    # max_num_seqs / max_num_seqs * pages_per_seq). Iterate over phys
+    # slots, not iter slots — otherwise the loop reads into the
+    # padding region of the phys-keyed arrays where q_len = 0 and
+    # the (0 < q_len <= kv_len) check fires spuriously.
+    #
+    # Coupled-K: phys_seq_indices is None and num_iters == num_phys, so
+    # num_phys collapses to k and the iteration is identical to the
+    # pre-LOGICAL behaviour.
+    if phys_seq_indices is not None:
+        # phys_seq_indices is iter-keyed in [0, max_num_seqs). Active
+        # phys count = max(active iter slots) + 1.
+        num_phys = int(jnp.max(phys_seq_indices[:k])) + 1 if k > 0 else 0
+    else:
+        num_phys = int(k)
 
-    if cu_q_lens[k] > max_num_tokens:
+    if num_phys > max_num_seqs:
+        raise ValueError(f"{num_phys=} must be <= {max_num_seqs=}")
+
+    if num_phys > 0 and cu_q_lens[num_phys] > max_num_tokens:
         raise ValueError(
-            f"Total q tokens {cu_q_lens[k]} must be <= {max_num_tokens=}.")
-    for i in range(k):
+            f"Total q tokens {cu_q_lens[num_phys]} must be <= "
+            f"{max_num_tokens=}.")
+    for i in range(num_phys):
         q_len = cu_q_lens[i + 1] - cu_q_lens[i]
         kv_len = kv_lens[i]
         if not (0 < q_len <= kv_len):
