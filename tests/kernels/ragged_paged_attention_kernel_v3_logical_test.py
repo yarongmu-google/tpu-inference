@@ -96,11 +96,18 @@ def _build_logical_workload(
             assert q_len == 1, "DECODE seq must have q_len==1"
             decode_iters.append((phys_idx, 0))
         elif kind == "L":
-            assert q_len % K_kernel == 0, (
-                f"LOGICAL seq q_len={q_len} must be divisible by K_kernel="
-                f"{K_kernel} in this helper")
-            for off in range(0, q_len, K_kernel):
-                logical_iters.append((phys_idx, off))
+            # LOGICAL phys: emit full K_kernel-size chunks plus a MIXED
+            # tail iter for any non-divisible remainder. Mirrors
+            # plan_step's behaviour. Lets the same workload spec exercise
+            # L-only AND L+M-tail interaction (cross-pallas_call ordering
+            # and §6.4 race fix at the L->M boundary).
+            full_chunks = q_len // K_kernel
+            tail = q_len % K_kernel
+            for chunk_idx in range(full_chunks):
+                logical_iters.append((phys_idx, chunk_idx * K_kernel))
+            if tail > 0:
+                # MIXED tail iter inherits the cumulative q_offset.
+                mixed_iters.append((phys_idx, full_chunks * K_kernel))
         elif kind == "M":
             mixed_iters.append((phys_idx, 0))
         else:
@@ -307,6 +314,127 @@ class TestLogicalEquivalence(jtu.JaxTestCase):
         self._run_and_assert(
             seqs=[(8, 8, "L")],   # prior=8, this-step q=8 -> 2 chunks
             K_kernel=4)
+
+    def test_cross_mode_lm_tail_equivalence(self):
+        """LOGICAL with L+M tail produces same output as COUPLED MIXED on
+        the same workload. Tests cross-pallas_call ordering (L
+        pallas_call's writes must drain before M reads them) and §6.4
+        c.2 read/write split end-to-end at the L->M boundary.
+
+        Without pallas_call drain semantics, M would read stale cache.
+        Without §6.4 c.2, L writes would race with M reads. Both would
+        manifest as out_logical[:10] != out_coupled[:10] here, since
+        COUPLED's single MIXED iter never has the L->M handoff and gives
+        us a clean oracle."""
+        if not jtu.is_device_tpu_at_least(version=4):
+            self.skipTest("Expect TPUv4+")
+        rng = np.random.default_rng(2026)
+
+        # phys 0 with q_len=10, K_kernel=4 -> 2 LOGICAL chunks (q_offsets
+        # 0, 4) + 1 MIXED tail (q_offset=8, q_len=2). prior_kv_len=0 so
+        # all in-step content sources from merged_kv (Option A).
+        common = _build_logical_workload(
+            seqs=[(0, 10, "L")], K_kernel=4,
+            num_q_heads=8, num_kv_heads=2, head_dim=128,
+            page_size=16, num_pages=512,
+            q_dtype=jnp.bfloat16, kv_dtype=jnp.bfloat16, rng=rng)
+
+        # LOGICAL invocation: distribution = [0, 2, 3].
+        out_logical, _ = ragged_paged_attention(
+            common["q"], common["k"], common["v"],
+            jnp.array(common["kv_cache"]),   # explicit copy (defensive)
+            common["kv_lens"], common["page_indices"], common["cu_q_lens"],
+            common["distribution"],
+            common["phys_seq_indices"], common["q_offsets"],
+            chunk_prefill_size=4,
+            p_block_sizes=(64, 128, 32, 64),
+            d_block_sizes=(64, 128, 32, 64),
+            m_block_sizes=(64, 128, 32, 64),
+        )
+
+        # COUPLED invocation: same q/k/v/cache, but no LOGICAL prefetches
+        # and distribution = [0, 0, 1] — phys 0's full q_len=10 routes to
+        # MIXED in a single iter, no L->M handoff.
+        coupled_distribution = jnp.array([0, 0, 1], dtype=jnp.int32)
+        out_coupled, _ = ragged_paged_attention(
+            common["q"], common["k"], common["v"],
+            jnp.array(common["kv_cache"]),
+            common["kv_lens"], common["page_indices"], common["cu_q_lens"],
+            coupled_distribution,
+            chunk_prefill_size=None,        # skip P/L pass
+            p_block_sizes=(64, 128, 32, 64),
+            d_block_sizes=(64, 128, 32, 64),
+            m_block_sizes=(64, 128, 32, 64),
+        )
+
+        # Both modes write phys 0's full q_range [0, 10). LOGICAL via
+        # 2 L iters (output q[0:8]) plus 1 M tail (output q[8:10]).
+        # COUPLED via 1 M iter (output q[0:10]).
+        self.assertAllClose(out_logical[:10], out_coupled[:10],
+                            atol=0.2, rtol=0.2)
+        self.assertTrue(jnp.all(jnp.isfinite(out_logical[:10])))
+        self.assertTrue(jnp.all(jnp.isfinite(out_coupled[:10])))
+
+    def test_dispatch_decode_plus_logical_plus_mixed(self):
+        """Workload with one phys per bucket. No shared-phys cross-
+        pallas_call dependency, but exercises the kernel's full
+        D->L->M dispatch path. Compares LOGICAL bucket output to the
+        LOGICAL reference; D and M buckets are covered by existing v3
+        tests."""
+        if not jtu.is_device_tpu_at_least(version=4):
+            self.skipTest("Expect TPUv4+")
+        rng = np.random.default_rng(2026)
+
+        # phys 0 DECODE (q=1, prior=8), phys 1 LOGICAL (q=8, K_kernel=4
+        # -> 2 chunks), phys 2 MIXED (q=3 < K_kernel -> 1 MIXED iter).
+        seqs = [(8, 1, "D"), (0, 8, "L"), (0, 3, "M")]
+        K_kernel = 4
+        w = _build_logical_workload(
+            seqs=seqs, K_kernel=K_kernel,
+            num_q_heads=8, num_kv_heads=2, head_dim=128,
+            page_size=16, num_pages=512,
+            q_dtype=jnp.bfloat16, kv_dtype=jnp.bfloat16, rng=rng)
+
+        # LOGICAL bucket reference (iters [num_decode, num_decode+num_L)).
+        expected, _ = ref_ragged_paged_attention_logical(
+            queries=w["q"], keys=w["k"], values=w["v"],
+            kv_cache=w["kv_cache"], kv_lens=w["kv_lens"],
+            page_indices=w["page_indices"], cu_q_lens=w["cu_q_lens"],
+            phys_seq_indices=w["phys_seq_indices"],
+            q_offsets=w["q_offsets"],
+            distribution=w["distribution"],
+            static_q_len=K_kernel)
+
+        output, _ = ragged_paged_attention(
+            w["q"], w["k"], w["v"], w["kv_cache"],
+            w["kv_lens"], w["page_indices"], w["cu_q_lens"],
+            w["distribution"],
+            w["phys_seq_indices"], w["q_offsets"],
+            chunk_prefill_size=K_kernel,
+            p_block_sizes=(64, 128, 32, 64),
+            d_block_sizes=(64, 128, 32, 64),
+            m_block_sizes=(64, 128, 32, 64),
+        )
+
+        # L iters cover phys 1 only; output range is
+        # cu_q_lens[1] : cu_q_lens[1] + (num_L_iters * K_kernel).
+        # (Cant use cu_q_lens[last_L_phys + 1] here because the workload
+        # has multiple phys reqs in different buckets — that index would
+        # span past phys 1 into phys 2's MIXED q range.)
+        L_start = int(w["distribution"][0])
+        L_end = int(w["distribution"][1])
+        num_L_iters = L_end - L_start
+        first_L_phys = int(w["phys_seq_indices"][L_start])
+        q_lo = int(w["cu_q_lens"][first_L_phys])
+        q_hi = q_lo + num_L_iters * K_kernel
+        kernel_L_output = output[q_lo:q_hi]
+
+        self.assertEqual(kernel_L_output.shape, expected.shape)
+        self.assertAllClose(kernel_L_output, expected, atol=0.2, rtol=0.2)
+        # Sanity: D and M bucket outputs are also finite (the dispatch
+        # sequence ran all three pallas_calls without poisoning output).
+        active_q_end = int(w["cu_q_lens"][len(seqs)])
+        self.assertTrue(jnp.all(jnp.isfinite(output[:active_q_end])))
 
 
 @jtu.with_config(jax_numpy_dtype_promotion="standard")
