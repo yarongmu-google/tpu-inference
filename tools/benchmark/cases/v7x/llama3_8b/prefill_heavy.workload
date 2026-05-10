@@ -38,7 +38,7 @@
 
 
 : "${MAX_NUM_SEQS:=128}"
-: "${MAX_NUM_BATCHED_TOKENS:=10275}"
+: "${MAX_NUM_BATCHED_TOKENS:=8192}"
 : "${MAX_MODEL_LEN:=8192}"
 
 # vLLM's --block-size (KV-cache page size). Empty = let vLLM pick its
