@@ -528,14 +528,17 @@ class RpaV3KernelTuner(KernelTunerBase):
                     # per phys req (the formulas +max_num_seqs slack term).
                     if mns < self.max_num_seqs:
                         continue
-                    # The synthetic LOGICAL workload uses
-                    # M_per_phys = (mns // max_num_seqs) - 1 chunks per
-                    # phys at K tokens each. If that exceeds
-                    # max_num_tokens // max_num_seqs we cant fit the
-                    # workload in the q buffer — skip.
+                    # The synthetic LOGICAL workload uses M_per_phys =
+                    # (mns // max_num_seqs) - 1 chunks per phys at K
+                    # tokens each. If even ONE phys cant fit the
+                    # max_num_tokens budget at this (K, M_per_phys),
+                    # skip — there's no meaningful workload to tune.
+                    # (The actual workload size is scaled down inside
+                    # _build_inputs to `min(max_num_tokens // per_phys_q,
+                    # max_num_seqs)`, mirroring PREFILLs sizing.)
                     M_per_phys = max(1, mns // self.max_num_seqs - 1)
                     per_phys_q = K * M_per_phys
-                    if per_phys_q * self.max_num_seqs > self.max_num_tokens:
+                    if per_phys_q > self.max_num_tokens:
                         continue
 
                 # ---- Hybrid VMEM-Aware Tuning Pruning (Theoretical bounds) ----
@@ -646,10 +649,21 @@ class RpaV3KernelTuner(KernelTunerBase):
             # M_per_phys derives from the formula
             # `max_num_subseqs = max_num_seqs * (M + 1)` -> M = mns/N - 1.
             # Floor at 1 so the workload always has at least one chunk
-            # per phys; bounds check in generate_cases ensures the
-            # resulting per-phys q_len fits max_num_tokens.
+            # per phys; generate_cases ensures the resulting per_phys_q
+            # fits at least one phys reqs q-budget.
             M_per_phys = max(1, mns // max_num_seqs - 1)
-            actual_num_seqs = max_num_seqs
+            per_phys_q = K * M_per_phys
+            # Scale actual_num_seqs to fit max_num_tokens, mirroring
+            # PREFILLs sizing. Without this, the synthetic workload
+            # would try to fit max_num_seqs * per_phys_q tokens which
+            # at MNS=128, K=256, MNB=10275 is 128*256=32768 — way over
+            # MNB. Result: all combos get rejected and the tune
+            # produces zero cases. The runtimes max_num_subseqs is
+            # SMEM-driven (set from envs.RPA_MAX_NUM_SUBSEQS at deploy
+            # time), independent of how many phys reqs the synthetic
+            # tune workload happens to use.
+            actual_num_seqs = max(
+                1, min(self.max_num_tokens // per_phys_q, max_num_seqs))
             return get_logical_only_example(
                 actual_num_seqs, K, M_per_phys,
                 tuning_key.max_model_len) + (actual_num_seqs, )
