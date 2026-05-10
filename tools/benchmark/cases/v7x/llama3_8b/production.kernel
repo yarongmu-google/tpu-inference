@@ -716,31 +716,6 @@
           "sliding_window": null,
           "case": "logical",
           "chunk_prefill_size": 256,
-          "code_revision": "7d3cd8799f08"
-        },
-        "tunable_params": {
-          "bq_sz": 256,
-          "bkv_sz": 2048,
-          "bq_csz": 256,
-          "bkv_csz": 512,
-          "max_num_subseqs": 256
-        },
-        "Latency": 4973,
-        "WarmupTime": 3211916,
-        "CaseId": 0
-      },
-      {
-        "tuning_key": {
-          "page_size": 128,
-          "q_dtype": "bfloat16",
-          "kv_dtype": "bfloat16",
-          "num_q_heads": 32,
-          "num_kv_heads": 8,
-          "head_dim": 128,
-          "max_model_len": 8192,
-          "sliding_window": null,
-          "case": "logical",
-          "chunk_prefill_size": 256,
           "code_revision": "e58abea228cc"
         },
         "tunable_params": {
