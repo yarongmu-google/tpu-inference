@@ -135,19 +135,17 @@ def _build_logical_workload(
     padded_head_dim = align_to(head_dim, 128)
     num_kv_heads_x2 = align_to(num_kv_heads * 2, kv_packing)
 
-    # Zero-init (NOT NaN-init like the existing coupled-K tests use). Under
-    # LOGICAL with q_len << bkv_sz, the kernel's per-iter DMAs only cover
-    # [0, kv_len) of vmem; positions [kv_len, bkv_sz) inherit prior vmem
-    # contents. The kernel's attention then masks those positions out via
-    # `where(mask, attn, mask_value)`, but the v-matmul still computes
-    # `attn_weight x v`. With attn_weight ~ 0 after softmax(mask_value):
-    # 0 * NaN = NaN, which propagates into the output. Zero-init avoids
-    # this by ensuring un-DMAed vmem positions are 0, not NaN.
-    # See project_kernel_logical_vmem_padding_fragility.md for the
-    # kernel-hardening follow-up.
-    kv_cache = jnp.zeros(
+    # NaN-init matches the existing coupled-K v3 test convention. NaN at
+    # cache positions the kernel must NOT read (per §6.4 Option A: the
+    # iter-write window) is a stronger test — a future regression where
+    # the kernel mistakenly reads from cache at those positions would
+    # propagate NaN into the output. We pre-populate positions [0, prior)
+    # below for each phys req with finite prior content (legitimately
+    # readable from cache); everything else stays NaN.
+    kv_cache = jnp.full(
         (num_pages, page_size, num_kv_heads_x2 // kv_packing, kv_packing,
          padded_head_dim),
+        jnp.nan,
         dtype=kv_dtype,
     )
 
