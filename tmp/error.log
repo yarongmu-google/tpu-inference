@@ -1,46 +1,71 @@
 Runlog: tmp/log/tune_all_prefill_heavy.txt
-===== 2026-05-10 12:18:05 Starting full kernel tune for prefill_heavy =====
+===== 2026-05-10 12:22:26 Starting full kernel tune for prefill_heavy =====
 Cases: decode -> prefill -> mixed
 Branch: rpa3_2
-Git commit: 23197ebc11460c94aef0375859bccee34de62584
+Git commit: e58abea228cc79d1a1ac7d94b29eb1308814d0a6
 
 
-===== 2026-05-10 12:18:05 Tuning logical (case_set_id=prefill_heavy_logical) =====
+===== 2026-05-10 12:22:26 Tuning logical (case_set_id=prefill_heavy_logical) =====
 DB path: tmp/log/kernel_tuner_run/prefill_heavy_logical
 WARNING:absl:Tensorflow library not found, tensorflow.io.gfile operations will use native shim calls. GCS paths (i.e. 'gs://...') cannot be accessed.
 INFO:numexpr.utils:Note: detected 224 virtual cores but NumExpr set to maximum of 64, check "NUMEXPR_MAX_THREADS" environment variable.
 INFO:numexpr.utils:Note: NumExpr detected 224 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
 INFO:numexpr.utils:NumExpr defaulting to 16 threads.
-INFO 05-10 12:18:11 [__init__.py:59] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
-I0510 12:18:11.298682 127505453377472 kernel_tuner_runner.py:115] Using case_set_id: prefill_heavy_logical, run_id: 0, case_set_desc: prefill_heavy logical kernel tune for this tuning run.
-I0510 12:18:11.298778 127505453377472 local_db_manager.py:53] Database initialized at tmp/log/kernel_tuner_run/prefill_heavy_logical
-I0510 12:18:11.303874 127505453377472 rpa_v3_kernel_tuner.py:431] RPA_V3_BQ_SZ_LST override: [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192] -> [256]
-I0510 12:18:11.303941 127505453377472 rpa_v3_kernel_tuner.py:431] RPA_V3_BKV_SZ_LST override: [512, 1024, 2048, 4096, 8192] -> [2048]
-I0510 12:18:11.303964 127505453377472 rpa_v3_kernel_tuner.py:431] RPA_V3_BQ_CSZ_LST override: [32, 64, 128, 256, 512, 1024, 2048] -> [256]
-I0510 12:18:11.303986 127505453377472 rpa_v3_kernel_tuner.py:431] RPA_V3_BKV_CSZ_LST override: [128, 256, 512, 1024, 2048] -> [512]
-I0510 12:18:11.304004 127505453377472 rpa_v3_kernel_tuner.py:431] RPA_V3_K_LST override: [128, 256, 512, 1024, 2048, 4096, 8192] -> [256]
-I0510 12:18:11.304025 127505453377472 rpa_v3_kernel_tuner.py:431] RPA_V3_PAGE_SIZE_LST override: [64, 128, 256] -> [128]
-I0510 12:18:11.304048 127505453377472 kernel_tuner_runner.py:135] Running in locally mode. Skipping Buildkite pipeline generation and running tuning jobs directly.
-I0510 12:18:11.304162 127505453377472 kernel_tuner_base.py:134] CaseSetId prefill_heavy_logical already exists with the same description. Proceeding with the existing case set.
-I0510 12:18:11.304208 127505453377472 kernel_tuner_base.py:356] Worker [unknown] Claimed CaseSetId: prefill_heavy_logical, RunId: 0, Bucket 0 (0-6) for processing.
-I0510 12:18:11.304493 127505453377472 local_db_manager.py:236] Marked bucket as in progress: cs_id=prefill_heavy_logical, r_id=0, b_id=0, worker=None
-I0510 12:18:11.305837 127505453377472 local_db_manager.py:252] Marked bucket as completed: cs_id=prefill_heavy_logical, r_id=0, b_id=0, tt_us=1
-I0510 12:18:11.305882 127505453377472 kernel_tuner_base.py:433] Worker [unknown] Completed Bucket 0 (0-6) for CaseSetId: prefill_heavy_logical, RunId: 0. Total time: 0.00s.
-I0510 12:18:11.305905 127505453377472 local_db_manager.py:297] Database at tmp/log/kernel_tuner_run/prefill_heavy_logical finalized with 0 cases, 0 invalid cases.
-I0510 12:18:11.305950 127505453377472 local_db_manager.py:303] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical/CaseSet.json
-I0510 12:18:11.305970 127505453377472 local_db_manager.py:303] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical/KernelTuningCases.json
-I0510 12:18:11.305984 127505453377472 local_db_manager.py:303] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical/WorkBuckets.json
-I0510 12:18:11.305999 127505453377472 local_db_manager.py:303] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical/CaseResults.json
-===== 2026-05-10 12:18:11 logical done in 6s =====
-[rpa3_2 1bc4a2f337] [Kernel-Tune] progress: logical done (prefill_heavy 20260510_121805)
- 1 file changed, 33 insertions(+)
+INFO 05-10 12:22:32 [__init__.py:59] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+I0510 12:22:32.547244 140337196267456 kernel_tuner_runner.py:115] Using case_set_id: prefill_heavy_logical, run_id: 0, case_set_desc: prefill_heavy logical kernel tune for this tuning run.
+I0510 12:22:32.547411 140337196267456 local_db_manager.py:53] Database initialized at tmp/log/kernel_tuner_run/prefill_heavy_logical
+I0510 12:22:32.552355 140337196267456 rpa_v3_kernel_tuner.py:431] RPA_V3_BQ_SZ_LST override: [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192] -> [256]
+I0510 12:22:32.552416 140337196267456 rpa_v3_kernel_tuner.py:431] RPA_V3_BKV_SZ_LST override: [512, 1024, 2048, 4096, 8192] -> [2048]
+I0510 12:22:32.552440 140337196267456 rpa_v3_kernel_tuner.py:431] RPA_V3_BQ_CSZ_LST override: [32, 64, 128, 256, 512, 1024, 2048] -> [256]
+I0510 12:22:32.552462 140337196267456 rpa_v3_kernel_tuner.py:431] RPA_V3_BKV_CSZ_LST override: [128, 256, 512, 1024, 2048] -> [512]
+I0510 12:22:32.552482 140337196267456 rpa_v3_kernel_tuner.py:431] RPA_V3_K_LST override: [128, 256, 512, 1024, 2048, 4096, 8192] -> [256]
+I0510 12:22:32.552504 140337196267456 rpa_v3_kernel_tuner.py:431] RPA_V3_PAGE_SIZE_LST override: [64, 128, 256] -> [128]
+I0510 12:22:32.552526 140337196267456 kernel_tuner_runner.py:135] Running in locally mode. Skipping Buildkite pipeline generation and running tuning jobs directly.
+I0510 12:22:32.552692 140337196267456 local_db_manager.py:102] Initialized case set: {'ID': 'prefill_heavy_logical', 'Description': 'prefill_heavy logical kernel tune', 'Status': 'CREATING', 'ScanSpace': 0}
+I0510 12:22:32.552720 140337196267456 kernel_tuner_base.py:141] Initialized new CaseSet with ID: prefill_heavy_logical and description: prefill_heavy logical kernel tune
+I0510 12:22:32.552966 140337196267456 rpa_v3_kernel_tuner.py:607] [Debug] Generated 6 cases
+I0510 12:22:32.553184 140337196267456 local_db_manager.py:164] Flushed: wrote 6 cases to KernelTuningCases
+I0510 12:22:32.553402 140337196267456 local_db_manager.py:136] Finished case set: ID=prefill_heavy_logical, valid=6, invalid=0, duration=0.0s
+I0510 12:22:32.553433 140337196267456 kernel_tuner_base.py:196] 
+Complete Generate Tuning Cases for prefill_heavy_logical, Valid Cases: 6 | Duration: 0s
+I0510 12:22:32.553461 140337196267456 kernel_tuner_base.py:356] Worker [unknown] Claimed CaseSetId: prefill_heavy_logical, RunId: 0, Bucket 0 (0-6) for processing.
+I0510 12:22:32.553556 140337196267456 local_db_manager.py:236] Marked bucket as in progress: cs_id=prefill_heavy_logical, r_id=0, b_id=0, worker=None
+I0510 12:22:32.553648 140337196267456 rpa_v3_kernel_tuner.py:860] Running rpa_v3 case=logical K=256 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='logical', chunk_prefill_size=256, code_revision='e58abea228cc') params=TunableParams(bq_sz=256, bkv_sz=2048, bq_csz=256, bkv_csz=512, max_num_subseqs=256) iters=1
+I0510 12:22:53.807091 140337196267456 rpa_v3_kernel_tuner.py:769] [Debug] case=logical K=256 actual_num_seqs=40 distribution=Array([ 0, 40, 40], dtype=int32)
+I0510 12:22:59.971681 140337196267456 rpa_v3_kernel_tuner.py:860] Running rpa_v3 case=logical K=256 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='logical', chunk_prefill_size=256, code_revision='e58abea228cc') params=TunableParams(bq_sz=256, bkv_sz=2048, bq_csz=256, bkv_csz=512, max_num_subseqs=256) iters=10
+I0510 12:23:01.974915 140337196267456 rpa_v3_kernel_tuner.py:860] Running rpa_v3 case=logical K=256 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='logical', chunk_prefill_size=256, code_revision='e58abea228cc') params=TunableParams(bq_sz=256, bkv_sz=2048, bq_csz=256, bkv_csz=512, max_num_subseqs=384) iters=1
+I0510 12:23:16.099039 140337196267456 rpa_v3_kernel_tuner.py:769] [Debug] case=logical K=256 actual_num_seqs=40 distribution=Array([ 0, 40, 40], dtype=int32)
+I0510 12:23:20.130486 140337196267456 rpa_v3_kernel_tuner.py:860] Running rpa_v3 case=logical K=256 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='logical', chunk_prefill_size=256, code_revision='e58abea228cc') params=TunableParams(bq_sz=256, bkv_sz=2048, bq_csz=256, bkv_csz=512, max_num_subseqs=384) iters=10
+I0510 12:23:21.131173 140337196267456 rpa_v3_kernel_tuner.py:860] Running rpa_v3 case=logical K=256 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='logical', chunk_prefill_size=256, code_revision='e58abea228cc') params=TunableParams(bq_sz=256, bkv_sz=2048, bq_csz=256, bkv_csz=512, max_num_subseqs=640) iters=1
+I0510 12:23:35.373742 140337196267456 rpa_v3_kernel_tuner.py:769] [Debug] case=logical K=256 actual_num_seqs=40 distribution=Array([ 0, 40, 40], dtype=int32)
+I0510 12:23:38.938312 140337196267456 rpa_v3_kernel_tuner.py:860] Running rpa_v3 case=logical K=256 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='logical', chunk_prefill_size=256, code_revision='e58abea228cc') params=TunableParams(bq_sz=256, bkv_sz=2048, bq_csz=256, bkv_csz=512, max_num_subseqs=640) iters=10
+I0510 12:23:39.428870 140337196267456 rpa_v3_kernel_tuner.py:860] Running rpa_v3 case=logical K=256 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='logical', chunk_prefill_size=256, code_revision='e58abea228cc') params=TunableParams(bq_sz=256, bkv_sz=2048, bq_csz=256, bkv_csz=512, max_num_subseqs=1152) iters=1
+I0510 12:23:53.663313 140337196267456 rpa_v3_kernel_tuner.py:769] [Debug] case=logical K=256 actual_num_seqs=40 distribution=Array([ 0, 40, 40], dtype=int32)
+I0510 12:23:57.287388 140337196267456 rpa_v3_kernel_tuner.py:860] Running rpa_v3 case=logical K=256 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='logical', chunk_prefill_size=256, code_revision='e58abea228cc') params=TunableParams(bq_sz=256, bkv_sz=2048, bq_csz=256, bkv_csz=512, max_num_subseqs=1152) iters=10
+I0510 12:23:57.574741 140337196267456 rpa_v3_kernel_tuner.py:860] Running rpa_v3 case=logical K=256 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='logical', chunk_prefill_size=256, code_revision='e58abea228cc') params=TunableParams(bq_sz=256, bkv_sz=2048, bq_csz=256, bkv_csz=512, max_num_subseqs=2176) iters=1
+I0510 12:24:11.721861 140337196267456 rpa_v3_kernel_tuner.py:769] [Debug] case=logical K=256 actual_num_seqs=32 distribution=Array([ 0, 32, 32], dtype=int32)
+I0510 12:24:14.994299 140337196267456 rpa_v3_kernel_tuner.py:860] Running rpa_v3 case=logical K=256 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='logical', chunk_prefill_size=256, code_revision='e58abea228cc') params=TunableParams(bq_sz=256, bkv_sz=2048, bq_csz=256, bkv_csz=512, max_num_subseqs=2176) iters=10
+I0510 12:24:15.127942 140337196267456 rpa_v3_kernel_tuner.py:860] Running rpa_v3 case=logical K=256 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='logical', chunk_prefill_size=256, code_revision='e58abea228cc') params=TunableParams(bq_sz=256, bkv_sz=2048, bq_csz=256, bkv_csz=512, max_num_subseqs=4224) iters=1
+I0510 12:24:29.172621 140337196267456 rpa_v3_kernel_tuner.py:769] [Debug] case=logical K=256 actual_num_seqs=32 distribution=Array([ 0, 32, 32], dtype=int32)
+I0510 12:24:32.357625 140337196267456 rpa_v3_kernel_tuner.py:860] Running rpa_v3 case=logical K=256 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='logical', chunk_prefill_size=256, code_revision='e58abea228cc') params=TunableParams(bq_sz=256, bkv_sz=2048, bq_csz=256, bkv_csz=512, max_num_subseqs=4224) iters=10
+I0510 12:24:32.432053 140337196267456 local_db_manager.py:284] Saved 6 results to CaseResults
+I0510 12:24:32.432431 140337196267456 local_db_manager.py:252] Marked bucket as completed: cs_id=prefill_heavy_logical, r_id=0, b_id=0, tt_us=119878531
+I0510 12:24:32.432487 140337196267456 kernel_tuner_base.py:433] Worker [unknown] Completed Bucket 0 (0-6) for CaseSetId: prefill_heavy_logical, RunId: 0. Total time: 119.88s.
+I0510 12:24:32.432547 140337196267456 local_db_manager.py:297] Database at tmp/log/kernel_tuner_run/prefill_heavy_logical finalized with 6 cases, 0 invalid cases.
+I0510 12:24:32.432625 140337196267456 local_db_manager.py:303] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical/CaseSet.json
+I0510 12:24:32.432651 140337196267456 local_db_manager.py:303] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical/KernelTuningCases.json
+I0510 12:24:32.432667 140337196267456 local_db_manager.py:303] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical/WorkBuckets.json
+I0510 12:24:32.432688 140337196267456 local_db_manager.py:303] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical/CaseResults.json
+===== 2026-05-10 12:24:37 logical done in 131s =====
+[rpa3_2 952b8fe849] [Kernel-Tune] progress: logical done (prefill_heavy 20260510_122226)
+ 1 file changed, 58 insertions(+)
 
-===== 2026-05-10 12:18:13 ALL CASES DONE =====
+===== 2026-05-10 12:24:38 ALL CASES DONE =====
 
 Inspector commands to extract winners (run on the same TPU VM):
   python3 -m tools.kernel.tuner.v1.inspect_result_cli \
       --source=local --db-path=tmp/log/kernel_tuner_run/prefill_heavy_logical \
       query_min_latency \
-      --case_set_id=prefill_heavy_logical_20260510_121805 --run_id=0
-[rpa3_2 9506282557] [Kernel-Tune] progress: all done (prefill_heavy 20260510_121805)
+      --case_set_id=prefill_heavy_logical_20260510_122226 --run_id=0
+[rpa3_2 48f47e3511] [Kernel-Tune] progress: all done (prefill_heavy 20260510_122226)
  1 file changed, 8 insertions(+)
