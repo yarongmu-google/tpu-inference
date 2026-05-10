@@ -65,50 +65,23 @@ from typing import Any
 RECIPES: dict[tuple[str, str], dict[str, Any]] = {
     ("rpa_v3", "vllm"): {
         "sweep_axes": {
-            # vllm scheduler knobs (orthogonal to kernel; swept end-to-end).
-            #
-            # MAX_NUM_BATCHED_TOKENS values:
-            #   8192  — floor; was the throughput peak in the 8B
-            #           prefill_heavy sweep, and is the smallest value
-            #           large enough to hold one chunk at the largest
-            #           K we sweep (K=2048) plus headroom. Below 8192
-            #           the sweep was uninformative at 8B (4.71-4.79
-            #           req/s across [2048, 4096, 8192]).
-            #   16384 — 2x scaling.
-            #   32768 — fits one full 32K-context prefill in one
-            #           scheduler step (relevant for the 70B workload).
-            #   65536 — 2x past a single full request; gives the
-            #           scheduler room to pack chunks from multiple
-            #           requests in one step at long context.
-            #
-            # Removed: 2048, 4096 (uninformative at 8B); 10275 (an
-            # 8B-TP1 artifact that collapsed throughput from 4.79 to
-            # 3.39 req/s — likely a kernel-tile-shape mismatch at the
-            # non-power-of-2 dimension; see commit log).
             "MAX_NUM_BATCHED_TOKENS":       [8192, 16384, 32768, 65536],
-            # MAX_NUM_SEQS values:
-            #   128 — bm-infra v6e/v7x default; the floor.
-            #   256 — middle rung; useful at long-context (32K+) where
-            #          per-request KV is large enough that 1000 is not
-            #          actually reachable but 128 leaves throughput on
-            #          the table.
-            #   1000 — saturate concurrency on v7xs HBM-backed capacity;
-            #          vllm auto-caps the actual concurrency to whatever
-            #          fits, so 1000 is "use as much as you can".
             "MAX_NUM_SEQS":                 [128, 256, 1000],
-            # K=0 folds the baseline (chunk-prefill OFF) into the same
-            # sweep — the highest-throughput row wins regardless of K.
-            # Powers-of-two from 128 up to MAX_MODEL_LEN cover the K
-            # values the kernel tuner already produces winners for.
-            "LONG_PREFILL_TOKEN_THRESHOLD": [0, 128, 256, 512, 1024, 2048],
         },
         "fixed": {
-            # page_size winner from the all-three-flavors tune. If the
-            # tuner ever produces a stronger winner at a different
-            # page_size, update here OR sweep BLOCK_SIZE in sweep_axes
-            # (auto-link will inject D/P/M block sizes for the chosen
-            # page_size from the kernel registry).
+            # page_size winner from the all-three-flavors tune.
             "BLOCK_SIZE": 128,
+            # Decoupled-K is the kernel default for this recipe: the L
+            # kernel processes chunked prefills, kernel_K is pinned by
+            # the kernel-tune winner, and LONG_PREFILL_TOKEN_THRESHOLD
+            # is derived (= mnss * RPA_KERNEL_K) by
+            # sweep.py:_apply_auto_link and validated by the server at
+            # runner init. Both LPTT and RPA_KERNEL_K therefore leave
+            # sweep_axes — the kernel registry is the source of truth.
+            # Today there is one L winner at K=256 for this workload;
+            # widen this pin to a sweep axis once the tuner produces
+            # winners at other K values.
+            "RPA_KERNEL_K": 256,
         },
         "timeout_seconds": 1800,
         # Default rank: best throughput. Stated explicitly so a future
