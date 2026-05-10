@@ -512,6 +512,97 @@ per request → meaningful TTFT cut, especially at long context.
 **Run the 70B sweep first** — if K=256 wins by <3% over K=2048 there,
 the decoupling is not worth the engineering cost.
 
+### Bet 2 implementation: L kernel quick-look recipe
+
+Bet 2 was implemented end-to-end in commits `8e68f2c0..eb270764` (Phase 2b
+stack: kernel LOGICAL case + runner-side wiring + orchestrator auto-link).
+The throughput / latency comparison against today's P / M kernels uses a
+fast-track tune that pins all kernel block sizes to the existing P-winner
+values and sweeps only the new dimension (`max_num_subseqs`). Per-axis
+overrides via env vars (`RPA_V3_*_LST`, commit `4dd5b5f0`) collapse the
+LOGICAL search space from hundreds of combos to 6.
+
+#### Phase 1 — Fast-track LOGICAL tune (throughput workload, MNS=128)
+
+```bash
+git pull origin rpa3_2
+
+RPA_V3_BQ_SZ_LST=256 \
+RPA_V3_BKV_SZ_LST=2048 \
+RPA_V3_BQ_CSZ_LST=256 \
+RPA_V3_BKV_CSZ_LST=512 \
+RPA_V3_K_LST=256 \
+RPA_V3_PAGE_SIZE_LST=128 \
+CASES_TO_TUNE=logical RPA_V3_TUNER_CASES=logical \
+  tools/kernel/tuner/v1/tune_all_cases.sh \
+    tools/benchmark/cases/v7x/llama3_8b/prefill_heavy.workload
+
+# Then build registry (merges into existing production.kernel).
+tools/kernel/tuner/v1/build_kernel_registry.sh \
+    tmp/log/tune_all_prefill_heavy.txt \
+    tools/benchmark/cases/v7x/llama3_8b/production.kernel
+```
+
+Expected: 6 LOGICAL combos at (page=128, K=256), one per
+`max_num_subseqs ∈ {256, 384, 640, 1152, 2176, 4224}`. Should finish in
+minutes.
+
+#### Phase 2 — Fast-track LOGICAL tune (latency workload, MNS=1)
+
+```bash
+RPA_V3_BQ_SZ_LST=256 \
+RPA_V3_BKV_SZ_LST=2048 \
+RPA_V3_BQ_CSZ_LST=256 \
+RPA_V3_BKV_CSZ_LST=512 \
+RPA_V3_K_LST=256 \
+RPA_V3_PAGE_SIZE_LST=128 \
+CASES_TO_TUNE=logical RPA_V3_TUNER_CASES=logical \
+  tools/kernel/tuner/v1/tune_all_cases.sh \
+    tools/benchmark/cases/v7x/llama3_8b/prefill_heavy_latency.workload
+
+tools/kernel/tuner/v1/build_kernel_registry.sh \
+    tmp/log/tune_all_prefill_heavy_latency.txt \
+    tools/benchmark/cases/v7x/llama3_8b/production.kernel
+```
+
+Expected: 6 LOGICAL combos at MNS=1 candidates `{2, 3, 5, 9, 17, 33}`.
+Even faster than Phase 1.
+
+#### Phase 3 — Throughput service comparison (L vs P)
+
+```bash
+SERVICE_ID=vllm RPA_KERNEL_K=256 tools/run_pipeline.sh \
+    tools/benchmark/cases/v7x/llama3_8b/prefill_heavy.workload
+```
+
+Compare `req/s` and `P99 TTFT` to the P-baseline (4.79 req/s / 207.2 s).
+
+**Hypothesis:** L slightly slower than P due to indirection cost (extra
+`phys_seq_indices_ref[seq_idx]` lookup per iter). If L is way slower,
+kernel bug.
+
+#### Phase 4 — Latency service comparison (L vs M)
+
+The current latency baseline (M, 388 ms) uses
+`LONG_PREFILL_TOKEN_THRESHOLD=0` (PREFILL/LOGICAL pass skipped). For an
+L-vs-M comparison we need to ENABLE the LOGICAL pass:
+
+```bash
+SERVICE_ID=vllm_latency RPA_KERNEL_K=256 \
+LONG_PREFILL_TOKEN_THRESHOLD=8192 \
+tools/run_pipeline.sh \
+    tools/benchmark/cases/v7x/llama3_8b/prefill_heavy_latency.workload
+```
+
+`LONG_PREFILL_TOKEN_THRESHOLD=8192` lets vLLM hand the runner the full
+8191-token prefill in one step → planner emits 32 LOGICAL chunks →
+kernel processes them in one call (assuming `max_num_subseqs ≥ 33`).
+
+Compare to 388 ms.
+
+**Hypothesis:** L beats M because static-K block sizes are well-tuned
+and we avoid MIXED's dynamic-q-len overhead.
+
 ### What we ruled out (and why)
 
 - **vLLM scheduler fork (rpa3 branch in vLLM)**: same runner-side
