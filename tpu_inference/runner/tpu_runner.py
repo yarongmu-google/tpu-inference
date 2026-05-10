@@ -79,6 +79,7 @@ from tpu_inference.runner.subseq_planner import (
     build_iter_prefetches,
     evaluate_decoupled_k_config,
     required_max_num_subseqs,
+    validate_decoupled_k_runner_init,
 )
 from tpu_inference.runner.persistent_batch_manager import \
     PersistentBatchManager
@@ -400,24 +401,13 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
         # iter-keyed prefetches arent allocated and their AttentionMetadata
         # fields stay None so the kernel takes its coupled branch.
         if self._decoupled_k_config is not None:
-            dp_size = self.vllm_config.sharding_config.total_dp_size
-            if dp_size > 1:
-                raise NotImplementedError(
-                    "Decoupled-K (RPA_KERNEL_K) with attention DP > 1 is not "
-                    f"yet supported (got total_dp_size={dp_size}). The "
-                    "iter-keyed prefetch construction assumes a single DP "
-                    "shard per step. Disable RPA_KERNEL_K or run with "
-                    "total_dp_size=1 until the DP-aware planner lands.")
-            if isinstance(self.drafter, Eagle3Proposer):
-                raise NotImplementedError(
-                    "Decoupled-K (RPA_KERNEL_K) with eagle3 spec-decode is "
-                    "not yet supported: eagle3.py rebuilds AttentionMetadata "
-                    "for the draft model_fn, and that rebuild does not "
-                    "forward phys_seq_indices / q_offsets — the draft kernel "
-                    "would silently fall to the coupled branch with "
-                    "mismatched request_distribution, yielding OOB reads on "
-                    "every iter beyond max_num_seqs. Disable RPA_KERNEL_K or "
-                    "run without eagle3 until the rebuild path is updated.")
+            # Gate unsupported combinations (DP > 1, eagle3 spec-decode).
+            # Helper takes resolved booleans so the gate logic is unit-
+            # testable without importing the JAX / vLLM runtime stack.
+            validate_decoupled_k_runner_init(
+                is_eagle3_drafter=isinstance(self.drafter, Eagle3Proposer),
+                total_dp_size=self.vllm_config.sharding_config.total_dp_size,
+            )
             self._max_num_subseqs = required_max_num_subseqs(
                 max_num_seqs=self.scheduler_config.max_num_seqs,
                 K_sched_cap=self._decoupled_k_config.effective_K_sched_cap,

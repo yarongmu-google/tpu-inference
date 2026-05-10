@@ -452,6 +452,57 @@ def build_iter_prefetches(
                           q_offsets=q_offsets)
 
 
+def validate_decoupled_k_runner_init(
+    *,
+    is_eagle3_drafter: bool,
+    total_dp_size: int,
+) -> None:
+    """Raise NotImplementedError for decoupled-K + runner-init combos
+    that arent yet supported.
+
+    Called from TPUModelRunner.__init__ only when RPA_KERNEL_K is set
+    (i.e. ``_decoupled_k_config is not None``). Two combinations are
+    gated:
+
+      total_dp_size > 1
+        The iter-keyed prefetch construction in
+        ``build_iter_prefetches`` assumes a single DP shard per step.
+        Under DP > 1, each shard would need its own plan / prefetches
+        and the runner-side wiring isnt aware of that yet.
+
+      is_eagle3_drafter
+        ``spec_decode/jax/eagle3.py``s AttentionMetadata rebuild does
+        NOT forward ``phys_seq_indices`` / ``q_offsets`` — the draft
+        kernel would silently fall to its coupled branch with a
+        ``request_distribution`` computed under decoupled-K
+        assumptions, producing OOB reads on every iter beyond
+        ``max_num_seqs``.
+
+    Inputs are booleans (not live config / drafter objects) so the gate
+    is unit-testable without importing the JAX / vLLM runtime stack.
+    The runner does the ``isinstance(self.drafter, Eagle3Proposer)`` /
+    ``vllm_config.sharding_config.total_dp_size`` lookup at the call
+    site and passes the resolved booleans here.
+    """
+    if total_dp_size > 1:
+        raise NotImplementedError(
+            "Decoupled-K (RPA_KERNEL_K) with attention DP > 1 is not "
+            f"yet supported (got total_dp_size={total_dp_size}). The "
+            "iter-keyed prefetch construction assumes a single DP "
+            "shard per step. Disable RPA_KERNEL_K or run with "
+            "total_dp_size=1 until the DP-aware planner lands.")
+    if is_eagle3_drafter:
+        raise NotImplementedError(
+            "Decoupled-K (RPA_KERNEL_K) with eagle3 spec-decode is not "
+            "yet supported: eagle3.py rebuilds AttentionMetadata for "
+            "the draft model_fn, and that rebuild does not forward "
+            "phys_seq_indices / q_offsets — the draft kernel would "
+            "silently fall to the coupled branch with mismatched "
+            "request_distribution, yielding OOB reads on every iter "
+            "beyond max_num_seqs. Disable RPA_KERNEL_K or run without "
+            "eagle3 until the rebuild path is updated.")
+
+
 def required_max_num_subseqs(*, max_num_seqs: int, K_sched_cap: int,
                              K_kernel: int) -> int:
     """Compute the prefetch-array sizing bound at runner init.

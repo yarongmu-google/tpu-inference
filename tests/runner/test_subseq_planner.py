@@ -56,6 +56,7 @@ evaluate_decoupled_k_config = _mod.evaluate_decoupled_k_config
 build_prior_kv_lens = _mod.build_prior_kv_lens
 build_iter_prefetches = _mod.build_iter_prefetches
 IterPrefetches = _mod.IterPrefetches
+validate_decoupled_k_runner_init = _mod.validate_decoupled_k_runner_init
 
 
 class TestPlanStepDecodeOnly(unittest.TestCase):
@@ -901,6 +902,44 @@ class TestBuildIterPrefetches(unittest.TestCase):
                 static_q_len=4,
                 num_scheduled_tokens=None,   # required for LOGICAL bounds check
             )
+
+
+class TestValidateDecoupledKRunnerInit(unittest.TestCase):
+    """Tests for the runner-init gate that rejects decoupled-K combos
+    that arent yet supported. Inputs are booleans so the gate is unit-
+    testable here without importing the JAX / vLLM runtime stack."""
+
+    def test_dp_size_1_no_eagle3_passes(self):
+        # Happy path — does not raise.
+        validate_decoupled_k_runner_init(
+            is_eagle3_drafter=False, total_dp_size=1)
+
+    def test_dp_gt_1_raises_with_actionable_message(self):
+        with self.assertRaises(NotImplementedError) as cm:
+            validate_decoupled_k_runner_init(
+                is_eagle3_drafter=False, total_dp_size=4)
+        # Caller should know which knob to flip.
+        self.assertIn("DP > 1", str(cm.exception))
+        self.assertIn("total_dp_size=4", str(cm.exception))
+        self.assertIn("RPA_KERNEL_K", str(cm.exception))
+
+    def test_eagle3_raises_with_actionable_message(self):
+        with self.assertRaises(NotImplementedError) as cm:
+            validate_decoupled_k_runner_init(
+                is_eagle3_drafter=True, total_dp_size=1)
+        self.assertIn("eagle3", str(cm.exception))
+        self.assertIn("phys_seq_indices", str(cm.exception))
+        self.assertIn("RPA_KERNEL_K", str(cm.exception))
+
+    def test_both_set_dp_takes_precedence(self):
+        # Order matters for diagnostics: when both are misconfigured,
+        # the user should see DP first (more fundamental config) and
+        # fix that before learning about the eagle3 deferral.
+        with self.assertRaises(NotImplementedError) as cm:
+            validate_decoupled_k_runner_init(
+                is_eagle3_drafter=True, total_dp_size=2)
+        self.assertIn("DP > 1", str(cm.exception))
+        self.assertNotIn("eagle3", str(cm.exception))
 
 
 if __name__ == "__main__":
