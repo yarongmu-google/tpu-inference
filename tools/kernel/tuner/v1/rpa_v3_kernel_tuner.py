@@ -651,9 +651,17 @@ class RpaV3KernelTuner(KernelTunerBase):
                 f"{tunable_params=} max_num_seqs={max_num_seqs} "
                 f"max_num_tokens={self.max_num_tokens}. This is a "
                 "logic bug — both call sites must use size_logical_workload.")
+            # 5-tuple convention: last element is the ITER count (num_total
+            # in distribution[2]). For D / P / M, iter == phys count so
+            # the two are interchangeable. For LOGICAL, total_iters =
+            # actual_num_seqs * m_per_phys; passing the phys count here
+            # would make distribution[2] < distribution[1] and fail
+            # dynamic_validate_inputs (i <= j <= k). The phys count is
+            # recomputed via size_logical_workload at the iter-keyed
+            # prefetch fill site below.
             return get_logical_only_example(
                 sizing.actual_num_seqs, K, sizing.m_per_phys,
-                tuning_key.max_model_len) + (sizing.actual_num_seqs, )
+                tuning_key.max_model_len) + (sizing.total_iters, )
         actual_num_seqs = min(8, max_num_seqs)
         return get_mixed_example(actual_num_seqs, self.max_num_tokens,
                                  tuning_key.max_model_len) + (
@@ -778,16 +786,23 @@ class RpaV3KernelTuner(KernelTunerBase):
         # [N-1]*M, padded to mns. q_offsets: [0, K, 2K, ..., (M-1)*K]
         # repeated N times, padded to mns. Padding values are 0 (kernel
         # never reads beyond distribution[2] = N*M).
+        #
+        # `actual_num_seqs` from _build_inputs is the iter count for
+        # LOGICAL (carries through to distribution[2]); the PHYS count
+        # for the fill loop is recomputed via size_logical_workload.
         if (tuning_key.case == CASE_LOGICAL and tunable_params is not None
                 and tunable_params.max_num_subseqs is not None):
             mns = tunable_params.max_num_subseqs
             K = tuning_key.chunk_prefill_size
-            M_per_phys = max(1, mns // self.max_num_seqs - 1)
+            sizing = size_logical_workload(
+                max_num_seqs=self.max_num_seqs,
+                max_num_tokens=self.max_num_tokens,
+                K=K, max_num_subseqs=mns)
             phys_seq_indices_np = np.zeros(mns, dtype=np.int32)
             q_offsets_np = np.zeros(mns, dtype=np.int32)
             i = 0
-            for phys in range(actual_num_seqs):
-                for chunk_idx in range(M_per_phys):
+            for phys in range(sizing.actual_num_seqs):
+                for chunk_idx in range(sizing.m_per_phys):
                     phys_seq_indices_np[i] = phys
                     q_offsets_np[i] = chunk_idx * K
                     i += 1
