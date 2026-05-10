@@ -8,8 +8,13 @@
 #   runlog_label      Optional label for output files. Defaults to the case filename.
 #
 # Outputs:
-#   tmp/log/tune_all_<label>_<date>.txt           — runlog (auto-committed per case)
-#   /tmp/kernel_tuner_run_<YYYY_MM_DD>/           — local DB (one row per case_set_id)
+#   tmp/log/tune_all_<label>.txt                       — runlog (auto-committed per case)
+#   tmp/log/kernel_tuner_run/<label>_<case>/           — local DB (one dir per case),
+#                                                        durable across reboot, reused
+#                                                        on kill-restart for resumable
+#                                                        tuning. Set KERNEL_TUNER_FRESH=1
+#                                                        to force a timestamped suffix
+#                                                        and start a fresh DB.
 #
 # Time budget (per existing PREFILL trial, async-dispatch timing):
 #   DECODE: ~5–10 min  (q_len=1 collapses the search space)
@@ -51,13 +56,27 @@ esac
 DEFAULT_LABEL=$(basename "$CASE_FILE" .workload)
 LABEL="${2:-$DEFAULT_LABEL}"
 
-# Per-run timestamp for case_set_id. The RUNLOG filename is intentionally
-# stable across runs (so accumulation in build_kernel_registry merges into
-# the same .kernel file — see commit 8d4242e3) but the case_set_id MUST
-# be unique per run because LocalDbManager treats it as a primary key in
-# /tmp/kernel_tuner_run_*/CaseSet.json. Without DATE, re-running the same
-# workload would either overwrite the previous run's DB rows or — under
-# `set -u` — crash with `DATE: unbound variable`.
+# Per-run timestamp for case_set_id. By default it is **empty** so
+# CASE_SET_ID is stable across runs (`${LABEL}_${CASE}`) — that way a
+# kill-restart REUSES the prior runs DB and the kernel_tuner_base
+# already-processed-ids skip lets the new run pick up where the old
+# one stopped (per-(tuning_key, tunable_params) combo skip — see
+# kernel_tuner_base.py:362 + local_db_manager.get_already_processed_ids).
+# Set KERNEL_TUNER_FRESH=1 to add a timestamp suffix and force a
+# fresh DB (useful when comparing two independent runs end-to-end —
+# rare; default is "resume").
+#
+# Stable case_set_id requires a stable case_set_desc too —
+# kernel_tuner_base raises on description mismatch (see
+# kernel_tuner_base.py:130). The desc is human-readable only, so
+# making it date-independent is fine.
+if [ "${KERNEL_TUNER_FRESH:-0}" = "1" ]; then
+    DATE_SUFFIX="_$(date +%Y%m%d_%H%M%S)"
+else
+    DATE_SUFFIX=""
+fi
+# Date kept as a separate var purely for filename / log purposes
+# below; it is no longer wired into CASE_SET_ID by default.
 DATE=$(date +%Y%m%d_%H%M%S)
 
 # Load the workload definitions into the environment.
@@ -144,14 +163,21 @@ export PYTHONUNBUFFERED=1
 # extend an existing decode/prefill/mixed kernel registry with the
 # decoupled-K LOGICAL winners). The CI default is unchanged so existing
 # pipelines see no behaviour difference.
+mkdir -p tmp/log/kernel_tuner_run
 for CASE in $CASES_TO_TUNE; do
-    CASE_SET_ID="${LABEL}_${CASE}_${DATE}"
+    CASE_SET_ID="${LABEL}_${CASE}${DATE_SUFFIX}"
     # Authoritative DB path: bash decides where the runner writes,
     # rather than the runner generating a timestamped path that bash
     # then has to discover via `ls -td` (which races under concurrent
-    # invocations). CASE_SET_ID is unique per (label, case, date), so
-    # this is collision-free even with parallel runs.
-    DB_PATH="/tmp/kernel_tuner_run_${CASE_SET_ID}"
+    # invocations).
+    #
+    # Path lives under tmp/log/ (durable across reboot — `/tmp` is
+    # tmpfs / cleared at boot and we lost 48h of prefill tuning twice
+    # to that). gitignored via tmp/log/kernel_tuner_run/. Stable
+    # CASE_SET_ID means a kill-restart REUSES this DB and the runner
+    # skips the (tuning_key, tunable_params) combos already in
+    # CaseResults.json — true resumable tuning.
+    DB_PATH="tmp/log/kernel_tuner_run/${CASE_SET_ID}"
     {
         echo ""
         echo "===== $(date '+%F %T') Tuning $CASE (case_set_id=$CASE_SET_ID) ====="
@@ -167,7 +193,7 @@ for CASE in $CASES_TO_TUNE; do
             --kernel_tuner_name=rpa_v3_kernel_tuner \
             --run_locally=true \
             --case_set_id="$CASE_SET_ID" \
-            --case_set_desc="$LABEL $CASE kernel tune $(date +%F)" \
+            --case_set_desc="$LABEL $CASE kernel tune" \
             --db_path="$DB_PATH"
 
         DUR=$(( $(date +%s) - START_S ))
@@ -199,7 +225,7 @@ done
     echo ""
     echo "Inspector commands to extract winners (run on the same TPU VM):"
     for CASE in $CASES_TO_TUNE; do
-        CASE_DB="/tmp/kernel_tuner_run_${LABEL}_${CASE}_${DATE}"
+        CASE_DB="tmp/log/kernel_tuner_run/${LABEL}_${CASE}${DATE_SUFFIX}"
         echo "  python3 -m tools.kernel.tuner.v1.inspect_result_cli \\"
         echo "      --source=local --db-path=$CASE_DB \\"
         echo "      query_min_latency \\"

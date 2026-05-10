@@ -231,3 +231,12 @@ tmp/bench_*/**/profile/
 # trackable; gitignore the runlogs.
 tmp/log/*.log
 tmp/log/*.txt
+
+# Kernel-tuner local DB. Lives under tmp/log/ for durability (survives
+# reboot — /tmp does not). One subdirectory per (label, case); reused
+# across runs unless KERNEL_TUNER_FRESH=1, enabling resumable tuning
+# via local_db_manager.get_already_processed_ids. The DB itself is
+# regenerable from a re-tune; only the .kernel registry produced by
+# build_kernel_registry.py is the durable artifact (tracked under
+# tools/benchmark/cases/<topo>/<model>/production.kernel).
+tmp/log/kernel_tuner_run/

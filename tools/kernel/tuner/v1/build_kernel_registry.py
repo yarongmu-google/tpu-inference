@@ -75,8 +75,16 @@ def main():
             content = f.read()
         case_matches = list(re.finditer(
             r"Tuning ([a-z]+) \(case_set_id=([^)]+)\)", content))
+        # DB paths historically lived at `/tmp/kernel_tuner_run_*` and now
+        # live under `tmp/log/kernel_tuner_run/*` for durability. Match
+        # both shapes so this fallback works against legacy and current
+        # runlogs alike. The regex is anchored on the trailing path
+        # token (no spaces) so the leading directory shape is the only
+        # variable piece.
         db_matches = list(re.finditer(
-            r"Database initialized at (/tmp/kernel_tuner_run_[^\s]+)", content))
+            r"Database initialized at "
+            r"((?:/tmp/kernel_tuner_run_|tmp/log/kernel_tuner_run/)[^\s]+)",
+            content))
         if len(case_matches) != len(db_matches):
             print(f"Mismatch: {len(case_matches)} case headers vs "
                   f"{len(db_matches)} DB paths.", file=sys.stderr)
