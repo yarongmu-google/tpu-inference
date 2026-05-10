@@ -1057,9 +1057,23 @@ def _ragged_paged_attention_kernel_loop(
     def _fetch_bq(seq_idx, bq_idx, bq_sem_idx, *, wait=False):
         sem = sems.at[1, bq_sem_idx]
         vmem_ref = bq_x2_ref.at[bq_sem_idx]
-        q_len_start = cu_q_lens_ref[seq_idx] + bq_idx * bq_sz
-        q_end = cu_q_lens_ref[seq_idx + 1]
-        sz = jnp.minimum(bq_sz, q_end - q_len_start)
+        # LOGICAL-aware q range: cu_q_lens_ref is PHYS-keyed under Path C;
+        # seq_idx is iter-keyed and (under decoupled-K) can exceed num_phys.
+        # Indexing cu_q_lens_ref[seq_idx] directly gives the wrong q range
+        # for any iter beyond the first phys — the iter's q-tokens are
+        # never fetched, attention runs on stale vmem, and the un-fetched
+        # output positions retain whatever the HBM allocation contained
+        # (NaN on v7+). Route through _derive_iter_quantities (which
+        # already handles both LOGICAL and coupled cases) for the right
+        # q_start / q_end. In coupled-K (phys_seq_indices identity,
+        # q_offsets all 0) qs.q_start == cu_q_lens_ref[seq_idx] and
+        # qs.q_end == cu_q_lens_ref[seq_idx + 1] — same numerics as
+        # before, no behavior change.
+        qs = _derive_iter_quantities(
+            seq_idx, phys_seq_indices_ref, q_offsets_ref,
+            cu_q_lens_ref, kv_lens_ref, case, static_q_len)
+        q_len_start = qs.q_start + bq_idx * bq_sz
+        sz = jnp.minimum(bq_sz, qs.q_end - q_len_start)
 
         debug_print(
             "[RPA debug]"
@@ -1068,7 +1082,7 @@ def _ragged_paged_attention_kernel_loop(
         debug_print("[RPA debug] bq_idx={}", bq_idx)
         debug_print("[RPA debug] bq_sem_idx={}", bq_sem_idx)
         debug_print("[RPA debug] q_len_start={}", q_len_start)
-        debug_print("[RPA debug] q_end={}", q_end)
+        debug_print("[RPA debug] q_end={}", qs.q_end)
         debug_print("[RPA debug] sz={}", sz)
 
         _async_copy(
@@ -1081,9 +1095,14 @@ def _ragged_paged_attention_kernel_loop(
     def _send_bo(seq_idx, bo_idx, bo_sem_idx, *, wait=False):
         sem = sems.at[2, bo_sem_idx]
         vmem_ref = bo_x2_ref.at[bo_sem_idx]
-        q_len_start = cu_q_lens_ref[seq_idx] + bo_idx * bq_sz
-        q_end = cu_q_lens_ref[seq_idx + 1]
-        sz = jnp.minimum(bq_sz, q_end - q_len_start)
+        # LOGICAL-aware q range — see _fetch_bq comment above. Same bug
+        # would have left LOGICAL iter outputs un-written; fix mirrors
+        # the fetch.
+        qs = _derive_iter_quantities(
+            seq_idx, phys_seq_indices_ref, q_offsets_ref,
+            cu_q_lens_ref, kv_lens_ref, case, static_q_len)
+        q_len_start = qs.q_start + bo_idx * bq_sz
+        sz = jnp.minimum(bq_sz, qs.q_end - q_len_start)
 
         debug_print(
             "[RPA debug]"
@@ -1092,7 +1111,7 @@ def _ragged_paged_attention_kernel_loop(
         debug_print("[RPA debug] bo_idx={}", bo_idx)
         debug_print("[RPA debug] bo_sem_idx={}", bo_sem_idx)
         debug_print("[RPA debug] q_len_start={}", q_len_start)
-        debug_print("[RPA debug] q_end={}", q_end)
+        debug_print("[RPA debug] q_end={}", qs.q_end)
         debug_print("[RPA debug] sz={}", sz)
 
         _async_copy(
