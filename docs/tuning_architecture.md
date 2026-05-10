@@ -57,7 +57,7 @@ That's the entire write path. The file IS the live store AND the archive — the
 
 Why this works at our scale:
 
-- **Atomicity is free.** POSIX guarantees atomic writes under `PIPE_BUF` (~4 KB); our rows are ~200 bytes each. No partial-row corruption is possible. Reads at restart see exactly the rows that finished writing — no recovery logic.
+- **Atomicity is robust on modern Linux filesystems.** POSIX's `PIPE_BUF` guarantee is for pipes/FIFOs, not regular files — strictly speaking POSIX makes no atomicity guarantee for `write(2)` on regular files. But ext4 (with the default `data=ordered` journal) and XFS both make a single sub-block `write(2)` atomic in practice: the entry either lands fully or not at all. Our rows (~200 bytes) are well within filesystem block boundaries (typically 4 KB). With `O_APPEND` + one `write(2)` per row, we get atomicity + non-interleaving without any application-level coordination. **Soft-kill survival** (Ctrl-C, SIGKILL, OOM-killer, ssh disconnect): the kernel flushes the page cache to disk on process exit; the file is intact through the last completed write. **Hard-crash survival** (power loss, kernel panic): up to a few seconds of un-flushed rows from the page cache may be lost; the file remains *consistent* through the last successfully-flushed row (no torn rows). For our use case — restart and re-tune at most a handful of combos — this is sufficient. If a deployment ever needs hard-crash durability, add `os.fsync` after each row at the cost of ~1 extra ms/row.
 - **No archive step.** The file is git-trackable as-is. `git add` it when ready.
 - **JSONL > JSON.** Human-readable diffs in PR review; `grep`-able for ad-hoc queries ("which workloads use K=128?"); schema-flexible (new fields are additive). Protobuf would optimize for size and parse-speed, but at ~1 MB per tune file with ~thousands of rows, neither matters.
 - **Speed is adequate.** Building the skip-set at run start = parse the file once. ~1 MB / ms. Negligible.
@@ -142,7 +142,9 @@ Tuning and sweeping both follow the same pattern:
 
 **Crash-atomic writes** are inherent to append-only JSONL on POSIX. One row per `write()` call; rows are ~200 bytes (well under PIPE_BUF). No torn rows, no recovery logic at restart.
 
-**Concurrency** is single-machine-per-workload by assumption. Two TPU VMs working on different workloads don't interact. If we ever need multi-machine on one workload, shard by pin_keys (range-partition the search space across VMs); not in scope today.
+**Concurrency.** Per-(workload, kernel_sha) for kernel tuning and per-(workload, service_sha) for sweeps is the unit of write isolation: each gets its own `.raw/<sha>.jsonl`. Two TPU VMs running **different** workloads, or **different** kernel/service SHAs against the same workload (e.g. one VM tuning `(rpa_v3, vllm)`-throughput, another tuning `(rpa_v3, vllm_latency)`-latency), don't interact. Running two machines on the **same** (workload, sha) pair is unsupported; if needed in the future, shard by pin_keys (range-partition the search space across VMs).
+
+**Schema-evolution friendliness.** `TunableParams` field additions (e.g. adding `max_num_subseqs` for the LOGICAL case in commit 2536219e) come with a `kernel.py` change, hence a new kernel SHA, hence a fresh `.raw/<new_sha>.jsonl`. Old SHAs' rows stay isolated — no hash collisions in the skip-set, no schema migration. The TTL=2 prune retires the prior schema's data after one more SHA bump. Same property holds for `.service.raw` against vLLM/runner SHA changes.
 
 ## 7. Projection: pure-CPU, idempotent
 
@@ -169,30 +171,61 @@ RPA_M_BLOCK_SIZES=64,512,64,256 \
 python3 -m vllm.entrypoints.cli.main serve <model> ...
 ```
 
-Tooling does **not** validate that these are mutually consistent. If the user sets `RPA_MAX_NUM_SUBSEQS < max_num_seqs` or block sizes that exceed VMEM, the kernel fails loudly at runtime — sufficient feedback. No registry lookup, no fallback. Inconsistency is on the user.
+Tooling does **not** cross-validate the env vars against the workload geometry. But mostly-broken combinations still fail loudly, just at three distinct stages depending on the failure mode:
+
+- **Runner init**: shape invariants the runner can check pre-trace. E.g. `tpu_runner.py:432` raises `ValueError` for `RPA_MAX_NUM_SUBSEQS < max_num_seqs`. Earliest, clearest feedback.
+- **JIT trace time**: VMEM / SMEM overflow, kernel-shape inconsistency. The pallas_call lowering raises with the exact memory-budget breakdown.
+- **Kernel runtime**: only true semantic bugs (e.g. NaN propagation from a corrupt cache page). Rare; means the geometry was internally consistent but produced wrong results.
+
+Inconsistency is on the user; loudness is on the runner. No registry lookup, no fallback.
 
 The prod and dev paths share the runner. The runner reads env vars; it doesn't know whether they came from a registry lookup or `export` on a shell.
 
 ## 9. `.workload` schema (today's contract, documented)
 
-A `.workload` is a bash file sourced into the env. Required variables:
+A `.workload` is a bash file sourced into the env via `set -a; source <file>; set +a`. Variables, grouped by what consumes them:
+
+**Model identity** (vLLM CLI / model loading):
 
 ```bash
-INPUT_LEN=2048           # per-request input tokens for the synthetic workload
-OUTPUT_LEN=128           # per-request output tokens
-MAX_MODEL_LEN=2176       # max prompt + decode (must equal INPUT_LEN + OUTPUT_LEN)
-MAX_NUM_SEQS=8           # persistent batch capacity
-MAX_NUM_BATCHED_TOKENS=1024
+MODEL=meta-llama/Llama-3.1-8B-Instruct   # HF model id
+TENSOR_PARALLEL_SIZE=4                    # vLLM TP degree
+```
+
+**Model shape** (kernel `tuning_key`):
+
+```bash
 NUM_Q_HEADS=32
 NUM_KV_HEADS=8
 HEAD_DIM=128
+MAX_MODEL_LEN=8192       # must satisfy MAX_MODEL_LEN >= INPUT_LEN + OUTPUT_LEN;
+                         # tuner / sweep enforce this at load time.
 ```
 
-Convention: lives at `tools/benchmark/cases/<topo>/<model>/<workload>.workload`. The path implicitly carries `topo` (e.g. `v7x`) and `model` (e.g. `llama3_1_8b`); the `.workload` filename is the workload name used as the lookup key.
+**Runtime capacity** (vLLM `--max-num-seqs`, etc., AND kernel SMEM sizing):
 
-A separate `.service` and `.kernel` file lives in the same directory. The lookup is by filename match.
+```bash
+MAX_NUM_SEQS=8                # persistent batch capacity
+MAX_NUM_BATCHED_TOKENS=1024   # per-step token budget across all seqs
+LONG_PREFILL_TOKEN_THRESHOLD= # optional: vLLM K_sched. Empty -> vLLM default.
+BLOCK_SIZE=                   # optional: KV-cache page size. Empty -> auto-link
+                              # from .kernel (orchestrator) or vLLM default (dev).
+```
 
-Adding a field to `.workload`: append it. No migration; new fields default to "use today's defaults" until tuning explicitly varies them.
+**Benchmark workload** (used by `run_benchmark.sh` to drive the synthetic load; not a kernel input):
+
+```bash
+DATASET=sonnet            # which prompt corpus to sample
+INPUT_LEN=2048            # per-request prompt length
+OUTPUT_LEN=128            # per-request output length
+NUM_PROMPTS=1000          # bench duration / sample count
+```
+
+**Convention.** Lives at `tools/benchmark/cases/<topo>/<model>/<workload>.workload`. The path implicitly carries `topo` (e.g. `v7x`) and `model` (e.g. `llama3_1_8b`); the `.workload` filename is the workload name used as the lookup key. `.service` and `.kernel` live alongside in the same directory.
+
+**Default-then-override pattern.** Each variable uses `: "${FOO:=default}"` so callers can override via env without editing the file. Empty defaults (`BLOCK_SIZE=`) signal "filled in by orchestrator from the registry, or pass through to vLLM if dev-path".
+
+**Adding a field.** Append it. New fields default to "use today's behavior" until a tuning sweep explicitly varies them.
 
 ## 10. Migration from today's stack
 
@@ -218,3 +251,6 @@ Each step is small enough to ship and review independently. Total work: ~1-2 wee
 - **Combo** — one point in the sweep search space: a dict of vLLM CLI flags + env vars.
 - **Objective** — a function from a metrics-bag to a scalar, used to pick a winner from `.service.raw`. Examples: `throughput_max`, `ttft_min`, `p99_min`.
 - **Projection** — the pure function `.raw → winners`. Idempotent, deterministic, CPU-only.
+- **`kernel_sha`** — short git SHA (8-char) of `tpu_inference` HEAD at tune time. Same definition as today's `TuningKey.code_revision`. Captures any change to `kernels/ragged_paged_attention/v3/kernel.py` (and conservatively to other files; the over-coverage is fine — it just rotates `.raw` shards more often than strictly necessary).
+- **`service_sha`** — pair `(vllm_sha, tpu_inference_sha)` joined as `<8>-<8>`. Either repo's change can shape vLLM scheduling or runner behavior; tracking both is the conservative choice. Today's per-sweep `meta.txt` already captures both via `git rev-parse HEAD` in each repo's worktree.
+- **"Latest" `.raw/<sha>.jsonl`** — the file whose `<sha>` matches the **current** `tpu_inference` HEAD at the time of the projection. If no file matches HEAD (e.g. fresh checkout, never tuned), the projection fails loudly rather than picking a stale neighbor — better to be told "no data for this SHA" than to silently use winners from a different kernel version.
