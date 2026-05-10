@@ -487,6 +487,14 @@ def required_max_num_subseqs(*, max_num_seqs: int, K_sched_cap: int,
     verify a chosen ``max_num_subseqs`` fits the SMEM_LIMIT before
     allocating prefetch arrays.
 
+    DEGENERATE CASE: ``K_sched_cap == K_kernel``. The formula returns
+    ``2 * max_num_seqs`` (one PREFILL slot + one MIXED slot per real req)
+    yet no PREFILL chunking ever happens — each non-decode req emits a
+    single MIXED sub-seq, identical to coupled-K behaviour, and the
+    iter-keyed prefetches consume 2x SMEM for nothing. There is no SMEM
+    benefit from running decoupled-K with K_sched == K_kernel; use the
+    coupled-K path (RPA_KERNEL_K unset) for that geometry.
+
     Returns:
       Required size for the prefetch arrays (kv_lens, cu_q_lens-1,
       page_indices/pages_per_seq, etc.) at runner init.

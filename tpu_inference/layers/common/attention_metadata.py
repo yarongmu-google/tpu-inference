@@ -87,6 +87,20 @@ class AttentionMetadata(object):
     # consumes this together with q_offsets via the LOGICAL dispatch.
     # None when RPA_KERNEL_K is unset (todays coupled-K path); the
     # kernel falls back to seq_idx as the page_indices selector.
+    #
+    # FORWARD-COMPAT: when adding another iter-keyed prefetch (e.g. a
+    # per-iter q_len to remove the MIXED phys-q_len lookup), every site
+    # below must be updated in lockstep — silent drift is the failure
+    # mode, since the kernel reads positional args:
+    #   1. AttentionMetadata data_fields + field def (this file)
+    #   2. subseq_planner.IterPrefetches + build_iter_prefetches
+    #   3. tpu_runner.py: both _prepare_inputs_dp* DeviceBuffer fills
+    #      and both _extract_attn_metadata pulls
+    #   4. attention_interface.sharded_ragged_paged_attention args /
+    #      in_specs and attention() forwarding
+    #   5. kernel.ragged_paged_attention signature + LOGICAL trace
+    #   6. compilation_manager.py: both warmup paths (main + eagle3)
+    #   7. spec_decode/jax/eagle3.py AttentionMetadata rebuild
     phys_seq_indices: jax.Array | None = None
     # (max_num_subseqs,) i32 — under decoupled-K, the q-token offset into
     # the physical requests scheduled-token slice where this iters

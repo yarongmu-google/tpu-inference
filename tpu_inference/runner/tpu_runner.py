@@ -408,6 +408,16 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
                     "iter-keyed prefetch construction assumes a single DP "
                     "shard per step. Disable RPA_KERNEL_K or run with "
                     "total_dp_size=1 until the DP-aware planner lands.")
+            if isinstance(self.drafter, Eagle3Proposer):
+                raise NotImplementedError(
+                    "Decoupled-K (RPA_KERNEL_K) with eagle3 spec-decode is "
+                    "not yet supported: eagle3.py rebuilds AttentionMetadata "
+                    "for the draft model_fn, and that rebuild does not "
+                    "forward phys_seq_indices / q_offsets — the draft kernel "
+                    "would silently fall to the coupled branch with "
+                    "mismatched request_distribution, yielding OOB reads on "
+                    "every iter beyond max_num_seqs. Disable RPA_KERNEL_K or "
+                    "run without eagle3 until the rebuild path is updated.")
             self._max_num_subseqs = required_max_num_subseqs(
                 max_num_seqs=self.scheduler_config.max_num_seqs,
                 K_sched_cap=self._decoupled_k_config.effective_K_sched_cap,
