@@ -219,3 +219,15 @@ tmp/bench_*/**/bench.log
 tmp/bench_*/**/bench.log.stderr
 tmp/bench_*/**/sonnet_4x.txt
 tmp/bench_*/**/profile/
+
+# Runlogs under tmp/log/. The kernel tuner / sweeper / pipeline scripts
+# write per-run runlogs here (tune_all_*.txt, sweep_*.txt, pipeline_*.txt,
+# script_build_*.txt, *_baseline_*.txt, *_optimized_*.txt) plus session
+# debug logs (e.g. *.log files captured during VM debugging sessions).
+# These are regenerable from the source-of-truth artifacts (.kernel
+# registries, .manifest.jsonl sidecars, .service files) and bulky enough
+# to bloat .git over time — the largest single runlog seen so far is
+# ~9 MB. Keep .kernel / .manifest.jsonl / .service / metrics.txt
+# trackable; gitignore the runlogs.
+tmp/log/*.log
+tmp/log/*.txt

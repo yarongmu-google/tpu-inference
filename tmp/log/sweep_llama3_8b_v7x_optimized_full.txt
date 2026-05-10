@@ -1,2 +1,0 @@
-SMOKE_TEST=1 detected: Truncating service sweep space to 1 combo.
-[1/1] c1113c9a7462 skipped_resumed (—)  tmp/bench_prefill_heavy_optimized_full/c1113c9a7462
