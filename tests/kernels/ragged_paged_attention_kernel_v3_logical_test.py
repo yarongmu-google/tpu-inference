@@ -339,10 +339,24 @@ class TestLogicalEquivalence(jtu.JaxTestCase):
             page_size=16, num_pages=512,
             q_dtype=jnp.bfloat16, kv_dtype=jnp.bfloat16, rng=rng)
 
+        # ragged_paged_attention donates (q, k, v, kv_cache). After the
+        # first call the originals in `common` are deleted, so each
+        # invocation needs fresh clones — otherwise the second call
+        # raises "Array has been deleted". jnp.array(x) does an HBM->HBM
+        # clone (cheap; stays on TPU) so the timed-loop pattern in the
+        # tuner relies on the same trick.
+        def fresh_qkvc():
+            return (
+                jnp.array(common["q"]),
+                jnp.array(common["k"]),
+                jnp.array(common["v"]),
+                jnp.array(common["kv_cache"]),
+            )
+
         # LOGICAL invocation: distribution = [0, 2, 3].
+        q_l, k_l, v_l, c_l = fresh_qkvc()
         out_logical, _ = ragged_paged_attention(
-            common["q"], common["k"], common["v"],
-            jnp.array(common["kv_cache"]),   # explicit copy (defensive)
+            q_l, k_l, v_l, c_l,
             common["kv_lens"], common["page_indices"], common["cu_q_lens"],
             common["distribution"],
             common["phys_seq_indices"], common["q_offsets"],
@@ -352,13 +366,13 @@ class TestLogicalEquivalence(jtu.JaxTestCase):
             m_block_sizes=(64, 128, 32, 64),
         )
 
-        # COUPLED invocation: same q/k/v/cache, but no LOGICAL prefetches
-        # and distribution = [0, 0, 1] — phys 0's full q_len=10 routes to
-        # MIXED in a single iter, no L->M handoff.
+        # COUPLED invocation: same logical inputs, fresh donatable buffers,
+        # but no LOGICAL prefetches and distribution = [0, 0, 1] — phys 0's
+        # full q_len=10 routes to MIXED in a single iter, no L->M handoff.
         coupled_distribution = jnp.array([0, 0, 1], dtype=jnp.int32)
+        q_c, k_c, v_c, c_c = fresh_qkvc()
         out_coupled, _ = ragged_paged_attention(
-            common["q"], common["k"], common["v"],
-            jnp.array(common["kv_cache"]),
+            q_c, k_c, v_c, c_c,
             common["kv_lens"], common["page_indices"], common["cu_q_lens"],
             coupled_distribution,
             chunk_prefill_size=None,        # skip P/L pass
