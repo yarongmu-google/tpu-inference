@@ -334,6 +334,14 @@ def _apply_auto_link(
                     f"Re-run with the post-A.1 tuner, or set "
                     f"RPA_MAX_NUM_SUBSEQS manually for this combo.")
             combo["RPA_MAX_NUM_SUBSEQS"] = str(mns)
+        # LPTT is a derived deployment value, not a sweep dimension.
+        # Server enforces LPTT == mnss * kernel_K at runner init
+        # (tpu_runner.py). Set it from the resolved mnss when the user
+        # left it unset; honor an explicit user pin and let the server
+        # reject it if it violates the invariant.
+        if "LONG_PREFILL_TOKEN_THRESHOLD" not in combo:
+            combo["LONG_PREFILL_TOKEN_THRESHOLD"] = str(
+                int(combo["RPA_MAX_NUM_SUBSEQS"]) * rpa_kernel_k)
     elif k > 0 and "RPA_P_BLOCK_SIZES" not in combo:
         p_params = _registry_lookup(registry, "prefill", page_size, k)
         if p_params is None:

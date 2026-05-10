@@ -206,7 +206,6 @@ class TestSweepAutoLink(unittest.TestCase):
             "kernel_registry": "logical.kernel",
             "fixed": {
                 "BLOCK_SIZE": 128,
-                "LONG_PREFILL_TOKEN_THRESHOLD": 512,
                 "RPA_KERNEL_K": 128,    # decoupled-K active
             },
         }
@@ -222,6 +221,11 @@ class TestSweepAutoLink(unittest.TestCase):
         self.assertEqual(c["RPA_P_BLOCK_SIZES"], "128,1024,128,512")
         # max_num_subseqs auto-linked from LOGICAL winner.
         self.assertEqual(c["RPA_MAX_NUM_SUBSEQS"], "256")
+        # LPTT was not pinned by the spec; sweep derives it from
+        # the resolved mnss * kernel_K. The server (tpu_runner.py) will
+        # enforce the same invariant at init for non-sweep launches.
+        self.assertEqual(c["LONG_PREFILL_TOKEN_THRESHOLD"],
+                         str(256 * 128))
 
     def test_logical_missing_max_num_subseqs_raises(self):
         # A LOGICAL entry that lacks `max_num_subseqs` in its

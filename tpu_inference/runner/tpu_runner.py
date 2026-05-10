@@ -436,6 +436,25 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
                         f"RPA_MAX_NUM_SUBSEQS={tuned_mns} must be >= "
                         f"max_num_seqs={self.scheduler_config.max_num_seqs} "
                         "(at least one prefetch slot per phys req).")
+                # Decoupled-K invariant: the scheduler-side prefill chunk
+                # threshold must match what the L kernel can chew in one
+                # pallas_call, which is (mnss * kernel_K). Mismatch means
+                # silent under- or over-utilisation — never what we want.
+                # See sweep.py:_apply_auto_link for the producer side.
+                K_kernel = self._decoupled_k_config.K_kernel
+                lptt = self.scheduler_config.long_prefill_token_threshold
+                expected_lptt = tuned_mns * K_kernel
+                if lptt != expected_lptt:
+                    raise ValueError(
+                        f"LONG_PREFILL_TOKEN_THRESHOLD={lptt} violates "
+                        f"the decoupled-K invariant "
+                        f"LPTT == RPA_MAX_NUM_SUBSEQS * RPA_KERNEL_K "
+                        f"({tuned_mns} * {K_kernel} = {expected_lptt}). "
+                        "LPTT is a derived deployment value — the "
+                        "benchmark sweep auto-derives it from the kernel "
+                        "registry. If you launched vLLM directly, set "
+                        "LONG_PREFILL_TOKEN_THRESHOLD to the expected "
+                        "value above.")
                 self._max_num_subseqs = tuned_mns
                 logger.info(
                     "Decoupled-K: using RPA_MAX_NUM_SUBSEQS=%d (tuned)",
@@ -531,26 +550,6 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
             scheduler_config.long_prefill_token_threshold,
             cfg.K_sched_effective, cfg.effective_M,
             cfg.effective_K_sched_cap, cfg.smem_budget)
-        # Footgun guard: pre-C4 (the prefetch-array wire-up that actually
-        # consumes the StepPlan), the bucketer at
-        # persistent_batch_manager._reorder_batch:108 still uses
-        # nst[req_id] == K_kernel for the PREFILL bucket. If the user
-        # sets RPA_KERNEL_K != LONG_PREFILL_TOKEN_THRESHOLD before C4
-        # has landed, every multi-token request lands in MIXED instead
-        # of PREFILL — silent throughput collapse. Warn loudly when
-        # the values disagree until C4 lands and removes this comment.
-        if cfg.K_kernel != scheduler_config.long_prefill_token_threshold:
-            logger.warning(
-                "RPA_KERNEL_K (%d) != LONG_PREFILL_TOKEN_THRESHOLD (%d). "
-                "Until the per-step prefetch-array construction (C4) "
-                "lands, the bucketer still requires q_len == K_kernel "
-                "exactly for PREFILL routing — mismatched values will "
-                "send every prefill through MIXED with no warning. "
-                "If you are intentionally testing the decoupled path, "
-                "ensure the C4 commit has landed before relying on "
-                "performance numbers.",
-                cfg.K_kernel,
-                scheduler_config.long_prefill_token_threshold)
         return cfg
 
     def _init_random(self):
