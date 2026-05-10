@@ -29,3 +29,11 @@ Complete Generate Tuning Cases for prefill_heavy_logical, Valid Cases: 0 | Durat
 I0510 11:35:58.309237 131256633087936 local_db_manager.py:297] Database at tmp/log/kernel_tuner_run/prefill_heavy_logical finalized with 0 cases, 0 invalid cases.
 I0510 11:35:58.309276 131256633087936 local_db_manager.py:303] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical/CaseSet.json
 ===== 2026-05-10 11:35:59 logical done in 7s =====
+
+===== 2026-05-10 11:36:00 ALL CASES DONE =====
+
+Inspector commands to extract winners (run on the same TPU VM):
+  python3 -m tools.kernel.tuner.v1.inspect_result_cli \
+      --source=local --db-path=tmp/log/kernel_tuner_run/prefill_heavy_logical \
+      query_min_latency \
+      --case_set_id=prefill_heavy_logical_20260510_113552 --run_id=0
