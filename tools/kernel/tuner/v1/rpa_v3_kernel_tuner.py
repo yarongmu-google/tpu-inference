@@ -409,6 +409,41 @@ class RpaV3KernelTuner(KernelTunerBase):
             self.page_size = [128]
             self.max_num_subseqs_lst = [self.max_num_seqs * 2]   # M=1
 
+        # Per-axis overrides via env vars for ad-hoc fast-track tuning.
+        # Format: comma-separated ints. Empty / unset = use the default
+        # list set above. Useful for narrowing the LOGICAL sweep to the
+        # neighborhood of an existing winner from another case (e.g. pin
+        # everything to the PREFILL winners block sizes and sweep only
+        # max_num_subseqs to compare L kernel latency to P kernel latency
+        # at the same block sizes).
+        #
+        # Examples:
+        #   RPA_V3_BQ_SZ_LST=256                   single value
+        #   RPA_V3_BKV_SZ_LST=1024,2048            two values
+        #   RPA_V3_PAGE_SIZE_LST=128               pin page size
+        def _override_lst_from_env(env_name, default_lst):
+            raw = os.environ.get(env_name)
+            if not raw:
+                return default_lst
+            parsed = [int(x.strip()) for x in raw.split(",") if x.strip()]
+            logger.info("%s override: %s -> %s", env_name, default_lst, parsed)
+            return parsed
+
+        self.bq_sz_lst = _override_lst_from_env(
+            "RPA_V3_BQ_SZ_LST", self.bq_sz_lst)
+        self.bkv_sz_lst = _override_lst_from_env(
+            "RPA_V3_BKV_SZ_LST", self.bkv_sz_lst)
+        self.bq_csz_lst = _override_lst_from_env(
+            "RPA_V3_BQ_CSZ_LST", self.bq_csz_lst)
+        self.bkv_csz_lst = _override_lst_from_env(
+            "RPA_V3_BKV_CSZ_LST", self.bkv_csz_lst)
+        self.chunk_prefill_size_lst = _override_lst_from_env(
+            "RPA_V3_K_LST", self.chunk_prefill_size_lst)
+        self.max_num_subseqs_lst = _override_lst_from_env(
+            "RPA_V3_MAX_NUM_SUBSEQS_LST", self.max_num_subseqs_lst)
+        self.page_size = _override_lst_from_env(
+            "RPA_V3_PAGE_SIZE_LST", self.page_size)
+
     def _block_sizes_valid(self, case, page_size, bq_sz, bkv_sz, bq_csz,
                            bkv_csz, K):
         if bq_sz % bq_csz != 0:
