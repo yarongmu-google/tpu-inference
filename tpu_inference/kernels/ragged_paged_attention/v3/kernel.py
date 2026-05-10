@@ -2032,7 +2032,18 @@ def get_default_block_sizes(
         "disable_bounds_checks",
         "disable_semaphore_checks",
     ),
-    donate_argnames=("queries", "keys", "values", "kv_cache"),
+    # Only `queries` and `kv_cache` are actually donatable: pallas_calls
+    # input_output_aliases maps them to output_0 and output_1
+    # respectively, so JAX can reuse the input buffers in-place. `keys`
+    # and `values` are NOT passed into pallas_call directly — the
+    # kernel computes `merge_kv(keys, values)` first, producing a fresh
+    # buffer, and the originals have no alias target. Declaring them as
+    # donated produced a per-call UserWarning ("Some donated buffers
+    # were not usable: bfloat16[..., 2, ...]") with no actual reuse;
+    # callers re-allocate k/v at the next layer regardless. Removing
+    # the over-declaration is a no-op for HBM but cleans up the
+    # warning.
+    donate_argnames=("queries", "kv_cache"),
 )
 def ragged_paged_attention(
     queries: jax.
