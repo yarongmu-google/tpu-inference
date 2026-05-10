@@ -130,12 +130,16 @@ SERVICE_LOG="tmp/log/script_build_service_registry_${SWEEP_NAME}.txt"
 #    restricted form commits only what was added for that path,
 #    leaving the user's pre-staged work intact.
 #
-# 2. Auto-push is opt-in via PIPELINE_AUTOPUSH=1 (default off). The
-#    trap fires on Ctrl-C and `set -e` aborts; pushing partial logs
-#    to a shared branch on every interrupt is too aggressive. The
-#    full run (which actually wants the push) sets this explicitly.
+# 2. Auto-push is opt-OUT via PIPELINE_AUTOPUSH=0 (default on). The
+#    trap fires on Ctrl-C and `set -e` aborts too; that means a
+#    partial / killed pipeline still pushes its in-flight commits.
+#    Acceptable: the trap only commits paths it owns
+#    (production.kernel, production.service, the two logs), and
+#    those are recoverable from origin if a crash leaves them in a
+#    weird state. Users debugging locally who don't want their
+#    branch updated can set PIPELINE_AUTOPUSH=0 to disable.
 _should_autopush() {
-    [ "${PIPELINE_AUTOPUSH:-0}" = "1" ]
+    [ "${PIPELINE_AUTOPUSH:-1}" = "1" ]
 }
 
 _commit_path_only() {

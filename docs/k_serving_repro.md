@@ -571,8 +571,7 @@ Even faster than Phase 1.
 #### Phase 3 — Throughput service comparison (L vs P)
 
 ```bash
-SERVICE_ID=vllm RPA_KERNEL_K=256 tools/run_pipeline.sh \
-    tools/benchmark/cases/v7x/llama3_8b/prefill_heavy.workload
+tools/run_pipeline.sh tools/benchmark/cases/v7x/llama3_8b/prefill_heavy.workload
 ```
 
 Compare `req/s` and `P99 TTFT` to the P-baseline (4.79 req/s / 207.2 s).
