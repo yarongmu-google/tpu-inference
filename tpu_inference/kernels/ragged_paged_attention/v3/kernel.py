@@ -896,8 +896,11 @@ def _ragged_paged_attention_kernel_loop(
         # kv_cache_hbm_ref via _update_kv_cache. Earlier sub-seqs wrote
         # their slices in their own iter passes; future sub-seqs will
         # write theirs. Preserves O(N) total writes (vs O(N^2) if we
-        # wrote the cumulative range). In coupled-K, matches the read
-        # split exactly.
+        # wrote the cumulative range). In coupled-K (q_offset=0 SMEM
+        # constant), the _read and _write expressions reduce to the
+        # same value — XLA's CSE / constant-folding should collapse
+        # them in the lowered HLO. Verify in Phase 2c via
+        # --xla_mosaic_dump_to and the lowered IR diff vs today.
         kv_left_frm_cache_write = jnp.maximum(kv_left - q_len, 0)
         kv_left_frm_new_write = kv_left - kv_left_frm_cache_write
         bkv_sz_frm_cache_write = jnp.minimum(kv_left_frm_cache_write, bkv_sz)
@@ -1570,23 +1573,29 @@ def validate_logical_prefetches(
 ):
     """Validate the LOGICAL iter→phys indirection prefetches.
 
-    Static checks (always run when both prefetches are provided):
+    Checks (always run when both prefetches are provided; static only):
       - Both must be present together (or both None).
       - Same shape, both i32 dtype.
+      - 1D arrays.
       - shape[0] >= max_num_seqs (coupled-K identity needs at least
         max_num_seqs entries; LOGICAL needs max_num_subseqs > max_num_seqs).
-
-    Dynamic checks (skipped when `distribution=None` — i.e., from
-    static_validate_inputs):
-      - phys_seq_indices values in `[0, max_num_seqs)` for the iters
-        actually visited (`[0, distribution[2])`).
-      - q_offsets values >= 0 for the same range.
 
     No-op if both prefetches are None (= caller hasn't enabled the
     indirection; coupled-K with no prefetches passed). Used by both
     static_validate_inputs and dynamic_validate_inputs as a single source
     of LOGICAL-specific checks.
+
+    Note: value-range checks (phys_seq_indices in [0, max_num_seqs),
+    q_offsets non-negative) are NOT performed here. They would require
+    a Python-level loop over a JAX-traced shape (`distribution[-1]`),
+    which crashes under @jax.jit. Value validation belongs in the
+    runner-side construction code (subseq_planner), where the prefetches
+    are built in concrete Python before being passed to the kernel. The
+    `distribution` parameter is kept in the signature only to mirror the
+    static/dynamic split convention used elsewhere in the file; it is
+    currently unused.
     """
+    del distribution  # unused; see docstring note.
     if phys_seq_indices is None and q_offsets is None:
         return
     if phys_seq_indices is None or q_offsets is None:
@@ -1609,23 +1618,6 @@ def validate_logical_prefetches(
         raise ValueError(
             f"phys_seq_indices.shape[0]={phys_seq_indices.shape[0]} must be "
             f">= {max_num_seqs=} (need at least one entry per phys seq).")
-
-    if distribution is None:
-        # Static-only path: skip value-range checks.
-        return
-
-    # Dynamic checks: values are valid for the iters actually visited.
-    num_iters = distribution[-1]
-    for iter_idx in range(num_iters):
-        phys_idx = phys_seq_indices[iter_idx]
-        if not (0 <= phys_idx < max_num_seqs):
-            raise ValueError(
-                f"phys_seq_indices[{iter_idx}]={phys_idx} must be in "
-                f"[0, {max_num_seqs}).")
-        q_off = q_offsets[iter_idx]
-        if q_off < 0:
-            raise ValueError(
-                f"q_offsets[{iter_idx}]={q_off} must be non-negative.")
 
 
 def dynamic_validate_inputs(
@@ -2147,10 +2139,18 @@ def ragged_paged_attention(
     pages_per_seq = num_page_indices // max_num_seqs
     num_q_heads_per_kv_head = num_q_heads_per_kv_head_per_q_packing * q_packing
 
+    # LOGICAL dispatch gate: presence-based, NOT shape-based. Caller signals
+    # "use LOGICAL" by explicitly passing prefetches (any values, any shape).
+    # If they pass None, we apply identity defaults and dispatch to today's
+    # coupled-K PREFILL. Capturing this BEFORE applying defaults so the
+    # signal isn't lost. Avoids the silent footgun where a max_num_seqs-
+    # sized but non-identity array would have been routed to PREFILL.
+    use_logical_prefill = phys_seq_indices is not None
+
     # Default the iter→phys prefetches to identity for coupled-K (D/P/M).
-    # Caller passes real arrays (size > max_num_seqs) for LOGICAL. The
-    # kernel reads these uniformly with no case-based branching; identity
-    # values make the formulas reduce numerically to today's behavior.
+    # The kernel reads these uniformly with no case-based branching;
+    # identity values make the formulas reduce numerically to today's
+    # behavior.
     if phys_seq_indices is None:
         phys_seq_indices = jnp.arange(max_num_seqs, dtype=jnp.int32)
     if q_offsets is None:
@@ -2337,12 +2337,8 @@ def ragged_paged_attention(
             "bkv_csz": block_sizes[3],
         }
 
-    # Decoupled-K (LOGICAL) is gated on the caller passing iter-keyed
-    # prefetches with non-identity shape (max_num_subseqs > max_num_seqs).
-    # When LOGICAL is selected, it REPLACES the PREFILL pass; DECODE and
-    # MIXED still run. Identity-shape prefetches (the default) → coupled-K
-    # → today's D/P/M dispatch.
-    use_logical_prefill = (phys_seq_indices.shape[0] != max_num_seqs)
+    # `use_logical_prefill` was computed earlier (presence-based gate). When
+    # True, LOGICAL replaces the PREFILL pass; DECODE and MIXED still run.
 
     # Decode-only
     q, kv_cache = run_rpa_kernel(
