@@ -595,25 +595,74 @@ kernel bug.
 
 #### Phase 4 — Latency service comparison (L vs M)
 
-The current latency baseline (M, 388 ms) uses
-`LONG_PREFILL_TOKEN_THRESHOLD=0` (PREFILL/LOGICAL pass skipped). For an
-L-vs-M comparison we need to ENABLE the LOGICAL pass:
+The M-only baseline is Row 1 of §"Three-way comparison" (Mean TTFT
+388 ms at MNS=1, MNB=8192, K=0). The L kernel must process the full
+8191-token prefill in ONE pallas_call to be a fair comparator —
+requires mnss·kernel_K ≥ 8192. With kernel_K=256, that pins mnss=33
+(the only valid value: at MNS=1/MNB=8192 the synthetic-workload sizer
+rejects mnss>33 because per_phys_q would overflow MNB).
+
+Step 1 — Re-tune the L kernel for the latency workload. Block sizes
+pinned to the P-kernel throughput winner (same fast-track shortcut as
+Phase 1); the single tune point is mnss=33.
 
 ```bash
-SERVICE_ID=vllm_latency RPA_KERNEL_K=256 \
-LONG_PREFILL_TOKEN_THRESHOLD=8192 \
-tools/run_pipeline.sh \
+git pull origin rpa3_2
+
+RPA_V3_BQ_SZ_LST=256 \
+RPA_V3_BKV_SZ_LST=2048 \
+RPA_V3_BQ_CSZ_LST=256 \
+RPA_V3_BKV_CSZ_LST=512 \
+RPA_V3_K_LST=256 \
+RPA_V3_PAGE_SIZE_LST=128 \
+RPA_V3_MAX_NUM_SUBSEQS_LST=33 \
+CASES_TO_TUNE=logical RPA_V3_TUNER_CASES=logical \
+KERNEL_TUNER_FRESH=1 \
+  tools/kernel/tuner/v1/tune_all_cases.sh \
     tools/benchmark/cases/v7x/llama3_8b/prefill_heavy_latency.workload
+
+tools/kernel/tuner/v1/build_kernel_registry.sh \
+    tmp/log/tune_all_prefill_heavy_latency.txt \
+    tools/benchmark/cases/v7x/llama3_8b/production.kernel
 ```
 
-`LONG_PREFILL_TOKEN_THRESHOLD=8192` lets vLLM hand the runner the full
-8191-token prefill in one step → planner emits 32 LOGICAL chunks →
-kernel processes them in one call (assuming `max_num_subseqs ≥ 33`).
+Step 2 — Synthesize the L+latency sweep spec, sweep MNB ∈ {8192,
+16384, 32768} at MNS=1, and project the latency winner. Each step
+auto-commits + pushes.
 
-Compare to 388 ms.
+```bash
+python3 -m tools.benchmark.sweep_recipes \
+    --workload tools/benchmark/cases/v7x/llama3_8b/prefill_heavy_latency.workload \
+    --service vllm_latency_decoupled_k \
+    --out tmp/log/synthesized_prefill_heavy_latency.service
 
-**Hypothesis:** L beats M because static-K block sizes are well-tuned
-and we avoid MIXED's dynamic-q-len overhead.
+tools/benchmark/sweep.sh tmp/log/synthesized_prefill_heavy_latency.service
+
+tools/benchmark/build_service_registry.sh \
+    tmp/bench_prefill_heavy_latency_rpa_v3_vllm_latency_decoupled_k \
+    --metric metrics.MeanTTFT --ascending \
+    --export-production tools/benchmark/cases/v7x/llama3_8b/production.service \
+    --kernel-id rpa_v3 --service-id vllm_latency_decoupled_k
+```
+
+Compare Mean TTFT to the M baseline (388 ms).
+
+**Note (asymmetry):** Row 1's 388 ms used the M kernel with block
+sizes that were tuned for the throughput workload, not the latency
+one (per the `prefill_heavy_latency.workload` header). The L number
+here uses block sizes from the *throughput* P-winner — same kind of
+shortcut. For unimpeachable rigor, also re-tune M with the latency
+workload and compare against that. Deferred.
+
+**⚠ Note (path collision):** Both Phase 3 and Phase 4 export to the
+same `production.service` path. Phase 4 overwrites Phase 3's winner.
+Pull the Phase 3 result first if you need it; per-objective .service
+files are a refactor item.
+
+**Hypothesis:** L beats M because the L kernel folds all 32 prefill
+chunks into ONE pallas_call (mnss=33 fits all of them in one
+prefetch-array fill), whereas M handles 8191 q-tokens in one MIXED
+call but with dynamic-q-len overhead the L kernel doesn't have.
 
 ### What we ruled out (and why)
 

@@ -131,6 +131,27 @@ RECIPES: dict[tuple[str, str], dict[str, Any]] = {
         "rank_metric": "metrics.MeanTTFT",
         "rank_descending": False,
     },
+    # Single-prompt LATENCY recipe with L (decoupled-K) routing.
+    # Differences from ("rpa_v3", "vllm_latency"):
+    #   - RPA_KERNEL_K=256 pinned: engages the L kernel.
+    #   - LPTT NOT in fixed; auto-derived (= mnss * kernel_K)
+    #     by sweep.py:_apply_auto_link, validated server-side.
+    #   - MAX_NUM_BATCHED_TOKENS floor raised to 8192 (the 8191-token
+    #     prefill must fit in one scheduler step -> one L pallas_call;
+    #     anything smaller chunks across steps and defeats L's premise).
+    ("rpa_v3", "vllm_latency_decoupled_k"): {
+        "sweep_axes": {
+            "MAX_NUM_BATCHED_TOKENS": [8192, 16384, 32768],
+        },
+        "fixed": {
+            "BLOCK_SIZE": 128,
+            "MAX_NUM_SEQS": 1,
+            "RPA_KERNEL_K": 256,
+        },
+        "timeout_seconds": 600,
+        "rank_metric": "metrics.MeanTTFT",
+        "rank_descending": False,
+    },
 }
 
 
