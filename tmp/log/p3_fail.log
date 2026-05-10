@@ -31,9 +31,9 @@ seqs = [(0, 8, 'L')], K_kernel = 4
         """LOGICAL-only workloads (no DECODE / MIXED iters)."""
 >       self._run_and_assert(seqs=seqs, K_kernel=K_kernel)
 
-tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:295: 
+tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:304: 
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:282: in _run_and_assert
+tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:291: in _run_and_assert
     self.assertAllClose(kernel_logical_output, expected, atol=0.2,
 ../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/test_util.py:1374: in assertAllClose
     self.assertArraysAllClose(actual, desired, check_dtypes=False, atol=atol, rtol=rtol,
@@ -118,9 +118,9 @@ seqs = [(0, 16, 'L')], K_kernel = 4
         """LOGICAL-only workloads (no DECODE / MIXED iters)."""
 >       self._run_and_assert(seqs=seqs, K_kernel=K_kernel)
 
-tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:295: 
+tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:304: 
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:282: in _run_and_assert
+tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:291: in _run_and_assert
     self.assertAllClose(kernel_logical_output, expected, atol=0.2,
 ../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/test_util.py:1374: in assertAllClose
     self.assertArraysAllClose(actual, desired, check_dtypes=False, atol=atol, rtol=rtol,
@@ -205,9 +205,9 @@ seqs = [(0, 8, 'L'), (0, 8, 'L')], K_kernel = 4
         """LOGICAL-only workloads (no DECODE / MIXED iters)."""
 >       self._run_and_assert(seqs=seqs, K_kernel=K_kernel)
 
-tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:295: 
+tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:304: 
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:282: in _run_and_assert
+tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:291: in _run_and_assert
     self.assertAllClose(kernel_logical_output, expected, atol=0.2,
 ../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/test_util.py:1374: in assertAllClose
     self.assertArraysAllClose(actual, desired, check_dtypes=False, atol=atol, rtol=rtol,
@@ -286,9 +286,9 @@ self = <tests.kernels.ragged_paged_attention_kernel_v3_logical_test.TestLogicalE
             seqs=[(8, 8, "L")],   # prior=8, this-step q=8 -> 2 chunks
             K_kernel=4)
 
-tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:300: 
+tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:309: 
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:282: in _run_and_assert
+tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:291: in _run_and_assert
     self.assertAllClose(kernel_logical_output, expected, atol=0.2,
 ../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/test_util.py:1374: in assertAllClose
     self.assertArraysAllClose(actual, desired, check_dtypes=False, atol=atol, rtol=rtol,
@@ -412,7 +412,7 @@ self = <tests.kernels.ragged_paged_attention_kernel_v3_logical_test.TestLogicalK
 >       self.assertAllClose(kernel_logical_output, expected, atol=0.2,
                             rtol=0.2)
 
-tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:393: 
+tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:402: 
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
 ../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/test_util.py:1374: in assertAllClose
     self.assertArraysAllClose(actual, desired, check_dtypes=False, atol=atol, rtol=rtol,
@@ -493,4 +493,4 @@ FAILED tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py::TestLogic
 FAILED tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py::TestLogicalEquivalence::test_logical_equivalence_decode_free2
 FAILED tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py::TestLogicalEquivalence::test_logical_equivalence_with_prior_kv
 FAILED tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py::TestLogicalKvCacheRaceFix::test_evil_corruption_at_iter_write_window
-======================== 5 failed, 1 warning in 20.31s =========================
+======================== 5 failed, 1 warning in 20.16s =========================
