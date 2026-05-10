@@ -79,6 +79,7 @@ SERVICE_ID="${SERVICE_ID:-vllm}"
 for script in \
     "tools/kernel/tuner/v1/tune_all_cases.sh" \
     "tools/kernel/tuner/v1/build_kernel_registry.sh" \
+    "tools/benchmark/build_service_registry.sh" \
     "tools/benchmark/sweep.sh"; do
     if [ ! -x "$script" ]; then
         echo "Error: sub-script not executable: $script" >&2
@@ -232,7 +233,7 @@ echo ""
         ASCENDING_FLAG=(--ascending)
     fi
     {
-        python3 -m tools.benchmark.build_service_registry "$SWEEP_DIR" \
+        tools/benchmark/build_service_registry.sh "$SWEEP_DIR" \
             --metric "$RANK_METRIC" \
             "${ASCENDING_FLAG[@]}" \
             --export-production "$PROD_SERVICE" \

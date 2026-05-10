@@ -571,7 +571,20 @@ Even faster than Phase 1.
 #### Phase 3 — Throughput service comparison (L vs P)
 
 ```bash
-tools/run_pipeline.sh tools/benchmark/cases/v7x/llama3_8b/prefill_heavy.workload
+# 1. Synthesize the sweep spec from the (rpa_v3, vllm) recipe.
+python3 -m tools.benchmark.sweep_recipes \
+    --workload tools/benchmark/cases/v7x/llama3_8b/prefill_heavy.workload \
+    --out tmp/log/synthesized_prefill_heavy.service
+
+# 2. Sweep the 12 combos (MNB x MNS). Auto-commits + pushes per combo.
+tools/benchmark/sweep.sh tmp/log/synthesized_prefill_heavy.service
+
+# 3. Project winners to production.service. Auto-commits + pushes.
+tools/benchmark/build_service_registry.sh \
+    tmp/bench_prefill_heavy_rpa_v3_vllm \
+    --metric metrics.RequestThroughput \
+    --export-production tools/benchmark/cases/v7x/llama3_8b/production.service \
+    --kernel-id rpa_v3 --service-id vllm
 ```
 
 Compare `req/s` and `P99 TTFT` to the P-baseline (4.79 req/s / 207.2 s).
