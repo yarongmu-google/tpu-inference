@@ -1,0 +1,748 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.12, pytest-8.4.1, pluggy-1.6.0 -- /home/ymu_google_com/miniconda3/envs/vllm12/bin/python3
+cachedir: .pytest_cache
+hypothesis profile 'default'
+rootdir: /home/ymu_google_com/tpu-inference
+configfile: pyproject.toml
+plugins: mock-3.14.1, cov-6.2.1, anyio-4.9.0, hypothesis-6.151.9, jaxtyping-0.3.2
+collecting ... collected 5 items
+
+tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py::TestLogicalEquivalence::test_logical_equivalence_decode_free0 FAILED [ 20%]
+tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py::TestLogicalEquivalence::test_logical_equivalence_decode_free1 FAILED [ 40%]
+tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py::TestLogicalEquivalence::test_logical_equivalence_decode_free2 FAILED [ 60%]
+tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py::TestLogicalEquivalence::test_logical_equivalence_with_prior_kv FAILED [ 80%]
+tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py::TestLogicalKvCacheRaceFix::test_evil_corruption_at_iter_write_window FAILED [100%]
+
+=================================== FAILURES ===================================
+_________ TestLogicalEquivalence.test_logical_equivalence_decode_free0 _________
+
+self = <tests.kernels.ragged_paged_attention_kernel_v3_logical_test.TestLogicalEquivalence testMethod=test_logical_equivalence_decode_free0>
+seqs = [(0, 8, 'L')], K_kernel = 4
+
+    @parameterized.parameters(
+        # Single phys, 2 LOGICAL chunks.
+        dict(seqs=[(0, 8, "L")], K_kernel=4),
+        # Single phys, 4 LOGICAL chunks.
+        dict(seqs=[(0, 16, "L")], K_kernel=4),
+        # Two phys, each chunked.
+        dict(seqs=[(0, 8, "L"), (0, 8, "L")], K_kernel=4),
+    )
+    def test_logical_equivalence_decode_free(self, seqs, K_kernel):
+        """LOGICAL-only workloads (no DECODE / MIXED iters)."""
+>       self._run_and_assert(seqs=seqs, K_kernel=K_kernel)
+
+tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:295: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:239: in _run_and_assert
+    expected, _ = ref_ragged_paged_attention_logical(
+tpu_inference/kernels/ragged_paged_attention/v3/kernel.py:360: in ref_ragged_paged_attention_logical
+    dynamic_validate_inputs(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+queries = Array([[[0.851562, 0.178711, 0.0263672, ..., 0.5, 0.302734, 0.0932617],
+        [0.174805, 0.90625, 0.443359, ..., 0.6...594, 0.120605, 0.625],
+        [0.0446777, 0.310547, 0.478516, ..., 0.355469, 0.152344, 0.8125]]],      dtype=bfloat16)
+keys = Array([[[0.207031, 0.691406, 0.462891, ..., 0.00769043, 0.143555,
+         0.0153198],
+        [0.15625, 0.0244141, 0....      0.036377],
+        [0.0358887, 0.462891, 0.361328, ..., 0.777344, 0.115723,
+         0.882812]]], dtype=bfloat16)
+values = Array([[[0.890625, 0.363281, 0.373047, ..., 0.339844, 0.279297,
+         0.542969],
+        [0.451172, 0.0952148, 0.87...617, 0.683594],
+        [0.699219, 0.660156, 0.0432129, ..., 0.0712891, 0.193359,
+         0.447266]]], dtype=bfloat16)
+kv_cache = Array([[[[[nan, nan, nan, ..., nan, nan, nan],
+          [nan, nan, nan, ..., nan, nan, nan]],
+
+         [[nan, nan, n...n]],
+
+         [[nan, nan, nan, ..., nan, nan, nan],
+          [nan, nan, nan, ..., nan, nan, nan]]]]], dtype=bfloat16)
+kv_lens = Array([8, 0, 0, 0, 0, 0, 0, 0], dtype=int32)
+page_indices = Array([0, 0, 0, 0, 0, 0, 0, 0], dtype=int32)
+cu_q_lens = Array([0, 8, 8, 8, 8, 8, 8, 8, 8], dtype=int32)
+distribution = Array([0, 2, 2], dtype=int32)
+phys_seq_indices = Array([0, 0, 0, 0, 0, 0, 0, 0], dtype=int32)
+q_offsets = Array([0, 4, 0, 0, 0, 0, 0, 0], dtype=int32)
+
+    def dynamic_validate_inputs(
+        queries: jax.
+        Array,  # [max_num_tokens, actual_num_q_heads, actual_head_dim]
+        keys: jax.Array,  # [max_num_tokens, actual_num_kv_heads, actual_head_dim]
+        values: jax.
+        Array,  # [max_num_tokens, actual_num_kv_heads, actual_head_dim]
+        kv_cache: jax.
+        Array,  # [total_num_pages, page_size, num_kv_heads_x2 // kv_packing, kv_packing, head_dim]
+        kv_lens: jax.Array,  # i32[max_num_seqs]
+        page_indices: jax.Array,  # i32[max_num_seqs * pages_per_seq]
+        cu_q_lens: jax.Array,  # i32[max_num_seqs + 1]
+        distribution: jax.Array,  # i32[3]
+        phys_seq_indices: jax.Array | None = None,  # i32[max_num_subseqs]
+        q_offsets: jax.Array | None = None,  # i32[max_num_subseqs]
+        *,
+        use_causal_mask: bool = True,
+        skip_kv_mask: bool = False,
+        sm_scale: float = 1.0,
+        sliding_window: int | None = None,
+        soft_cap: float | None = None,
+        out_dtype: Any = None,
+        mask_value: float | None = None,
+        q_scale: float | None = None,
+        k_scale: float | None = None,
+        v_scale: float | None = None,
+        # Kernel optimization params.
+        chunk_prefill_size: int | None = None,
+        # Kernel tuning params.
+        d_block_sizes: tuple[int, int, int, int] | None = None,
+        p_block_sizes: tuple[int, int, int, int] | None = None,
+        m_block_sizes: tuple[int, int, int, int] | None = None,
+        vmem_limit_bytes: int | None = None,
+    ):
+        q, k, v = queries, keys, values
+        static_validate_inputs(
+            q,
+            k,
+            v,
+            kv_cache,
+            kv_lens,
+            page_indices,
+            cu_q_lens,
+            distribution,
+            phys_seq_indices,
+            q_offsets,
+            use_causal_mask=use_causal_mask,
+            skip_kv_mask=skip_kv_mask,
+            sm_scale=sm_scale,
+            sliding_window=sliding_window,
+            soft_cap=soft_cap,
+            out_dtype=out_dtype,
+            mask_value=mask_value,
+            q_scale=q_scale,
+            k_scale=k_scale,
+            v_scale=v_scale,
+            chunk_prefill_size=chunk_prefill_size,
+            d_block_sizes=d_block_sizes,
+            p_block_sizes=p_block_sizes,
+            m_block_sizes=m_block_sizes,
+            vmem_limit_bytes=vmem_limit_bytes,
+        )
+        max_num_tokens = q.shape[0]
+        total_num_pages = kv_cache.shape[0]
+        page_size = kv_cache.shape[1]
+        max_num_seqs = kv_lens.shape[0]
+        # LOGICAL prefetches: dynamic value-range checks (static checks already
+        # ran inside static_validate_inputs above).
+        validate_logical_prefetches(phys_seq_indices, q_offsets, max_num_seqs,
+                                    distribution=distribution)
+        num_page_indices = page_indices.shape[0]
+        assert num_page_indices % max_num_seqs == 0
+        pages_per_seq = num_page_indices // max_num_seqs
+    
+        i, j, k = distribution
+        if not (i <= j <= k):
+            raise ValueError(f"Invalid distribution: {distribution=}")
+    
+        if k > max_num_seqs:
+            raise ValueError(f"num_seqs={k} must be <= {max_num_seqs=}")
+    
+        if cu_q_lens[k] > max_num_tokens:
+            raise ValueError(
+                f"Total q tokens {cu_q_lens[k]} must be <= {max_num_tokens=}.")
+        for i in range(k):
+            q_len = cu_q_lens[i + 1] - cu_q_lens[i]
+            kv_len = kv_lens[i]
+            if not (0 < q_len <= kv_len):
+>               raise ValueError(
+                    f"Require 0 < {q_len=} <= {kv_len=} at sequence {i}.")
+E               ValueError: Require 0 < q_len=Array(0, dtype=int32) <= kv_len=Array(0, dtype=int32) at sequence 1.
+
+tpu_inference/kernels/ragged_paged_attention/v3/kernel.py:1714: ValueError
+_________ TestLogicalEquivalence.test_logical_equivalence_decode_free1 _________
+
+self = <tests.kernels.ragged_paged_attention_kernel_v3_logical_test.TestLogicalEquivalence testMethod=test_logical_equivalence_decode_free1>
+seqs = [(0, 16, 'L')], K_kernel = 4
+
+    @parameterized.parameters(
+        # Single phys, 2 LOGICAL chunks.
+        dict(seqs=[(0, 8, "L")], K_kernel=4),
+        # Single phys, 4 LOGICAL chunks.
+        dict(seqs=[(0, 16, "L")], K_kernel=4),
+        # Two phys, each chunked.
+        dict(seqs=[(0, 8, "L"), (0, 8, "L")], K_kernel=4),
+    )
+    def test_logical_equivalence_decode_free(self, seqs, K_kernel):
+        """LOGICAL-only workloads (no DECODE / MIXED iters)."""
+>       self._run_and_assert(seqs=seqs, K_kernel=K_kernel)
+
+tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:295: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:239: in _run_and_assert
+    expected, _ = ref_ragged_paged_attention_logical(
+tpu_inference/kernels/ragged_paged_attention/v3/kernel.py:360: in ref_ragged_paged_attention_logical
+    dynamic_validate_inputs(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+queries = Array([[[0.851562, 0.178711, 0.0263672, ..., 0.5, 0.302734, 0.0932617],
+        [0.174805, 0.90625, 0.443359, ..., 0.6...594, 0.120605, 0.625],
+        [0.0446777, 0.310547, 0.478516, ..., 0.355469, 0.152344, 0.8125]]],      dtype=bfloat16)
+keys = Array([[[0.207031, 0.691406, 0.462891, ..., 0.00769043, 0.143555,
+         0.0153198],
+        [0.15625, 0.0244141, 0....      0.036377],
+        [0.0358887, 0.462891, 0.361328, ..., 0.777344, 0.115723,
+         0.882812]]], dtype=bfloat16)
+values = Array([[[0.890625, 0.363281, 0.373047, ..., 0.339844, 0.279297,
+         0.542969],
+        [0.451172, 0.0952148, 0.87...617, 0.683594],
+        [0.699219, 0.660156, 0.0432129, ..., 0.0712891, 0.193359,
+         0.447266]]], dtype=bfloat16)
+kv_cache = Array([[[[[nan, nan, nan, ..., nan, nan, nan],
+          [nan, nan, nan, ..., nan, nan, nan]],
+
+         [[nan, nan, n...n]],
+
+         [[nan, nan, nan, ..., nan, nan, nan],
+          [nan, nan, nan, ..., nan, nan, nan]]]]], dtype=bfloat16)
+kv_lens = Array([16,  0,  0,  0,  0,  0,  0,  0], dtype=int32)
+page_indices = Array([0, 0, 0, 0, 0, 0, 0, 0], dtype=int32)
+cu_q_lens = Array([ 0, 16, 16, 16, 16, 16, 16, 16, 16], dtype=int32)
+distribution = Array([0, 4, 4], dtype=int32)
+phys_seq_indices = Array([0, 0, 0, 0, 0, 0, 0, 0], dtype=int32)
+q_offsets = Array([ 0,  4,  8, 12,  0,  0,  0,  0], dtype=int32)
+
+    def dynamic_validate_inputs(
+        queries: jax.
+        Array,  # [max_num_tokens, actual_num_q_heads, actual_head_dim]
+        keys: jax.Array,  # [max_num_tokens, actual_num_kv_heads, actual_head_dim]
+        values: jax.
+        Array,  # [max_num_tokens, actual_num_kv_heads, actual_head_dim]
+        kv_cache: jax.
+        Array,  # [total_num_pages, page_size, num_kv_heads_x2 // kv_packing, kv_packing, head_dim]
+        kv_lens: jax.Array,  # i32[max_num_seqs]
+        page_indices: jax.Array,  # i32[max_num_seqs * pages_per_seq]
+        cu_q_lens: jax.Array,  # i32[max_num_seqs + 1]
+        distribution: jax.Array,  # i32[3]
+        phys_seq_indices: jax.Array | None = None,  # i32[max_num_subseqs]
+        q_offsets: jax.Array | None = None,  # i32[max_num_subseqs]
+        *,
+        use_causal_mask: bool = True,
+        skip_kv_mask: bool = False,
+        sm_scale: float = 1.0,
+        sliding_window: int | None = None,
+        soft_cap: float | None = None,
+        out_dtype: Any = None,
+        mask_value: float | None = None,
+        q_scale: float | None = None,
+        k_scale: float | None = None,
+        v_scale: float | None = None,
+        # Kernel optimization params.
+        chunk_prefill_size: int | None = None,
+        # Kernel tuning params.
+        d_block_sizes: tuple[int, int, int, int] | None = None,
+        p_block_sizes: tuple[int, int, int, int] | None = None,
+        m_block_sizes: tuple[int, int, int, int] | None = None,
+        vmem_limit_bytes: int | None = None,
+    ):
+        q, k, v = queries, keys, values
+        static_validate_inputs(
+            q,
+            k,
+            v,
+            kv_cache,
+            kv_lens,
+            page_indices,
+            cu_q_lens,
+            distribution,
+            phys_seq_indices,
+            q_offsets,
+            use_causal_mask=use_causal_mask,
+            skip_kv_mask=skip_kv_mask,
+            sm_scale=sm_scale,
+            sliding_window=sliding_window,
+            soft_cap=soft_cap,
+            out_dtype=out_dtype,
+            mask_value=mask_value,
+            q_scale=q_scale,
+            k_scale=k_scale,
+            v_scale=v_scale,
+            chunk_prefill_size=chunk_prefill_size,
+            d_block_sizes=d_block_sizes,
+            p_block_sizes=p_block_sizes,
+            m_block_sizes=m_block_sizes,
+            vmem_limit_bytes=vmem_limit_bytes,
+        )
+        max_num_tokens = q.shape[0]
+        total_num_pages = kv_cache.shape[0]
+        page_size = kv_cache.shape[1]
+        max_num_seqs = kv_lens.shape[0]
+        # LOGICAL prefetches: dynamic value-range checks (static checks already
+        # ran inside static_validate_inputs above).
+        validate_logical_prefetches(phys_seq_indices, q_offsets, max_num_seqs,
+                                    distribution=distribution)
+        num_page_indices = page_indices.shape[0]
+        assert num_page_indices % max_num_seqs == 0
+        pages_per_seq = num_page_indices // max_num_seqs
+    
+        i, j, k = distribution
+        if not (i <= j <= k):
+            raise ValueError(f"Invalid distribution: {distribution=}")
+    
+        if k > max_num_seqs:
+            raise ValueError(f"num_seqs={k} must be <= {max_num_seqs=}")
+    
+        if cu_q_lens[k] > max_num_tokens:
+            raise ValueError(
+                f"Total q tokens {cu_q_lens[k]} must be <= {max_num_tokens=}.")
+        for i in range(k):
+            q_len = cu_q_lens[i + 1] - cu_q_lens[i]
+            kv_len = kv_lens[i]
+            if not (0 < q_len <= kv_len):
+>               raise ValueError(
+                    f"Require 0 < {q_len=} <= {kv_len=} at sequence {i}.")
+E               ValueError: Require 0 < q_len=Array(0, dtype=int32) <= kv_len=Array(0, dtype=int32) at sequence 1.
+
+tpu_inference/kernels/ragged_paged_attention/v3/kernel.py:1714: ValueError
+_________ TestLogicalEquivalence.test_logical_equivalence_decode_free2 _________
+
+self = <tests.kernels.ragged_paged_attention_kernel_v3_logical_test.TestLogicalEquivalence testMethod=test_logical_equivalence_decode_free2>
+seqs = [(0, 8, 'L'), (0, 8, 'L')], K_kernel = 4
+
+    @parameterized.parameters(
+        # Single phys, 2 LOGICAL chunks.
+        dict(seqs=[(0, 8, "L")], K_kernel=4),
+        # Single phys, 4 LOGICAL chunks.
+        dict(seqs=[(0, 16, "L")], K_kernel=4),
+        # Two phys, each chunked.
+        dict(seqs=[(0, 8, "L"), (0, 8, "L")], K_kernel=4),
+    )
+    def test_logical_equivalence_decode_free(self, seqs, K_kernel):
+        """LOGICAL-only workloads (no DECODE / MIXED iters)."""
+>       self._run_and_assert(seqs=seqs, K_kernel=K_kernel)
+
+tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:295: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:239: in _run_and_assert
+    expected, _ = ref_ragged_paged_attention_logical(
+tpu_inference/kernels/ragged_paged_attention/v3/kernel.py:360: in ref_ragged_paged_attention_logical
+    dynamic_validate_inputs(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+queries = Array([[[0.851562, 0.178711, 0.0263672, ..., 0.5, 0.302734, 0.0932617],
+        [0.174805, 0.90625, 0.443359, ..., 0.6...594, 0.120605, 0.625],
+        [0.0446777, 0.310547, 0.478516, ..., 0.355469, 0.152344, 0.8125]]],      dtype=bfloat16)
+keys = Array([[[0.207031, 0.691406, 0.462891, ..., 0.00769043, 0.143555,
+         0.0153198],
+        [0.15625, 0.0244141, 0....      0.036377],
+        [0.0358887, 0.462891, 0.361328, ..., 0.777344, 0.115723,
+         0.882812]]], dtype=bfloat16)
+values = Array([[[0.890625, 0.363281, 0.373047, ..., 0.339844, 0.279297,
+         0.542969],
+        [0.451172, 0.0952148, 0.87...617, 0.683594],
+        [0.699219, 0.660156, 0.0432129, ..., 0.0712891, 0.193359,
+         0.447266]]], dtype=bfloat16)
+kv_cache = Array([[[[[nan, nan, nan, ..., nan, nan, nan],
+          [nan, nan, nan, ..., nan, nan, nan]],
+
+         [[nan, nan, n...n]],
+
+         [[nan, nan, nan, ..., nan, nan, nan],
+          [nan, nan, nan, ..., nan, nan, nan]]]]], dtype=bfloat16)
+kv_lens = Array([8, 8, 0, 0, 0, 0, 0, 0], dtype=int32)
+page_indices = Array([0, 1, 0, 0, 0, 0, 0, 0], dtype=int32)
+cu_q_lens = Array([ 0,  8, 16, 16, 16, 16, 16, 16, 16], dtype=int32)
+distribution = Array([0, 4, 4], dtype=int32)
+phys_seq_indices = Array([0, 0, 1, 1, 0, 0, 0, 0], dtype=int32)
+q_offsets = Array([0, 4, 0, 4, 0, 0, 0, 0], dtype=int32)
+
+    def dynamic_validate_inputs(
+        queries: jax.
+        Array,  # [max_num_tokens, actual_num_q_heads, actual_head_dim]
+        keys: jax.Array,  # [max_num_tokens, actual_num_kv_heads, actual_head_dim]
+        values: jax.
+        Array,  # [max_num_tokens, actual_num_kv_heads, actual_head_dim]
+        kv_cache: jax.
+        Array,  # [total_num_pages, page_size, num_kv_heads_x2 // kv_packing, kv_packing, head_dim]
+        kv_lens: jax.Array,  # i32[max_num_seqs]
+        page_indices: jax.Array,  # i32[max_num_seqs * pages_per_seq]
+        cu_q_lens: jax.Array,  # i32[max_num_seqs + 1]
+        distribution: jax.Array,  # i32[3]
+        phys_seq_indices: jax.Array | None = None,  # i32[max_num_subseqs]
+        q_offsets: jax.Array | None = None,  # i32[max_num_subseqs]
+        *,
+        use_causal_mask: bool = True,
+        skip_kv_mask: bool = False,
+        sm_scale: float = 1.0,
+        sliding_window: int | None = None,
+        soft_cap: float | None = None,
+        out_dtype: Any = None,
+        mask_value: float | None = None,
+        q_scale: float | None = None,
+        k_scale: float | None = None,
+        v_scale: float | None = None,
+        # Kernel optimization params.
+        chunk_prefill_size: int | None = None,
+        # Kernel tuning params.
+        d_block_sizes: tuple[int, int, int, int] | None = None,
+        p_block_sizes: tuple[int, int, int, int] | None = None,
+        m_block_sizes: tuple[int, int, int, int] | None = None,
+        vmem_limit_bytes: int | None = None,
+    ):
+        q, k, v = queries, keys, values
+        static_validate_inputs(
+            q,
+            k,
+            v,
+            kv_cache,
+            kv_lens,
+            page_indices,
+            cu_q_lens,
+            distribution,
+            phys_seq_indices,
+            q_offsets,
+            use_causal_mask=use_causal_mask,
+            skip_kv_mask=skip_kv_mask,
+            sm_scale=sm_scale,
+            sliding_window=sliding_window,
+            soft_cap=soft_cap,
+            out_dtype=out_dtype,
+            mask_value=mask_value,
+            q_scale=q_scale,
+            k_scale=k_scale,
+            v_scale=v_scale,
+            chunk_prefill_size=chunk_prefill_size,
+            d_block_sizes=d_block_sizes,
+            p_block_sizes=p_block_sizes,
+            m_block_sizes=m_block_sizes,
+            vmem_limit_bytes=vmem_limit_bytes,
+        )
+        max_num_tokens = q.shape[0]
+        total_num_pages = kv_cache.shape[0]
+        page_size = kv_cache.shape[1]
+        max_num_seqs = kv_lens.shape[0]
+        # LOGICAL prefetches: dynamic value-range checks (static checks already
+        # ran inside static_validate_inputs above).
+        validate_logical_prefetches(phys_seq_indices, q_offsets, max_num_seqs,
+                                    distribution=distribution)
+        num_page_indices = page_indices.shape[0]
+        assert num_page_indices % max_num_seqs == 0
+        pages_per_seq = num_page_indices // max_num_seqs
+    
+        i, j, k = distribution
+        if not (i <= j <= k):
+            raise ValueError(f"Invalid distribution: {distribution=}")
+    
+        if k > max_num_seqs:
+            raise ValueError(f"num_seqs={k} must be <= {max_num_seqs=}")
+    
+        if cu_q_lens[k] > max_num_tokens:
+            raise ValueError(
+                f"Total q tokens {cu_q_lens[k]} must be <= {max_num_tokens=}.")
+        for i in range(k):
+            q_len = cu_q_lens[i + 1] - cu_q_lens[i]
+            kv_len = kv_lens[i]
+            if not (0 < q_len <= kv_len):
+>               raise ValueError(
+                    f"Require 0 < {q_len=} <= {kv_len=} at sequence {i}.")
+E               ValueError: Require 0 < q_len=Array(0, dtype=int32) <= kv_len=Array(0, dtype=int32) at sequence 2.
+
+tpu_inference/kernels/ragged_paged_attention/v3/kernel.py:1714: ValueError
+________ TestLogicalEquivalence.test_logical_equivalence_with_prior_kv _________
+
+self = <tests.kernels.ragged_paged_attention_kernel_v3_logical_test.TestLogicalEquivalence testMethod=test_logical_equivalence_with_prior_kv>
+
+    def test_logical_equivalence_with_prior_kv(self):
+        """LOGICAL iter on a phys req with prior_kv_len > 0 — exercises
+        the cache-vs-merged_kv boundary at offset phys_kv_q_gap."""
+>       self._run_and_assert(
+            seqs=[(8, 8, "L")],   # prior=8, this-step q=8 -> 2 chunks
+            K_kernel=4)
+
+tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:300: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:239: in _run_and_assert
+    expected, _ = ref_ragged_paged_attention_logical(
+tpu_inference/kernels/ragged_paged_attention/v3/kernel.py:360: in ref_ragged_paged_attention_logical
+    dynamic_validate_inputs(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+queries = Array([[[0.851562, 0.178711, 0.0263672, ..., 0.5, 0.302734, 0.0932617],
+        [0.174805, 0.90625, 0.443359, ..., 0.6...594, 0.120605, 0.625],
+        [0.0446777, 0.310547, 0.478516, ..., 0.355469, 0.152344, 0.8125]]],      dtype=bfloat16)
+keys = Array([[[0.207031, 0.691406, 0.462891, ..., 0.00769043, 0.143555,
+         0.0153198],
+        [0.15625, 0.0244141, 0....      0.036377],
+        [0.0358887, 0.462891, 0.361328, ..., 0.777344, 0.115723,
+         0.882812]]], dtype=bfloat16)
+values = Array([[[0.890625, 0.363281, 0.373047, ..., 0.339844, 0.279297,
+         0.542969],
+        [0.451172, 0.0952148, 0.87...617, 0.683594],
+        [0.699219, 0.660156, 0.0432129, ..., 0.0712891, 0.193359,
+         0.447266]]], dtype=bfloat16)
+kv_cache = Array([[[[[0.19043, 0.933594, 0.5, ..., 0.539062, 0.546875, 0.388672],
+          [0.675781, 0.847656, 0.769531, ..., 0...n]],
+
+         [[nan, nan, nan, ..., nan, nan, nan],
+          [nan, nan, nan, ..., nan, nan, nan]]]]], dtype=bfloat16)
+kv_lens = Array([16,  0,  0,  0,  0,  0,  0,  0], dtype=int32)
+page_indices = Array([0, 0, 0, 0, 0, 0, 0, 0], dtype=int32)
+cu_q_lens = Array([0, 8, 8, 8, 8, 8, 8, 8, 8], dtype=int32)
+distribution = Array([0, 2, 2], dtype=int32)
+phys_seq_indices = Array([0, 0, 0, 0, 0, 0, 0, 0], dtype=int32)
+q_offsets = Array([0, 4, 0, 0, 0, 0, 0, 0], dtype=int32)
+
+    def dynamic_validate_inputs(
+        queries: jax.
+        Array,  # [max_num_tokens, actual_num_q_heads, actual_head_dim]
+        keys: jax.Array,  # [max_num_tokens, actual_num_kv_heads, actual_head_dim]
+        values: jax.
+        Array,  # [max_num_tokens, actual_num_kv_heads, actual_head_dim]
+        kv_cache: jax.
+        Array,  # [total_num_pages, page_size, num_kv_heads_x2 // kv_packing, kv_packing, head_dim]
+        kv_lens: jax.Array,  # i32[max_num_seqs]
+        page_indices: jax.Array,  # i32[max_num_seqs * pages_per_seq]
+        cu_q_lens: jax.Array,  # i32[max_num_seqs + 1]
+        distribution: jax.Array,  # i32[3]
+        phys_seq_indices: jax.Array | None = None,  # i32[max_num_subseqs]
+        q_offsets: jax.Array | None = None,  # i32[max_num_subseqs]
+        *,
+        use_causal_mask: bool = True,
+        skip_kv_mask: bool = False,
+        sm_scale: float = 1.0,
+        sliding_window: int | None = None,
+        soft_cap: float | None = None,
+        out_dtype: Any = None,
+        mask_value: float | None = None,
+        q_scale: float | None = None,
+        k_scale: float | None = None,
+        v_scale: float | None = None,
+        # Kernel optimization params.
+        chunk_prefill_size: int | None = None,
+        # Kernel tuning params.
+        d_block_sizes: tuple[int, int, int, int] | None = None,
+        p_block_sizes: tuple[int, int, int, int] | None = None,
+        m_block_sizes: tuple[int, int, int, int] | None = None,
+        vmem_limit_bytes: int | None = None,
+    ):
+        q, k, v = queries, keys, values
+        static_validate_inputs(
+            q,
+            k,
+            v,
+            kv_cache,
+            kv_lens,
+            page_indices,
+            cu_q_lens,
+            distribution,
+            phys_seq_indices,
+            q_offsets,
+            use_causal_mask=use_causal_mask,
+            skip_kv_mask=skip_kv_mask,
+            sm_scale=sm_scale,
+            sliding_window=sliding_window,
+            soft_cap=soft_cap,
+            out_dtype=out_dtype,
+            mask_value=mask_value,
+            q_scale=q_scale,
+            k_scale=k_scale,
+            v_scale=v_scale,
+            chunk_prefill_size=chunk_prefill_size,
+            d_block_sizes=d_block_sizes,
+            p_block_sizes=p_block_sizes,
+            m_block_sizes=m_block_sizes,
+            vmem_limit_bytes=vmem_limit_bytes,
+        )
+        max_num_tokens = q.shape[0]
+        total_num_pages = kv_cache.shape[0]
+        page_size = kv_cache.shape[1]
+        max_num_seqs = kv_lens.shape[0]
+        # LOGICAL prefetches: dynamic value-range checks (static checks already
+        # ran inside static_validate_inputs above).
+        validate_logical_prefetches(phys_seq_indices, q_offsets, max_num_seqs,
+                                    distribution=distribution)
+        num_page_indices = page_indices.shape[0]
+        assert num_page_indices % max_num_seqs == 0
+        pages_per_seq = num_page_indices // max_num_seqs
+    
+        i, j, k = distribution
+        if not (i <= j <= k):
+            raise ValueError(f"Invalid distribution: {distribution=}")
+    
+        if k > max_num_seqs:
+            raise ValueError(f"num_seqs={k} must be <= {max_num_seqs=}")
+    
+        if cu_q_lens[k] > max_num_tokens:
+            raise ValueError(
+                f"Total q tokens {cu_q_lens[k]} must be <= {max_num_tokens=}.")
+        for i in range(k):
+            q_len = cu_q_lens[i + 1] - cu_q_lens[i]
+            kv_len = kv_lens[i]
+            if not (0 < q_len <= kv_len):
+>               raise ValueError(
+                    f"Require 0 < {q_len=} <= {kv_len=} at sequence {i}.")
+E               ValueError: Require 0 < q_len=Array(0, dtype=int32) <= kv_len=Array(0, dtype=int32) at sequence 1.
+
+tpu_inference/kernels/ragged_paged_attention/v3/kernel.py:1714: ValueError
+_____ TestLogicalKvCacheRaceFix.test_evil_corruption_at_iter_write_window ______
+
+self = <tests.kernels.ragged_paged_attention_kernel_v3_logical_test.TestLogicalKvCacheRaceFix testMethod=test_evil_corruption_at_iter_write_window>
+
+    def test_evil_corruption_at_iter_write_window(self):
+        """LOGICAL iter on phys with prior_kv_len > 0. Cache at
+        [phys_kv_q_gap, kv_len) is corrupted. Kernel + reference both
+        ignore it (read merged_kv) and produce identical output."""
+        if not jtu.is_device_tpu_at_least(version=4):
+            self.skipTest("Expect TPUv4+")
+    
+        rng = np.random.default_rng(2026)
+        seqs = [(8, 8, "L")]   # prior_kv_len=8, q_len=8 -> 2 LOGICAL iters
+        K_kernel = 4
+    
+        w = _build_logical_workload(
+            seqs=seqs, K_kernel=K_kernel,
+            num_q_heads=8, num_kv_heads=2, head_dim=128,
+            page_size=16, num_pages=512,
+            q_dtype=jnp.bfloat16, kv_dtype=jnp.bfloat16, rng=rng,
+            cache_corruptor=self._corruptor)
+    
+        # Reference output on corrupted cache: §6.4 Option A in the
+        # reference IGNORES cache at [phys_kv_q_gap, kv_len) and reads
+        # from merged_kv, so this is the "correct" output.
+>       expected, _ = ref_ragged_paged_attention_logical(
+            queries=w["q"], keys=w["k"], values=w["v"],
+            kv_cache=w["kv_cache"], kv_lens=w["kv_lens"],
+            page_indices=w["page_indices"], cu_q_lens=w["cu_q_lens"],
+            phys_seq_indices=w["phys_seq_indices"],
+            q_offsets=w["q_offsets"],
+            distribution=w["distribution"],
+            static_q_len=K_kernel)
+
+tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py:365: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tpu_inference/kernels/ragged_paged_attention/v3/kernel.py:360: in ref_ragged_paged_attention_logical
+    dynamic_validate_inputs(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+queries = Array([[[0.851562, 0.178711, 0.0263672, ..., 0.5, 0.302734, 0.0932617],
+        [0.174805, 0.90625, 0.443359, ..., 0.6...594, 0.120605, 0.625],
+        [0.0446777, 0.310547, 0.478516, ..., 0.355469, 0.152344, 0.8125]]],      dtype=bfloat16)
+keys = Array([[[0.207031, 0.691406, 0.462891, ..., 0.00769043, 0.143555,
+         0.0153198],
+        [0.15625, 0.0244141, 0....      0.036377],
+        [0.0358887, 0.462891, 0.361328, ..., 0.777344, 0.115723,
+         0.882812]]], dtype=bfloat16)
+values = Array([[[0.890625, 0.363281, 0.373047, ..., 0.339844, 0.279297,
+         0.542969],
+        [0.451172, 0.0952148, 0.87...617, 0.683594],
+        [0.699219, 0.660156, 0.0432129, ..., 0.0712891, 0.193359,
+         0.447266]]], dtype=bfloat16)
+kv_cache = Array([[[[[0.19043, 0.933594, 0.5, ..., 0.539062, 0.546875, 0.388672],
+          [0.675781, 0.847656, 0.769531, ..., 0...n]],
+
+         [[nan, nan, nan, ..., nan, nan, nan],
+          [nan, nan, nan, ..., nan, nan, nan]]]]], dtype=bfloat16)
+kv_lens = Array([16,  0,  0,  0,  0,  0,  0,  0], dtype=int32)
+page_indices = Array([0, 0, 0, 0, 0, 0, 0, 0], dtype=int32)
+cu_q_lens = Array([0, 8, 8, 8, 8, 8, 8, 8, 8], dtype=int32)
+distribution = Array([0, 2, 2], dtype=int32)
+phys_seq_indices = Array([0, 0, 0, 0, 0, 0, 0, 0], dtype=int32)
+q_offsets = Array([0, 4, 0, 0, 0, 0, 0, 0], dtype=int32)
+
+    def dynamic_validate_inputs(
+        queries: jax.
+        Array,  # [max_num_tokens, actual_num_q_heads, actual_head_dim]
+        keys: jax.Array,  # [max_num_tokens, actual_num_kv_heads, actual_head_dim]
+        values: jax.
+        Array,  # [max_num_tokens, actual_num_kv_heads, actual_head_dim]
+        kv_cache: jax.
+        Array,  # [total_num_pages, page_size, num_kv_heads_x2 // kv_packing, kv_packing, head_dim]
+        kv_lens: jax.Array,  # i32[max_num_seqs]
+        page_indices: jax.Array,  # i32[max_num_seqs * pages_per_seq]
+        cu_q_lens: jax.Array,  # i32[max_num_seqs + 1]
+        distribution: jax.Array,  # i32[3]
+        phys_seq_indices: jax.Array | None = None,  # i32[max_num_subseqs]
+        q_offsets: jax.Array | None = None,  # i32[max_num_subseqs]
+        *,
+        use_causal_mask: bool = True,
+        skip_kv_mask: bool = False,
+        sm_scale: float = 1.0,
+        sliding_window: int | None = None,
+        soft_cap: float | None = None,
+        out_dtype: Any = None,
+        mask_value: float | None = None,
+        q_scale: float | None = None,
+        k_scale: float | None = None,
+        v_scale: float | None = None,
+        # Kernel optimization params.
+        chunk_prefill_size: int | None = None,
+        # Kernel tuning params.
+        d_block_sizes: tuple[int, int, int, int] | None = None,
+        p_block_sizes: tuple[int, int, int, int] | None = None,
+        m_block_sizes: tuple[int, int, int, int] | None = None,
+        vmem_limit_bytes: int | None = None,
+    ):
+        q, k, v = queries, keys, values
+        static_validate_inputs(
+            q,
+            k,
+            v,
+            kv_cache,
+            kv_lens,
+            page_indices,
+            cu_q_lens,
+            distribution,
+            phys_seq_indices,
+            q_offsets,
+            use_causal_mask=use_causal_mask,
+            skip_kv_mask=skip_kv_mask,
+            sm_scale=sm_scale,
+            sliding_window=sliding_window,
+            soft_cap=soft_cap,
+            out_dtype=out_dtype,
+            mask_value=mask_value,
+            q_scale=q_scale,
+            k_scale=k_scale,
+            v_scale=v_scale,
+            chunk_prefill_size=chunk_prefill_size,
+            d_block_sizes=d_block_sizes,
+            p_block_sizes=p_block_sizes,
+            m_block_sizes=m_block_sizes,
+            vmem_limit_bytes=vmem_limit_bytes,
+        )
+        max_num_tokens = q.shape[0]
+        total_num_pages = kv_cache.shape[0]
+        page_size = kv_cache.shape[1]
+        max_num_seqs = kv_lens.shape[0]
+        # LOGICAL prefetches: dynamic value-range checks (static checks already
+        # ran inside static_validate_inputs above).
+        validate_logical_prefetches(phys_seq_indices, q_offsets, max_num_seqs,
+                                    distribution=distribution)
+        num_page_indices = page_indices.shape[0]
+        assert num_page_indices % max_num_seqs == 0
+        pages_per_seq = num_page_indices // max_num_seqs
+    
+        i, j, k = distribution
+        if not (i <= j <= k):
+            raise ValueError(f"Invalid distribution: {distribution=}")
+    
+        if k > max_num_seqs:
+            raise ValueError(f"num_seqs={k} must be <= {max_num_seqs=}")
+    
+        if cu_q_lens[k] > max_num_tokens:
+            raise ValueError(
+                f"Total q tokens {cu_q_lens[k]} must be <= {max_num_tokens=}.")
+        for i in range(k):
+            q_len = cu_q_lens[i + 1] - cu_q_lens[i]
+            kv_len = kv_lens[i]
+            if not (0 < q_len <= kv_len):
+>               raise ValueError(
+                    f"Require 0 < {q_len=} <= {kv_len=} at sequence {i}.")
+E               ValueError: Require 0 < q_len=Array(0, dtype=int32) <= kv_len=Array(0, dtype=int32) at sequence 1.
+
+tpu_inference/kernels/ragged_paged_attention/v3/kernel.py:1714: ValueError
+=========================== short test summary info ============================
+FAILED tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py::TestLogicalEquivalence::test_logical_equivalence_decode_free0
+FAILED tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py::TestLogicalEquivalence::test_logical_equivalence_decode_free1
+FAILED tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py::TestLogicalEquivalence::test_logical_equivalence_decode_free2
+FAILED tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py::TestLogicalEquivalence::test_logical_equivalence_with_prior_kv
+FAILED tests/kernels/ragged_paged_attention_kernel_v3_logical_test.py::TestLogicalKvCacheRaceFix::test_evil_corruption_at_iter_write_window
+============================== 5 failed in 11.74s ==============================
