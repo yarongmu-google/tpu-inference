@@ -50,7 +50,7 @@ class PersistentBatchManager:
         # update_states() ALSO computes a per-step StepPlan via
         # subseq_planner.plan_step(); the plan is consumed by the
         # prefetch-array construction code (next commit) to build per-iter
-        # cu_q_lens, kv_lens, page_indices, and real_seq_idx_per_iter.
+        # cu_q_lens, kv_lens, page_indices, phys_seq_indices, and q_offsets.
         self.decoupled_k_config = decoupled_k_config
         # Cached per-step output of plan_step(). Set by
         # compute_step_plan() during update_states() when
@@ -339,7 +339,7 @@ class PersistentBatchManager:
         metadata (q_offset_in_real_req, q_len, kv_len_at_end). The
         prefetch-array construction code (next commit) materialises this
         into the kernels cu_q_lens / kv_lens / page_indices /
-        real_seq_idx_per_iter arrays.
+        phys_seq_indices / q_offsets arrays.
 
         Returns None when self.decoupled_k_config is None (todays
         coupled-K path; no chunking happens, the existing

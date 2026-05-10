@@ -28,14 +28,20 @@ import jax
         "query_start_loc",
         "request_distribution",
         "mamba_state_indices",
-        # Decoupled-K (RPA_KERNEL_K) sub-chunk indirection. None when
-        # decoupling is off (todays coupled-K path) — kernel skips the
-        # extra dereference and uses seq_idx directly. When set, the
-        # kernel uses real_seq_idx_per_iter[seq_idx] to look up the
-        # real-request slot for page_indices_ref. See
-        # tpu_inference/runner/subseq_planner.py for the per-step
+        # Decoupled-K (RPA_KERNEL_K) sub-chunk indirection. Both fields
+        # are None on todays coupled-K path — kernel skips the extra
+        # dereference and uses seq_idx directly with phys-keyed
+        # cu_q_lens / kv_lens. When set, the kernel reads:
+        #   phys_seq_indices[seq_idx] -> physical-request slot for
+        #     page_indices_ref / cu_q_lens / kv_lens lookups.
+        #   q_offsets[seq_idx]        -> q-token offset into the
+        #     physical requests scheduled-token slice where this iters
+        #     q-window begins. Pairs with the kernels static_q_len to
+        #     define [q_start, q_start + static_q_len).
+        # See tpu_inference/runner/subseq_planner.py for the per-step
         # chunking semantics and the SMEM accounting.
-        "real_seq_idx_per_iter",
+        "phys_seq_indices",
+        "q_offsets",
     ],
     meta_fields=[
         # Static Python int (or None) — captured into the JIT trace as
@@ -71,17 +77,25 @@ class AttentionMetadata(object):
     # use this field, only hybrid models exercise it today.
     mamba_state_indices: jax.Array | None = None
     # (max_num_subseqs,) i32 — under decoupled-K, maps each loop iteration
-    # (sub-seq slot) to its real-request slot in the persistent batch.
-    # Length of this array sets the kernels iteration count; values are
-    # in [0, max_num_real_seqs). Multiple sub-seqs of the same real
-    # request hold the SAME real-seq slot value, so they share the
-    # corresponding row of page_indices_ref — eliminating the SMEM
-    # blow-up that naive duplication would cause. See
-    # subseq_planner.py for the chunking semantics, kernel.py for the
-    # consumer (added in a follow-up commit, not yet wired).
+    # (sub-seq slot) to its physical-request slot in the persistent
+    # batch. Length of this array sets the kernels iteration count;
+    # values are in [0, max_num_seqs). Multiple sub-seqs of the same
+    # physical request hold the SAME phys-seq slot value, so they share
+    # the corresponding row of page_indices_ref / cu_q_lens / kv_lens —
+    # eliminating the SMEM blow-up that naive duplication would cause.
+    # See subseq_planner.py for the chunking semantics; kernel.py
+    # consumes this together with q_offsets via the LOGICAL dispatch.
     # None when RPA_KERNEL_K is unset (todays coupled-K path); the
     # kernel falls back to seq_idx as the page_indices selector.
-    real_seq_idx_per_iter: jax.Array | None = None
+    phys_seq_indices: jax.Array | None = None
+    # (max_num_subseqs,) i32 — under decoupled-K, the q-token offset into
+    # the physical requests scheduled-token slice where this iters
+    # q-window begins. 0 for the first sub-seq of a physical request,
+    # static_q_len for the second, and so on. Combined with the
+    # kernels static_q_len, defines this iters [q_start, q_end)
+    # inside cu_q_lens[phys] : cu_q_lens[phys + 1]. None on todays
+    # coupled-K path (kernel derives q-bounds from cu_q_lens directly).
+    q_offsets: jax.Array | None = None
     # Static (Python int) — when None, ragged_paged_attention skips its
     # PREFILL pass (decode-only + mixed). When set to K > 0, sequences
     # in the request_distribution[0]:request_distribution[1] slice are
