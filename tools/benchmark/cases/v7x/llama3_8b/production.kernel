@@ -1,7 +1,7 @@
 {
   "metadata": {
-    "last_updated_from_runlog": "tmp/log/tune_all_prefill_heavy_latency.txt",
-    "last_updated_at": "2026-05-10T12:52:47.829850"
+    "last_updated_from_runlog": "tmp/log/tune_all_prefill_heavy.txt",
+    "last_updated_at": "2026-05-10T14:51:19.782986"
   },
   "results": {
     "decode": [
@@ -753,6 +753,31 @@
         "Latency": 392,
         "WarmupTime": 3171315,
         "CaseId": 0
+      },
+      {
+        "tuning_key": {
+          "page_size": 128,
+          "q_dtype": "bfloat16",
+          "kv_dtype": "bfloat16",
+          "num_q_heads": 32,
+          "num_kv_heads": 8,
+          "head_dim": 128,
+          "max_model_len": 8192,
+          "sliding_window": null,
+          "case": "logical",
+          "chunk_prefill_size": 256,
+          "code_revision": "ff6aff0fd8d2"
+        },
+        "tunable_params": {
+          "bq_sz": 256,
+          "bkv_sz": 2048,
+          "bq_csz": 256,
+          "bkv_csz": 512,
+          "max_num_subseqs": 4224
+        },
+        "Latency": 2203,
+        "WarmupTime": 2981685,
+        "CaseId": 5
       }
     ]
   }
