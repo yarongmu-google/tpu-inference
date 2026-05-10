@@ -37,3 +37,29 @@ Inspector commands to extract winners (run on the same TPU VM):
       --source=local --db-path=tmp/log/kernel_tuner_run/prefill_heavy_logical \
       query_min_latency \
       --case_set_id=prefill_heavy_logical_20260510_113552 --run_id=0
+===== 2026-05-10 11:38:12 Starting full kernel tune for prefill_heavy =====
+Cases: decode -> prefill -> mixed
+Branch: rpa3_2
+Git commit: c9569238f36ae05e3ead4c276d375a89d169526d
+
+
+===== 2026-05-10 11:38:12 Tuning logical (case_set_id=prefill_heavy_logical) =====
+DB path: tmp/log/kernel_tuner_run/prefill_heavy_logical
+WARNING:absl:Tensorflow library not found, tensorflow.io.gfile operations will use native shim calls. GCS paths (i.e. 'gs://...') cannot be accessed.
+INFO:numexpr.utils:Note: detected 224 virtual cores but NumExpr set to maximum of 64, check "NUMEXPR_MAX_THREADS" environment variable.
+INFO:numexpr.utils:Note: NumExpr detected 224 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+INFO:numexpr.utils:NumExpr defaulting to 16 threads.
+INFO 05-10 11:38:18 [__init__.py:59] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+I0510 11:38:18.582581 126686677653440 kernel_tuner_runner.py:115] Using case_set_id: prefill_heavy_logical, run_id: 0, case_set_desc: prefill_heavy logical kernel tune for this tuning run.
+I0510 11:38:18.582676 126686677653440 local_db_manager.py:53] Database initialized at tmp/log/kernel_tuner_run/prefill_heavy_logical
+I0510 11:38:18.586964 126686677653440 rpa_v3_kernel_tuner.py:429] RPA_V3_BQ_SZ_LST override: [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192] -> [256]
+I0510 11:38:18.587025 126686677653440 rpa_v3_kernel_tuner.py:429] RPA_V3_BKV_SZ_LST override: [512, 1024, 2048, 4096, 8192] -> [2048]
+I0510 11:38:18.587048 126686677653440 rpa_v3_kernel_tuner.py:429] RPA_V3_BQ_CSZ_LST override: [32, 64, 128, 256, 512, 1024, 2048] -> [256]
+I0510 11:38:18.587070 126686677653440 rpa_v3_kernel_tuner.py:429] RPA_V3_BKV_CSZ_LST override: [128, 256, 512, 1024, 2048] -> [512]
+I0510 11:38:18.587087 126686677653440 rpa_v3_kernel_tuner.py:429] RPA_V3_K_LST override: [128, 256, 512, 1024, 2048, 4096, 8192] -> [256]
+I0510 11:38:18.587128 126686677653440 rpa_v3_kernel_tuner.py:429] RPA_V3_PAGE_SIZE_LST override: [64, 128, 256] -> [128]
+I0510 11:38:18.587152 126686677653440 kernel_tuner_runner.py:135] Running in locally mode. Skipping Buildkite pipeline generation and running tuning jobs directly.
+I0510 11:38:18.587254 126686677653440 kernel_tuner_base.py:134] CaseSetId prefill_heavy_logical already exists with the same description. Proceeding with the existing case set.
+I0510 11:38:18.587296 126686677653440 local_db_manager.py:297] Database at tmp/log/kernel_tuner_run/prefill_heavy_logical finalized with 0 cases, 0 invalid cases.
+I0510 11:38:18.587340 126686677653440 local_db_manager.py:303] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical/CaseSet.json
+===== 2026-05-10 11:38:19 logical done in 7s =====
