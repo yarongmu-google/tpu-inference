@@ -67,9 +67,21 @@ class LocalDbManager(StorageManager):
             return json.load(f)
 
     def _write_table(self, table_name, data):
+        # Crash-atomic write: dump to <path>.tmp first, then os.replace
+        # to swap atomically into <path>. Without this, a kill / OOM /
+        # ssh-disconnect mid-`json.dump` leaves a TRUNCATED file at
+        # <path> — the next runs _read_table raises JSONDecodeError
+        # and the entire DB is treated as missing, silently re-tuning
+        # from scratch (the same failure mode that motivated the
+        # /tmp -> tmp/log/ relocation in dff512e9, just rarer).
+        # os.replace is atomic on POSIX; the .tmp file lives in the
+        # same directory as <path> so the rename stays within one
+        # filesystem.
         path = self._table_path(table_name)
-        with open(path, 'w') as f:
+        tmp_path = path + ".tmp"
+        with open(tmp_path, 'w') as f:
             json.dump(data, f, indent=2)
+        os.replace(tmp_path, path)
 
     # ------------------------------------------------------------------
     # StorageManager interface
