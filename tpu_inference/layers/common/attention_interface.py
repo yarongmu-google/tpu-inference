@@ -350,6 +350,8 @@ def sharded_ragged_paged_attention(
     k_scale: float | None = None,
     v_scale: float | None = None,
     chunk_prefill_size: int | None = None,
+    phys_seq_indices: jax.Array | None = None,
+    q_offsets: jax.Array | None = None,
 ):
     """Shards along KV heads."""
     # Handle GQA/MQA where num_kv_heads < tp_size
@@ -398,6 +400,23 @@ def sharded_ragged_paged_attention(
 
         in_specs += (P(ShardingAxisName.ATTN_HEAD), )
         args += (attention_sink, )
+
+    if phys_seq_indices is not None:
+        # Decoupled-K (RPA_KERNEL_K): the LOGICAL kernel branch needs
+        # iter-keyed prefetches alongside the existing phys-keyed ones.
+        # hd64 kernel doesnt have a LOGICAL path yet — gate explicitly so
+        # a misconfigured (RPA_KERNEL_K + head_dim==64) deployment fails
+        # loud here rather than silently dropping the new args.
+        if use_hd64:
+            raise NotImplementedError(
+                "Decoupled-K (RPA_KERNEL_K) with the hd64 kernel "
+                "(head_dim==64) is not yet supported. Disable RPA_KERNEL_K "
+                "or run with head_dim != 64.")
+        in_specs += (
+            P(ShardingAxisName.ATTN_DATA),  # phys_seq_indices
+            P(ShardingAxisName.ATTN_DATA),  # q_offsets
+        )
+        args += (phys_seq_indices, q_offsets)
 
     def _ragged_paged_attention(*args):
         kwargs = dict(
@@ -482,6 +501,10 @@ def attention(
         # trace time (per-trace, not per-step — same as before, but
         # without the module-global mutation footgun).
         chunk_prefill_size=md.chunk_prefill_size,
+        # Decoupled-K iter-keyed prefetches; both None on the coupled-K
+        # path (kernel falls back to its coupled branch).
+        phys_seq_indices=md.phys_seq_indices,
+        q_offsets=md.q_offsets,
     )
 
     return kv_cache, output
