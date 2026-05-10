@@ -210,3 +210,36 @@ Inspector commands to extract winners (run on the same TPU VM):
       --source=local --db-path=tmp/log/kernel_tuner_run/prefill_heavy_logical \
       query_min_latency \
       --case_set_id=prefill_heavy_logical_20260510_114539 --run_id=0
+===== 2026-05-10 12:00:28 Starting full kernel tune for prefill_heavy =====
+Cases: decode -> prefill -> mixed
+Branch: rpa3_2
+Git commit: 779edf5fb48a0f090231519270890c704594615c
+
+
+===== 2026-05-10 12:00:28 Tuning logical (case_set_id=prefill_heavy_logical) =====
+DB path: tmp/log/kernel_tuner_run/prefill_heavy_logical
+WARNING:absl:Tensorflow library not found, tensorflow.io.gfile operations will use native shim calls. GCS paths (i.e. 'gs://...') cannot be accessed.
+INFO:numexpr.utils:Note: detected 224 virtual cores but NumExpr set to maximum of 64, check "NUMEXPR_MAX_THREADS" environment variable.
+INFO:numexpr.utils:Note: NumExpr detected 224 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+INFO:numexpr.utils:NumExpr defaulting to 16 threads.
+INFO 05-10 12:00:33 [__init__.py:59] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+I0510 12:00:33.957431 131205958936512 kernel_tuner_runner.py:115] Using case_set_id: prefill_heavy_logical, run_id: 0, case_set_desc: prefill_heavy logical kernel tune for this tuning run.
+I0510 12:00:33.957527 131205958936512 local_db_manager.py:53] Database initialized at tmp/log/kernel_tuner_run/prefill_heavy_logical
+I0510 12:00:33.961815 131205958936512 rpa_v3_kernel_tuner.py:431] RPA_V3_BQ_SZ_LST override: [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192] -> [256]
+I0510 12:00:33.961878 131205958936512 rpa_v3_kernel_tuner.py:431] RPA_V3_BKV_SZ_LST override: [512, 1024, 2048, 4096, 8192] -> [2048]
+I0510 12:00:33.961904 131205958936512 rpa_v3_kernel_tuner.py:431] RPA_V3_BQ_CSZ_LST override: [32, 64, 128, 256, 512, 1024, 2048] -> [256]
+I0510 12:00:33.961926 131205958936512 rpa_v3_kernel_tuner.py:431] RPA_V3_BKV_CSZ_LST override: [128, 256, 512, 1024, 2048] -> [512]
+I0510 12:00:33.961945 131205958936512 rpa_v3_kernel_tuner.py:431] RPA_V3_K_LST override: [128, 256, 512, 1024, 2048, 4096, 8192] -> [256]
+I0510 12:00:33.961968 131205958936512 rpa_v3_kernel_tuner.py:431] RPA_V3_PAGE_SIZE_LST override: [64, 128, 256] -> [128]
+I0510 12:00:33.961987 131205958936512 kernel_tuner_runner.py:135] Running in locally mode. Skipping Buildkite pipeline generation and running tuning jobs directly.
+I0510 12:00:33.962088 131205958936512 kernel_tuner_base.py:134] CaseSetId prefill_heavy_logical already exists with the same description. Proceeding with the existing case set.
+I0510 12:00:33.962148 131205958936512 kernel_tuner_base.py:356] Worker [unknown] Claimed CaseSetId: prefill_heavy_logical, RunId: 0, Bucket 0 (0-6) for processing.
+I0510 12:00:33.962438 131205958936512 local_db_manager.py:236] Marked bucket as in progress: cs_id=prefill_heavy_logical, r_id=0, b_id=0, worker=None
+I0510 12:00:33.963474 131205958936512 local_db_manager.py:252] Marked bucket as completed: cs_id=prefill_heavy_logical, r_id=0, b_id=0, tt_us=1
+I0510 12:00:33.963515 131205958936512 kernel_tuner_base.py:433] Worker [unknown] Completed Bucket 0 (0-6) for CaseSetId: prefill_heavy_logical, RunId: 0. Total time: 0.00s.
+I0510 12:00:33.963540 131205958936512 local_db_manager.py:297] Database at tmp/log/kernel_tuner_run/prefill_heavy_logical finalized with 0 cases, 0 invalid cases.
+I0510 12:00:33.963586 131205958936512 local_db_manager.py:303] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical/CaseSet.json
+I0510 12:00:33.963606 131205958936512 local_db_manager.py:303] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical/KernelTuningCases.json
+I0510 12:00:33.963620 131205958936512 local_db_manager.py:303] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical/WorkBuckets.json
+I0510 12:00:33.963635 131205958936512 local_db_manager.py:303] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical/CaseResults.json
+===== 2026-05-10 12:00:34 logical done in 6s =====
