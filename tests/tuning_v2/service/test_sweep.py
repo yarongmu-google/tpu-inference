@@ -58,6 +58,7 @@ SAMPLE_PIN_KEYS = {
     "page_size":     128,
     "kernel_K":      256,
     "code_revision": "abc12345",
+    "mnss":          4224,
 }
 
 
@@ -465,6 +466,36 @@ class TestResolveKernelPinKeys(unittest.TestCase):
         with self.assertRaises(KernelRegistryMissingError):
             resolve_kernel_pin_keys(self.dir, "x")
 
+    def test_logical_winner_includes_mnss_from_tunable_params(self):
+        """Review followup: pin_keys now carries mnss so the
+        service-sweep pre-filter can drop infeasible MNS combos.
+        For LOGICAL (decoupled-K), mnss is in tunable_params."""
+        (self.dir / "x.kernel").write_text(json.dumps(SAMPLE_KERNEL_DOC))
+        pk = resolve_kernel_pin_keys(self.dir, "x")
+        self.assertEqual(pk["mnss"], 4224)
+
+    def test_prefill_winner_includes_mnss_equal_to_max_num_seqs(self):
+        """For PREFILL (coupled-K, no decoupling), the iter capacity
+        equals max_num_seqs — mnss is sourced from tuning_key."""
+        doc = {
+            "winners": [{
+                "tuning_key": {
+                    "case": "prefill",
+                    "page_size": 128, "kernel_K": 256,
+                    "code_revision": "x",
+                    "max_num_seqs": 256,
+                },
+                "tunable_params": {
+                    "bq_sz": 256, "bkv_sz": 2048,
+                    "bq_csz": 256, "bkv_csz": 512,
+                },
+            }],
+        }
+        (self.dir / "x.kernel").write_text(json.dumps(doc))
+        pk = resolve_kernel_pin_keys(self.dir, "x")
+        self.assertEqual(pk["case"], "prefill")
+        self.assertEqual(pk["mnss"], 256)
+
 
 class TestRunServiceSweepKernelPinKeys(unittest.TestCase):
     """Specific to the kernel_pin_keys integration."""
@@ -669,6 +700,68 @@ class TestIsFeasible(unittest.TestCase):
         feasible, _ = _is_feasible(
             {"MAX_NUM_BATCHED_TOKENS": "not a number"},
             {"INPUT_LEN": "1024"},
+        )
+        self.assertTrue(feasible)
+
+    # ----- followup: mnss-based feasibility -----
+
+    def test_mns_above_mnss_is_infeasible(self):
+        """Review followup: combo MNS exceeding the pinned kernel's
+        iter capacity (mnss) is unrunnable — kernel was tuned with
+        fewer slots than the swept concurrency."""
+        feasible, reason = _is_feasible(
+            {"MAX_NUM_SEQS": 1000},
+            {},
+            kernel_pin_keys={"mnss": 256},
+        )
+        self.assertFalse(feasible)
+        self.assertIn("MAX_NUM_SEQS=1000", reason)
+        self.assertIn("mnss=256", reason)
+
+    def test_mns_equal_to_mnss_is_feasible(self):
+        feasible, _ = _is_feasible(
+            {"MAX_NUM_SEQS": 256},
+            {},
+            kernel_pin_keys={"mnss": 256},
+        )
+        self.assertTrue(feasible)
+
+    def test_mns_below_mnss_is_feasible(self):
+        feasible, _ = _is_feasible(
+            {"MAX_NUM_SEQS": 128},
+            {},
+            kernel_pin_keys={"mnss": 4224},
+        )
+        self.assertTrue(feasible)
+
+    def test_no_pin_keys_skips_mnss_check(self):
+        """pin_keys is optional; when absent, the mnss check is skipped
+        (the MNB-vs-INPUT_LEN check still runs if applicable)."""
+        feasible, _ = _is_feasible(
+            {"MAX_NUM_SEQS": 99999},
+            {},
+            kernel_pin_keys=None,
+        )
+        self.assertTrue(feasible)
+
+    def test_pin_keys_without_mnss_skips_mnss_check(self):
+        """A pin_keys dict that doesn't carry mnss (e.g. legacy raw
+        rows from before this followup) doesn't block the sweep."""
+        feasible, _ = _is_feasible(
+            {"MAX_NUM_SEQS": 99999},
+            {},
+            kernel_pin_keys={"page_size": 128, "kernel_K": 256},
+        )
+        self.assertTrue(feasible)
+
+    def test_non_int_mns_or_mnss_does_not_crash(self):
+        """Defensive: bad-typed mns/mnss shouldn't crash the filter;
+        treat as unfilterable and let the runner record whatever
+        comes back."""
+        feasible, _ = _is_feasible(
+            {"MAX_NUM_SEQS": "not a number"},
+            {},
+            kernel_pin_keys={"mnss": 256},
         )
         self.assertTrue(feasible)
 

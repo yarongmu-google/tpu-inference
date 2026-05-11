@@ -71,18 +71,24 @@ PERMANENT_STATUSES = frozenset({"SUCCESS", "FAILED_OOM", "FAILED", "SKIPPED"})
 def _is_feasible(
     combo: dict[str, Any],
     workload_env: dict[str, str],
+    kernel_pin_keys: dict[str, Any] | None = None,
 ) -> tuple[bool, str | None]:
-    """Pre-filter check for service-sweep combos (fix #7).
+    """Pre-filter check for service-sweep combos (fix #7 + followup).
 
     Returns `(feasible, reason)`. Feasible means the combo COULD plausibly
     produce a measurement; reason is the explanation we stamp on the
     SKIPPED row when it can't.
 
-    Current rules (kept narrow — only filter on conditions that
-    deterministically fail):
+    Rules (each must deterministically fail to qualify):
       - `MAX_NUM_BATCHED_TOKENS < INPUT_LEN`: a single prompt's prefill
         won't fit in one batch slot without chunked prefill (which v2
         sweeps don't enable). vLLM will reject the request.
+      - `MAX_NUM_SEQS > kernel_pin_keys.mnss`: the kernel was tuned
+        with a fixed iter-slot capacity (mnss = mns_tune × (M+1)).
+        Sweeping a service MNS that exceeds that capacity means there
+        are more concurrent sequences than slots — out-of-bounds at
+        runtime. Only checked when pin_keys is provided AND carries
+        mnss (resolve_kernel_pin_keys always populates it now).
 
     We deliberately do NOT add a too-high MNB ceiling — Phase 5 of
     rpa3_2 missed the MNB=131,072 sweet spot because the search axis
@@ -91,20 +97,32 @@ def _is_feasible(
     """
     mnb_raw = combo.get("MAX_NUM_BATCHED_TOKENS")
     inp_raw = workload_env.get("INPUT_LEN")
-    if mnb_raw is None or not inp_raw:
-        return True, None
-    try:
-        mnb = int(mnb_raw)
-        inp = int(inp_raw)
-    except (TypeError, ValueError):
-        # Non-int values surface elsewhere (validate.py); don't double-
-        # report here.
-        return True, None
-    if mnb < inp:
-        return False, (
-            f"MAX_NUM_BATCHED_TOKENS={mnb} < INPUT_LEN={inp}; vLLM "
-            f"will reject single-prompt prefill at this MNB."
-        )
+    if mnb_raw is not None and inp_raw:
+        try:
+            mnb = int(mnb_raw)
+            inp = int(inp_raw)
+        except (TypeError, ValueError):
+            mnb = inp = None    # treat as unfilterable
+        if mnb is not None and inp is not None and mnb < inp:
+            return False, (
+                f"MAX_NUM_BATCHED_TOKENS={mnb} < INPUT_LEN={inp}; "
+                f"vLLM will reject single-prompt prefill at this MNB."
+            )
+
+    mns_raw = combo.get("MAX_NUM_SEQS")
+    pin_mnss = (kernel_pin_keys or {}).get("mnss")
+    if mns_raw is not None and pin_mnss is not None:
+        try:
+            mns = int(mns_raw)
+            mnss = int(pin_mnss)
+        except (TypeError, ValueError):
+            mns = mnss = None
+        if mns is not None and mnss is not None and mns > mnss:
+            return False, (
+                f"MAX_NUM_SEQS={mns} > kernel iter capacity mnss="
+                f"{mnss} (from pinned kernel winner); insufficient "
+                f"slots for the swept concurrency."
+            )
     return True, None
 
 
@@ -122,7 +140,13 @@ def resolve_kernel_pin_keys(
     """Read `<workload>.kernel` and extract the pin_keys.
 
     Prefers the LOGICAL case (decoupled-K) over PREFILL (coupled-K).
-    Pin keys returned: `page_size`, `kernel_K`, `code_revision`.
+    Pin keys returned: `case`, `page_size`, `kernel_K`,
+    `code_revision`, `mnss`. The `mnss` field is the kernel's
+    iter-slot capacity — for LOGICAL it comes from the chosen
+    winner's tunable_params; for PREFILL (coupled-K, no
+    decoupling) it equals max_num_seqs from the tuning_key. The
+    service-sweep pre-filter uses it to drop infeasible
+    high-concurrency combos.
 
     Raises:
       KernelRegistryMissingError if the file doesn't exist or has no
@@ -153,11 +177,19 @@ def resolve_kernel_pin_keys(
             f"sweep cannot resolve kernel_pin_keys.",
         )
     tk = chosen["tuning_key"]
+    tp = chosen.get("tunable_params", {})
+    # LOGICAL winners carry mnss in tunable_params (decoupled-K iter
+    # capacity); PREFILL winners are coupled-K so mnss == mns.
+    if tk.get("case") == "logical":
+        mnss = tp.get("mnss")
+    else:
+        mnss = tk.get("max_num_seqs")
     return {
         "case":           tk.get("case"),
         "page_size":      tk.get("page_size"),
         "kernel_K":       tk.get("kernel_K"),
         "code_revision":  tk.get("code_revision"),
+        "mnss":           mnss,
     }
 
 
@@ -246,7 +278,9 @@ def run_service_sweep(
     for combo in enumerate_service_combos(search_space=search_space):
         if service_combo_key(combo) in skip_set:
             continue
-        feasible, skip_reason = _is_feasible(combo, workload_env)
+        feasible, skip_reason = _is_feasible(
+            combo, workload_env, kernel_pin_keys=kernel_pin_keys,
+        )
         if not feasible:
             # Pre-filter: record as SKIPPED so resume picks it up and
             # doesn't re-attempt next sweep. Don't call measurement_fn.
