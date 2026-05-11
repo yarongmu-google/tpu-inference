@@ -777,15 +777,24 @@ high-MNS configurations confirmed the architectural fragility of P:
 | P at MNS=1000 + MNB=131072 + LPTT=256 | **1.80** | **−62%** |
 | **L at MNS=1000 + MNB=131072** | **4.90** | **+2.5%** |
 
-At MNS=1000 P cannot use the additional concurrency: kernel block
-sizes tuned for q=8192 don't transfer to q=131072; HBM pressure from
-admitting many partial-prefill slots forces eviction/recompute churn.
+At MNS=1000 P cannot use the additional concurrency. Memory is not
+the constraint — v7x-1 has 96 GB HBM (model 16 GB + 1000-req × 8K
+KV cache ~16 GB + activations ~30 GB peak fits with room to spare).
+Mechanism not fully isolated, but plausible causes:
+- Block sizes (`256,2048,256,512`) tuned at q=8192 don't transfer to
+  q=131072 — kernel-tile efficiency tanks at the much larger
+  static-q regime.
+- vLLM scheduler / admission overhead scales nontrivially with
+  running-set size at MNS=1000.
+- JIT recompilation at the q=131072 shape, if not in the kernel
+  cache, costs a few prefills.
+
 The same configuration runs cleanly under L because L's
-multi-chunk-per-call packing matches its block-size tune AND its
-one-shot-per-prefill turnover keeps KV pressure bounded. So **at the
-same deployment config, L is ~2.7× faster than P** — the +2.5%
-steady-state gap was an underestimate, masking the deeper truth that
-the high-MNS regime is L-only.
+multi-chunk-per-call packing matches its block-size tune, and L's
+one-shot-per-prefill turnover dynamics let vLLM cycle the running
+set faster. So **at the same deployment config, L is ~2.7× faster
+than P** — the +2.5% steady-state gap was an underestimate, masking
+the deeper truth that the high-MNS regime is L-only.
 
 **⚠ Memory caveat.** At MNB=1,081,344, vLLM's per-step activation
 buffers scale to ~MNB × hidden × 2 bytes ≈ 8.9 GB per tensor for the
