@@ -196,6 +196,8 @@ class TestRunServiceSweep(unittest.TestCase):
             self.assertEqual(r["kernel_pin_keys"], SAMPLE_PIN_KEYS)
             self.assertIn("metrics", r)
             self.assertEqual(r["status"], "SUCCESS")
+            # Review followup: service_revision is now stamped per row.
+            self.assertEqual(r["service_revision"], "sha1-sha2")
 
     def test_resume_skips_completed(self):
         run_service_sweep(

@@ -159,11 +159,23 @@ def project_service(
 
     rows = list(read_rows(raw_path))
 
-    # Cross-validate: every row in <sha>.jsonl must carry the same SHA
-    # (we don't have a stable per-row service_revision field today —
-    # the SHA is implicit in the filename only — but if we ever add
-    # one, this is where it would be checked). For now, no per-row
-    # SHA assertion. Symmetric placeholder.
+    # Cross-validate every row's recorded service_revision against
+    # the .raw/<sha>.jsonl filename (review followup; symmetric with
+    # kernel/project's code_revision check). Rows without the field
+    # are tolerated for forward-compat (older raw files predate the
+    # per-row stamp); rows with a mismatching value are fatal — they
+    # signal that the file was written under a different SHA than its
+    # filename claims, which would silently poison the projection.
+    for i, row in enumerate(rows):
+        row_sha = row.get("service_revision")
+        if row_sha is not None and row_sha != file_sha:
+            raise ServiceRevisionMismatchError(
+                f"{raw_path}: row {i} has service_revision="
+                f"{row_sha!r} but filename claims {file_sha!r}. The "
+                f".raw file is corrupted (written under a different "
+                f"service SHA than its name). Re-run the sweep under "
+                f"the correct revision or rename the file.",
+            )
 
     winners_by_objective: dict[str, dict[str, Any] | None] = {}
     for objective_name, (metric_path, descending) in objectives.items():

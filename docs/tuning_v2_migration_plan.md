@@ -116,6 +116,16 @@ Each item lands as its own commit with tests passing. Auto-commit + auto-push en
 
 **Status snapshot at the end of (l):** 12 commits on the `tune` branch, **309 tests, 100% line + branch coverage** across 22 modules (763 stmts / 294 branches) above the mock boundary. Library + CLI + shell wrappers are runnable; only the TPU-side measurement bindings + the actual end-to-end perf comparison remain.
 
+**Review-followup test gap (#22):** the code review identified the
+absence of an integration test that exercises a *real* TPU-side
+`measurement_fn` (production wiring). That test is intentionally
+deferred — it requires the TPU-wire adapter (`kernel/measurement_tpu.py`
++ `service/measurement_bench.py`) which is hardware-blocked along with
+items (m) and (n). The mock-only test suite captures regressions in
+the orchestration / projection / accumulator / lookup layers; kernel
+correctness is exercised on hardware in item (m). Reclassifying #22
+under TPU-wire keeps the labeling honest.
+
 ## TPU wiring contract
 
 Items (h) and (i) export library functions that take a `measurement_fn` parameter:

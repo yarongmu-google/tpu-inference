@@ -334,6 +334,70 @@ class TestProjectService(unittest.TestCase):
         self.assertEqual(a.read_text(), b.read_text())
 
 
+class TestServiceRevisionCrossValidation(unittest.TestCase):
+    """Review followup: symmetric with kernel-side fix-2 cross-
+    validation. Per-row service_revision must match the .raw/<sha>.
+    jsonl filename; mismatch raises."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.raw_dir = self.dir / "prefill_heavy.service.raw"
+        self.raw_dir.mkdir(parents=True)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_rows_with_matching_revision_project_cleanly(self):
+        path = self.raw_dir / "sha1-sha2.jsonl"
+        append_row(path, {
+            "status":           "SUCCESS",
+            "combo":            {"MAX_NUM_BATCHED_TOKENS": 8192,
+                                 "MAX_NUM_SEQS": 128},
+            "metrics":          {"req_per_sec": 4.0, "ttft_mean_ms": 100,
+                                 "ttft_p99_ms": 200},
+            "service_revision": "sha1-sha2",
+        })
+        out = project_service(self.dir, "prefill_heavy",
+                              service_revision="sha1-sha2")
+        self.assertIsNotNone(out)
+
+    def test_row_with_mismatched_revision_raises(self):
+        from tools.tuning.v2.service.project import (
+            ServiceRevisionMismatchError,
+        )
+        path = self.raw_dir / "sha1-sha2.jsonl"
+        append_row(path, {
+            "status":           "SUCCESS",
+            "combo":            {"MAX_NUM_BATCHED_TOKENS": 8192,
+                                 "MAX_NUM_SEQS": 128},
+            "metrics":          {"req_per_sec": 4.0, "ttft_mean_ms": 100,
+                                 "ttft_p99_ms": 200},
+            "service_revision": "WRONG-SHA",
+        })
+        with self.assertRaises(ServiceRevisionMismatchError) as cm:
+            project_service(self.dir, "prefill_heavy",
+                            service_revision="sha1-sha2")
+        self.assertIn("WRONG-SHA", str(cm.exception))
+        self.assertIn("sha1-sha2", str(cm.exception))
+
+    def test_row_without_revision_field_is_tolerated(self):
+        """Forward-compat: older raw files predate the per-row stamp.
+        Don't break projection on them — only mismatches raise."""
+        path = self.raw_dir / "sha1-sha2.jsonl"
+        append_row(path, {
+            "status":  "SUCCESS",
+            "combo":   {"MAX_NUM_BATCHED_TOKENS": 8192,
+                        "MAX_NUM_SEQS": 128},
+            "metrics": {"req_per_sec": 4.0, "ttft_mean_ms": 100,
+                        "ttft_p99_ms": 200},
+            # no service_revision field
+        })
+        out = project_service(self.dir, "prefill_heavy",
+                              service_revision="sha1-sha2")
+        self.assertIsNotNone(out)
+
+
 class TestResolveRawPath(unittest.TestCase):
 
     def test_none_service_revision_falls_back_to_mtime(self):

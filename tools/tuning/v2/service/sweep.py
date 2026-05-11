@@ -261,7 +261,10 @@ def run_service_sweep(
     """
     # workload_env IS now used (fix #7: feasibility pre-filter reads
     # INPUT_LEN). Previously del'd here as "passed for symmetry".
-    del service_revision  # recorded externally (stamped via raw filename)
+    # service_revision: stamped per row (review followup) so the
+    # projection step can cross-validate every row's recorded
+    # revision against the .raw/<sha>.jsonl filename — symmetric
+    # with the kernel-side fix-2 cross-validation.
 
     if kernel_pin_keys is None:
         kernel_pin_keys = resolve_kernel_pin_keys(workload_dir, workload_name)
@@ -316,6 +319,7 @@ def run_service_sweep(
         row = {
             "combo":            combo,
             "kernel_pin_keys":  kernel_pin_keys,
+            "service_revision": service_revision,
             **result,
         }
         append_row(raw_path, row)
