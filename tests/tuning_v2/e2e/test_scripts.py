@@ -188,6 +188,65 @@ class TestRunPipelineComposition(unittest.TestCase):
         ))
 
 
+class TestRealExecValidate(unittest.TestCase):
+    """fix #10 / #22: actually run validate.sh through bash with a
+    real (synthetic) workload. Exercises the shell wrapper + Python
+    module + clean-subshell env-diff (fix #4) end-to-end."""
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _run(self, *args):
+        return subprocess.run(
+            ["bash", str(SCRIPTS_DIR / "validate.sh"), *args],
+            capture_output=True, text=True,
+            cwd=str(SCRIPTS_DIR.parents[3]),  # repo root for PYTHONPATH
+        )
+
+    def test_validates_a_real_workload_file(self):
+        wl = self.dir / "x.workload"
+        wl.write_text(
+            ': "${MODEL:=foo}"\n'
+            ': "${TENSOR_PARALLEL_SIZE:=1}"\n'
+            ': "${NUM_Q_HEADS:=32}"\n'
+            ': "${NUM_KV_HEADS:=8}"\n'
+            ': "${HEAD_DIM:=128}"\n'
+            ': "${MAX_MODEL_LEN:=8192}"\n'
+            ': "${MAX_NUM_SEQS:=128}"\n'
+            ': "${INPUT_LEN:=8191}"\n'
+            ': "${OUTPUT_LEN:=1}"\n'
+        )
+        result = self._run(str(wl))
+        self.assertEqual(
+            result.returncode, 0,
+            f"validate.sh failed: stdout={result.stdout!r} "
+            f"stderr={result.stderr!r}",
+        )
+
+    def test_invalid_workload_exits_nonzero(self):
+        wl = self.dir / "bad.workload"
+        # MAX_MODEL_LEN < INPUT_LEN + OUTPUT_LEN -> invariant violation.
+        wl.write_text(
+            ': "${MODEL:=foo}"\n'
+            ': "${TENSOR_PARALLEL_SIZE:=1}"\n'
+            ': "${NUM_Q_HEADS:=32}"\n'
+            ': "${NUM_KV_HEADS:=8}"\n'
+            ': "${HEAD_DIM:=128}"\n'
+            ': "${MAX_MODEL_LEN:=512}"\n'
+            ': "${MAX_NUM_SEQS:=128}"\n'
+            ': "${INPUT_LEN:=8000}"\n'
+            ': "${OUTPUT_LEN:=1}"\n'
+        )
+        result = self._run(str(wl))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("INPUT_LEN+OUTPUT_LEN", result.stderr)
+
+
 class TestWrapperDelegation(unittest.TestCase):
     """Each thin wrapper should delegate to a python -m invocation."""
 

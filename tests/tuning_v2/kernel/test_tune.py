@@ -259,6 +259,38 @@ class TestRunKernelTune(unittest.TestCase):
         self.assertIn("RuntimeError", rows[0]["error"])
         self.assertIn("boom", rows[0]["error"])
 
+    def test_measurement_returns_none_recorded_as_unknown_error(self):
+        """fix #24: a buggy measurement_fn returning None must NOT
+        crash the loop. Coerced to UNKNOWN_ERROR + row stamped."""
+        n = run_kernel_tune(
+            workload_env=self.WORKLOAD_ENV_BASE,
+            workload_dir=self.workload_dir,
+            workload_name="test",
+            raw_path=self.raw_path,
+            measurement_fn=lambda tk, tp: None,
+            code_revision="abc12345",
+        )
+        self.assertEqual(n, 1)
+        rows = list(read_rows(self.raw_path))
+        self.assertEqual(rows[0]["status"], "UNKNOWN_ERROR")
+        self.assertIn("non-dict", rows[0]["error"])
+        self.assertIn("NoneType", rows[0]["error"])
+
+    def test_measurement_returns_list_recorded_as_unknown_error(self):
+        """fix #24: same defense for any non-dict return."""
+        n = run_kernel_tune(
+            workload_env=self.WORKLOAD_ENV_BASE,
+            workload_dir=self.workload_dir,
+            workload_name="test",
+            raw_path=self.raw_path,
+            measurement_fn=lambda tk, tp: [1, 2, 3],
+            code_revision="abc12345",
+        )
+        self.assertEqual(n, 1)
+        rows = list(read_rows(self.raw_path))
+        self.assertEqual(rows[0]["status"], "UNKNOWN_ERROR")
+        self.assertIn("list", rows[0]["error"])
+
     def test_on_progress_callback_called_per_row(self):
         # Widen the overlay so we have multiple combos.
         (self.workload_dir / "test.kernel_axes.json").write_text(

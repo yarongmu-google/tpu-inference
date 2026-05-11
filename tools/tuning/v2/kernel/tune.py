@@ -157,6 +157,16 @@ def run_kernel_tune(
                 "status": "UNKNOWN_ERROR",
                 "error": f"{type(e).__name__}: {e}",
             }
+        # Defensive (fix #24): a buggy measurement_fn returning None /
+        # non-dict would crash the `**result` spread below and take
+        # the whole tune down. Coerce to UNKNOWN_ERROR instead so the
+        # combo is recorded as retryable and the sweep continues.
+        if not isinstance(result, dict):
+            result = {
+                "status": "UNKNOWN_ERROR",
+                "error":  f"measurement_fn returned non-dict: "
+                          f"{type(result).__name__}",
+            }
         row = {
             "tuning_key":     tuning_key,
             "tunable_params": tunable_params,

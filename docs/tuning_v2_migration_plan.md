@@ -90,7 +90,7 @@ tests/tuning_v2/
     e2e/test_pipeline_smoke.py    # mocked TPU; verifies wiring end-to-end
 ```
 
-Coverage target: 100% line coverage on `tools/tuning/v2/` modules. Actual TPU runs are mocked at the kernel-launch boundary (`pallas_call` and `vllm bench serve` are stubbed; the tuner/sweeper interacts with the mocks via the same interface as production but the work units complete instantly with deterministic measurements).
+Coverage target: 100% line + branch coverage on `tools/tuning/v2/` modules. Actual TPU runs are mocked at the kernel-launch boundary (`pallas_call` and `vllm bench serve` are stubbed; the tuner/sweeper interacts with the mocks via the same interface as production but the work units complete instantly with deterministic measurements). The 100% claim therefore covers the orchestration / projection / accumulator / lookup / shell-wrapper layers — **not** the TPU kernel itself or the bench-tool binding. Kernel correctness is exercised by item (m)'s on-hardware validation, not by this suite.
 
 ## Migration sequence
 
@@ -114,7 +114,7 @@ Each item lands as its own commit with tests passing. Auto-commit + auto-push en
 | m | ⏸ blocked | `[Tune-v2] End-to-end validation: re-tune 8B at wider ranges` | run the v2 pipeline against `prefill_heavy.workload` with item 7+8's wider grid; compare numbers to rpa3_2's 4.90 winner. Hardware-blocked. |
 | n | ⏸ blocked | `[Tune-v2] Retire v1` | delete `tools/kernel/tuner/v1/`, `tools/benchmark/sweep_recipes.py`, etc. once v2 demonstrates parity. After (m). |
 
-**Status snapshot at the end of (l):** 12 commits on the `tune` branch, **309 tests, 100% line + branch coverage** across 22 modules (763 stmts / 294 branches). Library + CLI + shell wrappers are runnable; only the TPU-side measurement bindings + the actual end-to-end perf comparison remain.
+**Status snapshot at the end of (l):** 12 commits on the `tune` branch, **309 tests, 100% line + branch coverage** across 22 modules (763 stmts / 294 branches) above the mock boundary. Library + CLI + shell wrappers are runnable; only the TPU-side measurement bindings + the actual end-to-end perf comparison remain.
 
 ## TPU wiring contract
 

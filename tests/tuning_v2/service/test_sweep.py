@@ -233,6 +233,22 @@ class TestRunServiceSweep(unittest.TestCase):
         )
         self.assertEqual(n, 2)
 
+    def test_measurement_returns_non_dict_recorded_as_unknown_error(self):
+        """fix #24: a buggy measurement_fn returning None / list / etc.
+        must NOT crash the sweep. Coerced to UNKNOWN_ERROR + row stamped."""
+        run_service_sweep(
+            workload_env={},
+            workload_dir=self.workload_dir,
+            workload_name="test",
+            raw_path=self.raw_path,
+            measurement_fn=lambda c: None,
+            service_revision="sha1-sha2",
+        )
+        rows = list(read_rows(self.raw_path))
+        for r in rows:
+            self.assertEqual(r["status"], "UNKNOWN_ERROR")
+            self.assertIn("NoneType", r["error"])
+
     def test_measurement_exception_recorded(self):
         def raise_(c):
             raise RuntimeError("boom")

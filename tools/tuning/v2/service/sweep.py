@@ -259,6 +259,14 @@ def run_service_sweep(
                     "status": "UNKNOWN_ERROR",
                     "error": f"{type(e).__name__}: {e}",
                 }
+        # Defensive (fix #24): coerce non-dict return to UNKNOWN_ERROR
+        # so the `**result` spread doesn't crash the sweep.
+        if not isinstance(result, dict):
+            result = {
+                "status": "UNKNOWN_ERROR",
+                "error":  f"measurement_fn returned non-dict: "
+                          f"{type(result).__name__}",
+            }
         row = {
             "combo":            combo,
             "kernel_pin_keys":  kernel_pin_keys,

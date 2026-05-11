@@ -22,5 +22,11 @@ test-first.
 python3 -m unittest discover tests.tuning_v2 -v
 ```
 
-100% line coverage target on `tools/tuning/v2/`. TPU runs are mocked at the
-`pallas_call` / `vllm bench serve` boundary; tests run on any host.
+100% line + branch coverage target on `tools/tuning/v2/`. The coverage
+claim applies to the Python modules above the mock boundary — TPU
+execution (`pallas_call`) and the vLLM bench subprocess
+(`vllm bench serve`) are stubbed in tests. End-to-end correctness on
+real hardware is verified by the manual validation step (see the
+migration plan, item m); the test suite catches regressions in the
+orchestrator / projection / accumulator / lookup logic, NOT in the
+TPU kernel or the bench binding itself.

@@ -17,8 +17,10 @@ import io
 import json
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tools.tuning.v2.core.raw_store import (
     append_row,
@@ -221,6 +223,145 @@ class TestRawStore(unittest.TestCase):
         )
         # Row 1 has no status, falls through filter, NOT added.
         self.assertEqual(skip, {2})
+
+
+class TestAtomicityGuarantees(unittest.TestCase):
+    """fix #10 / #20: explicit tests for the atomicity properties the
+    raw store relies on (O_APPEND + fsync per write)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_every_append_ends_in_newline(self):
+        """Each row terminator must be a literal `\\n` byte so that
+        even a kill mid-write of the NEXT row leaves the file
+        parseable up to the last completed row."""
+        path = self.dir / "newlines.jsonl"
+        for i in range(50):
+            append_row(path, {"i": i})
+        data = path.read_bytes()
+        self.assertTrue(data.endswith(b"\n"),
+                        "file does not end in a newline")
+        # Every line that's not the trailing empty piece must be a
+        # full JSON object.
+        for ln in data.splitlines():
+            self.assertEqual(ln[:1] + ln[-1:], b"{}",
+                             f"row not a complete object: {ln!r}")
+
+    def test_fsync_called_once_per_append(self):
+        """The crash-durability guarantee relies on os.fsync after
+        each write. Verify it's actually invoked."""
+        path = self.dir / "fsync.jsonl"
+        with mock.patch("tools.tuning.v2.core.raw_store.os.fsync") as f:
+            append_row(path, {"a": 1})
+            append_row(path, {"a": 2})
+            append_row(path, {"a": 3})
+        self.assertEqual(f.call_count, 3)
+
+    def test_open_uses_o_append_and_o_creat(self):
+        """O_APPEND is load-bearing for the atomic-seek-then-write
+        guarantee; O_CREAT lets the first append create the file.
+        Verify both are in the flags."""
+        import os as _os
+        path = self.dir / "flags.jsonl"
+        with mock.patch("tools.tuning.v2.core.raw_store.os.open",
+                        wraps=_os.open) as o:
+            append_row(path, {"a": 1})
+        self.assertTrue(o.called)
+        flags = o.call_args[0][1]
+        self.assertTrue(flags & _os.O_APPEND)
+        self.assertTrue(flags & _os.O_CREAT)
+        self.assertTrue(flags & _os.O_WRONLY)
+
+
+class TestConcurrentAppenders(unittest.TestCase):
+    """fix #10 / #21: O_APPEND atomically seeks-to-EOF + writes, so
+    multiple appenders to the same file must not interleave bytes
+    within a single row. We don't currently use this in production
+    (single tuner per .raw file), but the test enforces the safety
+    property the comment in raw_store.py claims."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_threaded_appends_produce_no_interleaved_lines(self):
+        path = self.dir / "concurrent.jsonl"
+        n_threads = 8
+        rows_per_thread = 50
+
+        def worker(tid: int):
+            for i in range(rows_per_thread):
+                # Pad the payload so a non-atomic write would have an
+                # obvious chance to interleave; rows have varied sizes.
+                append_row(path, {
+                    "tid": tid, "i": i,
+                    "pad": "x" * (10 + (i % 17) * 5),
+                })
+
+        threads = [threading.Thread(target=worker, args=(t,))
+                   for t in range(n_threads)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        rows = list(read_rows(path))
+        # All N*K rows present, every line parses cleanly.
+        self.assertEqual(len(rows), n_threads * rows_per_thread)
+        # Per-thread row counts match exactly (no lost / duplicated rows).
+        seen: dict[int, set[int]] = {}
+        for r in rows:
+            seen.setdefault(r["tid"], set()).add(r["i"])
+        for t in range(n_threads):
+            self.assertEqual(seen[t], set(range(rows_per_thread)))
+
+
+class TestSchemaForwardCompatibility(unittest.TestCase):
+    """fix #10 / #23: extra unknown fields in raw rows must round-trip
+    through read_rows and the skip_set without crashing. The
+    projection step iterates rows verbatim, but the read layer is
+    the boundary that must be permissive."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_unknown_fields_preserved_on_read(self):
+        path = self.dir / "extra.jsonl"
+        append_row(path, {
+            "tuning_key": {"case": "logical"},
+            "status": "SUCCESS",
+            "latency_us": 1.0,
+            "future_field_v2": {"nested": [1, 2, 3]},
+        })
+        rows = list(read_rows(path))
+        self.assertIn("future_field_v2", rows[0])
+        self.assertEqual(rows[0]["future_field_v2"]["nested"], [1, 2, 3])
+
+    def test_skip_set_tolerates_unknown_fields(self):
+        path = self.dir / "extra_skip.jsonl"
+        append_row(path, {
+            "tuning_key": {"case": "logical"},
+            "status": "SUCCESS",
+            "_future": "stuff",
+        })
+        skip = build_skip_set(
+            path,
+            key_fn=lambda r: r["tuning_key"]["case"],
+            status_filter={"SUCCESS"},
+        )
+        self.assertEqual(skip, {"logical"})
 
 
 if __name__ == "__main__":
