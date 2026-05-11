@@ -77,15 +77,19 @@ def enumerate_logical_combos(
                             for bkv_csz in search_space["bkv_csz"]:
                                 if bkv_csz > bkv_sz:
                                     continue
-                                # Defensive ordering (fix #14): spread
-                                # model_shape FIRST, then the explicit
-                                # identity keys. If model_shape ever
-                                # grows a colliding key (e.g. a future
-                                # workload adds a `max_num_seqs` field
-                                # to model shape), the explicit keys
-                                # below win — they represent the actual
-                                # tuning identity, not pass-through
-                                # metadata.
+                                # Spread-order precedence (fix #14):
+                                # this is REORDERING, not namespacing.
+                                # `**model_shape` goes first so any
+                                # future colliding key in model_shape
+                                # is overwritten by the explicit
+                                # identity keys below — the dict
+                                # literal's later keys win. A true
+                                # namespace would nest model_shape
+                                # under its own subkey; we don't, to
+                                # avoid breaking consumers that read
+                                # `tuning_key["num_q_heads"]` directly.
+                                # Tested by
+                                # test_explicit_keys_win_on_collision.
                                 tuning_key = {
                                     **model_shape,
                                     "case":            "logical",

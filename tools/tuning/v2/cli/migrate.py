@@ -38,7 +38,7 @@ files first, then can run `aggregate.sh` to regenerate the v2-format
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from tools.tuning.v2.cli.validate import parse_workload_env
 
@@ -65,7 +65,21 @@ MATCH_KEYS = (
     "input_len",
     "output_len",
     "tensor_parallel_size",
+    # Kernel-derived pin (review followup): two workloads sharing
+    # model + seq config but at different page sizes are distinct
+    # tunes. Without this, they got identical full copies.
+    "page_size",
 )
+
+
+class MigrationResult(NamedTuple):
+    """Outcome of `migrate_model_dir`. The `status` field lets callers
+    (CLI, integration tests) distinguish empty states that previously
+    looked identical at the (0, []) return tuple. (Review followup.)"""
+
+    status: str   # "ok" | "no_v1_file" | "no_workloads"
+    n_migrated: int
+    paths: list[Path]
 
 
 def _is_v2_format(doc: dict[str, Any]) -> bool:
@@ -135,7 +149,14 @@ def _model_shape_matches(
     }
 
     def _wl_value(key: str) -> Any:
-        raw = workload_env.get(_ENV_VAR_FOR[key], "")
+        env_var = _ENV_VAR_FOR.get(key)
+        if env_var is None:
+            # Kernel-derived match keys (e.g. page_size) have no
+            # workload env-var counterpart. Skip the workload side
+            # of the comparison — the conservative "missing on
+            # either side = match" rule kicks in.
+            return None
+        raw = workload_env.get(env_var, "")
         return raw if raw else None
 
     for k in MATCH_KEYS:
@@ -204,7 +225,7 @@ def migrate_model_dir(
     model_dir: Path,
     *,
     force: bool = False,
-) -> tuple[int, list[Path]]:
+) -> MigrationResult:
     """Migrate all workloads in a single per-model directory.
 
     Reads `model_dir/production.kernel` (v1 format) if present, then
@@ -221,8 +242,10 @@ def migrate_model_dir(
              (fix #3).
 
     Returns:
-      `(n_workloads_migrated, written_paths)`. Returns `(0, [])` when
-      there's no v1 production.kernel.
+      MigrationResult(status, n_migrated, paths). status is one of:
+        - "no_v1_file":  model_dir had no production.kernel; n=0, paths=[]
+        - "no_workloads": v1 file present but no `.workload` files; n=0
+        - "ok":          n workload files written
 
     Raises:
       MigrationRefusedError if the v1 input is in fact a v2 file
@@ -231,7 +254,7 @@ def migrate_model_dir(
     """
     v1_path = model_dir / "production.kernel"
     if not v1_path.exists():
-        return 0, []
+        return MigrationResult("no_v1_file", 0, [])
     with open(v1_path, "r", encoding="utf-8") as f:
         v1_doc = json.load(f)
 
@@ -246,6 +269,8 @@ def migrate_model_dir(
         )
 
     workload_files = sorted(model_dir.glob("*.workload"))
+    if not workload_files:
+        return MigrationResult("no_workloads", 0, [])
 
     # Overwrite check (fix #3): refuse if any target exists, unless
     # --force.
@@ -274,7 +299,7 @@ def migrate_model_dir(
             encoding="utf-8",
         )
         written.append(out)
-    return len(written), written
+    return MigrationResult("ok", len(written), written)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -297,32 +322,30 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 1
 
-    # Distinguish "no v1 file" from "v1 file present but no workloads"
-    # in the exit messages (fix #18, minor).
-    v1_path = args.model_dir / "production.kernel"
-    if not v1_path.exists():
+    try:
+        result = migrate_model_dir(args.model_dir, force=args.force)
+    except MigrationRefusedError as e:
+        print(f"migrate refused: {e}", file=sys.stderr)
+        return 1
+
+    # Library now returns a typed result with a status field — distinct
+    # exit messages for the three empty states (review followup #18).
+    if result.status == "no_v1_file":
         print(
             f"migrate: no v1 production.kernel in {args.model_dir}; "
             "nothing to migrate.",
             file=sys.stderr,
         )
         return 1
-
-    try:
-        n, paths = migrate_model_dir(args.model_dir, force=args.force)
-    except MigrationRefusedError as e:
-        print(f"migrate refused: {e}", file=sys.stderr)
-        return 1
-
-    if n == 0:
+    if result.status == "no_workloads":
         print(
             f"migrate: production.kernel found, but no .workload files "
             f"in {args.model_dir}; nothing to do.",
             file=sys.stderr,
         )
         return 1
-    print(f"Migrated {n} workload(s):")
-    for p in paths:
+    print(f"Migrated {result.n_migrated} workload(s):")
+    for p in result.paths:
         print(f"  {p}")
     print(
         f"\nNext steps:\n"

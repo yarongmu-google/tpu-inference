@@ -56,6 +56,20 @@ class TestDiscoverWorkloadFiles(unittest.TestCase):
         result = discover_workload_files(self.dir, ".kernel")
         self.assertEqual([p.name for p in result], ["alpha.kernel"])
 
+    def test_admits_files_with_production_prefix(self):
+        """fix #13 followup: exact-match exclusion, not prefix. A file
+        named like `production_v2.kernel` is a legit workload-named
+        source, not the accumulator's output. The old prefix-based
+        rule dropped it incorrectly."""
+        (self.dir / "production.kernel").write_text("{}")
+        (self.dir / "production_v2.kernel").write_text("{}")
+        (self.dir / "alpha.kernel").write_text("{}")
+        result = discover_workload_files(self.dir, ".kernel")
+        names = sorted(p.name for p in result)
+        self.assertEqual(names, ["alpha.kernel", "production_v2.kernel"])
+        # The exact-named production output is still excluded.
+        self.assertNotIn("production.kernel", names)
+
     def test_excludes_other_suffixes(self):
         (self.dir / "alpha.kernel").write_text("{}")
         (self.dir / "alpha.service").write_text("{}")

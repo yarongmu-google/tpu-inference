@@ -200,6 +200,31 @@ class TestEnumerateLogical(unittest.TestCase):
         for tk, _ in combos:
             self.assertEqual(tk["case"], "logical")
 
+    def test_explicit_keys_win_on_collision(self):
+        """fix #14 followup: REORDERING precedence guarantee. If
+        model_shape happens to carry a key that collides with an
+        explicit tuning_key field (case / page_size / kernel_K /
+        max_num_seqs / code_revision), the explicit value MUST win
+        (it represents the actual tuning identity). The current code
+        achieves this by spreading model_shape first; this test pins
+        that behavior so a future re-order can't silently regress."""
+        shape_with_collision = dict(MODEL_SHAPE)
+        shape_with_collision["max_num_seqs"] = 99999
+        shape_with_collision["case"] = "WRONG"
+        shape_with_collision["kernel_K"] = 11111
+        shape_with_collision["page_size"] = 22222
+        shape_with_collision["code_revision"] = "WRONG"
+        combos = _enum(model_shape=shape_with_collision)
+        self.assertGreater(len(combos), 0)
+        tk, _ = combos[0]
+        # Explicit identity keys won — none of the WRONG / 9999X
+        # values from model_shape remain.
+        self.assertEqual(tk["max_num_seqs"], 128)
+        self.assertEqual(tk["case"], "logical")
+        self.assertEqual(tk["kernel_K"], 256)
+        self.assertEqual(tk["page_size"], 128)
+        self.assertEqual(tk["code_revision"], "abc12345")
+
     def test_tunable_params_keys(self):
         _, tp = _enum()[0]
         self.assertEqual(

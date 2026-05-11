@@ -278,24 +278,31 @@ class TestMigrateModelDir(unittest.TestCase):
             },
         }))
 
-    def test_no_production_kernel_returns_zero(self):
-        n, paths = migrate_model_dir(self.cases)
-        self.assertEqual(n, 0)
-        self.assertEqual(paths, [])
+    def test_no_production_kernel_returns_no_v1_status(self):
+        result = migrate_model_dir(self.cases)
+        self.assertEqual(result.status, "no_v1_file")
+        self.assertEqual(result.n_migrated, 0)
+        self.assertEqual(result.paths, [])
 
-    def test_no_workload_files_returns_zero(self):
+    def test_no_workload_files_returns_no_workloads_status(self):
+        """Review followup #18: distinguishable from no_v1_file."""
         self._write_v1_production_kernel()
-        n, paths = migrate_model_dir(self.cases)
-        self.assertEqual(n, 0)
+        result = migrate_model_dir(self.cases)
+        self.assertEqual(result.status, "no_workloads")
+        self.assertEqual(result.n_migrated, 0)
+        self.assertEqual(result.paths, [])
 
     def test_one_workload_one_output(self):
         self._write_v1_production_kernel()
         (self.cases / "prefill_heavy.workload").write_text(
             VALID_WORKLOAD_8B,
         )
-        n, paths = migrate_model_dir(self.cases)
-        self.assertEqual(n, 1)
-        self.assertEqual(paths, [self.cases / "prefill_heavy.kernel"])
+        result = migrate_model_dir(self.cases)
+        self.assertEqual(result.status, "ok")
+        self.assertEqual(result.n_migrated, 1)
+        self.assertEqual(
+            result.paths, [self.cases / "prefill_heavy.kernel"],
+        )
         doc = json.loads((self.cases / "prefill_heavy.kernel").read_text())
         self.assertEqual(doc["workload"], "prefill_heavy")
         self.assertEqual(doc["n_winners"], 2)
@@ -307,15 +314,15 @@ class TestMigrateModelDir(unittest.TestCase):
         (self.cases / "prefill_heavy_latency.workload").write_text(
             VALID_WORKLOAD_8B,
         )
-        n, paths = migrate_model_dir(self.cases)
-        self.assertEqual(n, 2)
-        names = {p.name for p in paths}
+        result = migrate_model_dir(self.cases)
+        self.assertEqual(result.n_migrated, 2)
+        names = {p.name for p in result.paths}
         self.assertEqual(
             names,
             {"prefill_heavy.kernel", "prefill_heavy_latency.kernel"},
         )
         # Both files have all 2 entries (matching model shape).
-        for p in paths:
+        for p in result.paths:
             doc = json.loads(p.read_text())
             self.assertEqual(doc["n_winners"], 2)
 
@@ -325,7 +332,7 @@ class TestMigrateModelDir(unittest.TestCase):
         (self.cases / "different.workload").write_text(
             DIFFERENT_MODEL_WORKLOAD,
         )
-        n, paths = migrate_model_dir(self.cases)
+        migrate_model_dir(self.cases)
         # different.workload has NUM_Q_HEADS=8 vs entry's 32 -> 0 winners.
         diff_doc = json.loads(
             (self.cases / "different.kernel").read_text(),
@@ -343,6 +350,64 @@ class TestMigrateModelDir(unittest.TestCase):
         migrate_model_dir(self.cases)
         after = (self.cases / "production.kernel").read_text()
         self.assertEqual(before, after)
+
+    def test_workloads_differing_only_on_mns_get_disjoint_entries(self):
+        """fix #8 headline e2e: two workloads with identical model
+        shape but different MAX_NUM_SEQS no longer get identical full
+        copies — each receives only the entries whose tuning_key
+        carries the matching MNS."""
+        # v1 doc with TWO entries differing on max_num_seqs.
+        entry_mns_128 = json.loads(json.dumps(SAMPLE_V1_ENTRY))
+        entry_mns_128["tuning_key"]["max_num_seqs"] = 128
+        entry_mns_1 = json.loads(json.dumps(SAMPLE_V1_ENTRY))
+        entry_mns_1["tuning_key"]["max_num_seqs"] = 1
+        (self.cases / "production.kernel").write_text(json.dumps({
+            "metadata": {},
+            "results": {"logical": [entry_mns_128, entry_mns_1]},
+        }))
+
+        # Two .workload files, same model shape, different MNS.
+        wl_mns_128 = VALID_WORKLOAD_8B   # has MAX_NUM_SEQS=128
+        wl_mns_1 = VALID_WORKLOAD_8B.replace(
+            'MAX_NUM_SEQS:=128', 'MAX_NUM_SEQS:=1',
+        )
+        (self.cases / "wl_a.workload").write_text(wl_mns_128)
+        (self.cases / "wl_b.workload").write_text(wl_mns_1)
+
+        result = migrate_model_dir(self.cases)
+        self.assertEqual(result.status, "ok")
+        a_doc = json.loads((self.cases / "wl_a.kernel").read_text())
+        b_doc = json.loads((self.cases / "wl_b.kernel").read_text())
+        self.assertEqual(a_doc["n_winners"], 1)
+        self.assertEqual(b_doc["n_winners"], 1)
+        self.assertEqual(
+            a_doc["winners"][0]["tuning_key"]["max_num_seqs"], 128,
+        )
+        self.assertEqual(
+            b_doc["winners"][0]["tuning_key"]["max_num_seqs"], 1,
+        )
+
+    def test_workloads_with_different_page_size_unfiltered_when_workload_silent(self):
+        """page_size is in MATCH_KEYS but has no .workload env-var
+        counterpart, so workloads that don't declare it inherit the
+        conservative 'missing on either side = match' rule and receive
+        all entries regardless of page_size. The widening is still
+        useful at the v1-tuning_key vs v2-tuning_key cross-check
+        layer (tested separately in TestModelShapeMatchesWidened)."""
+        entry_ps_64 = json.loads(json.dumps(SAMPLE_V1_ENTRY))
+        entry_ps_64["tuning_key"]["page_size"] = 64
+        entry_ps_128 = json.loads(json.dumps(SAMPLE_V1_ENTRY))
+        entry_ps_128["tuning_key"]["page_size"] = 128
+        (self.cases / "production.kernel").write_text(json.dumps({
+            "metadata": {},
+            "results": {"logical": [entry_ps_64, entry_ps_128]},
+        }))
+        (self.cases / "x.workload").write_text(VALID_WORKLOAD_8B)
+        result = migrate_model_dir(self.cases)
+        self.assertEqual(result.status, "ok")
+        x_doc = json.loads((self.cases / "x.kernel").read_text())
+        # workload silent on page_size -> both entries pass through.
+        self.assertEqual(x_doc["n_winners"], 2)
 
 
 class TestIsV2Format(unittest.TestCase):
@@ -410,6 +475,20 @@ class TestModelShapeMatchesWidened(unittest.TestCase):
         }
         self.assertFalse(_model_shape_matches(tk, self.WORKLOAD_8B_MNS_128))
 
+    def test_page_size_in_match_keys_unmapped_skips_check(self):
+        """Review followup #5: page_size is in MATCH_KEYS but has no
+        workload env-var counterpart. A tuning_key with page_size
+        doesn't reject a workload that's silent on it (no-mapping
+        falls through the conservative 'missing on either side =
+        match' rule). Tested explicitly so the unmapped behavior is
+        pinned."""
+        from tools.tuning.v2.cli.migrate import MATCH_KEYS
+        self.assertIn("page_size", MATCH_KEYS)
+        tk = {"num_q_heads": 32, "page_size": 64}
+        # WORKLOAD doesn't carry BLOCK_SIZE or similar; the comparison
+        # silently passes.
+        self.assertTrue(_model_shape_matches(tk, self.WORKLOAD_8B_MNS_128))
+
     def test_mns_absent_from_tk_treated_as_match(self):
         """Legacy v1 entries may not carry MAX_NUM_SEQS in tuning_key.
         Don't filter on absence — they're still candidates."""
@@ -465,8 +544,9 @@ class TestMigrateRefusal(unittest.TestCase):
         self._write_v1()
         (self.cases / "alpha.workload").write_text(VALID_WORKLOAD_8B)
         (self.cases / "alpha.kernel").write_text('{"existing": true}')
-        n, paths = migrate_model_dir(self.cases, force=True)
-        self.assertEqual(n, 1)
+        result = migrate_model_dir(self.cases, force=True)
+        self.assertEqual(result.status, "ok")
+        self.assertEqual(result.n_migrated, 1)
         doc = json.loads((self.cases / "alpha.kernel").read_text())
         self.assertNotIn("existing", doc)
         self.assertEqual(doc["schema_version"], 1)
