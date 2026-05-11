@@ -159,6 +159,60 @@ class TestRunPipelineComposition(unittest.TestCase):
             with self.subTest(step=step):
                 self.assertIn(step, content)
 
+    def test_supports_extra_flags_passthrough(self):
+        """Smoke runs need to thread --iters/--warmup etc. into the
+        inner steps. The orchestrator reads EXTRA_*_FLAGS env vars
+        and forwards them to each step. Asserts the contract is
+        documented and the var names are stable."""
+        content = (SCRIPTS_DIR / "run_pipeline.sh").read_text()
+        for var in ("EXTRA_VALIDATE_FLAGS", "EXTRA_TUNE_FLAGS",
+                    "EXTRA_PROJECT_KERNEL_FLAGS",
+                    "EXTRA_SWEEP_FLAGS",
+                    "EXTRA_PROJECT_SERVICE_FLAGS",
+                    "EXTRA_AGGREGATE_FLAGS"):
+            with self.subTest(var=var):
+                self.assertIn(var, content)
+
+    def test_extra_tune_flags_actually_threaded_at_runtime(self):
+        """run_pipeline.sh + EXTRA_TUNE_FLAGS='--iters 1 --warmup 0'
+        should reach tune_kernel.sh. Replace the wrapper scripts with
+        echo-only stubs so we can observe what flags they receive."""
+        import tempfile
+        import subprocess
+        with tempfile.TemporaryDirectory() as t:
+            scripts_dir = Path(t) / "scripts"
+            scripts_dir.mkdir()
+            # Stub each wrapper to echo its args to a log file.
+            for name in ("validate.sh", "tune_kernel.sh",
+                         "project_kernel.sh", "sweep_service.sh",
+                         "project_service.sh", "aggregate.sh"):
+                stub = scripts_dir / name
+                stub.write_text(
+                    "#!/bin/bash\n"
+                    f"echo {name} \"$@\" >> \"{t}/run.log\"\n"
+                )
+                stub.chmod(0o755)
+            # Copy the real orchestrator into the stub dir.
+            real = (SCRIPTS_DIR / "run_pipeline.sh").read_text()
+            (scripts_dir / "run_pipeline.sh").write_text(real)
+            (scripts_dir / "run_pipeline.sh").chmod(0o755)
+
+            env = {
+                **os.environ,
+                "EXTRA_TUNE_FLAGS":  "--iters 1 --warmup 0",
+                "EXTRA_SWEEP_FLAGS": "--timeout 60",
+            }
+            subprocess.run(
+                ["bash", str(scripts_dir / "run_pipeline.sh"),
+                 "/tmp/fake.workload"],
+                check=True, env=env,
+            )
+            log = (Path(t) / "run.log").read_text()
+        self.assertIn("tune_kernel.sh /tmp/fake.workload "
+                      "--iters 1 --warmup 0", log)
+        self.assertIn("sweep_service.sh /tmp/fake.workload "
+                      "--timeout 60", log)
+
     def test_no_dead_repo_root_variable(self):
         """fix #15: REPO_ROOT was assigned but never used — removed."""
         content = (SCRIPTS_DIR / "run_pipeline.sh").read_text()

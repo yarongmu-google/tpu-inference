@@ -20,8 +20,10 @@ from pathlib import Path
 from unittest import mock
 
 from tools.tuning.v2.core.git_atomic import (
+    NO_COMMIT_ENV,
     NO_PUSH_ENV,
     commit_and_push,
+    commit_disabled,
     push_disabled,
 )
 
@@ -73,6 +75,38 @@ class TestPushDisabled(unittest.TestCase):
             self.assertFalse(push_disabled())
         with mock.patch.dict(os.environ, {NO_PUSH_ENV: "yes"}):
             self.assertFalse(push_disabled())
+
+
+class TestCommitDisabled(unittest.TestCase):
+
+    def test_disabled_when_env_set_to_1(self):
+        with mock.patch.dict(os.environ, {NO_COMMIT_ENV: "1"}):
+            self.assertTrue(commit_disabled())
+
+    def test_enabled_when_env_unset(self):
+        env = {k: v for k, v in os.environ.items() if k != NO_COMMIT_ENV}
+        with mock.patch.dict(os.environ, env, clear=True):
+            self.assertFalse(commit_disabled())
+
+    def test_only_literal_one_enables(self):
+        with mock.patch.dict(os.environ, {NO_COMMIT_ENV: "0"}):
+            self.assertFalse(commit_disabled())
+        with mock.patch.dict(os.environ, {NO_COMMIT_ENV: "yes"}):
+            self.assertFalse(commit_disabled())
+
+    def test_commit_and_push_short_circuits_when_no_commit_set(self):
+        """KERNEL_TUNER_NO_COMMIT=1 must skip git add / commit / push
+        entirely — useful for smoke runs that shouldn't pollute the
+        branch with progress commits."""
+        with mock.patch.dict(os.environ, {NO_COMMIT_ENV: "1"}):
+            with mock.patch(
+                "tools.tuning.v2.core.git_atomic._git",
+            ) as git_mock:
+                result = commit_and_push(
+                    [Path("/tmp/fake.jsonl")], "msg",
+                )
+        self.assertFalse(result)
+        git_mock.assert_not_called()
 
 
 class TestCommitAndPush(unittest.TestCase):

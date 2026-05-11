@@ -133,6 +133,24 @@ def make_measurement_fn(
         bench_script = repo_root / "tools" / "benchmark" / "run_benchmark.sh"
 
     def measurement(combo: dict[str, Any]) -> dict[str, Any]:
+        # Smoke-run escape hatch: bypass the real bench subprocess
+        # and return deterministic synthetic metrics. Lets the sweep
+        # flow run end-to-end (raw_store write, projection, commit
+        # hooks) without standing up a vLLM server. Values are
+        # non-zero so projection's "is there a metric?" check passes
+        # — they are NOT real measurements; do not compare to past
+        # winners.
+        if os.environ.get("MOCK_BENCH") == "1":
+            return {
+                "status": "SUCCESS",
+                "metrics": {
+                    "req_per_sec":  1.0,
+                    "ttft_mean_ms": 100.0,
+                    "ttft_p99_ms":  200.0,
+                },
+                "mock":   True,   # downstream can flag-filter mocks
+            }
+
         # Lazy import so this module is import-able without
         # tools.benchmark on the path (tests stub the path; the
         # parser doesn't pull vLLM).

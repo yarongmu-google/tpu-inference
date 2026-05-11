@@ -240,6 +240,39 @@ class TestMakeMeasurementFn(unittest.TestCase):
         # File contents (9.99) won, not stdout (4.79).
         self.assertEqual(result["metrics"]["req_per_sec"], 9.99)
 
+    def test_mock_bench_env_bypasses_subprocess(self):
+        """MOCK_BENCH=1 short-circuits the real bench. The subprocess
+        is NOT invoked; deterministic synthetic metrics return."""
+        run_mock = mock.Mock()
+        fn = make_measurement_fn(
+            self.workload,
+            bench_script=Path("/fake/run_benchmark.sh"),
+            run_subprocess=run_mock,
+        )
+        import os as _os
+        with mock.patch.dict(_os.environ, {"MOCK_BENCH": "1"}):
+            result = fn({"MAX_NUM_BATCHED_TOKENS": 8192})
+        self.assertEqual(result["status"], "SUCCESS")
+        self.assertTrue(result["mock"])
+        self.assertEqual(result["metrics"]["req_per_sec"], 1.0)
+        # Real subprocess was NOT called.
+        run_mock.assert_not_called()
+
+    def test_mock_bench_env_other_value_does_not_bypass(self):
+        """Only literal '1' enables mock — matches the SMOKE_TEST /
+        NO_PUSH / NO_COMMIT contract elsewhere in the stack."""
+        run_mock = mock.Mock(return_value=self._make_proc())
+        fn = make_measurement_fn(
+            self.workload,
+            bench_script=Path("/fake/run_benchmark.sh"),
+            run_subprocess=run_mock,
+        )
+        import os as _os
+        with mock.patch.dict(_os.environ, {"MOCK_BENCH": "true"}):
+            fn({"MAX_NUM_BATCHED_TOKENS": 8192})
+        # Real subprocess WAS called.
+        run_mock.assert_called_once()
+
     def test_falls_back_to_stdout_when_metrics_file_absent(self):
         """If the bench didn't write metrics.txt but stdout has the
         numbers, parse those. Forward-compat for bench scripts that

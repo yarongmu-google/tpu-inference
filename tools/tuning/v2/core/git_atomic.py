@@ -50,6 +50,7 @@ from pathlib import Path
 # Env var that disables push. Honored verbatim from v1 so users with the
 # muscle memory don't have to relearn.
 NO_PUSH_ENV = "KERNEL_TUNER_NO_PUSH"
+NO_COMMIT_ENV = "KERNEL_TUNER_NO_COMMIT"
 
 
 def _git(cmd: list[str], cwd: Path, check: bool = False) -> subprocess.CompletedProcess:
@@ -91,6 +92,18 @@ def push_disabled() -> bool:
     return os.environ.get(NO_PUSH_ENV) == "1"
 
 
+def commit_disabled() -> bool:
+    """Check whether the NO_COMMIT env var is set to '1'.
+
+    Suppresses BOTH the commit and the push — useful for smoke runs
+    that shouldn't pollute the branch with progress / complete
+    commits. NO_PUSH alone still creates commits locally (which then
+    have to be `git reset` away); NO_COMMIT keeps the working tree
+    pristine.
+    """
+    return os.environ.get(NO_COMMIT_ENV) == "1"
+
+
 def commit_and_push(
     paths: list[Path],
     message: str,
@@ -116,6 +129,12 @@ def commit_and_push(
     (tune/sweep/project) should not be aborted by a git hiccup.
     """
     if not paths:
+        return False
+
+    # Smoke-run escape hatch: skip everything (no add, no commit, no
+    # push). Useful for first-on-hardware shakeouts where the raw
+    # store landing on disk is the only signal we want.
+    if commit_disabled():
         return False
 
     if repo_root is None:
