@@ -49,12 +49,25 @@ REQUIRED: dict[str, tuple[bool, int]] = {
     "NUM_KV_HEADS":          (True, 1),
     "HEAD_DIM":              (True, 1),
     "MAX_MODEL_LEN":         (True, 1),
-    "MAX_NUM_SEQS":          (True, 1),
     # fix #4: INPUT_LEN / OUTPUT_LEN drive bench prompt shape and gate
     # the MAX_MODEL_LEN invariant below. Required so operators can't
     # silently omit them and have bench fall back to defaults.
     "INPUT_LEN":             (True, 1),
     "OUTPUT_LEN":            (True, 1),
+}
+
+# MAX_NUM_SEQS: OPTIONAL per architecture-doc §2 line 73 — it's
+# category-5 (service-tuned). Two scenarios:
+#   - Latency: pin MAX_NUM_SEQS=1 in .workload. Single-MNS
+#     pipeline; kernel-tune + service-sweep both targeted at the
+#     low-concurrency regime.
+#   - Throughput: omit MAX_NUM_SEQS from .workload. The service
+#     sweep enumerates MNS candidates and the projection picks the
+#     best. Kernel-tune uses the max MNS candidate as its mnss-
+#     derivation parameter (worst-case ceiling).
+# If present, it's validated as int >= 1.
+OPTIONAL_INTS: dict[str, int] = {
+    "MAX_NUM_SEQS": 1,
 }
 
 # Vars that warn-on-presence: they straddle .workload (legacy) and
@@ -158,6 +171,15 @@ def validate(workload_path: Path) -> list[tuple[str, str]]:
             err = _validate_int(var, env[var], min_value)
             if err is not None:
                 issues.append(("error", err))
+
+    # Optional ints: if present, must validate. If absent, no error
+    # (the scenario is intentional — see OPTIONAL_INTS comment).
+    for var, min_value in OPTIONAL_INTS.items():
+        if var not in env or not env[var]:
+            continue
+        err = _validate_int(var, env[var], min_value)
+        if err is not None:
+            issues.append(("error", err))
 
     for var in WARN_PRESENT:
         if var in env:

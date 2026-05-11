@@ -37,9 +37,16 @@
 : "${HEAD_DIM:=128}"
 
 
-: "${MAX_NUM_SEQS:=128}"
 : "${MAX_MODEL_LEN:=8192}"
 
+# MAX_NUM_SEQS: NOT pinned here (throughput scenario). The service
+# sweep enumerates MNS candidates from DEFAULT_MAX_NUM_SEQS (or
+# the per-workload service_axes.json overlay) and the projection
+# picks the best — "how much can the TPU tolerate?" is answered
+# by sweeping, not by guessing.
+# For the latency scenario (MNS=1 always), see the sibling
+# `../latency/prefill_heavy.workload` file.
+#
 # MAX_NUM_BATCHED_TOKENS lives in the service-sweep layer
 # (architecture doc §2, category 5). Pin via
 # prefill_heavy.service_axes.json overlay or let the default

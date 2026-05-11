@@ -276,6 +276,49 @@ class TestRunKernelTune(unittest.TestCase):
         self.assertIn("non-dict", rows[0]["error"])
         self.assertIn("NoneType", rows[0]["error"])
 
+    def test_throughput_workload_resolves_mns_from_service_axes(self):
+        """Per arch-doc §2 line 73: when MAX_NUM_SEQS is absent from
+        .workload (throughput scenario), the kernel-tune sources it
+        from max(service_axes.MAX_NUM_SEQS) so the kernel is tuned
+        for the worst-case concurrency the service-sweep may pick."""
+        # Workload env without MNS.
+        env_no_mns = dict(self.WORKLOAD_ENV_BASE)
+        del env_no_mns["MAX_NUM_SEQS"]
+        # Remove the existing kernel_axes overlay so the default
+        # mnss derivation fires; pin only page_size/kernel_K to keep
+        # the cartesian product small.
+        (self.workload_dir / "test.kernel_axes.json").write_text(
+            json.dumps({
+                "page_size": [128], "kernel_K": [256],
+                "bq_sz": [256], "bkv_sz": [2048],
+                "bq_csz": [256], "bkv_csz": [512],
+            }),
+        )
+        # Service axes pinned high so the kernel-tune ceiling is
+        # max(service.MAX_NUM_SEQS).
+        (self.workload_dir / "test.service_axes.json").write_text(
+            json.dumps({
+                "MAX_NUM_BATCHED_TOKENS": [8192],
+                "MAX_NUM_SEQS":           [128, 1000],
+            }),
+        )
+        calls = []
+        def measure(tk, tp):
+            calls.append((tk, tp))
+            return {"status": "SUCCESS", "latency_us": 100.0}
+        n = run_kernel_tune(
+            workload_env=env_no_mns,
+            workload_dir=self.workload_dir,
+            workload_name="test",
+            raw_path=self.raw_path,
+            measurement_fn=measure,
+            code_revision="abc12345",
+        )
+        # The kernel-tune ran SOME combos; each tuning_key stamps
+        # max_num_seqs = max(service axes) = 1000.
+        self.assertGreater(n, 0)
+        self.assertEqual(calls[0][0]["max_num_seqs"], 1000)
+
     def test_smoke_test_env_runs_exactly_one_combo(self):
         """fix #11: SMOKE_TEST=1 truncates the search space to one
         combo end-to-end through run_kernel_tune. Removes the narrow
@@ -585,6 +628,61 @@ class TestCliMain(unittest.TestCase):
         # Workload env was pushed into os.environ before the
         # adapter built (v1 tuner reads them at construction).
         self.assertEqual(os.environ.get("MAX_NUM_SEQS"), "128")
+
+    def test_cli_throughput_workload_pushes_max_mns_to_environ(self):
+        """When .workload omits MAX_NUM_SEQS (throughput scenario),
+        the CLI pushes max(service_axes.MAX_NUM_SEQS) into os.environ
+        so the v1 RpaV3KernelTuner reads the right ceiling at
+        construction time."""
+        from tools.tuning.v2.core.git_atomic import NO_PUSH_ENV
+        repo = self.dir / "repo"
+        cases = repo / "cases" / "v7x" / "llama3_8b" / "throughput"
+        cases.mkdir(parents=True)
+        _init_git_repo(repo)
+        (cases / "x.kernel_axes.json").write_text(json.dumps({
+            "page_size": [128], "kernel_K": [256], "mnss": [4224],
+            "bq_sz": [256], "bkv_sz": [2048],
+            "bq_csz": [256], "bkv_csz": [512],
+        }))
+        # Pin service MNS axis so we know what the CLI should pick.
+        (cases / "x.service_axes.json").write_text(json.dumps({
+            "MAX_NUM_BATCHED_TOKENS": [8192],
+            "MAX_NUM_SEQS":           [128, 1000],
+        }))
+        w = cases / "x.workload"
+        # Throughput scenario: NO MAX_NUM_SEQS pin.
+        w.write_text(
+            'NUM_Q_HEADS=32\nNUM_KV_HEADS=8\nHEAD_DIM=128\n'
+            'MAX_MODEL_LEN=8192\n'
+        )
+        saved_no_push = os.environ.pop(NO_PUSH_ENV, None)
+        saved_mns = os.environ.pop("MAX_NUM_SEQS", None)
+        os.environ[NO_PUSH_ENV] = "1"
+        try:
+            with mock.patch(
+                "tools.tuning.v2.kernel.measurement_tpu.make_measurement_fn",
+                return_value=lambda tk, tp: {
+                    "status": "SUCCESS", "latency_us": 1.0,
+                },
+            ):
+                with mock.patch.object(
+                    sys, "stderr", new=open(os.devnull, "w"),
+                ):
+                    with mock.patch.object(
+                        sys, "stdout", new=open(os.devnull, "w"),
+                    ):
+                        tune_main([str(w)])
+            # CLI pushed the resolved MNS ceiling into env.
+            self.assertEqual(os.environ.get("MAX_NUM_SEQS"), "1000")
+        finally:
+            if saved_no_push is None:
+                os.environ.pop(NO_PUSH_ENV, None)
+            else:
+                os.environ[NO_PUSH_ENV] = saved_no_push
+            if saved_mns is None:
+                os.environ.pop("MAX_NUM_SEQS", None)
+            else:
+                os.environ["MAX_NUM_SEQS"] = saved_mns
 
     def test_cli_iters_and_warmup_threaded_through(self):
         """--iters / --warmup flags reach make_measurement_fn."""

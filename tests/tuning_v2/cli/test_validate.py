@@ -241,25 +241,59 @@ class TestValidate(unittest.TestCase):
 
     def test_empty_value_reports_error(self):
         w = self.dir / "x.workload"
-        w.write_text(VALID_WORKLOAD + 'MAX_NUM_SEQS=""\n')
+        w.write_text(VALID_WORKLOAD + 'MAX_MODEL_LEN=""\n')
         issues = validate(w)
         errs = [m for sev, m in issues if sev == "error"]
-        self.assertTrue(any("MAX_NUM_SEQS" in m and "empty" in m
+        self.assertTrue(any("MAX_MODEL_LEN" in m and "empty" in m
                             for m in errs))
 
     def test_non_integer_int_var_reports_error(self):
         w = self.dir / "x.workload"
-        w.write_text(VALID_WORKLOAD + "MAX_NUM_SEQS=not_a_number\n")
+        w.write_text(VALID_WORKLOAD + "MAX_MODEL_LEN=not_a_number\n")
         issues = validate(w)
         errs = [m for sev, m in issues if sev == "error"]
-        self.assertTrue(any("MAX_NUM_SEQS" in m and "integer" in m
+        self.assertTrue(any("MAX_MODEL_LEN" in m and "integer" in m
                             for m in errs))
 
     def test_below_min_value_reports_error(self):
         w = self.dir / "x.workload"
-        w.write_text(VALID_WORKLOAD + "MAX_NUM_SEQS=0\n")
+        w.write_text(VALID_WORKLOAD + "MAX_MODEL_LEN=0\n")
         issues = validate(w)
         errs = [m for sev, m in issues if sev == "error"]
+        self.assertTrue(any("MAX_MODEL_LEN" in m and ">= 1" in m
+                            for m in errs))
+
+    def test_optional_mns_absent_is_ok(self):
+        """MAX_NUM_SEQS is OPTIONAL per architecture-doc §2 line 73 —
+        throughput scenarios omit it and let the service sweep find
+        the best value. Validate should NOT error on absence."""
+        w = self.dir / "x.workload"
+        wl_without_mns = VALID_WORKLOAD.replace(
+            ': "${MAX_NUM_SEQS:=128}"\n', "",
+        )
+        # MAX_NUM_SEQS isn't in VALID_WORKLOAD anymore by default,
+        # but be defensive in case it gets added back.
+        w.write_text(wl_without_mns)
+        self.assertEqual(validate(w), [])
+
+    def test_optional_mns_pinned_for_latency_validates_int(self):
+        """MNS=1 in .workload is the latency scenario. Should
+        validate as a positive int."""
+        w = self.dir / "x.workload"
+        w.write_text(VALID_WORKLOAD + 'MAX_NUM_SEQS="1"\n')
+        self.assertEqual(validate(w), [])
+
+    def test_optional_mns_non_integer_still_errors(self):
+        """If the operator sets MNS to a bogus value, surface it."""
+        w = self.dir / "x.workload"
+        w.write_text(VALID_WORKLOAD + "MAX_NUM_SEQS=not_a_number\n")
+        errs = [m for sev, m in validate(w) if sev == "error"]
+        self.assertTrue(any("MAX_NUM_SEQS" in m for m in errs))
+
+    def test_optional_mns_zero_errors(self):
+        w = self.dir / "x.workload"
+        w.write_text(VALID_WORKLOAD + "MAX_NUM_SEQS=0\n")
+        errs = [m for sev, m in validate(w) if sev == "error"]
         self.assertTrue(any("MAX_NUM_SEQS" in m and ">= 1" in m
                             for m in errs))
 

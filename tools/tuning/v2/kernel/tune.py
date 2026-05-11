@@ -135,9 +135,21 @@ def run_kernel_tune(
       Count of new rows appended in this run (excludes skipped /
       already-done from previous runs).
     """
+    # MAX_NUM_SEQS resolution (architecture-doc §2 line 73 + your
+    # latency/throughput convention):
+    #   - workload pins MAX_NUM_SEQS -> latency scenario, single MNS.
+    #   - workload silent -> throughput scenario; kernel-tune uses
+    #     max(service_axes.MAX_NUM_SEQS) so the tuned kernel handles
+    #     the worst-case concurrency the service-sweep may pick.
+    service_space = service_search_space(workload_dir, workload_name)
+    if "MAX_NUM_SEQS" in workload_env and workload_env["MAX_NUM_SEQS"]:
+        max_num_seqs = int(workload_env["MAX_NUM_SEQS"])
+    else:
+        max_num_seqs = max(service_space["MAX_NUM_SEQS"])
+
     search_space = kernel_search_space(
         workload_dir, workload_name,
-        max_num_seqs=int(workload_env["MAX_NUM_SEQS"]),
+        max_num_seqs=max_num_seqs,
     )
     model_shape = model_shape_from_workload(workload_env)
 
@@ -148,7 +160,6 @@ def run_kernel_tune(
     # space's max (doc §2, line 83: "kernel-tune must be aware of,
     # or recomputed against, the sweep's MNB candidates"). This is
     # the coupling between layers the architecture acknowledges.
-    service_space = service_search_space(workload_dir, workload_name)
     mnb_ceiling = max(service_space["MAX_NUM_BATCHED_TOKENS"])
 
     skip_set = build_skip_set(
@@ -158,7 +169,7 @@ def run_kernel_tune(
     )
 
     combos = enumerator(
-        max_num_seqs=int(workload_env["MAX_NUM_SEQS"]),
+        max_num_seqs=max_num_seqs,
         max_num_batched_tokens=mnb_ceiling,
         model_shape=model_shape,
         code_revision=code_revision,
@@ -292,22 +303,29 @@ def main(argv: list[str] | None = None) -> int:
     workload_name = args.workload.stem
 
     # Push workload env into the process environment so the v1
-    # RpaV3KernelTuner can read MAX_NUM_SEQS / NUM_Q_HEADS / etc.
+    # RpaV3KernelTuner can read NUM_Q_HEADS / HEAD_DIM / etc.
     # from os.environ at construction time.
     import os as _os
     _os.environ.update(workload_env)
 
-    # MAX_NUM_BATCHED_TOKENS no longer lives in .workload (arch §2).
-    # The v1 tuner reads it from os.environ for its own pruning
-    # ceiling — set it from the service search space's max so the
-    # kernel layer's pruning aligns with the sweep's upper bound.
-    # (This is the cross-layer coupling the architecture doc names
-    # at §2 line 83.)
+    # Neither MAX_NUM_BATCHED_TOKENS nor MAX_NUM_SEQS (when omitted
+    # for throughput scenarios) live in .workload per architecture-
+    # doc §2. The v1 tuner reads BOTH from os.environ; supply them
+    # from the service search space's max so the kernel layer's
+    # pruning aligns with the sweep's upper bound. (Cross-layer
+    # coupling §2 line 83.)
     from tools.tuning.v2.service.search_space import service_search_space
     _service_space = service_search_space(workload_dir, workload_name)
     _os.environ["MAX_NUM_BATCHED_TOKENS"] = str(
         max(_service_space["MAX_NUM_BATCHED_TOKENS"]),
     )
+    if "MAX_NUM_SEQS" not in workload_env or not workload_env["MAX_NUM_SEQS"]:
+        # Throughput scenario: tune at the worst-case MNS the
+        # service may sweep. Latency scenarios pin MNS in .workload
+        # explicitly and we just inherit that.
+        _os.environ["MAX_NUM_SEQS"] = str(
+            max(_service_space["MAX_NUM_SEQS"]),
+        )
 
     # Lazy imports — only at CLI time, only when actually running on
     # TPU. Tests use `run_kernel_tune` directly with a mocked
