@@ -54,10 +54,14 @@ def discover_workload_files(
         return []
     # Use glob with the suffix directly so directories like
     # `<workload>.kernel.raw/` are not matched (they don't end in
-    # the suffix as a file).
+    # the suffix as a file). Exact-match exclusion of the production
+    # output (fix #13): a file like `production_v2.kernel` is a legit
+    # workload-named source, not the accumulator's output. Old code
+    # used `startswith("production")` which dropped it incorrectly.
+    production_name = f"production{suffix}"
     candidates = sorted(
         p for p in model_dir.glob(f"*{suffix}")
-        if p.is_file() and not p.name.startswith("production")
+        if p.is_file() and p.name != production_name
     )
     return candidates
 

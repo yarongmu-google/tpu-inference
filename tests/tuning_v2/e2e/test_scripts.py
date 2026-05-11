@@ -149,17 +149,43 @@ class TestRunPipelineComposition(unittest.TestCase):
                 f"run_pipeline.sh has {cur_name} before {prev_name}",
             )
 
+    def test_supports_from_flag(self):
+        """fix #16: `--from <step>` flag is documented and parsed."""
+        content = (SCRIPTS_DIR / "run_pipeline.sh").read_text()
+        self.assertIn("--from", content)
+        # All step names must be valid `--from` targets.
+        for step in ("validate", "tune_kernel", "project_kernel",
+                     "sweep_service", "project_service", "aggregate"):
+            with self.subTest(step=step):
+                self.assertIn(step, content)
+
+    def test_no_dead_repo_root_variable(self):
+        """fix #15: REPO_ROOT was assigned but never used — removed."""
+        content = (SCRIPTS_DIR / "run_pipeline.sh").read_text()
+        self.assertNotIn("REPO_ROOT=", content)
+
     def test_passes_workload_arg_to_sub_steps(self):
         """The orchestrator must forward the workload arg to each
-        per-workload step (and the workload's parent dir to aggregate)."""
+        per-workload step (and the workload's parent dir to aggregate).
+        Regex allows either direct invocation (`tune_kernel.sh "$X"`)
+        or via a helper function (`run_step ... tune_kernel.sh "$X"`)."""
         content = (SCRIPTS_DIR / "run_pipeline.sh").read_text()
-        # workload var name should appear in each step call.
-        self.assertTrue(re.search(r'tune_kernel\.sh"\s+"\$WORKLOAD"', content))
-        self.assertTrue(re.search(r'project_kernel\.sh"\s+"\$WORKLOAD"', content))
-        self.assertTrue(re.search(r'sweep_service\.sh"\s+"\$WORKLOAD"', content))
-        self.assertTrue(re.search(r'project_service\.sh"\s+"\$WORKLOAD"', content))
+        for script in (
+            "tune_kernel", "project_kernel",
+            "sweep_service", "project_service",
+        ):
+            with self.subTest(script=script):
+                # `tune_kernel.sh` followed (eventually on same line)
+                # by "$WORKLOAD".
+                self.assertTrue(re.search(
+                    rf"{script}\.sh\b[^\n]*\"\$WORKLOAD\"",
+                    content,
+                ))
         # aggregate gets the workload's PARENT dir.
-        self.assertTrue(re.search(r'aggregate\.sh"\s+"\$WORKLOAD_DIR"', content))
+        self.assertTrue(re.search(
+            r'aggregate\.sh\b[^\n]*"\$WORKLOAD_DIR"',
+            content,
+        ))
 
 
 class TestWrapperDelegation(unittest.TestCase):

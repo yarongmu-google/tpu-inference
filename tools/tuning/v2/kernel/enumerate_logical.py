@@ -77,13 +77,22 @@ def enumerate_logical_combos(
                             for bkv_csz in search_space["bkv_csz"]:
                                 if bkv_csz > bkv_sz:
                                     continue
+                                # Defensive ordering (fix #14): spread
+                                # model_shape FIRST, then the explicit
+                                # identity keys. If model_shape ever
+                                # grows a colliding key (e.g. a future
+                                # workload adds a `max_num_seqs` field
+                                # to model shape), the explicit keys
+                                # below win — they represent the actual
+                                # tuning identity, not pass-through
+                                # metadata.
                                 tuning_key = {
+                                    **model_shape,
                                     "case":            "logical",
                                     "page_size":       page_size,
                                     "kernel_K":        kernel_K,
                                     "max_num_seqs":    max_num_seqs,
                                     "code_revision":   code_revision,
-                                    **model_shape,
                                 }
                                 tunable_params = {
                                     "bq_sz":   bq_sz,

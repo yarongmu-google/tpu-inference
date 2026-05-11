@@ -37,7 +37,6 @@ deterministic values without touching JAX/TPU. The runner itself
 imports zero TPU-side code.
 """
 
-import json
 import sys
 from pathlib import Path
 from typing import Any, Callable, Iterator

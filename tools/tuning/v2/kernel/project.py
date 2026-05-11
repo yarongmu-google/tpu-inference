@@ -84,10 +84,21 @@ def _resolve_raw_path(
 
 
 def _kernel_group_key(row: dict[str, Any]) -> tuple:
-    """Group key for a kernel-tune row: (case, tuning_key)."""
+    """Group key for a kernel-tune row.
+
+    Two raw rows belong to the same group iff their tuning_key matches
+    on every field. The grouped winner is the lowest-latency row
+    within each group — i.e., one winner per unique tuning identity
+    regardless of how many times that identity was measured (re-runs,
+    auto-resume picking up where a crash left off, etc.).
+
+    The key is built as `(case, *sorted_non_case_items)` so `case`
+    sorts first in the projection output — useful when scanning
+    `<workload>.kernel` by case manually. The rest are sorted on key
+    name for hash stability across Python versions / dict iteration
+    orders.
+    """
     tk = row["tuning_key"]
-    # Use a hashable form of the tuning_key (canonical_json would
-    # work; tuple of items in sorted order also fine).
     return (tk.get("case"),) + tuple(
         sorted((k, _hashable(v)) for k, v in tk.items() if k != "case")
     )
