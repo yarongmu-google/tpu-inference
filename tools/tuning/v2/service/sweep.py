@@ -184,12 +184,18 @@ def resolve_kernel_pin_keys(
         mnss = tp.get("mnss")
     else:
         mnss = tk.get("max_num_seqs")
+    # Discriminators (architecture doc §13.4.1): forward-compat
+    # defaults for older .kernel files predating the stamp — missing
+    # is tolerable history, mismatching would be corruption (caller
+    # cross-validates downstream).
     return {
         "case":           tk.get("case"),
         "page_size":      tk.get("page_size"),
         "kernel_K":       tk.get("kernel_K"),
         "code_revision":  tk.get("code_revision"),
         "mnss":           mnss,
+        "kernel_variant": tk.get("kernel_variant", "rpa_v3"),
+        "hardware":       tk.get("hardware", "tpu_v7x"),
     }
 
 

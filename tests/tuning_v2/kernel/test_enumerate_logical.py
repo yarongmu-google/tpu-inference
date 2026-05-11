@@ -200,6 +200,41 @@ class TestEnumerateLogical(unittest.TestCase):
         for tk, _ in combos:
             self.assertEqual(tk["case"], "logical")
 
+    def test_tuning_key_includes_discriminators_by_default(self):
+        """Architecture doc §13.4: every row carries kernel_variant,
+        hardware, schema_version. Today these are literal defaults;
+        when a second plugin lands, the caller passes its own."""
+        tk, _ = _enum()[0]
+        self.assertEqual(tk["kernel_variant"], "rpa_v3")
+        self.assertEqual(tk["hardware"], "tpu_v7x")
+        self.assertEqual(tk["schema_version"], 1)
+
+    def test_caller_overrides_kernel_variant_and_hardware(self):
+        """Passing a non-default plugin / HW propagates onto every row.
+        This is the seam the second kernel / GPU port plugs into."""
+        combos = _enum(
+            kernel_variant="rpa_v3_hd64",
+            hardware="cuda_h100",
+        )
+        for tk, _ in combos:
+            self.assertEqual(tk["kernel_variant"], "rpa_v3_hd64")
+            self.assertEqual(tk["hardware"], "cuda_h100")
+
+    def test_explicit_keys_win_over_discriminators_on_collision(self):
+        """Three-tier precedence (doc §13.4): if model_shape somehow
+        had `kernel_variant`, the discriminator overrides it; if a
+        future explicit key collides with `kernel_variant`, the
+        explicit identity wins. This test pins tier 2 > tier 1; the
+        existing test_explicit_keys_win_on_collision pins tier 3 > 2."""
+        shape = dict(MODEL_SHAPE)
+        shape["kernel_variant"] = "WRONG"
+        shape["hardware"] = "WRONG"
+        combos = _enum(model_shape=shape)
+        tk, _ = combos[0]
+        # Discriminator from default overrode model_shape's value.
+        self.assertEqual(tk["kernel_variant"], "rpa_v3")
+        self.assertEqual(tk["hardware"], "tpu_v7x")
+
     def test_explicit_keys_win_on_collision(self):
         """fix #14 followup: REORDERING precedence guarantee. If
         model_shape happens to carry a key that collides with an

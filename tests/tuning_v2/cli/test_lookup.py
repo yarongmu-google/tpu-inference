@@ -288,6 +288,48 @@ class TestLookupEnv(unittest.TestCase):
         self.assertEqual(env["RPA_D_BLOCK_SIZES"], "1,512,1,256")
         self.assertEqual(env["RPA_M_BLOCK_SIZES"], "128,512,128,256")
 
+    # ---- kernel_variant dispatch (architecture doc §13.4.1) ----
+
+    def test_pin_keys_without_kernel_variant_defaults_to_rpa_v3(self):
+        """Forward-compat: older .service files predate the
+        kernel_variant stamp; lookup defaults to rpa_v3 and still
+        emits the RPA_* env vars."""
+        pk_no_variant = {
+            "case": "logical", "page_size": 128,
+            "kernel_K": 256, "code_revision": "abc12345",
+            # no kernel_variant
+        }
+        self._write_pair(
+            _kernel_doc_with_cases(["logical"]),
+            _service_doc(pin_keys=pk_no_variant),
+        )
+        env = lookup_env(self.dir, "test")
+        self.assertIn("RPA_KERNEL_K", env)
+
+    def test_pin_keys_with_known_kernel_variant_dispatches(self):
+        pk = dict(_DEFAULT_PIN_KEYS)
+        pk["kernel_variant"] = "rpa_v3"
+        self._write_pair(
+            _kernel_doc_with_cases(["logical"]),
+            _service_doc(pin_keys=pk),
+        )
+        env = lookup_env(self.dir, "test")
+        self.assertIn("RPA_KERNEL_K", env)
+
+    def test_unknown_kernel_variant_raises(self):
+        """Mismatching-is-fatal: a pin_keys.kernel_variant that the
+        lookup doesn't know about means a new plugin landed without
+        an emit branch. Fail loud rather than emit RPA_* env vars
+        for a non-RPA kernel."""
+        pk = dict(_DEFAULT_PIN_KEYS)
+        pk["kernel_variant"] = "flash_attn_cuda"
+        self._write_pair(
+            _kernel_doc_with_cases(["logical"]),
+            _service_doc(pin_keys=pk),
+        )
+        with self.assertRaisesRegex(KeyError, "kernel_variant"):
+            lookup_env(self.dir, "test")
+
 
 class TestCaseWinnerHelper(unittest.TestCase):
     """Direct tests for _case_winner — production callers always pass

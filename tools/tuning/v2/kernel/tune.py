@@ -44,7 +44,11 @@ from typing import Any, Callable, Iterator
 from tools.tuning.v2.core.git_atomic import commit_and_push
 from tools.tuning.v2.core.keyset import combo_key
 from tools.tuning.v2.core.raw_store import append_row, build_skip_set
-from tools.tuning.v2.kernel.enumerate_logical import enumerate_logical_combos
+from tools.tuning.v2.kernel.enumerate_logical import (
+    DEFAULT_HARDWARE,
+    DEFAULT_KERNEL_VARIANT,
+    enumerate_logical_combos,
+)
 from tools.tuning.v2.kernel.search_space import kernel_search_space
 
 
@@ -89,6 +93,8 @@ def run_kernel_tune(
     code_revision: str,
     enumerator: Callable[..., Iterator[tuple[dict, dict]]]
         = enumerate_logical_combos,
+    kernel_variant: str = DEFAULT_KERNEL_VARIANT,
+    hardware: str = DEFAULT_HARDWARE,
     commit_every: int = 25,
     on_progress: Callable[[int], None] | None = None,
 ) -> int:
@@ -144,6 +150,8 @@ def run_kernel_tune(
         model_shape=model_shape,
         code_revision=code_revision,
         search_space=search_space,
+        kernel_variant=kernel_variant,
+        hardware=hardware,
     )
 
     n_new = 0

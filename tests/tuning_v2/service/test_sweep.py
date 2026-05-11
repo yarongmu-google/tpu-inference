@@ -54,11 +54,13 @@ SAMPLE_KERNEL_DOC = {
 }
 
 SAMPLE_PIN_KEYS = {
-    "case":          "logical",
-    "page_size":     128,
-    "kernel_K":      256,
-    "code_revision": "abc12345",
-    "mnss":          4224,
+    "case":           "logical",
+    "page_size":      128,
+    "kernel_K":       256,
+    "code_revision":  "abc12345",
+    "mnss":           4224,
+    "kernel_variant": "rpa_v3",
+    "hardware":       "tpu_v7x",
 }
 
 
@@ -475,6 +477,62 @@ class TestResolveKernelPinKeys(unittest.TestCase):
         (self.dir / "x.kernel").write_text(json.dumps(SAMPLE_KERNEL_DOC))
         pk = resolve_kernel_pin_keys(self.dir, "x")
         self.assertEqual(pk["mnss"], 4224)
+
+    def test_pin_keys_include_kernel_variant_and_hardware(self):
+        """Architecture doc §13.4.1: pin_keys carry the kernel→service
+        handoff discriminators so cli/lookup can dispatch."""
+        (self.dir / "x.kernel").write_text(json.dumps(SAMPLE_KERNEL_DOC))
+        pk = resolve_kernel_pin_keys(self.dir, "x")
+        self.assertEqual(pk["kernel_variant"], "rpa_v3")
+        self.assertEqual(pk["hardware"], "tpu_v7x")
+
+    def test_pin_keys_default_kernel_variant_for_unstamped_winner(self):
+        """Forward-compat: a .kernel file produced before the stamp
+        lacks kernel_variant / hardware in its winner tuning_keys.
+        Default to rpa_v3 / tpu_v7x rather than crashing."""
+        doc = {
+            "winners": [{
+                "tuning_key": {
+                    "case": "logical",
+                    "page_size": 128, "kernel_K": 256,
+                    "code_revision": "x",
+                    # no kernel_variant, no hardware
+                },
+                "tunable_params": {
+                    "bq_sz": 256, "bkv_sz": 2048,
+                    "bq_csz": 256, "bkv_csz": 512,
+                    "mnss": 4224,
+                },
+            }],
+        }
+        (self.dir / "x.kernel").write_text(json.dumps(doc))
+        pk = resolve_kernel_pin_keys(self.dir, "x")
+        self.assertEqual(pk["kernel_variant"], "rpa_v3")
+        self.assertEqual(pk["hardware"], "tpu_v7x")
+
+    def test_pin_keys_carry_explicit_kernel_variant_through(self):
+        """When a future plugin tunes against this codebase, the
+        winner's tuning_key.kernel_variant flows into pin_keys."""
+        doc = {
+            "winners": [{
+                "tuning_key": {
+                    "case": "logical",
+                    "page_size": 128, "kernel_K": 256,
+                    "code_revision": "x",
+                    "kernel_variant": "rpa_v3_hd64",
+                    "hardware":       "tpu_v6e",
+                },
+                "tunable_params": {
+                    "bq_sz": 256, "bkv_sz": 2048,
+                    "bq_csz": 256, "bkv_csz": 512,
+                    "mnss": 4224,
+                },
+            }],
+        }
+        (self.dir / "x.kernel").write_text(json.dumps(doc))
+        pk = resolve_kernel_pin_keys(self.dir, "x")
+        self.assertEqual(pk["kernel_variant"], "rpa_v3_hd64")
+        self.assertEqual(pk["hardware"], "tpu_v6e")
 
     def test_prefill_winner_includes_mnss_equal_to_max_num_seqs(self):
         """For PREFILL (coupled-K, no decoupling), the iter capacity

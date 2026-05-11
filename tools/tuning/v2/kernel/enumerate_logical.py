@@ -33,6 +33,11 @@ this signature, so each case is pluggable.
 from typing import Any, Iterator
 
 
+SCHEMA_VERSION = 1
+DEFAULT_KERNEL_VARIANT = "rpa_v3"
+DEFAULT_HARDWARE = "tpu_v7x"
+
+
 def enumerate_logical_combos(
     *,
     max_num_seqs: int,
@@ -40,6 +45,8 @@ def enumerate_logical_combos(
     model_shape: dict[str, Any],
     code_revision: str,
     search_space: dict[str, list[int]],
+    kernel_variant: str = DEFAULT_KERNEL_VARIANT,
+    hardware: str = DEFAULT_HARDWARE,
 ) -> Iterator[tuple[dict[str, Any], dict[str, Any]]]:
     """Yield each valid `(tuning_key, tunable_params)` pair for LOGICAL.
 
@@ -53,6 +60,14 @@ def enumerate_logical_combos(
       search_space: dict from `kernel/search_space.py`. Required keys:
                     `page_size`, `kernel_K`, `mnss`, `bq_sz`, `bkv_sz`,
                     `bq_csz`, `bkv_csz`.
+      kernel_variant: plugin discriminator (architecture doc §13.4).
+                      Defaults to `"rpa_v3"`. When a second TPU kernel
+                      (e.g. `"rpa_v3_hd64"`, `"mla"`) or a GPU plugin
+                      lands, the caller passes its own identifier.
+      hardware: hardware partition discriminator (architecture doc
+                §13.4.2). Defaults to `"tpu_v7x"`. Inferred by the
+                caller from the workload's path
+                (`cases/<topo>/<model>/`).
 
     Yields:
       `(tuning_key, tunable_params)` tuples. Order: nested-loop iteration
@@ -91,7 +106,16 @@ def enumerate_logical_combos(
                                 # Tested by
                                 # test_explicit_keys_win_on_collision.
                                 tuning_key = {
+                                    # Tier 1 (lowest precedence):
+                                    # workload pass-through.
                                     **model_shape,
+                                    # Tier 2: discriminators
+                                    # (architecture doc §13.4).
+                                    "kernel_variant":  kernel_variant,
+                                    "hardware":        hardware,
+                                    "schema_version":  SCHEMA_VERSION,
+                                    # Tier 3 (highest precedence):
+                                    # explicit tuning identity.
                                     "case":            "logical",
                                     "page_size":       page_size,
                                     "kernel_K":        kernel_K,

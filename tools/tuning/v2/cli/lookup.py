@@ -31,6 +31,14 @@ from pathlib import Path
 from typing import Any
 
 
+# Currently supported kernel_variant values for the env-var dispatch.
+# Adding a new TPU kernel variant (e.g. "rpa_v3_hd64", "mla") or a
+# cross-HW plugin ("flash_attn_cuda") extends this — see the
+# `emit_env_vars` block in `lookup_env`. Architecture doc §13.4.1.
+KNOWN_KERNEL_VARIANTS = frozenset({"rpa_v3"})
+DEFAULT_KERNEL_VARIANT = "rpa_v3"
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -132,6 +140,20 @@ def lookup_env(
             f"missing kernel_pin_keys. Re-run project_service against "
             f"a .service.raw produced by the current sweep_service "
             f"runner (which stamps pin_keys on every row).",
+        )
+
+    # Dispatch on kernel_variant so a future plugin (other TPU kernel
+    # variant or a GPU port) can branch on its own emitter. Missing
+    # is tolerable history (older .kernel files predate the stamp,
+    # default to rpa_v3); mismatching an unknown value is fatal —
+    # we don't know which env vars to emit. Architecture doc §13.4.1.
+    kernel_variant = pin_keys.get("kernel_variant", DEFAULT_KERNEL_VARIANT)
+    if kernel_variant not in KNOWN_KERNEL_VARIANTS:
+        raise KeyError(
+            f"service winner pin_keys.kernel_variant={kernel_variant!r} "
+            f"is not in KNOWN_KERNEL_VARIANTS={sorted(KNOWN_KERNEL_VARIANTS)}; "
+            f"add an emit branch in cli/lookup.py before tuning rows "
+            f"from this plugin can be looked up.",
         )
 
     env: dict[str, str] = {}
