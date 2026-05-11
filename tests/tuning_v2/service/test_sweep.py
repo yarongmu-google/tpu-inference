@@ -21,6 +21,7 @@ from tools.tuning.v2.core.raw_store import read_rows
 from tools.tuning.v2.service.sweep import (
     KernelRegistryMissingError,
     PERMANENT_STATUSES,
+    _is_feasible,
     enumerate_service_combos,
     main as sweep_main,
     resolve_kernel_pin_keys,
@@ -531,6 +532,144 @@ class TestRunServiceSweepCommitGuard(unittest.TestCase):
         self.assertEqual(n, 4)
         # 1 periodic (at row 3) + 1 final (for row 4) = 2.
         self.assertEqual(cap.call_count, 2)
+
+
+class TestIsFeasible(unittest.TestCase):
+    """fix #7: pre-filter for infeasible service combos."""
+
+    def test_combo_above_input_len_is_feasible(self):
+        feasible, reason = _is_feasible(
+            {"MAX_NUM_BATCHED_TOKENS": 8192},
+            {"INPUT_LEN": "1024"},
+        )
+        self.assertTrue(feasible)
+        self.assertIsNone(reason)
+
+    def test_combo_equal_to_input_len_is_feasible(self):
+        """Edge: MNB == INPUT_LEN. With chunked prefill off this just
+        barely fits."""
+        feasible, _ = _is_feasible(
+            {"MAX_NUM_BATCHED_TOKENS": 1024},
+            {"INPUT_LEN": "1024"},
+        )
+        self.assertTrue(feasible)
+
+    def test_combo_below_input_len_is_infeasible(self):
+        feasible, reason = _is_feasible(
+            {"MAX_NUM_BATCHED_TOKENS": 512},
+            {"INPUT_LEN": "1024"},
+        )
+        self.assertFalse(feasible)
+        self.assertIn("MAX_NUM_BATCHED_TOKENS=512", reason)
+        self.assertIn("INPUT_LEN=1024", reason)
+
+    def test_no_mnb_in_combo_is_feasible(self):
+        """If the combo doesn't sweep MNB, we have nothing to filter on."""
+        feasible, _ = _is_feasible(
+            {"MAX_NUM_SEQS": 128},
+            {"INPUT_LEN": "1024"},
+        )
+        self.assertTrue(feasible)
+
+    def test_no_input_len_in_workload_env_is_feasible(self):
+        """Defensive: workload missing INPUT_LEN -> don't pre-filter
+        (validate.py is the responsible layer for required fields)."""
+        feasible, _ = _is_feasible(
+            {"MAX_NUM_BATCHED_TOKENS": 512},
+            {},
+        )
+        self.assertTrue(feasible)
+
+    def test_non_int_value_does_not_crash(self):
+        feasible, _ = _is_feasible(
+            {"MAX_NUM_BATCHED_TOKENS": "not a number"},
+            {"INPUT_LEN": "1024"},
+        )
+        self.assertTrue(feasible)
+
+
+class TestRunServiceSweepFeasibilityPrefilter(unittest.TestCase):
+    """fix #7: infeasible combos get recorded as SKIPPED rows so
+    resume picks them up next time instead of re-attempting."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.workload_dir = Path(self.tmp.name)
+        self._saved_no_push = os.environ.pop(NO_PUSH_ENV, None)
+        os.environ[NO_PUSH_ENV] = "1"
+        (self.workload_dir / "test.kernel").write_text(
+            json.dumps(SAMPLE_KERNEL_DOC),
+        )
+        # MNB=[256, 8192] x MNS=[128]. With INPUT_LEN=1024, the
+        # MNB=256 row is infeasible.
+        (self.workload_dir / "test.service_axes.json").write_text(
+            json.dumps({
+                "MAX_NUM_BATCHED_TOKENS": [256, 8192],
+                "MAX_NUM_SEQS":           [128],
+            }),
+        )
+        self.raw_path = (
+            self.workload_dir / "test.service.raw" / "sha.jsonl"
+        )
+
+    def tearDown(self):
+        if self._saved_no_push is None:
+            os.environ.pop(NO_PUSH_ENV, None)
+        else:
+            os.environ[NO_PUSH_ENV] = self._saved_no_push
+        self.tmp.cleanup()
+
+    def _measure(self, c):
+        return {"status": "SUCCESS",
+                "metrics": {"req_per_sec": 1.0, "ttft_mean_ms": 100,
+                            "ttft_p99_ms": 200}}
+
+    def test_infeasible_combo_recorded_as_skipped_not_measured(self):
+        calls = []
+        def measure(c):
+            calls.append(c)
+            return self._measure(c)
+        run_service_sweep(
+            workload_env={"INPUT_LEN": "1024"},
+            workload_dir=self.workload_dir,
+            workload_name="test",
+            raw_path=self.raw_path,
+            measurement_fn=measure,
+            service_revision="sha",
+        )
+        rows = list(read_rows(self.raw_path))
+        self.assertEqual(len(rows), 2)
+        # measurement_fn was called only for the feasible MNB=8192 combo.
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["MAX_NUM_BATCHED_TOKENS"], 8192)
+        # The infeasible row landed as SKIPPED with a reason.
+        skipped = [r for r in rows if r["status"] == "SKIPPED"]
+        self.assertEqual(len(skipped), 1)
+        self.assertEqual(skipped[0]["combo"]["MAX_NUM_BATCHED_TOKENS"], 256)
+        self.assertIn("reason", skipped[0])
+
+    def test_skipped_row_picked_up_by_resume(self):
+        """A SKIPPED status is in PERMANENT_STATUSES; the second run
+        must NOT re-attempt the infeasible combo."""
+        # First run.
+        run_service_sweep(
+            workload_env={"INPUT_LEN": "1024"},
+            workload_dir=self.workload_dir,
+            workload_name="test",
+            raw_path=self.raw_path,
+            measurement_fn=self._measure,
+            service_revision="sha",
+        )
+        # Second run on the same store — should append zero new rows.
+        n_second = run_service_sweep(
+            workload_env={"INPUT_LEN": "1024"},
+            workload_dir=self.workload_dir,
+            workload_name="test",
+            raw_path=self.raw_path,
+            measurement_fn=self._measure,
+            service_revision="sha",
+        )
+        self.assertEqual(n_second, 0)
 
 
 class TestCliMain(unittest.TestCase):

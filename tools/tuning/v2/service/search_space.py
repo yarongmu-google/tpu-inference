@@ -40,6 +40,8 @@ Pure data + filesystem. No vLLM imports.
 import json
 from pathlib import Path
 
+from tools.tuning.v2.core.overlay import validate_overlay_schema
+
 # Liberal defaults: octave coverage up to mnss × kernel_K at typical
 # L-kernel configuration. The orchestrator prunes via memory/feasibility
 # checks; an over-wide MNB just OOMs that combo and the sweep continues.
@@ -82,9 +84,16 @@ def _load_overlay(
     workload_dir: Path,
     workload_name: str,
 ) -> dict[str, list[int]]:
-    """Load `<workload>.service_axes.json` if present, else empty dict."""
+    """Load `<workload>.service_axes.json` if present, else empty dict.
+
+    Raises `OverlayValidationError` (via `validate_overlay_schema`) if
+    the file exists but doesn't match the flat list[positive int]
+    schema (fix #7).
+    """
     overlay_path = workload_dir / f"{workload_name}.service_axes.json"
     if not overlay_path.exists():
         return {}
     with open(overlay_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        doc = json.load(f)
+    validate_overlay_schema(doc, overlay_path)
+    return doc

@@ -43,6 +43,8 @@ This module is pure-data + filesystem. No TPU/JAX imports.
 import json
 from pathlib import Path
 
+from tools.tuning.v2.core.overlay import validate_overlay_schema
+
 # v1-inherited defaults. Wider than what any single workload typically
 # wants (~thousands of combos pre-prune); the kernel-tune SMEM/VMEM
 # check + the per-workload overlay narrow these down.
@@ -118,9 +120,16 @@ def _load_overlay(
     workload_dir: Path,
     workload_name: str,
 ) -> dict[str, list[int]]:
-    """Load `<workload>.kernel_axes.json` if present, else empty dict."""
+    """Load `<workload>.kernel_axes.json` if present, else empty dict.
+
+    Raises `OverlayValidationError` (via `validate_overlay_schema`) if
+    the file exists but doesn't match the flat list[positive int]
+    schema (fix #7).
+    """
     overlay_path = workload_dir / f"{workload_name}.kernel_axes.json"
     if not overlay_path.exists():
         return {}
     with open(overlay_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        doc = json.load(f)
+    validate_overlay_schema(doc, overlay_path)
+    return doc

@@ -141,6 +141,22 @@ class TestKernelSearchSpace(unittest.TestCase):
         with self.assertRaises(json.JSONDecodeError):
             kernel_search_space(self.dir, "x", max_num_seqs=128)
 
+    def test_malformed_overlay_schema_raises(self):
+        """fix #7: schema-bad overlay (non-list axis value) is rejected
+        loudly via OverlayValidationError, not silently absorbed."""
+        from tools.tuning.v2.core.overlay import OverlayValidationError
+        overlay = self.dir / "x.kernel_axes.json"
+        overlay.write_text(json.dumps({"bq_sz": 256}))   # int, not list
+        with self.assertRaises(OverlayValidationError):
+            kernel_search_space(self.dir, "x", max_num_seqs=128)
+
+    def test_negative_int_in_overlay_raises(self):
+        from tools.tuning.v2.core.overlay import OverlayValidationError
+        overlay = self.dir / "x.kernel_axes.json"
+        overlay.write_text(json.dumps({"bq_sz": [-256]}))
+        with self.assertRaises(OverlayValidationError):
+            kernel_search_space(self.dir, "x", max_num_seqs=128)
+
     def test_mnss_derived_from_max_num_seqs(self):
         space = kernel_search_space(self.dir, "x", max_num_seqs=1)
         self.assertEqual(space["mnss"], [2, 3, 5, 9, 17, 33])

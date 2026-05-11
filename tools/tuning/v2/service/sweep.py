@@ -68,6 +68,46 @@ from tools.tuning.v2.service.search_space import service_search_space
 PERMANENT_STATUSES = frozenset({"SUCCESS", "FAILED_OOM", "FAILED", "SKIPPED"})
 
 
+def _is_feasible(
+    combo: dict[str, Any],
+    workload_env: dict[str, str],
+) -> tuple[bool, str | None]:
+    """Pre-filter check for service-sweep combos (fix #7).
+
+    Returns `(feasible, reason)`. Feasible means the combo COULD plausibly
+    produce a measurement; reason is the explanation we stamp on the
+    SKIPPED row when it can't.
+
+    Current rules (kept narrow — only filter on conditions that
+    deterministically fail):
+      - `MAX_NUM_BATCHED_TOKENS < INPUT_LEN`: a single prompt's prefill
+        won't fit in one batch slot without chunked prefill (which v2
+        sweeps don't enable). vLLM will reject the request.
+
+    We deliberately do NOT add a too-high MNB ceiling — Phase 5 of
+    rpa3_2 missed the MNB=131,072 sweet spot because the search axis
+    capped at 65,536, so we'd rather waste a few combos at the top
+    than risk re-introducing that bug.
+    """
+    mnb_raw = combo.get("MAX_NUM_BATCHED_TOKENS")
+    inp_raw = workload_env.get("INPUT_LEN")
+    if mnb_raw is None or not inp_raw:
+        return True, None
+    try:
+        mnb = int(mnb_raw)
+        inp = int(inp_raw)
+    except (TypeError, ValueError):
+        # Non-int values surface elsewhere (validate.py); don't double-
+        # report here.
+        return True, None
+    if mnb < inp:
+        return False, (
+            f"MAX_NUM_BATCHED_TOKENS={mnb} < INPUT_LEN={inp}; vLLM "
+            f"will reject single-prompt prefill at this MNB."
+        )
+    return True, None
+
+
 class KernelRegistryMissingError(RuntimeError):
     """Raised at sweep startup when the workload's `.kernel` file is
     missing or has no LOGICAL/PREFILL winner. Without one we can't
@@ -187,7 +227,8 @@ def run_service_sweep(
     Returns:
       Count of new rows appended in this run.
     """
-    del workload_env  # workload-env stays in .workload; not used here
+    # workload_env IS now used (fix #7: feasibility pre-filter reads
+    # INPUT_LEN). Previously del'd here as "passed for symmetry".
     del service_revision  # recorded externally (stamped via raw filename)
 
     if kernel_pin_keys is None:
@@ -205,13 +246,19 @@ def run_service_sweep(
     for combo in enumerate_service_combos(search_space=search_space):
         if service_combo_key(combo) in skip_set:
             continue
-        try:
-            result = measurement_fn(combo)
-        except Exception as e:    # pylint: disable=broad-except
-            result = {
-                "status": "UNKNOWN_ERROR",
-                "error": f"{type(e).__name__}: {e}",
-            }
+        feasible, skip_reason = _is_feasible(combo, workload_env)
+        if not feasible:
+            # Pre-filter: record as SKIPPED so resume picks it up and
+            # doesn't re-attempt next sweep. Don't call measurement_fn.
+            result = {"status": "SKIPPED", "reason": skip_reason}
+        else:
+            try:
+                result = measurement_fn(combo)
+            except Exception as e:    # pylint: disable=broad-except
+                result = {
+                    "status": "UNKNOWN_ERROR",
+                    "error": f"{type(e).__name__}: {e}",
+                }
         row = {
             "combo":            combo,
             "kernel_pin_keys":  kernel_pin_keys,

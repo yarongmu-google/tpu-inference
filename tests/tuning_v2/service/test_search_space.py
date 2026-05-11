@@ -85,6 +85,24 @@ class TestServiceSearchSpace(unittest.TestCase):
         with self.assertRaises(json.JSONDecodeError):
             service_search_space(self.dir, "x")
 
+    def test_malformed_overlay_schema_raises(self):
+        """fix #7: schema-bad overlay (non-list axis value) is rejected
+        loudly via OverlayValidationError."""
+        from tools.tuning.v2.core.overlay import OverlayValidationError
+        (self.dir / "x.service_axes.json").write_text(
+            json.dumps({"MAX_NUM_SEQS": "128"}),    # str, not list
+        )
+        with self.assertRaises(OverlayValidationError):
+            service_search_space(self.dir, "x")
+
+    def test_mixed_type_list_in_overlay_raises(self):
+        from tools.tuning.v2.core.overlay import OverlayValidationError
+        (self.dir / "x.service_axes.json").write_text(
+            json.dumps({"MAX_NUM_SEQS": [128, "1000"]}),
+        )
+        with self.assertRaises(OverlayValidationError):
+            service_search_space(self.dir, "x")
+
     def test_workload_name_used_in_overlay_filename(self):
         (self.dir / "alpha.service_axes.json").write_text(
             json.dumps({"MAX_NUM_SEQS": [128]}),
