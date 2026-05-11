@@ -58,7 +58,18 @@ def _block_sizes_for(case: str) -> dict:
     return base
 
 
-def _service_doc() -> dict:
+_DEFAULT_PIN_KEYS = {
+    "case":          "logical",
+    "page_size":     128,
+    "kernel_K":      256,
+    "code_revision": "abc12345",
+}
+
+
+def _service_doc(pin_keys: dict | None = None) -> dict:
+    """Service-doc fixture. Each winner carries kernel_pin_keys —
+    required by the lookup contract (post-fix-1)."""
+    pk = pin_keys if pin_keys is not None else _DEFAULT_PIN_KEYS
     return {
         "schema_version": 1,
         "workload": "test",
@@ -71,6 +82,7 @@ def _service_doc() -> dict:
                     "MAX_NUM_BATCHED_TOKENS": 131072,
                     "MAX_NUM_SEQS": 1000,
                 },
+                "kernel_pin_keys": pk,
                 "metrics": {
                     "req_per_sec": 4.90,
                     "ttft_mean_ms": 104120,
@@ -83,6 +95,7 @@ def _service_doc() -> dict:
                     "MAX_NUM_BATCHED_TOKENS": 8192,
                     "MAX_NUM_SEQS": 1,
                 },
+                "kernel_pin_keys": pk,
                 "metrics": {
                     "req_per_sec": 2.57,
                     "ttft_mean_ms": 388,
@@ -166,19 +179,30 @@ class TestLookupEnv(unittest.TestCase):
         self.assertEqual(env["MAX_NUM_SEQS"], "1000")
 
     def test_prefill_winner_without_logical_uses_coupled_k(self):
-        """Legacy path: only PREFILL exists (P kernel coupled-K). Set
-        RPA_P_BLOCK_SIZES + BLOCK_SIZE + RPA_KERNEL_K but NOT
-        RPA_MAX_NUM_SUBSEQS / LPTT."""
+        """Legacy path: only PREFILL exists (P kernel coupled-K). Sets
+        RPA_P_BLOCK_SIZES + BLOCK_SIZE but OMITS RPA_KERNEL_K (and the
+        decoupled-K-derived vars). Emitting RPA_KERNEL_K=0 under
+        coupled-K is ambiguous (fix #7) — consumers might interpret
+        0 as "decoupled-K with K=0" instead of "decoupled-K absent".
+        """
+        # When the service was swept against a PREFILL kernel,
+        # pin_keys reflects that (case=prefill, kernel_K=256).
+        prefill_pk = {
+            "case": "prefill", "page_size": 128,
+            "kernel_K": 256, "code_revision": "abc",
+        }
         self._write_pair(
             _kernel_doc_with_cases(["decode", "mixed", "prefill"]),
-            _service_doc(),
+            _service_doc(pin_keys=prefill_pk),
         )
         env = lookup_env(self.dir, "test")
         self.assertEqual(env["BLOCK_SIZE"], "128")
-        self.assertEqual(env["RPA_KERNEL_K"], "256")
+        self.assertEqual(env["RPA_P_BLOCK_SIZES"], "256,2048,256,512")
+        # Under coupled-K (no LOGICAL match), decoupled-K env vars are
+        # OMITTED entirely.
+        self.assertNotIn("RPA_KERNEL_K", env)
         self.assertNotIn("RPA_MAX_NUM_SUBSEQS", env)
         self.assertNotIn("LONG_PREFILL_TOKEN_THRESHOLD", env)
-        self.assertEqual(env["RPA_P_BLOCK_SIZES"], "256,2048,256,512")
 
     def test_logical_preferred_over_prefill_when_both_present(self):
         """When both PREFILL and LOGICAL exist (transition state), the
@@ -209,6 +233,79 @@ class TestLookupEnv(unittest.TestCase):
         for k, v in env.items():
             self.assertIsInstance(k, str)
             self.assertIsInstance(v, str)
+
+    def test_missing_kernel_pin_keys_raises(self):
+        """fix #1: a service winner without kernel_pin_keys is a
+        stale .service file (pre-fix-1) — lookup must fail loud,
+        not fall back to first-match-by-case."""
+        bad_service = _service_doc()
+        # Strip pin_keys from the throughput_max winner.
+        del bad_service["winners"]["throughput_max"]["kernel_pin_keys"]
+        self._write_pair(
+            _kernel_doc_with_cases(["logical"]), bad_service,
+        )
+        with self.assertRaisesRegex(KeyError, "kernel_pin_keys"):
+            lookup_env(self.dir, "test")
+
+    def test_pin_keys_mismatch_raises(self):
+        """fix #1: if the service's pin_keys don't match any kernel
+        winner, lookup must NOT silently pick the wrong kernel — it
+        must raise. This is the load-bearing fix: shipping wrong pins
+        because the kernel was re-tuned at a different SHA between
+        sweep and deploy."""
+        kernel_doc = _kernel_doc_with_cases(["logical"])
+        # Build a service doc that pins to kernel_K=512 (no match in
+        # the kernel registry, which only has K=256).
+        mismatch_pk = {
+            "case": "logical", "page_size": 128,
+            "kernel_K": 512, "code_revision": "deadbeef",
+        }
+        self._write_pair(kernel_doc, _service_doc(pin_keys=mismatch_pk))
+        with self.assertRaisesRegex(KeyError, "matching pin_keys"):
+            lookup_env(self.dir, "test")
+
+    def test_pin_keys_page_size_mismatch_raises(self):
+        """Same as above but the page_size differs."""
+        kernel_doc = _kernel_doc_with_cases(["logical"])
+        mismatch_pk = {
+            "case": "logical", "page_size": 64,
+            "kernel_K": 256, "code_revision": "abc",
+        }
+        self._write_pair(kernel_doc, _service_doc(pin_keys=mismatch_pk))
+        with self.assertRaisesRegex(KeyError, "matching pin_keys"):
+            lookup_env(self.dir, "test")
+
+    def test_decode_mixed_match_on_page_size_only(self):
+        """DECODE / MIXED winners don't carry kernel_K; the pin_keys
+        filter on those should match by page_size alone."""
+        # Kernel doc has decode + mixed + logical at page=128, K=256.
+        # Service pin_keys also at page=128, K=256.
+        self._write_pair(
+            _kernel_doc_with_cases(["decode", "mixed", "logical"]),
+            _service_doc(),
+        )
+        env = lookup_env(self.dir, "test")
+        self.assertEqual(env["RPA_D_BLOCK_SIZES"], "1,512,1,256")
+        self.assertEqual(env["RPA_M_BLOCK_SIZES"], "128,512,128,256")
+
+
+class TestCaseWinnerHelper(unittest.TestCase):
+    """Direct tests for _case_winner — production callers always pass
+    pin_keys, but the helper accepts None for ad-hoc lookups."""
+
+    def test_pin_keys_none_returns_first_match_by_case(self):
+        from tools.tuning.v2.cli.lookup import _case_winner
+        doc = {
+            "winners": [
+                {"tuning_key": {"case": "logical",
+                                "page_size": 128, "kernel_K": 256}},
+                {"tuning_key": {"case": "decode",  "page_size": 128}},
+            ],
+        }
+        # No pin_keys filter: first-by-case wins.
+        w = _case_winner(doc, "logical", pin_keys=None)
+        self.assertIsNotNone(w)
+        self.assertEqual(w["tuning_key"]["case"], "logical")
 
 
 class TestCliMain(unittest.TestCase):

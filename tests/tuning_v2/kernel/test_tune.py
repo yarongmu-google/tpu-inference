@@ -348,8 +348,10 @@ class TestRunKernelTune(unittest.TestCase):
             cap.assert_not_called()
 
     def test_periodic_commit_fires_at_commit_every(self):
-        """With commit_every=2 and 4 new rows, expect 2 periodic +
-        1 final = 3 total commits."""
+        """With commit_every=2 and 4 new rows, periodic commits fire
+        at rows 2 and 4. No final commit because n_new % commit_every
+        == 0 — would be an empty no-op (fix #10).
+        """
         # 4-combo overlay.
         (self.workload_dir / "test.kernel_axes.json").write_text(
             json.dumps({
@@ -377,8 +379,39 @@ class TestRunKernelTune(unittest.TestCase):
                 commit_every=2,
             )
         self.assertEqual(n, 4)
-        # Periodic at rows 2 and 4 + final = 3 calls.
-        self.assertEqual(cap.call_count, 3)
+        # Periodic at rows 2 and 4 — no final.
+        self.assertEqual(cap.call_count, 2)
+
+    def test_final_commit_fires_when_remainder_uncommitted(self):
+        """commit_every=3 with 4 new rows: periodic at row 3 + final
+        for row 4 = 2 commits."""
+        (self.workload_dir / "test.kernel_axes.json").write_text(
+            json.dumps({
+                "page_size": [64, 128],
+                "kernel_K":  [256],
+                "mnss":      [4224],
+                "bq_sz":     [128, 256],
+                "bkv_sz":    [2048],
+                "bq_csz":    [128],
+                "bkv_csz":   [512],
+            })
+        )
+        with mock.patch(
+            "tools.tuning.v2.kernel.tune.commit_and_push"
+        ) as cap:
+            n = run_kernel_tune(
+                workload_env=self.WORKLOAD_ENV_BASE,
+                workload_dir=self.workload_dir,
+                workload_name="test",
+                raw_path=self.raw_path,
+                measurement_fn=lambda tk, tp: {
+                    "status": "SUCCESS", "latency_us": 100.0,
+                },
+                code_revision="abc12345",
+                commit_every=3,
+            )
+        self.assertEqual(n, 4)
+        self.assertEqual(cap.call_count, 2)
 
 
 class TestParseWorkloadEnv(unittest.TestCase):

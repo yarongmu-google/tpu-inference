@@ -12,12 +12,32 @@ function:
 
   run_service_sweep(*, workload_env, workload_dir, workload_name,
                     raw_path, measurement_fn, service_revision,
-                    commit_every=5, on_progress=None) -> int
+                    kernel_pin_keys=None, commit_every=5,
+                    on_progress=None) -> int
 
 Enumerates combos (cartesian product of sweep axes from
 `service_search_space`), skips ones already in `.service.raw/<sha>.jsonl`
 with permanent status, calls `measurement_fn(combo)` for the rest,
-appends result + combo as one raw row, periodic commit+push.
+appends result + combo + kernel_pin_keys as one raw row, periodic
+commit+push.
+
+**kernel_pin_keys.** Every raw row carries the kernel-tune identity
+that the service relied on. This is the load-bearing field for deploy
+lookup: at deploy time, `.service.winners[objective].kernel_pin_keys`
+identifies which `.kernel` winner was actually used during the sweep
+(architecture doc §6 + §7, "Pin keys" Glossary). Without it, the
+deploy lookup falls back to "first kernel winner per case" — which
+silently ships wrong pins if the kernel was re-tuned at a different
+shape between sweep and deploy.
+
+The runner discovers pin_keys by reading `<workload>.kernel` at
+startup, picking the LOGICAL winner (decoupled-K) or falling back to
+the PREFILL winner (coupled-K). If neither exists, the runner raises
+KernelRegistryMissingError so the operator sees a loud failure
+instead of a sweep that silently records FAILED rows for every combo.
+
+Callers may inject `kernel_pin_keys=dict(...)` explicitly to bypass
+the .kernel read (tests use this).
 
 `measurement_fn` is the vLLM-bench boundary. Production wires it to
 `vllm bench serve` (a long-running subprocess); tests inject a mock
@@ -29,6 +49,7 @@ every 5 keeps the remote close to up-to-date without spam.
 """
 
 import itertools
+import json
 import sys
 from pathlib import Path
 from typing import Any, Callable, Iterator
@@ -45,6 +66,59 @@ from tools.tuning.v2.service.search_space import service_search_space
 # bench-tool failures (FAILED). Both are permanent here; UNKNOWN_ERROR
 # is retryable.
 PERMANENT_STATUSES = frozenset({"SUCCESS", "FAILED_OOM", "FAILED", "SKIPPED"})
+
+
+class KernelRegistryMissingError(RuntimeError):
+    """Raised at sweep startup when the workload's `.kernel` file is
+    missing or has no LOGICAL/PREFILL winner. Without one we can't
+    stamp `kernel_pin_keys` on raw rows, and a sweep that runs without
+    pin_keys silently breaks the deploy-time lookup contract."""
+
+
+def resolve_kernel_pin_keys(
+    workload_dir: Path,
+    workload_name: str,
+) -> dict[str, Any]:
+    """Read `<workload>.kernel` and extract the pin_keys.
+
+    Prefers the LOGICAL case (decoupled-K) over PREFILL (coupled-K).
+    Pin keys returned: `page_size`, `kernel_K`, `code_revision`.
+
+    Raises:
+      KernelRegistryMissingError if the file doesn't exist or has no
+      LOGICAL/PREFILL winner.
+    """
+    kernel_path = workload_dir / f"{workload_name}.kernel"
+    if not kernel_path.exists():
+        raise KernelRegistryMissingError(
+            f"no kernel registry at {kernel_path}; run "
+            f"project_kernel.sh first (or pass kernel_pin_keys "
+            f"explicitly to run_service_sweep).",
+        )
+    with open(kernel_path, "r", encoding="utf-8") as f:
+        kernel_doc = json.load(f)
+
+    logical = None
+    prefill = None
+    for w in kernel_doc.get("winners", []):
+        case = w.get("tuning_key", {}).get("case")
+        if case == "logical" and logical is None:
+            logical = w
+        elif case == "prefill" and prefill is None:
+            prefill = w
+    chosen = logical if logical is not None else prefill
+    if chosen is None:
+        raise KernelRegistryMissingError(
+            f"no LOGICAL or PREFILL winner in {kernel_path}; service "
+            f"sweep cannot resolve kernel_pin_keys.",
+        )
+    tk = chosen["tuning_key"]
+    return {
+        "case":           tk.get("case"),
+        "page_size":      tk.get("page_size"),
+        "kernel_K":       tk.get("kernel_K"),
+        "code_revision":  tk.get("code_revision"),
+    }
 
 
 def enumerate_service_combos(
@@ -77,6 +151,7 @@ def run_service_sweep(
     raw_path: Path,
     measurement_fn: Callable[[dict[str, Any]], dict[str, Any]],
     service_revision: str,
+    kernel_pin_keys: dict[str, Any] | None = None,
     commit_every: int = 5,
     on_progress: Callable[[int], None] | None = None,
 ) -> int:
@@ -85,8 +160,7 @@ def run_service_sweep(
     Args:
       workload_env: parsed `.workload` env dict. Not directly used by
                     the runner, but carried for symmetry with
-                    kernel/tune.run_kernel_tune so the orchestrator can
-                    pass the same dict to both layers.
+                    kernel/tune.run_kernel_tune.
       workload_dir: directory containing the workload's files.
       workload_name: workload stem.
       raw_path: append-only JSONL store, typically
@@ -99,6 +173,13 @@ def run_service_sweep(
       service_revision: `<tpu_inference_sha>-<vllm_sha>` for stamping
                         rows. Unused inside the loop but recorded for
                         provenance.
+      kernel_pin_keys: optional explicit pin_keys to stamp on every
+                       row. If None (default), discovered by reading
+                       `<workload>.kernel` and picking LOGICAL (else
+                       PREFILL). Raises KernelRegistryMissingError if
+                       neither is available — this is the pre-flight
+                       check that catches "sweep ran but .kernel
+                       missing" before recording any FAILED rows.
       commit_every: number of NEW combos between periodic commits.
                     `<= 0` disables periodic; final commit always runs.
       on_progress: optional `(n_new) -> None` callback per row.
@@ -108,6 +189,10 @@ def run_service_sweep(
     """
     del workload_env  # workload-env stays in .workload; not used here
     del service_revision  # recorded externally (stamped via raw filename)
+
+    if kernel_pin_keys is None:
+        kernel_pin_keys = resolve_kernel_pin_keys(workload_dir, workload_name)
+
     search_space = service_search_space(workload_dir, workload_name)
 
     skip_set = build_skip_set(
@@ -127,7 +212,11 @@ def run_service_sweep(
                 "status": "UNKNOWN_ERROR",
                 "error": f"{type(e).__name__}: {e}",
             }
-        row = {"combo": combo, **result}
+        row = {
+            "combo":            combo,
+            "kernel_pin_keys":  kernel_pin_keys,
+            **result,
+        }
         append_row(raw_path, row)
         n_new += 1
         if on_progress is not None:
@@ -138,7 +227,11 @@ def run_service_sweep(
                 f"[Sweep-v2] progress: {n_new} combos ({workload_name})",
             )
 
-    if n_new > 0:
+    # Final commit fires only if there are uncommitted rows since the
+    # last periodic checkpoint. When n_new is an exact multiple of
+    # commit_every, the periodic commit already covered them — a
+    # second commit here would be an empty no-op (fix #10).
+    if n_new > 0 and (commit_every <= 0 or n_new % commit_every != 0):
         commit_and_push(
             [raw_path],
             f"[Sweep-v2] complete: {n_new} combos ({workload_name})",

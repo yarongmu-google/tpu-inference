@@ -173,7 +173,12 @@ def run_kernel_tune(
                 f"[Tune-v2] progress: {n_new} cases ({workload_name})",
             )
 
-    if n_new > 0:
+    # Final commit fires only if the last batch of rows wasn't already
+    # picked up by a periodic commit. When n_new is an exact multiple
+    # of commit_every, the periodic at the boundary already covered
+    # everything — a second commit here would be a no-op empty diff
+    # but a noisy git log entry. (fix #10)
+    if n_new > 0 and (commit_every <= 0 or n_new % commit_every != 0):
         commit_and_push(
             [raw_path],
             f"[Tune-v2] complete: {n_new} cases ({workload_name})",

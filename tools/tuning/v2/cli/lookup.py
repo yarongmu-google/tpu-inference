@@ -36,11 +36,34 @@ def _read_json(path: Path) -> dict[str, Any]:
         return json.load(f)
 
 
-def _case_winner(kernel_doc: dict[str, Any], case: str) -> dict[str, Any] | None:
-    """Find the first winner in kernel_doc whose tuning_key.case matches."""
+def _case_winner(
+    kernel_doc: dict[str, Any],
+    case: str,
+    pin_keys: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Find the kernel winner whose tuning_key.case matches.
+
+    If `pin_keys` is given, also requires `tuning_key.page_size` and
+    `tuning_key.kernel_K` to match — this is the load-bearing
+    constraint that prevents shipping wrong pins when the kernel was
+    re-tuned at a different shape than the service was swept against.
+    For DECODE / MIXED winners, `kernel_K` in the pin_keys is
+    irrelevant (those cases don't carry one) — we match on
+    page_size only.
+    """
     for winner in kernel_doc.get("winners", []):
-        if winner.get("tuning_key", {}).get("case") == case:
-            return winner
+        tk = winner.get("tuning_key", {})
+        if tk.get("case") != case:
+            continue
+        if pin_keys is not None:
+            if tk.get("page_size") != pin_keys.get("page_size"):
+                continue
+            # kernel_K only matters for chunked-prefill cases (logical /
+            # prefill); decode and mixed don't carry it.
+            if case in ("logical", "prefill"):
+                if tk.get("kernel_K") != pin_keys.get("kernel_K"):
+                    continue
+        return winner
     return None
 
 
@@ -95,17 +118,35 @@ def lookup_env(
             f"{service_path}",
         )
 
+    # The service winner MUST carry the kernel pin_keys it ran against.
+    # Without them we can't resolve to the right .kernel row — first-
+    # match by case alone would silently ship pins from a kernel SHA
+    # that wasn't the one the sweep tested. This is the
+    # architecture-doc §6 contract. The producer (service/project.py
+    # via service/sweep.py stamping every raw row) guarantees the
+    # field; absence here means stale / hand-edited service file.
+    pin_keys = service_winner.get("kernel_pin_keys")
+    if pin_keys is None:
+        raise KeyError(
+            f"service winner for {objective!r} in {service_path} is "
+            f"missing kernel_pin_keys. Re-run project_service against "
+            f"a .service.raw produced by the current sweep_service "
+            f"runner (which stamps pin_keys on every row).",
+        )
+
     env: dict[str, str] = {}
 
     # Service combo first (deploy-time sched knobs).
     for k, v in service_winner.get("combo", {}).items():
         env[str(k)] = str(v)
 
-    # Kernel-derived pins per case.
-    decode = _case_winner(kernel_doc, "decode")
-    mixed = _case_winner(kernel_doc, "mixed")
-    logical = _case_winner(kernel_doc, "logical")
-    prefill = _case_winner(kernel_doc, "prefill")
+    # Kernel-derived pins per case. Filter by pin_keys so we get the
+    # exact kernel winner the service was swept against — not "first
+    # match by case", which would silently pick a wrong kernel SHA.
+    decode = _case_winner(kernel_doc, "decode", pin_keys=pin_keys)
+    mixed = _case_winner(kernel_doc, "mixed", pin_keys=pin_keys)
+    logical = _case_winner(kernel_doc, "logical", pin_keys=pin_keys)
+    prefill = _case_winner(kernel_doc, "prefill", pin_keys=pin_keys)
 
     if decode is not None:
         env["RPA_D_BLOCK_SIZES"] = _fmt_block_sizes(decode["tunable_params"])
@@ -118,20 +159,27 @@ def lookup_env(
     chunked = logical if logical is not None else prefill
     if chunked is None:
         raise KeyError(
-            f"no LOGICAL or PREFILL kernel winner in {kernel_path}; "
-            "cannot resolve decoupled-K env vars.",
+            f"no LOGICAL or PREFILL kernel winner in {kernel_path} "
+            f"matching pin_keys={pin_keys!r}; deploy lookup cannot "
+            f"resolve decoupled-K env vars. The kernel was likely "
+            f"re-tuned at a different shape since the service sweep "
+            f"ran — re-sweep with the current kernel.",
         )
 
     tp = chunked["tunable_params"]
     tk = chunked["tuning_key"]
     env["RPA_P_BLOCK_SIZES"] = _fmt_block_sizes(tp)
     env["BLOCK_SIZE"] = str(tk["page_size"])
-    env["RPA_KERNEL_K"] = str(tk.get("kernel_K", 0))
 
-    # Decoupled-K pins (only for LOGICAL).
+    # Decoupled-K pins (only for LOGICAL). Under coupled-K (PREFILL
+    # only), we OMIT both RPA_KERNEL_K and the decoupled-K-derived
+    # vars. Emitting RPA_KERNEL_K=0 would be ambiguous — consumers
+    # might interpret 0 as "decoupled-K active with K=0" instead of
+    # "decoupled-K absent". (fix #7)
     if chunked is logical:
         mnss = int(tp["mnss"])
         kernel_K = int(tk["kernel_K"])
+        env["RPA_KERNEL_K"] = str(kernel_K)
         env["RPA_MAX_NUM_SUBSEQS"] = str(mnss)
         env["LONG_PREFILL_TOKEN_THRESHOLD"] = str(mnss * kernel_K)
 
