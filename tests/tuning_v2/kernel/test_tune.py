@@ -276,6 +276,28 @@ class TestRunKernelTune(unittest.TestCase):
         self.assertIn("non-dict", rows[0]["error"])
         self.assertIn("NoneType", rows[0]["error"])
 
+    def test_smoke_test_env_runs_exactly_one_combo(self):
+        """fix #11: SMOKE_TEST=1 truncates the search space to one
+        combo end-to-end through run_kernel_tune. Removes the narrow
+        overlay so the full default space (~thousands of combos) is
+        what smoke is actually compressing."""
+        (self.workload_dir / "test.kernel_axes.json").unlink()
+        calls = []
+        def measure(tk, tp):
+            calls.append((tk, tp))
+            return {"status": "SUCCESS", "latency_us": 100.0}
+        with mock.patch.dict(os.environ, {"SMOKE_TEST": "1"}):
+            n = run_kernel_tune(
+                workload_env=self.WORKLOAD_ENV_BASE,
+                workload_dir=self.workload_dir,
+                workload_name="test",
+                raw_path=self.raw_path,
+                measurement_fn=measure,
+                code_revision="abc12345",
+            )
+        self.assertEqual(n, 1)
+        self.assertEqual(len(calls), 1)
+
     def test_measurement_returns_list_recorded_as_unknown_error(self):
         """fix #24: same defense for any non-dict return."""
         n = run_kernel_tune(

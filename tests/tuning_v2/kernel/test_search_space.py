@@ -161,6 +161,60 @@ class TestKernelSearchSpace(unittest.TestCase):
         space = kernel_search_space(self.dir, "x", max_num_seqs=1)
         self.assertEqual(space["mnss"], [2, 3, 5, 9, 17, 33])
 
+    def test_smoke_test_env_truncates_every_axis_to_one(self):
+        """fix #11: SMOKE_TEST=1 -> one value per axis -> one combo
+        total. Same env-var contract as v1's rpa_v3_kernel_tuner."""
+        import os as _os
+        from unittest import mock as _m
+        with _m.patch.dict(_os.environ, {"SMOKE_TEST": "1"}):
+            space = kernel_search_space(self.dir, "x", max_num_seqs=128)
+        # Every axis is length-1.
+        for axis, values in space.items():
+            with self.subTest(axis=axis):
+                self.assertEqual(
+                    len(values), 1,
+                    f"axis {axis} has {len(values)} values under SMOKE_TEST",
+                )
+        # Picks each axis's first value (consistent with v1).
+        self.assertEqual(space["bq_sz"], [DEFAULT_BQ_SZ[0]])
+
+    def test_smoke_test_env_unset_uses_full_space(self):
+        """Defensive: only the literal "1" enables smoke; absent or
+        any other value -> full space."""
+        import os as _os
+        from unittest import mock as _m
+        with _m.patch.dict(_os.environ, {}, clear=False):
+            _os.environ.pop("SMOKE_TEST", None)
+            space = kernel_search_space(self.dir, "x", max_num_seqs=128)
+        self.assertEqual(space["bq_sz"], DEFAULT_BQ_SZ)
+
+    def test_smoke_test_env_non_one_value_does_not_truncate(self):
+        """SMOKE_TEST=true / =yes / =0 / etc. must NOT enable smoke —
+        only the literal "1" matches the v1 contract."""
+        import os as _os
+        from unittest import mock as _m
+        for val in ("0", "true", "yes", "TRUE", ""):
+            with self.subTest(val=val):
+                with _m.patch.dict(_os.environ, {"SMOKE_TEST": val}):
+                    space = kernel_search_space(
+                        self.dir, "x", max_num_seqs=128,
+                    )
+                self.assertEqual(space["bq_sz"], DEFAULT_BQ_SZ)
+
+    def test_smoke_test_env_respects_overlay_choice_of_first_value(self):
+        """Overlay applies BEFORE smoke truncation, so an operator can
+        pin which single value smoke picks by writing a 1-element
+        overlay for that axis."""
+        import os as _os
+        from unittest import mock as _m
+        overlay = self.dir / "x.kernel_axes.json"
+        # Pin bq_sz to a non-default first value via overlay.
+        overlay.write_text(json.dumps({"bq_sz": [8192, 4096]}))
+        with _m.patch.dict(_os.environ, {"SMOKE_TEST": "1"}):
+            space = kernel_search_space(self.dir, "x", max_num_seqs=128)
+        # Overlay's first value wins (not the global default's first).
+        self.assertEqual(space["bq_sz"], [8192])
+
     def test_workload_name_used_in_overlay_filename(self):
         """Different workload names load different overlay files."""
         (self.dir / "alpha.kernel_axes.json").write_text(

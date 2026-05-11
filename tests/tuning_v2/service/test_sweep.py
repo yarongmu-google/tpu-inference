@@ -233,6 +233,27 @@ class TestRunServiceSweep(unittest.TestCase):
         )
         self.assertEqual(n, 2)
 
+    def test_smoke_test_env_runs_exactly_one_combo(self):
+        """fix #11: SMOKE_TEST=1 truncates the sweep to one combo
+        end-to-end through run_service_sweep. Removes the narrow
+        overlay so the full default space is what smoke compresses."""
+        (self.workload_dir / "test.service_axes.json").unlink()
+        calls = []
+        def measure(c):
+            calls.append(c)
+            return self._mock_measure(c)
+        with mock.patch.dict(os.environ, {"SMOKE_TEST": "1"}):
+            n = run_service_sweep(
+                workload_env={},
+                workload_dir=self.workload_dir,
+                workload_name="test",
+                raw_path=self.raw_path,
+                measurement_fn=measure,
+                service_revision="sha1-sha2",
+            )
+        self.assertEqual(n, 1)
+        self.assertEqual(len(calls), 1)
+
     def test_measurement_returns_non_dict_recorded_as_unknown_error(self):
         """fix #24: a buggy measurement_fn returning None / list / etc.
         must NOT crash the sweep. Coerced to UNKNOWN_ERROR + row stamped."""

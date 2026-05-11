@@ -41,9 +41,18 @@ This module is pure-data + filesystem. No TPU/JAX imports.
 """
 
 import json
+import os
 from pathlib import Path
 
 from tools.tuning.v2.core.overlay import validate_overlay_schema
+
+
+# v1 parity: SMOKE_TEST=1 truncates every axis to its first value so
+# the tuner runs exactly one combo. Same env-var contract as v1's
+# rpa_v3_kernel_tuner.py — operators reading existing scripts already
+# know it. Applied AFTER overlay merge so a `.kernel_axes.json` still
+# selects WHICH single value smoke mode picks.
+SMOKE_TEST_ENV = "SMOKE_TEST"
 
 # v1-inherited defaults. Wider than what any single workload typically
 # wants (~thousands of combos pre-prune); the kernel-tune SMEM/VMEM
@@ -113,6 +122,9 @@ def kernel_search_space(
     }
     overlay = _load_overlay(workload_dir, workload_name)
     space.update(overlay)
+    if os.environ.get(SMOKE_TEST_ENV) == "1":
+        # Smoke: one value per axis -> exactly one combo total.
+        space = {k: v[:1] for k, v in space.items()}
     return space
 
 

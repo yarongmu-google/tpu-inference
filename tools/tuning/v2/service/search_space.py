@@ -38,9 +38,18 @@ Pure data + filesystem. No vLLM imports.
 """
 
 import json
+import os
 from pathlib import Path
 
 from tools.tuning.v2.core.overlay import validate_overlay_schema
+
+
+# v1 parity: SMOKE_TEST=1 truncates each axis to its first value so
+# the sweep runs exactly one combo. Same contract as v1's
+# benchmark/sweep.py:apply_smoke_truncation_in_place. Applied AFTER
+# overlay merge so a `.service_axes.json` still selects WHICH single
+# value smoke picks.
+SMOKE_TEST_ENV = "SMOKE_TEST"
 
 # Liberal defaults: octave coverage up to mnss × kernel_K at typical
 # L-kernel configuration. The orchestrator prunes via memory/feasibility
@@ -77,6 +86,9 @@ def service_search_space(
     }
     overlay = _load_overlay(workload_dir, workload_name)
     space.update(overlay)
+    if os.environ.get(SMOKE_TEST_ENV) == "1":
+        # Smoke: one value per axis -> exactly one combo total.
+        space = {k: v[:1] for k, v in space.items()}
     return space
 
 

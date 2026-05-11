@@ -16,6 +16,18 @@ test-first.
 - `cli/` — top-level commands: aggregate, lookup, validate, migrate.
 - `scripts/` — thin shell wrappers over the Python entries.
 
+## Smoke test (fast sanity check)
+
+`SMOKE_TEST=1` truncates every kernel-tune and service-sweep axis to
+its first value — one combo through tune, one through sweep — for
+fast wiring checks. Same env-var contract as v1's `rpa_v3_kernel_tuner`
+and `benchmark/sweep.py`. Per-workload overlays still apply BEFORE
+truncation, so a 1-element overlay pins which value smoke selects.
+
+```bash
+SMOKE_TEST=1 tools/tuning/v2/scripts/run_pipeline.sh <workload>
+```
+
 ## Running tests
 
 ```bash
