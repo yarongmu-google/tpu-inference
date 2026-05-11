@@ -247,9 +247,15 @@ def _parse_workload_env(workload_path: Path) -> dict[str, str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry. Reads `.workload`, runs the tune with a real TPU
-    measurement function (imported lazily so this module's import
-    surface stays TPU-free)."""
+    """CLI entry. Reads `.workload`, runs the tune with the rpa_v3
+    TPU measurement function (lazy import keeps this module
+    import-able on non-TPU hosts).
+
+    Workload env vars are pushed into `os.environ` BEFORE the
+    measurement_fn is built, because v1's RpaV3KernelTuner reads
+    them at construction time (MAX_NUM_SEQS, MAX_NUM_BATCHED_TOKENS,
+    NUM_Q_HEADS, NUM_KV_HEADS, HEAD_DIM, MAX_MODEL_LEN, ...).
+    """
     import argparse
     p = argparse.ArgumentParser(
         description="Run a kernel tune for one workload + one case.",
@@ -258,6 +264,10 @@ def main(argv: list[str] | None = None) -> int:
                    help="Path to a `.workload` file.")
     p.add_argument("--commit-every", type=int, default=25,
                    help="Commit raw store every N cases.")
+    p.add_argument("--iters", type=int, default=10,
+                   help="Timed iterations per combo.")
+    p.add_argument("--warmup", type=int, default=2,
+                   help="Untimed warmup iterations per combo. 0 to skip.")
     args = p.parse_args(argv)
 
     if not args.workload.exists():
@@ -268,21 +278,42 @@ def main(argv: list[str] | None = None) -> int:
     workload_dir = args.workload.parent
     workload_name = args.workload.stem
 
-    # Lazy TPU-side import; only at CLI time.
+    # Push workload env into the process environment so the v1
+    # RpaV3KernelTuner can read MAX_NUM_SEQS / MAX_NUM_BATCHED_TOKENS
+    # / etc. from os.environ at construction time. The shell wrapper
+    # would normally export these via `source <workload>; python3 ...`
+    # but we do it here so the CLI works correctly even when invoked
+    # without the wrapper.
+    import os as _os
+    _os.environ.update(workload_env)
+
+    # Lazy imports — only at CLI time, only when actually running on
+    # TPU. Tests use `run_kernel_tune` directly with a mocked
+    # measurement_fn and never hit this path.
     from tools.tuning.v2.core.sha import kernel_sha
-    # The default production measurement function would invoke the
-    # kernel via pallas_call. That binding lives in a separate module
-    # (kernel/measurement_tpu.py) added in a later commit alongside
-    # the actual JAX/Pallas wiring. For now, the CLI is a placeholder
-    # that requires the caller to pass a measurement function via
-    # injection — covered by tests, not by `python3 -m`.
-    print(
-        "tools.tuning.v2.kernel.tune CLI: TPU measurement binding is "
-        "in a follow-up commit. The runnable today is the library "
-        "function `run_kernel_tune(..., measurement_fn=...)`.",
-        file=sys.stderr,
+    from tools.tuning.v2.kernel.measurement_tpu import make_measurement_fn
+
+    code_revision = kernel_sha()
+    raw_path = (
+        workload_dir / f"{workload_name}.kernel.raw" /
+        f"{code_revision}.jsonl"
     )
-    return 2
+
+    measurement_fn = make_measurement_fn(
+        iters=args.iters, warmup_iters=args.warmup,
+    )
+
+    n_new = run_kernel_tune(
+        workload_env=workload_env,
+        workload_dir=workload_dir,
+        workload_name=workload_name,
+        raw_path=raw_path,
+        measurement_fn=measurement_fn,
+        code_revision=code_revision,
+        commit_every=args.commit_every,
+    )
+    print(f"Tune-v2: {n_new} new rows written to {raw_path}")
+    return 0
 
 
 if __name__ == "__main__":   # pragma: no cover

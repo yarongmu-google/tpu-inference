@@ -534,17 +534,100 @@ class TestCliMain(unittest.TestCase):
             rc = tune_main([str(self.dir / "missing.workload")])
         self.assertEqual(rc, 1)
 
-    def test_placeholder_cli_returns_2(self):
-        """The CLI is a stub today (TPU binding lands in a later
-        commit). It should print a notice and return 2."""
-        w = self.dir / "x.workload"
-        w.write_text("MAX_NUM_SEQS=1\nMAX_NUM_BATCHED_TOKENS=8192\n"
-                     "NUM_Q_HEADS=1\nNUM_KV_HEADS=1\nHEAD_DIM=1\n"
-                     "MAX_MODEL_LEN=1\n")
-        # Capture stderr so test output stays clean.
-        with mock.patch.object(sys, "stderr", new=open(os.devnull, "w")):
-            rc = tune_main([str(w)])
-        self.assertEqual(rc, 2)
+    def test_cli_invokes_adapter_and_writes_rows(self):
+        """CLI is now functional (kernel/measurement_tpu.py wired).
+        Mock the adapter to keep the test off-TPU; assert the CLI
+        sets up env vars, builds the measurement_fn, and writes
+        rows to the SHA-named raw path."""
+        from tools.tuning.v2.core.git_atomic import NO_PUSH_ENV
+        repo = self.dir / "repo"
+        cases = repo / "cases" / "v7x" / "llama3_8b"
+        cases.mkdir(parents=True)
+        _init_git_repo(repo)
+        # Narrow overlay so the cartesian product is 1 combo.
+        (cases / "x.kernel_axes.json").write_text(json.dumps({
+            "page_size": [128], "kernel_K": [256], "mnss": [4224],
+            "bq_sz": [256], "bkv_sz": [2048],
+            "bq_csz": [256], "bkv_csz": [512],
+        }))
+        w = cases / "x.workload"
+        w.write_text(
+            'MAX_NUM_SEQS=128\n'
+            'MAX_NUM_BATCHED_TOKENS=8192\n'
+            'NUM_Q_HEADS=32\nNUM_KV_HEADS=8\nHEAD_DIM=128\n'
+            'MAX_MODEL_LEN=8192\n'
+        )
+        saved_no_push = os.environ.pop(NO_PUSH_ENV, None)
+        os.environ[NO_PUSH_ENV] = "1"
+        try:
+            measure_calls = []
+            def fake_measure(tk, tp):
+                measure_calls.append((tk, tp))
+                return {"status": "SUCCESS", "latency_us": 100.0}
+            with mock.patch(
+                "tools.tuning.v2.kernel.measurement_tpu.make_measurement_fn",
+                return_value=fake_measure,
+            ):
+                with mock.patch.object(
+                    sys, "stderr", new=open(os.devnull, "w"),
+                ):
+                    with mock.patch.object(
+                        sys, "stdout", new=open(os.devnull, "w"),
+                    ):
+                        rc = tune_main([str(w)])
+        finally:
+            if saved_no_push is None:
+                os.environ.pop(NO_PUSH_ENV, None)
+            else:
+                os.environ[NO_PUSH_ENV] = saved_no_push
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(measure_calls), 1)
+        # Workload env was pushed into os.environ before the
+        # adapter built (v1 tuner reads them at construction).
+        self.assertEqual(os.environ.get("MAX_NUM_SEQS"), "128")
+
+    def test_cli_iters_and_warmup_threaded_through(self):
+        """--iters / --warmup flags reach make_measurement_fn."""
+        from tools.tuning.v2.core.git_atomic import NO_PUSH_ENV
+        repo = self.dir / "repo"
+        cases = repo / "cases" / "v7x" / "llama3_8b"
+        cases.mkdir(parents=True)
+        _init_git_repo(repo)
+        (cases / "x.kernel_axes.json").write_text(json.dumps({
+            "page_size": [128], "kernel_K": [256], "mnss": [4224],
+            "bq_sz": [256], "bkv_sz": [2048],
+            "bq_csz": [256], "bkv_csz": [512],
+        }))
+        w = cases / "x.workload"
+        w.write_text(
+            'MAX_NUM_SEQS=128\nMAX_NUM_BATCHED_TOKENS=8192\n'
+            'NUM_Q_HEADS=32\nNUM_KV_HEADS=8\nHEAD_DIM=128\n'
+            'MAX_MODEL_LEN=8192\n'
+        )
+        saved_no_push = os.environ.pop(NO_PUSH_ENV, None)
+        os.environ[NO_PUSH_ENV] = "1"
+        try:
+            with mock.patch(
+                "tools.tuning.v2.kernel.measurement_tpu.make_measurement_fn",
+                return_value=lambda tk, tp: {
+                    "status": "SUCCESS", "latency_us": 1.0,
+                },
+            ) as make_mock:
+                with mock.patch.object(
+                    sys, "stderr", new=open(os.devnull, "w"),
+                ):
+                    with mock.patch.object(
+                        sys, "stdout", new=open(os.devnull, "w"),
+                    ):
+                        tune_main([
+                            str(w), "--iters", "5", "--warmup", "1",
+                        ])
+        finally:
+            if saved_no_push is None:
+                os.environ.pop(NO_PUSH_ENV, None)
+            else:
+                os.environ[NO_PUSH_ENV] = saved_no_push
+        make_mock.assert_called_once_with(iters=5, warmup_iters=1)
 
 
 if __name__ == "__main__":
