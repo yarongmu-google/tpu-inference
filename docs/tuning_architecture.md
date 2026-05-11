@@ -349,6 +349,170 @@ Each step is small enough to ship and review independently. Total work: ~2-3 wee
 
 ---
 
+## 13. Multi-kernel and cross-hardware extensibility
+
+Today's stack assumes **one kernel implementation** (RPA v3, `tools/tuning/v2/kernel/`) running on **one hardware family** (TPU v7x). Both assumptions will break soon: a head-dim-64 RPA variant is already on the roadmap, MLA-style attention is plausible, and GPU is a real future target. This section spells out the plug-in story so the next implementer doesn't have to re-derive it — and stamps the discriminator now while the cost is ~10 lines.
+
+### 13.1 Why this matters
+
+- **Multi-kernel today**: rpa_v3 (current), rpa_v3_hd64 (head-dim 64 quant variants), possibly a future RPA v4 with a different inner-loop structure. Each has its **own** tunable parameter set — bq_sz/bkv_sz mean something to v3 but might be replaced by MMA-tile / SMEM-stage on a future plugin.
+- **Multi-hardware later**: a CUDA / ROCm port wants the same library (`raw_store`, `projection`, `accumulator`, `git_atomic`, `lookup`, the runner loop) without rewriting any of it. Only the measurement adapter and the search-space module need to change.
+- **The abstraction boundary is already in the right place**: `measurement_fn(tk_dict, tp_dict) -> result_dict` (§"TPU wiring contract" in `tuning_v2_migration_plan.md`). The library calls this; the plugin owns it. There's no hidden coupling to JAX, Pallas, TPU mesh, or vLLM internals on the library side.
+
+### 13.2 The plugin triple
+
+Each kernel implementation owns three things, co-located in a `kernels/<variant>/` subdirectory:
+
+| Module | Responsibility |
+|---|---|
+| `adapter.py` | Builds the `measurement_fn`. Hardware-bound (calls pallas_call / CUTLASS / Triton). ~50-80 lines per kernel. |
+| `search_space.py` | Default candidate ranges per axis + `<workload>.kernel_axes.json` overlay reader. Knows axis names. ~80-120 lines per kernel. |
+| `tunable_params.py` | `@dataclass TunableParams`. Field set is **kernel-specific** — bq_sz/bkv_sz/bq_csz/bkv_csz/mnss for rpa_v3; MMA-tile/SMEM-stages/warp-shape for a flash-attn CUDA plugin. |
+
+The library doesn't care what's in `TunableParams` — it just calls `asdict(tp)` for the skip-set key (`canonical_json`) and forwards the dict to the adapter. The dataclass is the contract between adapter and search_space; library code never names a field.
+
+### 13.3 What stays generic vs. what's plugin-owned
+
+| Layer | Generic (one impl) | Plugin-owned (one per variant) |
+|---|---|---|
+| `core/raw_store.py` | ✅ pure JSONL plumbing |  |
+| `core/projection.py` | ✅ pure data transform |  |
+| `core/accumulator.py` | ✅ file union |  |
+| `core/git_atomic.py` | ✅ git wrapper |  |
+| `core/{sha,keyset,overlay}.py` | ✅ pure data |  |
+| `kernel/tune.py` runner loop | ✅ becomes `run_kernel_tune(*, kernel_impl, ...)` |  |
+| `kernel/enumerate_*.py` |  | ⬅ plugin owns (axis names, case constraints) |
+| `kernel/search_space.py` |  | ⬅ plugin owns (axis defaults) |
+| `kernel/adapter.py` (new) |  | ⬅ plugin owns (measurement_fn factory) |
+| `service/{sweep,project,search_space}.py` | ✅ vLLM combos are cross-backend (the bench tool already supports CUDA) |  |
+| `cli/{aggregate,lookup,validate,migrate}.py` | ✅ file I/O, no HW touching |  |
+
+The runner loop becomes parametric:
+
+```python
+# kernel/tune.py
+def run_kernel_tune(*, kernel_impl, workload_env, raw_path, ...):
+    measurement_fn = kernel_impl.adapter.make_measurement_fn(workload_env=...)
+    search_space  = kernel_impl.search_space.kernel_search_space(...)
+    TP            = kernel_impl.tunable_params.TunableParams
+    for tk_dict, tp_axes in kernel_impl.enumerate(search_space, workload_env=...):
+        tp = TP(**tp_axes)
+        result = measurement_fn(tk_dict, asdict(tp))
+        append_row(raw_path, {
+            "tuning_key": tk_dict,
+            "tunable_params": asdict(tp),
+            **result,
+        })
+```
+
+`canonical_json(asdict(tp))` keeps working as the skip-set key regardless of `TP`'s fields — the library doesn't introspect, only the plugin does.
+
+### 13.4 Stamp the discriminator now (cheap, big future option-value)
+
+Three fields go into `tuning_key` at row-construction time, even though there's only one valid value for each today:
+
+| Field | Default today | Purpose |
+|---|---|---|
+| `kernel_variant: str` | `"rpa_v3"` | Discriminates plugin at projection / dispatch / lookup time |
+| `hardware: str` | `"tpu_v7x"` | Self-identifies orphan `.raw` files (the path tells you, but the row should too) |
+| `schema_version: int` | `1` | Forward-compat reader contract; lets the projection layer apply per-version adapters when `2` arrives |
+
+Per-SHA partitioning makes this risk-free: old `.raw/<sha>.jsonl` files without these fields are read with implicit defaults (`kernel_variant="rpa_v3"`, `hardware="tpu_v7x"`, `schema_version=1`); new files include them explicitly. **No migration needed** — the old SHA partitions remain readable and any new tuning run on a new SHA produces stamped rows.
+
+Concrete sketch (additions to `tools/tuning/v2/kernel/enumerate_logical.py:93-100`):
+
+```python
+tuning_key = {
+    **model_shape,            # spread first (lowest precedence)
+    "kernel_variant":  "rpa_v3",        # discriminator (overrides model_shape)
+    "hardware":        "tpu_v7x",       # discriminator
+    "schema_version":  1,               # discriminator
+    "case":            "logical",       # explicit identity (overrides all above)
+    "page_size":       page_size,       # explicit identity
+    "kernel_K":        kernel_K,        # explicit identity
+    "max_num_seqs":    max_num_seqs,    # explicit identity
+    "code_revision":   code_revision,   # explicit identity
+}
+```
+
+Today these are literal constants because there's exactly one plugin / hardware / schema. When a second plugin lands (next TPU kernel variant — e.g. `rpa_v3_hd64`, MLA — or a CUDA / ROCm port), `kernel_variant` becomes a parameter of `run_kernel_tune` (passed by the caller, defaulted to the plugin's own identifier). `hardware` comes from the workload env or path (`cases/v7x/...` → `tpu_v7x`; `cases/h100/...` → `cuda_h100`). `schema_version` only changes when the row schema does — a deliberate, reviewed event.
+
+**Three-tier precedence.** The dict-literal positioning above is load-bearing, not cosmetic. Same rule as the existing `**model_shape` reordering (fix #14): later keys win. Tiers, lowest to highest precedence:
+
+1. `**model_shape` — pass-through workload metadata. If a future plugin's model_shape happens to grow a `kernel_variant` field, it loses to the discriminator.
+2. Discriminators (`kernel_variant`, `hardware`, `schema_version`) — plugin / hardware / schema identity. Override model_shape.
+3. Explicit identity keys (`case`, `page_size`, `kernel_K`, `max_num_seqs`, `code_revision`) — the actual tuning identity. Override discriminators.
+
+Pin this with a `test_explicit_keys_win_on_collision`-style test when the discriminator stamping lands (see `tests/tuning_v2/kernel/test_enumerate_logical.py::test_explicit_keys_win_on_collision` for the existing precedence pin around `**model_shape`).
+
+Test-fixture cost: one line each across the kernel-side test files that assert tuning_key shape (`test_enumerate_logical.py`, `test_tune.py`, `test_project.py`). Tests that don't pin the shape need no change.
+
+**Reader-side contract — missing tolerable, mismatching fatal.** Same shape as the existing `code_revision` / `service_revision` cross-validation (`kernel/project.py`, `service/project.py`):
+
+- Row MISSING the field → use the implicit default (`kernel_variant="rpa_v3"`, `hardware="tpu_v7x"`, `schema_version=1`). Forward-compat with historic `.raw/<old_sha>.jsonl` files that predate the stamp.
+- Row WITH a value that doesn't match the file's / partition's expected value → fatal. Raise a typed exception with the parsed-row index. Silent acceptance would poison the projection by treating cross-plugin or cross-hardware rows as comparable.
+
+Missing is tolerable history; mismatching is corruption. Don't conflate them.
+
+### 13.4.1 Symmetric stamping discipline (kernel ↔ service)
+
+The kernel-side discriminator stamping is one half of a two-sided contract. The service layer has its own stamps that must extend symmetrically as plugins multiply:
+
+- `service_revision` per row (`run_service_sweep` stamps it; `project_service` cross-validates against the `.raw/<sha>.jsonl` filename). Same missing-tolerable / mismatching-fatal rule.
+- `kernel_pin_keys` per row — the load-bearing kernel → service handoff. Today carries `case`, `page_size`, `kernel_K`, `code_revision`, `mnss`. **Plugin-specific**: a future MLA kernel might pin `latent_dim` / `n_groups` instead of `kernel_K`; a GPU kernel might pin `warp_m` / `smem_stages` instead of bq/bkv block sizes. The plugin's `adapter.py` declares which fields are pinned; the library doesn't introspect.
+
+When a second plugin lands, the contract grows in lockstep:
+
+1. `resolve_kernel_pin_keys` extends to stamp `kernel_variant` (and `hardware`, if cross-HW) into pin_keys so the service-side handoff carries the dispatch key.
+2. `cli/lookup.lookup_env` branches on `pin_keys.kernel_variant` to emit the right env vars (`RPA_*` for rpa_v3, `FLASH_*` for a flash-attn-CUDA plugin, etc., per §13.6). Cleaner alternative: each plugin owns an `emit_env_vars(winner) -> dict[str, str]` helper that lookup dispatches to.
+3. `service/sweep._is_feasible` may need plugin-specific pre-filter rules (e.g. GPU has different memory-feasibility constraints than TPU). Today's two filters — `MAX_NUM_BATCHED_TOKENS < INPUT_LEN` and `MAX_NUM_SEQS > pin_keys.mnss` — are hardware-agnostic enough to keep generic; plugin-specific rules go in `adapter.feasibility_filter(combo, pin_keys) -> tuple[bool, str|None]`.
+
+The discipline: any field stamped on the kernel side must have a parallel story on the service side. Whoever extends `resolve_kernel_pin_keys` to include `kernel_variant` must also extend `cli/lookup.lookup_env` to consume it in the same commit. The kernel↔service pair is one of four parallel pairs in this codebase (see also: `tune.py ↔ sweep.py`, `project.py ↔ project.py`, `search_space.py ↔ search_space.py`); asymmetric fixes age into asymmetric bugs.
+
+### 13.4.2 Hardware partitioning at the path layer
+
+Today's path convention partitions cleanly by hardware: `tools/benchmark/cases/<topo>/<model>/<workload>.workload`. `v7x` and `v6e` are already siblings; `h100` and `mi300` slot in the same place when GPU work starts. The benefits:
+
+- The accumulator and projection layers are hardware-agnostic — they walk a `model_dir` without knowing which `<topo>` it lives under. Cross-hardware comparisons (e.g. "Llama 8B throughput on v7x vs h100") are a sibling-directory operation, not a code path.
+- Per-SHA partitioning inside `.raw/<sha>.jsonl` extends naturally: a `.raw/` directory under a `h100` workload only contains GPU rows, so the kernel_variant / hardware stamps are redundant with the path BUT the row should still carry them so an orphaned `.raw` file copied out of context can be re-attributed. (This is exactly the case fix-2's per-row `code_revision` cross-validation solved at the SHA level — same shape, hardware dimension.)
+
+When adding a new TPU generation (`v8x`?) or a new GPU family (`b200`?), create the `cases/<new_topo>/` subtree and the rest of the stack works unchanged — the only code that knows about hardware identifiers is the workload-path parser in `core/accumulator._infer_topo_model` and (eventually) the per-plugin adapter selection in `run_kernel_tune`.
+
+### 13.5 Phasing: don't restructure until the second kernel lands
+
+YAGNI applies. Today there's one plugin, so the file layout `kernel/{tune,project,search_space,enumerate_logical}.py` is fine. The mechanical move to `kernels/rpa_v3/{tune,...}.py` happens **when the second kernel arrives**, not preemptively.
+
+- **Cost of restructuring preemptively**: a registry / dispatcher / plugin-discovery shim that isn't load-bearing. The runner loop has to pretend it can take multiple plugins when in fact only one exists. Premature abstraction.
+- **Cost of deferred restructuring**: when the second plugin lands, the first commit moves `kernel/` to `kernels/rpa_v3/` and threads `kernel_impl` through the runner. ~half a day's work, fully mechanical, well-tested because tests exercise the same surface area.
+- **Trigger to restructure**: the moment you find yourself copy-pasting from `kernel/enumerate_logical.py` or `kernel/search_space.py` into a sibling file for a different kernel. That's the signal to convert the implicit "one plugin" assumption into an explicit `kernel_impl` parameter.
+
+### 13.6 GPU is a special case of the same pattern
+
+A future CUDA / ROCm port is a plugin, not a fork:
+
+| Concern | Action when GPU lands |
+|---|---|
+| Kernel adapter | New `kernels/flash_attn_v2_cuda/adapter.py`. Wraps FlashAttention / CUTLASS / Triton. ~50-80 lines. |
+| Tunable params | New `kernels/flash_attn_v2_cuda/tunable_params.py`. `@dataclass TunableParams(warp_m, warp_n, smem_stages, mma_shape, ...)`. |
+| Search space | New `kernels/flash_attn_v2_cuda/search_space.py`. Axis defaults match GPU sensibilities. |
+| Workload path | `tools/benchmark/cases/h100/<model>/<workload>.workload`. Hardware partitioned by path (already true today: `cases/v7x/...`). |
+| Bench-side adapter | `service/measurement_bench.py` runs `vllm bench serve` against the GPU host the same way it runs against the TPU host. Subprocess + metrics parse; no changes. |
+| `cli/lookup.py` env-var output | Branch on `tuning_key.kernel_variant` to emit `RPA_*` (TPU) vs `FLASH_*` (CUDA) env vars, or — cleaner — let each plugin own an `emit_env_vars(winner) -> dict[str, str]` helper. |
+| `core/projection.py` | Unchanged. Projection is pure-data; it doesn't care what produced the rows. |
+| `core/accumulator.py` | Unchanged. Cross-model accumulator is hardware-agnostic. |
+
+Effort estimate: ~1-2 weeks for GPU parity after the multi-kernel restructure (§13.5) has happened. Not a rewrite — most of the v2 stack carries over.
+
+### 13.7 What NOT to do preemptively
+
+- **Don't build a plugin registry today.** One plugin doesn't need discovery. A `from tools.tuning.v2.kernels.rpa_v3 import adapter, search_space, tunable_params` import is the registry.
+- **Don't generalize `tunable_params` to `dict[str, Any]`.** The dataclass is the typed contract between adapter and search_space; keeping it typed catches misnamed axes at construction time. The library boundary already uses dicts (via `asdict`); plugin code keeps the typing benefit.
+- **Don't rename `case` / `kernel_K` / `mnss` to be kernel-agnostic.** Those names are RPA-v3-specific. The next plugin will have its own names. The dict-of-dicts row format doesn't care what fields are inside.
+- **Don't add `hardware` to the directory layout** ahead of the second hardware. The path *already* encodes it (`cases/v7x/...`). When GPU lands, add `cases/h100/` as a sibling — no migration of the v7x tree needed.
+- **Don't write per-plugin git commit messages.** `git_atomic.commit_and_push` takes a message string; the runner is the right place to format it (`f"[Tune-v2] {kernel_variant}: ..."`).
+
+---
+
 ## Glossary
 
 - **Workload** — a deployment shape (model, context length, batch capacity, request distribution). Identified by a `.workload` file.
@@ -360,4 +524,7 @@ Each step is small enough to ship and review independently. Total work: ~2-3 wee
 - **Projection** — the pure function `.raw → winners`. Idempotent, deterministic, CPU-only.
 - **`kernel_sha`** — short git SHA (8-char) of `tpu_inference` HEAD at tune time. Same definition as today's `TuningKey.code_revision`. Captures any change to `kernels/ragged_paged_attention/v3/kernel.py` (and conservatively to other files; the over-coverage is fine — it just rotates `.raw` shards more often than strictly necessary).
 - **`service_sha`** — pair `(vllm_sha, tpu_inference_sha)` joined as `<8>-<8>`. Either repo's change can shape vLLM scheduling or runner behavior; tracking both is the conservative choice. Today's per-sweep `meta.txt` already captures both via `git rev-parse HEAD` in each repo's worktree.
+- **Kernel variant** — identifier of the kernel implementation (e.g. `"rpa_v3"`, `"rpa_v3_hd64"`, `"flash_attn_v2_cuda"`). Discriminates which plugin produced a row; stamped into `tuning_key` per §13.4.
+- **Hardware** — TPU generation or GPU model (e.g. `"tpu_v7x"`, `"cuda_h100"`). Implicit in the `cases/<topo>/.../` path, explicit in `tuning_key.hardware` for orphan-file identity.
+- **Plugin (kernel)** — a `kernels/<variant>/` subdirectory exposing `adapter.py`, `search_space.py`, `tunable_params.py`. Per §13, the v2 runner is parametric over this trio. Today the codebase has one plugin folded into `tools/tuning/v2/kernel/`; the move to `kernels/<variant>/` happens when the second kernel arrives.
 - **"Latest" `.raw/<sha>.jsonl`** — the file whose `<sha>` matches the **current** `tpu_inference` HEAD at the time of the projection. If no file matches HEAD (e.g. fresh checkout, never tuned), the projection fails loudly rather than picking a stale neighbor — better to be told "no data for this SHA" than to silently use winners from a different kernel version.
