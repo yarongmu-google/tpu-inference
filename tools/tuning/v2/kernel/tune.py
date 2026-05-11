@@ -50,6 +50,7 @@ from tools.tuning.v2.kernel.enumerate_logical import (
     enumerate_logical_combos,
 )
 from tools.tuning.v2.kernel.search_space import kernel_search_space
+from tools.tuning.v2.service.search_space import service_search_space
 
 
 # Statuses that are permanent for resume — i.e., re-running them is a
@@ -102,8 +103,10 @@ def run_kernel_tune(
 
     Args:
       workload_env: parsed `.workload` env (strings; ints cast inside).
-                    Must include MAX_NUM_SEQS, MAX_NUM_BATCHED_TOKENS,
-                    NUM_Q_HEADS, NUM_KV_HEADS, HEAD_DIM, MAX_MODEL_LEN.
+                    Must include MAX_NUM_SEQS, NUM_Q_HEADS, NUM_KV_HEADS,
+                    HEAD_DIM, MAX_MODEL_LEN. MAX_NUM_BATCHED_TOKENS
+                    is read from the service search space, NOT
+                    workload_env (per architecture doc §2).
       workload_dir: directory containing the `.workload` and the
                     optional `<workload>.kernel_axes.json` overlay.
       workload_name: workload stem (e.g. `"prefill_heavy"`).
@@ -138,6 +141,16 @@ def run_kernel_tune(
     )
     model_shape = model_shape_from_workload(workload_env)
 
+    # MAX_NUM_BATCHED_TOKENS is category 5 (service-tuned) per
+    # architecture-doc §2 — it does NOT belong in .workload. The
+    # kernel-tune still needs an MNB upper bound to prune combos
+    # whose `per_phys_q > MNB`; source it from the service search
+    # space's max (doc §2, line 83: "kernel-tune must be aware of,
+    # or recomputed against, the sweep's MNB candidates"). This is
+    # the coupling between layers the architecture acknowledges.
+    service_space = service_search_space(workload_dir, workload_name)
+    mnb_ceiling = max(service_space["MAX_NUM_BATCHED_TOKENS"])
+
     skip_set = build_skip_set(
         raw_path,
         key_fn=lambda r: combo_key(r["tuning_key"], r["tunable_params"]),
@@ -146,7 +159,7 @@ def run_kernel_tune(
 
     combos = enumerator(
         max_num_seqs=int(workload_env["MAX_NUM_SEQS"]),
-        max_num_batched_tokens=int(workload_env["MAX_NUM_BATCHED_TOKENS"]),
+        max_num_batched_tokens=mnb_ceiling,
         model_shape=model_shape,
         code_revision=code_revision,
         search_space=search_space,
@@ -279,13 +292,22 @@ def main(argv: list[str] | None = None) -> int:
     workload_name = args.workload.stem
 
     # Push workload env into the process environment so the v1
-    # RpaV3KernelTuner can read MAX_NUM_SEQS / MAX_NUM_BATCHED_TOKENS
-    # / etc. from os.environ at construction time. The shell wrapper
-    # would normally export these via `source <workload>; python3 ...`
-    # but we do it here so the CLI works correctly even when invoked
-    # without the wrapper.
+    # RpaV3KernelTuner can read MAX_NUM_SEQS / NUM_Q_HEADS / etc.
+    # from os.environ at construction time.
     import os as _os
     _os.environ.update(workload_env)
+
+    # MAX_NUM_BATCHED_TOKENS no longer lives in .workload (arch §2).
+    # The v1 tuner reads it from os.environ for its own pruning
+    # ceiling — set it from the service search space's max so the
+    # kernel layer's pruning aligns with the sweep's upper bound.
+    # (This is the cross-layer coupling the architecture doc names
+    # at §2 line 83.)
+    from tools.tuning.v2.service.search_space import service_search_space
+    _service_space = service_search_space(workload_dir, workload_name)
+    _os.environ["MAX_NUM_BATCHED_TOKENS"] = str(
+        max(_service_space["MAX_NUM_BATCHED_TOKENS"]),
+    )
 
     # Lazy imports — only at CLI time, only when actually running on
     # TPU. Tests use `run_kernel_tune` directly with a mocked

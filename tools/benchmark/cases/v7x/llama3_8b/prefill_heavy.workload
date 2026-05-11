@@ -38,15 +38,16 @@
 
 
 : "${MAX_NUM_SEQS:=128}"
-: "${MAX_NUM_BATCHED_TOKENS:=8192}"
 : "${MAX_MODEL_LEN:=8192}"
 
-# vLLM's --block-size (KV-cache page size). Empty = let vLLM pick its
-# default for this version (the value drifts across releases — check
-# the vllm CLI or its --block-size doc for what your install uses).
-# Set to 64 or 128 to match a tuned page_size from the kernel-tuning
-# table.
-: "${BLOCK_SIZE:=}"
+# MAX_NUM_BATCHED_TOKENS lives in the service-sweep layer
+# (architecture doc §2, category 5). Pin via
+# prefill_heavy.service_axes.json overlay or let the default
+# DEFAULT_MAX_NUM_BATCHED_TOKENS range drive the sweep.
+#
+# BLOCK_SIZE is category 4 (kernel-derived from page_size) and is
+# auto-linked at deploy time by cli/lookup.lookup_env from the
+# .kernel winner. Don't set it here.
 
 : "${DATASET:=sonnet}"
 : "${INPUT_LEN:=8191}"
