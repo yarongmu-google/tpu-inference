@@ -225,6 +225,31 @@ def run_kernel_tune(
         }
         append_row(raw_path, row)
         n_new += 1
+
+        # One-line per-combo progress to stderr so operators see the
+        # tune working instead of staring at silence. Format prefers
+        # human-readable over machine-parseable; the raw JSONL is the
+        # source of truth for downstream tooling.
+        _status = result.get("status", "?")
+        _summary = (
+            f"latency_us={result['latency_us']:.1f}"
+            if _status == "SUCCESS" and "latency_us" in result
+            else (
+                f"error={result.get('error', '?')[:60]}"
+                if "error" in result else ""
+            )
+        )
+        print(
+            f"[tune {n_new:>4}] "
+            f"case={tuning_key.get('case'):<7} "
+            f"page={tuning_key.get('page_size'):<3} "
+            f"K={tuning_key.get('kernel_K'):<5} "
+            f"mnss={tunable_params.get('mnss'):<6} "
+            f"bq={tunable_params.get('bq_sz'):<5} "
+            f"→ {_status:<13} {_summary}",
+            file=sys.stderr, flush=True,
+        )
+
         if on_progress is not None:
             on_progress(n_new)
         if commit_every > 0 and n_new % commit_every == 0:

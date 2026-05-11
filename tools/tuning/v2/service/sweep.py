@@ -382,6 +382,30 @@ def run_service_sweep(
         }
         append_row(raw_path, row)
         n_new += 1
+
+        # Per-combo progress to stderr — mirror of kernel/tune.
+        _status = result.get("status", "?")
+        _metrics = result.get("metrics") or {}
+        if _status == "SUCCESS":
+            _summary = (
+                f"req/s={_metrics.get('req_per_sec', 0):.2f} "
+                f"ttft={_metrics.get('ttft_mean_ms', 0):.0f}ms "
+                f"p99={_metrics.get('ttft_p99_ms', 0):.0f}ms"
+            )
+            if result.get("mock"):
+                _summary += " (MOCK)"
+        elif "error" in result:
+            _summary = f"error={result['error'][:60]}"
+        else:
+            _summary = ""
+        print(
+            f"[sweep {n_new:>4}] "
+            f"MNB={combo.get('MAX_NUM_BATCHED_TOKENS'):<7} "
+            f"MNS={combo.get('MAX_NUM_SEQS'):<5} "
+            f"→ {_status:<13} {_summary}",
+            file=sys.stderr, flush=True,
+        )
+
         if on_progress is not None:
             on_progress(n_new)
         if commit_every > 0 and n_new % commit_every == 0:
