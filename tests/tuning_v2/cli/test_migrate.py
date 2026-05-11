@@ -16,7 +16,9 @@ from pathlib import Path
 from unittest import mock
 
 from tools.tuning.v2.cli.migrate import (
+    MigrationRefusedError,
     _convert_v1_entry,
+    _is_v2_format,
     _model_shape_matches,
     main as migrate_main,
     migrate_model_dir,
@@ -343,6 +345,133 @@ class TestMigrateModelDir(unittest.TestCase):
         self.assertEqual(before, after)
 
 
+class TestIsV2Format(unittest.TestCase):
+    """fix #3: schema check distinguishes v1 (`results`) from v2
+    (`by_workload`) format."""
+
+    def test_v1_doc_returns_false(self):
+        self.assertFalse(_is_v2_format({"results": {}}))
+
+    def test_v2_doc_returns_true(self):
+        self.assertTrue(_is_v2_format({"by_workload": {}}))
+
+    def test_doc_with_both_keys_returns_false(self):
+        """Defensive: if for some reason both keys exist, treat as v1
+        (don't refuse — let the migration try)."""
+        self.assertFalse(
+            _is_v2_format({"results": {}, "by_workload": {}}),
+        )
+
+    def test_doc_with_neither_returns_false(self):
+        """Empty / unknown shape — treat as v1 so migrate doesn't
+        block; downstream code handles the empty case."""
+        self.assertFalse(_is_v2_format({}))
+
+
+class TestModelShapeMatchesWidened(unittest.TestCase):
+    """fix #8: matching now includes MNS / INPUT / OUTPUT / TP."""
+
+    WORKLOAD_8B_MNS_128 = {
+        "NUM_Q_HEADS": "32", "NUM_KV_HEADS": "8",
+        "HEAD_DIM": "128", "MAX_MODEL_LEN": "8192",
+        "MAX_NUM_SEQS": "128",
+        "INPUT_LEN": "8191", "OUTPUT_LEN": "1",
+        "TENSOR_PARALLEL_SIZE": "1",
+    }
+
+    def test_matching_mns_passes(self):
+        tk = {
+            "num_q_heads": 32, "num_kv_heads": 8, "head_dim": 128,
+            "max_model_len": 8192, "max_num_seqs": 128,
+        }
+        self.assertTrue(_model_shape_matches(tk, self.WORKLOAD_8B_MNS_128))
+
+    def test_mismatched_mns_rejects(self):
+        """Two workloads with same model shape but different MNS no
+        longer share entries. Previously they would (regression
+        captured by fix #8)."""
+        tk = {
+            "num_q_heads": 32, "num_kv_heads": 8, "head_dim": 128,
+            "max_model_len": 8192, "max_num_seqs": 1,  # mismatch
+        }
+        self.assertFalse(_model_shape_matches(tk, self.WORKLOAD_8B_MNS_128))
+
+    def test_mismatched_input_len_rejects(self):
+        tk = {
+            "num_q_heads": 32, "num_kv_heads": 8,
+            "head_dim": 128, "max_model_len": 8192,
+            "input_len": 1024,    # mismatch
+        }
+        self.assertFalse(_model_shape_matches(tk, self.WORKLOAD_8B_MNS_128))
+
+    def test_mismatched_tp_rejects(self):
+        tk = {
+            "num_q_heads": 32, "tensor_parallel_size": 4,  # mismatch
+        }
+        self.assertFalse(_model_shape_matches(tk, self.WORKLOAD_8B_MNS_128))
+
+    def test_mns_absent_from_tk_treated_as_match(self):
+        """Legacy v1 entries may not carry MAX_NUM_SEQS in tuning_key.
+        Don't filter on absence — they're still candidates."""
+        tk = {"num_q_heads": 32}    # no max_num_seqs
+        self.assertTrue(
+            _model_shape_matches(tk, self.WORKLOAD_8B_MNS_128),
+        )
+
+
+class TestMigrateRefusal(unittest.TestCase):
+    """fix #3: schema-input check + --force gate."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.cases = Path(self.tmp.name) / "cases" / "v7x" / "llama3_8b"
+        self.cases.mkdir(parents=True)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _write_v1(self) -> None:
+        (self.cases / "production.kernel").write_text(json.dumps({
+            "metadata": {},
+            "results": {"logical": [SAMPLE_V1_ENTRY]},
+        }))
+
+    def _write_v2(self) -> None:
+        (self.cases / "production.kernel").write_text(json.dumps({
+            "schema_version": 1,
+            "topo": "v7x", "model": "llama3_8b",
+            "by_workload": {"alpha": {}},
+        }))
+
+    def test_v2_format_refused(self):
+        self._write_v2()
+        (self.cases / "alpha.workload").write_text(VALID_WORKLOAD_8B)
+        with self.assertRaises(MigrationRefusedError):
+            migrate_model_dir(self.cases)
+
+    def test_existing_kernel_refused_without_force(self):
+        self._write_v1()
+        (self.cases / "alpha.workload").write_text(VALID_WORKLOAD_8B)
+        (self.cases / "alpha.kernel").write_text('{"existing": true}')
+        with self.assertRaises(MigrationRefusedError):
+            migrate_model_dir(self.cases)
+        # Existing file preserved.
+        self.assertEqual(
+            json.loads((self.cases / "alpha.kernel").read_text()),
+            {"existing": True},
+        )
+
+    def test_existing_kernel_overwritten_with_force(self):
+        self._write_v1()
+        (self.cases / "alpha.workload").write_text(VALID_WORKLOAD_8B)
+        (self.cases / "alpha.kernel").write_text('{"existing": true}')
+        n, paths = migrate_model_dir(self.cases, force=True)
+        self.assertEqual(n, 1)
+        doc = json.loads((self.cases / "alpha.kernel").read_text())
+        self.assertNotIn("existing", doc)
+        self.assertEqual(doc["schema_version"], 1)
+
+
 class TestCliMain(unittest.TestCase):
 
     def setUp(self):
@@ -368,6 +497,47 @@ class TestCliMain(unittest.TestCase):
         with mock.patch.object(sys, "stderr", new=open(os.devnull, "w")):
             rc = migrate_main([str(self.dir)])
         self.assertEqual(rc, 1)
+
+    def test_no_workloads_returns_1_with_distinct_message(self):
+        """fix #18: v1 file exists but no .workload files. Exit
+        message distinguishes this from 'no v1 file at all'."""
+        (self.dir / "production.kernel").write_text(json.dumps({
+            "metadata": {}, "results": {},
+        }))
+        import io
+        buf = io.StringIO()
+        with mock.patch.object(sys, "stderr", new=buf):
+            rc = migrate_main([str(self.dir)])
+        self.assertEqual(rc, 1)
+        self.assertIn("no .workload files", buf.getvalue())
+
+    def test_refusal_returns_1_with_reason(self):
+        """v2-format input -> refused -> exit 1 with explanation."""
+        (self.dir / "production.kernel").write_text(json.dumps({
+            "by_workload": {},
+        }))
+        (self.dir / "x.workload").write_text(VALID_WORKLOAD_8B)
+        import io
+        buf = io.StringIO()
+        with mock.patch.object(sys, "stderr", new=buf):
+            rc = migrate_main([str(self.dir)])
+        self.assertEqual(rc, 1)
+        self.assertIn("v2 format", buf.getvalue())
+
+    def test_force_flag_forwards_to_migrate_model_dir(self):
+        (self.dir / "production.kernel").write_text(json.dumps({
+            "metadata": {}, "results": {"logical": [SAMPLE_V1_ENTRY]},
+        }))
+        (self.dir / "x.workload").write_text(VALID_WORKLOAD_8B)
+        (self.dir / "x.kernel").write_text('{"existing": true}')
+        with mock.patch.object(sys, "stdout", new=open(os.devnull, "w")):
+            with mock.patch.object(sys, "stderr",
+                                   new=open(os.devnull, "w")):
+                rc = migrate_main([str(self.dir), "--force"])
+        self.assertEqual(rc, 0)
+        # Overwritten.
+        doc = json.loads((self.dir / "x.kernel").read_text())
+        self.assertNotIn("existing", doc)
 
     def test_successful_migration_returns_0(self):
         model_dir = self.dir / "cases" / "v7x" / "llama3_8b"

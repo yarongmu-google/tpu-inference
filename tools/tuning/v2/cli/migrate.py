@@ -46,8 +46,13 @@ from tools.tuning.v2.cli.validate import parse_workload_env
 # v1 fields that we drop in the v2 conversion (not load-bearing).
 V1_DROP_FIELDS = ("WarmupTime", "CaseId")
 
-# Model-shape keys checked for "belongs to this workload" match.
-MODEL_SHAPE_KEYS = (
+# Tuning-key fields checked for "belongs to this workload" match.
+# Beyond model shape, also includes seq-configuration fields when the
+# v1 entry carries them — over-coupling workloads that share model
+# shape but differ in MNS / seq config is the regression that fix #8
+# closes.
+MATCH_KEYS = (
+    # Model shape:
     "num_q_heads",
     "num_kv_heads",
     "head_dim",
@@ -55,7 +60,23 @@ MODEL_SHAPE_KEYS = (
     "q_dtype",
     "kv_dtype",
     "sliding_window",
+    # Seq / deployment config (fix #8): v1 tuning_key may carry these.
+    "max_num_seqs",
+    "input_len",
+    "output_len",
+    "tensor_parallel_size",
 )
+
+
+def _is_v2_format(doc: dict[str, Any]) -> bool:
+    """True iff `doc` looks like a v2 production.kernel (post-aggregate).
+
+    v2 docs have a top-level `by_workload` key; v1 has a top-level
+    `results` key. Distinguishing prevents the operator from running
+    `migrate` on a v2 file (re-run after aggregate) and silently
+    producing empty per-workload `.kernel` files. (fix #3)
+    """
+    return "by_workload" in doc and "results" not in doc
 
 
 def _convert_v1_entry(entry: dict[str, Any]) -> dict[str, Any]:
@@ -81,41 +102,50 @@ def _model_shape_matches(
     tuning_key: dict[str, Any],
     workload_env: dict[str, str],
 ) -> bool:
-    """True iff `tuning_key`'s model-shape fields all match `workload_env`.
+    """True iff `tuning_key` matches `workload_env` on all available
+    keys.
 
-    Each `MODEL_SHAPE_KEYS` field in the tuning_key must equal the
-    corresponding value derived from the workload (best-effort cast
-    to int for numeric fields). Missing keys in either side are
-    treated as match (don't filter on absence — the workload may not
-    declare every field).
+    Each `MATCH_KEYS` field present in BOTH tuning_key and workload
+    env must equal. Missing on either side is treated as match (don't
+    filter on absence — workloads may not declare every field, and
+    older v1 entries may not have seq-config fields in their
+    tuning_key). The function is conservative: only ACTIVE conflicts
+    drop a row.
+
+    fix #8 — widened beyond pure model shape to include MAX_NUM_SEQS,
+    INPUT_LEN, OUTPUT_LEN, TENSOR_PARALLEL_SIZE. If a v1 entry's
+    tuning_key carries these, two workloads with same model shape but
+    different MNS get distinct (correctly-filtered) per-workload
+    .kernel files instead of identical full copies.
     """
-    # Map tuning_key model-shape key -> .workload env-var name. Has an
-    # entry for every key in MODEL_SHAPE_KEYS by contract.
+    # Map tuning_key field -> .workload env-var name. Has an entry for
+    # every key in MATCH_KEYS by contract.
     _ENV_VAR_FOR = {
-        "num_q_heads":    "NUM_Q_HEADS",
-        "num_kv_heads":   "NUM_KV_HEADS",
-        "head_dim":       "HEAD_DIM",
-        "max_model_len":  "MAX_MODEL_LEN",
-        "q_dtype":        "Q_DTYPE",
-        "kv_dtype":       "KV_DTYPE",
-        "sliding_window": "SLIDING_WINDOW",
+        "num_q_heads":          "NUM_Q_HEADS",
+        "num_kv_heads":         "NUM_KV_HEADS",
+        "head_dim":             "HEAD_DIM",
+        "max_model_len":        "MAX_MODEL_LEN",
+        "q_dtype":              "Q_DTYPE",
+        "kv_dtype":             "KV_DTYPE",
+        "sliding_window":       "SLIDING_WINDOW",
+        "max_num_seqs":         "MAX_NUM_SEQS",
+        "input_len":            "INPUT_LEN",
+        "output_len":           "OUTPUT_LEN",
+        "tensor_parallel_size": "TENSOR_PARALLEL_SIZE",
     }
 
     def _wl_value(key: str) -> Any:
-        """Return the workload's value for a model-shape key, or None
-        if not declared by the workload."""
         raw = workload_env.get(_ENV_VAR_FOR[key], "")
         return raw if raw else None
 
-    for k in MODEL_SHAPE_KEYS:
+    for k in MATCH_KEYS:
         if k not in tuning_key:
             continue
         wl_val = _wl_value(k)
         if wl_val is None:
             continue
         tk_val = tuning_key[k]
-        # Compare as strings (workload env is always strings) — robust
-        # against int vs str mismatches.
+        # Compare as strings — robust against int vs str mismatches.
         if str(tk_val) != str(wl_val):
             return False
     return True
@@ -164,15 +194,40 @@ def split_v1_production_kernel(
     }
 
 
-def migrate_model_dir(model_dir: Path) -> tuple[int, list[Path]]:
+class MigrationRefusedError(RuntimeError):
+    """Raised when migrate_model_dir refuses to run — typically
+    because the input is already v2-format or because per-workload
+    .kernel files would be clobbered without --force."""
+
+
+def migrate_model_dir(
+    model_dir: Path,
+    *,
+    force: bool = False,
+) -> tuple[int, list[Path]]:
     """Migrate all workloads in a single per-model directory.
 
     Reads `model_dir/production.kernel` (v1 format) if present, then
     for each `<workload>.workload` file in the dir, writes the v2
     `<workload>.kernel` file. Does NOT touch the v1 `production.kernel`.
 
+    Args:
+      model_dir: per-model dir containing v1 production.kernel +
+                 .workload files.
+      force: if False (default), refuse to overwrite any pre-existing
+             per-workload `<workload>.kernel`. If True, overwrite.
+             Default-safe — prevents the post-aggregate re-run
+             scenario from silently destroying per-workload files
+             (fix #3).
+
     Returns:
-      `(n_workloads_migrated, written_paths)`.
+      `(n_workloads_migrated, written_paths)`. Returns `(0, [])` when
+      there's no v1 production.kernel.
+
+    Raises:
+      MigrationRefusedError if the v1 input is in fact a v2 file
+      (post-aggregate state), or if `force=False` and at least one
+      per-workload `.kernel` already exists.
     """
     v1_path = model_dir / "production.kernel"
     if not v1_path.exists():
@@ -180,7 +235,33 @@ def migrate_model_dir(model_dir: Path) -> tuple[int, list[Path]]:
     with open(v1_path, "r", encoding="utf-8") as f:
         v1_doc = json.load(f)
 
+    # Schema check (fix #3): refuse v2 input. A v2 production.kernel
+    # has by_workload, no results; running migrate on it would emit
+    # empty per-workload files and clobber the real ones.
+    if _is_v2_format(v1_doc):
+        raise MigrationRefusedError(
+            f"{v1_path} is already in v2 format (has 'by_workload', "
+            f"no 'results' key). Migration would produce 0 winners "
+            f"and clobber the per-workload .kernel files. Aborting.",
+        )
+
     workload_files = sorted(model_dir.glob("*.workload"))
+
+    # Overwrite check (fix #3): refuse if any target exists, unless
+    # --force.
+    if not force:
+        existing = [
+            model_dir / f"{wl.stem}.kernel"
+            for wl in workload_files
+            if (model_dir / f"{wl.stem}.kernel").exists()
+        ]
+        if existing:
+            raise MigrationRefusedError(
+                f"refusing to overwrite existing per-workload .kernel "
+                f"files: {[str(p) for p in existing]}. Pass --force "
+                f"to migrate anyway.",
+            )
+
     written: list[Path] = []
     for wl_path in workload_files:
         workload_name = wl_path.stem
@@ -203,6 +284,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("model_dir", type=Path,
                    help="Per-model directory containing production.kernel.")
+    p.add_argument(
+        "--force", action="store_true",
+        help="Overwrite pre-existing per-workload .kernel files. "
+             "By default, migrate refuses if any target exists "
+             "(prevents clobbering after a v2 aggregate run).",
+    )
     args = p.parse_args(argv)
 
     if not args.model_dir.exists() or not args.model_dir.is_dir():
@@ -210,11 +297,27 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 1
 
-    n, paths = migrate_model_dir(args.model_dir)
+    # Distinguish "no v1 file" from "v1 file present but no workloads"
+    # in the exit messages (fix #18, minor).
+    v1_path = args.model_dir / "production.kernel"
+    if not v1_path.exists():
+        print(
+            f"migrate: no v1 production.kernel in {args.model_dir}; "
+            "nothing to migrate.",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        n, paths = migrate_model_dir(args.model_dir, force=args.force)
+    except MigrationRefusedError as e:
+        print(f"migrate refused: {e}", file=sys.stderr)
+        return 1
+
     if n == 0:
         print(
-            f"migrate: no production.kernel or no .workload files in "
-            f"{args.model_dir}; nothing to do.",
+            f"migrate: production.kernel found, but no .workload files "
+            f"in {args.model_dir}; nothing to do.",
             file=sys.stderr,
         )
         return 1
