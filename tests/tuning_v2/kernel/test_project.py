@@ -40,7 +40,9 @@ def _init_git_repo(d: Path) -> None:
                    cwd=d, check=True, env=env)
 
 
-def _sample_row(latency_us: float, mnss: int, status: str = "SUCCESS") -> dict:
+def _sample_row(latency_us: float, mnss: int,
+                status: str = "SUCCESS",
+                code_revision: str = "abc12345") -> dict:
     return {
         "status": status,
         "latency_us": latency_us,
@@ -49,7 +51,7 @@ def _sample_row(latency_us: float, mnss: int, status: str = "SUCCESS") -> dict:
             "page_size": 128,
             "kernel_K": 256,
             "max_num_seqs": 128,
-            "code_revision": "abc12345",
+            "code_revision": code_revision,
             "num_q_heads": 32,
             "num_kv_heads": 8,
             "head_dim": 128,
@@ -80,7 +82,7 @@ class TestProjectKernel(unittest.TestCase):
     def test_returns_none_when_no_raw_dir(self):
         empty = self.dir / "no_workload"
         empty.mkdir()
-        out = project_kernel(empty, "missing", code_revision="abc")
+        out = project_kernel(empty, "missing", code_revision="abc12345")
         self.assertIsNone(out)
 
     def test_returns_none_when_raw_dir_empty(self):
@@ -101,57 +103,76 @@ class TestProjectKernel(unittest.TestCase):
         self.assertEqual(doc["raw_source"], "abc12345.jsonl")
         self.assertEqual(doc["winners"][0]["tunable_params"]["mnss"], 4224)
 
-    def test_fallback_to_most_recent_when_sha_missing(self):
+    def test_explicit_sha_missing_raises(self):
+        """fix #2: passing a code_revision that doesn't exist in the
+        raw dir must fail loud, not silently fall back to mtime. This
+        was the v1-style behavior that hid which SHA the projection
+        actually came from."""
+        old = self.raw_dir / "old.jsonl"
+        # Match the file's "stem" SHA with each row's code_revision.
+        append_row(old, _sample_row(9999.0, mnss=33, code_revision="old"))
+        with self.assertRaises(FileNotFoundError):
+            project_kernel(self.dir, "prefill_heavy",
+                           code_revision="nonexistent")
+
+    def test_fallback_to_most_recent_when_revision_none(self):
+        """When the caller passes code_revision=None, discovery picks
+        the most-recently-modified .jsonl and the output's
+        code_revision is stamped from THAT file's name (not None,
+        not the caller's request)."""
         old = self.raw_dir / "old.jsonl"
         new = self.raw_dir / "new.jsonl"
-        append_row(old, _sample_row(9999.0, mnss=33))
-        # Ensure ordering by mtime.
+        append_row(old, _sample_row(9999.0, mnss=33, code_revision="old"))
         time.sleep(0.01)
-        append_row(new, _sample_row(2391.0, mnss=4224))
-        # Request a SHA that doesn't exist; falls back to most-recent.
+        append_row(new, _sample_row(2391.0, mnss=4224, code_revision="new"))
         out = project_kernel(self.dir, "prefill_heavy",
-                             code_revision="nonexistent")
+                             code_revision=None)
         doc = json.loads(out.read_text())
         self.assertEqual(doc["raw_source"], "new.jsonl")
+        # Stamped from the FILE, not from caller (fix #2).
+        self.assertEqual(doc["code_revision"], "new")
 
     def test_explicit_raw_path_bypasses_discovery(self):
-        a = self.raw_dir / "abc.jsonl"
-        b = self.raw_dir / "def.jsonl"
-        append_row(a, _sample_row(2391.0, mnss=4224))
-        append_row(b, _sample_row(99.0, mnss=33))
+        a = self.raw_dir / "abc12345.jsonl"
+        b = self.raw_dir / "def98765.jsonl"
+        append_row(a, _sample_row(2391.0, mnss=4224,
+                                  code_revision="abc12345"))
+        append_row(b, _sample_row(99.0, mnss=33,
+                                  code_revision="def98765"))
         # Pass raw_path explicitly; SHA arg ignored.
         out = project_kernel(self.dir, "prefill_heavy",
-                             code_revision="abc",
+                             code_revision="abc12345",
                              raw_path=b)
         doc = json.loads(out.read_text())
-        self.assertEqual(doc["raw_source"], "def.jsonl")
-        # Winner from file b (only row): mnss=33.
+        self.assertEqual(doc["raw_source"], "def98765.jsonl")
+        # code_revision stamped from raw_path.stem (fix #2).
+        self.assertEqual(doc["code_revision"], "def98765")
         self.assertEqual(doc["winners"][0]["tunable_params"]["mnss"], 33)
 
     def test_picks_lowest_latency_per_tuning_key(self):
-        path = self.raw_dir / "abc.jsonl"
+        path = self.raw_dir / "abc12345.jsonl"
         # Same tuning_key, different tunable_params.
         append_row(path, _sample_row(2391.0, mnss=4224))
         append_row(path, _sample_row(2203.0, mnss=4224))    # winner
         append_row(path, _sample_row(2500.0, mnss=4224))
         out = project_kernel(self.dir, "prefill_heavy",
-                             code_revision="abc")
+                             code_revision="abc12345")
         doc = json.loads(out.read_text())
         self.assertEqual(len(doc["winners"]), 1)
         self.assertEqual(doc["winners"][0]["latency_us"], 2203.0)
 
     def test_filters_non_success_status(self):
-        path = self.raw_dir / "abc.jsonl"
+        path = self.raw_dir / "abc12345.jsonl"
         append_row(path, _sample_row(100.0, mnss=4224, status="FAILED_OOM"))
         append_row(path, _sample_row(100.0, mnss=4224, status="UNKNOWN_ERROR"))
         append_row(path, _sample_row(2391.0, mnss=4224, status="SUCCESS"))
         out = project_kernel(self.dir, "prefill_heavy",
-                             code_revision="abc")
+                             code_revision="abc12345")
         doc = json.loads(out.read_text())
         self.assertEqual(doc["winners"][0]["latency_us"], 2391.0)
 
     def test_filters_rows_missing_latency_field(self):
-        path = self.raw_dir / "abc.jsonl"
+        path = self.raw_dir / "abc12345.jsonl"
         # Row with status=SUCCESS but no latency_us — pathological.
         bad = _sample_row(0, mnss=4224)
         del bad["latency_us"]
@@ -159,30 +180,30 @@ class TestProjectKernel(unittest.TestCase):
         # And a normal row.
         append_row(path, _sample_row(2391.0, mnss=4224))
         out = project_kernel(self.dir, "prefill_heavy",
-                             code_revision="abc")
+                             code_revision="abc12345")
         doc = json.loads(out.read_text())
         self.assertEqual(doc["winners"][0]["latency_us"], 2391.0)
 
     def test_writes_envelope_shape(self):
-        path = self.raw_dir / "abc.jsonl"
+        path = self.raw_dir / "abc12345.jsonl"
         append_row(path, _sample_row(2391.0, mnss=4224))
         out = project_kernel(self.dir, "prefill_heavy",
-                             code_revision="abc")
+                             code_revision="abc12345")
         doc = json.loads(out.read_text())
         self.assertEqual(doc["schema_version"], 1)
         self.assertEqual(doc["workload"], "prefill_heavy")
-        self.assertEqual(doc["code_revision"], "abc")
+        self.assertEqual(doc["code_revision"], "abc12345")
         self.assertEqual(doc["n_winners"], 1)
         self.assertIn("winners", doc)
 
     def test_idempotent_rewrite(self):
-        path = self.raw_dir / "abc.jsonl"
+        path = self.raw_dir / "abc12345.jsonl"
         append_row(path, _sample_row(2391.0, mnss=4224))
         a = project_kernel(self.dir, "prefill_heavy",
-                           code_revision="abc")
+                           code_revision="abc12345")
         first = a.read_text()
         b = project_kernel(self.dir, "prefill_heavy",
-                           code_revision="abc")
+                           code_revision="abc12345")
         second = b.read_text()
         self.assertEqual(first, second)
 
@@ -201,7 +222,7 @@ class TestProjectKernel(unittest.TestCase):
     def test_multiple_tuning_keys_each_winner(self):
         """If raw has rows for multiple tuning_keys (different K's),
         each gets its own winner."""
-        path = self.raw_dir / "abc.jsonl"
+        path = self.raw_dir / "abc12345.jsonl"
         # K=256 group, three rows.
         r1 = _sample_row(2391.0, mnss=4224); r1["tuning_key"]["kernel_K"] = 256
         r2 = _sample_row(2203.0, mnss=4224); r2["tuning_key"]["kernel_K"] = 256
@@ -213,12 +234,53 @@ class TestProjectKernel(unittest.TestCase):
         append_row(path, r3)
         append_row(path, r4)
         out = project_kernel(self.dir, "prefill_heavy",
-                             code_revision="abc")
+                             code_revision="abc12345")
         doc = json.loads(out.read_text())
         self.assertEqual(doc["n_winners"], 2)
         ks_and_lats = {(w["tuning_key"]["kernel_K"], w["latency_us"])
                        for w in doc["winners"]}
         self.assertEqual(ks_and_lats, {(256, 2203.0), (512, 3050.0)})
+
+
+class TestCodeRevisionCrossValidation(unittest.TestCase):
+    """fix #3: rows whose tuning_key.code_revision doesn't match the
+    .jsonl filename's SHA should be caught at projection time."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.raw_dir = self.dir / "x.kernel.raw"
+        self.raw_dir.mkdir()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_mismatched_code_revision_raises(self):
+        """File is named abc12345.jsonl but contains a row with
+        code_revision='wrongsha'. Projection must reject."""
+        from tools.tuning.v2.kernel.project import (
+            CodeRevisionMismatchError,
+            project_kernel,
+        )
+        path = self.raw_dir / "abc12345.jsonl"
+        # Row has code_revision='wrongsha', mismatching filename.
+        append_row(path, _sample_row(2391.0, mnss=4224,
+                                     code_revision="wrongsha"))
+        with self.assertRaises(CodeRevisionMismatchError):
+            project_kernel(self.dir, "x", code_revision="abc12345")
+
+    def test_row_with_no_code_revision_field_is_tolerated(self):
+        """Rows missing the field entirely (legacy / migrated rows)
+        don't fail validation — only rows that ASSERT a wrong SHA
+        do."""
+        from tools.tuning.v2.kernel.project import project_kernel
+        path = self.raw_dir / "abc12345.jsonl"
+        row = _sample_row(2391.0, mnss=4224)
+        del row["tuning_key"]["code_revision"]
+        append_row(path, row)
+        # Should NOT raise.
+        out = project_kernel(self.dir, "x", code_revision="abc12345")
+        self.assertIsNotNone(out)
 
 
 class TestHashableHelper(unittest.TestCase):
@@ -313,7 +375,7 @@ class TestCliMain(unittest.TestCase):
         w.write_text("MAX_NUM_SEQS=1\n")
         raw_dir = self.repo / "x.kernel.raw"
         raw_dir.mkdir()
-        append_row(raw_dir / "abc.jsonl",
+        append_row(raw_dir / "abc12345.jsonl",
                    _sample_row(2391.0, mnss=4224))
         with mock.patch(
             "tools.tuning.v2.kernel.project.kernel_sha",
@@ -330,7 +392,7 @@ class TestCliMain(unittest.TestCase):
         w.write_text("MAX_NUM_SEQS=1\n")
         raw_dir = self.repo / "x.kernel.raw"
         raw_dir.mkdir()
-        append_row(raw_dir / "abc.jsonl",
+        append_row(raw_dir / "abc12345.jsonl",
                    _sample_row(2391.0, mnss=4224))
         with mock.patch(
             "tools.tuning.v2.kernel.project.kernel_sha",

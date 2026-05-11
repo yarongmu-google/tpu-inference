@@ -34,6 +34,12 @@ from tools.tuning.v2.core.raw_store import read_rows
 from tools.tuning.v2.core.sha import kernel_sha
 
 
+class CodeRevisionMismatchError(RuntimeError):
+    """Raised when a raw row's tuning_key.code_revision doesn't match
+    the .jsonl filename's SHA. Indicates files were manually
+    concatenated or a buggy tuner stamped the wrong SHA."""
+
+
 def _resolve_raw_path(
     workload_dir: Path,
     workload_name: str,
@@ -41,25 +47,39 @@ def _resolve_raw_path(
 ) -> Path | None:
     """Pick the `.kernel.raw/<sha>.jsonl` to project.
 
-    If `code_revision` is given and the matching file exists, use it.
-    Otherwise pick the most-recently-modified `.jsonl` under the
-    `.kernel.raw/` directory. Returns None if no `.raw/` dir or no
-    files inside.
+    Two-mode contract:
+      - **code_revision given explicitly**: file MUST exist at
+        `<workload>.kernel.raw/<code_revision>.jsonl`. No mtime
+        fallback — when the operator pins the revision, missing
+        file is a fail-loud condition (fix #2).
+      - **code_revision is None**: discovery mode. Picks the
+        most-recently-modified `.jsonl` under `.kernel.raw/`.
+        Returns None if no `.raw/` dir or no files inside.
     """
     raw_dir = workload_dir / f"{workload_name}.kernel.raw"
     if not raw_dir.exists():
         return None
-    if code_revision is not None:
-        candidate = raw_dir / f"{code_revision}.jsonl"
-        if candidate.exists():
-            return candidate
     files = sorted(
         raw_dir.glob("*.jsonl"),
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
     if not files:
+        # No raw data is a valid state (tune never ran). Return None
+        # even if code_revision was specified — empty-dir isn't a
+        # "wrong SHA" condition.
         return None
+    if code_revision is not None:
+        candidate = raw_dir / f"{code_revision}.jsonl"
+        if not candidate.exists():
+            raise FileNotFoundError(
+                f"explicit code_revision {code_revision!r} but "
+                f"{candidate} does not exist. {raw_dir} contains: "
+                f"{[p.name for p in files]}. Either drop the "
+                f"--code-revision arg (fall back to most-recent) or "
+                f"pick from the list.",
+            )
+        return candidate
     return files[0]
 
 
@@ -109,17 +129,29 @@ def project_kernel(
     Args:
       workload_dir: directory containing the workload's files.
       workload_name: workload stem.
-      code_revision: if given, prefer the matching `.raw/<sha>.jsonl`.
-                     Defaults to `kernel_sha()`.
-      raw_path: explicit raw-file override. If given, bypasses the
-                discovery in `_resolve_raw_path`.
+      code_revision: optional pin. If given, the matching `.raw/<sha>.jsonl`
+                     must exist (fail-loud, no mtime fallback). If
+                     None, discovery picks the most-recently-modified
+                     `.jsonl` and the output is stamped with the SHA
+                     extracted from that filename (fix #2).
+      raw_path: explicit raw-file override. Bypasses both discovery
+                and the explicit-revision-must-exist check; the
+                output's `code_revision` is stamped from
+                `raw_path.stem`.
 
     Returns:
       Path to the written `.kernel` file, or None if no raw data
       exists yet (e.g., tune never ran).
+
+    Raises:
+      FileNotFoundError: explicit `code_revision` was given but the
+                         matching file doesn't exist.
+      CodeRevisionMismatchError: a row in the raw store carries a
+                                 `tuning_key.code_revision` that
+                                 doesn't match the file's SHA. Defends
+                                 against manual concatenation /
+                                 wrong-stamp regressions (fix #3).
     """
-    if code_revision is None:
-        code_revision = kernel_sha()
     if raw_path is None:
         raw_path = _resolve_raw_path(
             workload_dir, workload_name, code_revision,
@@ -127,7 +159,27 @@ def project_kernel(
         if raw_path is None:
             return None
 
+    # The SHA in the output is whatever the file's name says — not the
+    # caller's request. If they passed None we discovered; if they
+    # passed an explicit SHA we resolved to the matching file (above).
+    file_sha = raw_path.stem
+
     rows = list(read_rows(raw_path))
+
+    # Cross-validate: every row in <sha>.jsonl must carry tuning_key.
+    # code_revision == sha. A mismatch means files were manually
+    # concatenated or a buggy run stamped wrong SHAs into rows
+    # (fix #3).
+    for i, row in enumerate(rows):
+        row_sha = row.get("tuning_key", {}).get("code_revision")
+        if row_sha is not None and row_sha != file_sha:
+            raise CodeRevisionMismatchError(
+                f"row {i} in {raw_path} has "
+                f"tuning_key.code_revision={row_sha!r} but the file "
+                f"is named {file_sha!r}. Files are not concatenable "
+                f"across kernel SHAs — re-run the tune.",
+            )
+
     winners = project_winners(
         rows,
         group_fn=_kernel_group_key,
@@ -140,7 +192,7 @@ def project_kernel(
     doc = {
         "schema_version":  1,
         "workload":        workload_name,
-        "code_revision":   code_revision,
+        "code_revision":   file_sha,
         "raw_source":      str(raw_path.name),
         "n_winners":       len(winners),
         "winners":         winners,

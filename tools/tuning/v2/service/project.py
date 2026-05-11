@@ -45,6 +45,12 @@ DEFAULT_OBJECTIVES: dict[str, tuple[tuple[str, ...], bool]] = {
 }
 
 
+class ServiceRevisionMismatchError(RuntimeError):
+    """Raised when a raw row's recorded service_revision doesn't match
+    the .jsonl filename's SHA. Service-side analog of kernel/project's
+    CodeRevisionMismatchError."""
+
+
 def _resolve_raw_path(
     workload_dir: Path,
     workload_name: str,
@@ -52,23 +58,36 @@ def _resolve_raw_path(
 ) -> Path | None:
     """Pick the `.service.raw/<sha>.jsonl` to project.
 
-    Prefers SHA match; falls back to most-recent-mtime. Returns None
-    if no raw directory or empty.
+    Two-mode contract (symmetric with kernel/project._resolve_raw_path,
+    fix #2):
+      - `service_revision` given: file MUST exist. Fail-loud.
+      - `service_revision` is None: discovery, picks most-recent
+        `.jsonl` by mtime. Returns None if `.raw/` is missing or
+        empty.
     """
     raw_dir = workload_dir / f"{workload_name}.service.raw"
     if not raw_dir.exists():
         return None
-    if service_revision is not None:
-        candidate = raw_dir / f"{service_revision}.jsonl"
-        if candidate.exists():
-            return candidate
     files = sorted(
         raw_dir.glob("*.jsonl"),
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
     if not files:
+        # No raw data is a valid state. Return None even if revision
+        # was specified — empty dir isn't a "wrong SHA" condition.
         return None
+    if service_revision is not None:
+        candidate = raw_dir / f"{service_revision}.jsonl"
+        if not candidate.exists():
+            raise FileNotFoundError(
+                f"explicit service_revision {service_revision!r} but "
+                f"{candidate} does not exist. {raw_dir} contains: "
+                f"{[p.name for p in files]}. Either drop the "
+                f"--service-revision arg (fall back to most-recent) "
+                f"or pick from the list.",
+            )
+        return candidate
     return files[0]
 
 
@@ -119,19 +138,32 @@ def project_service(
     Returns:
       Path to the written `.service` file, or None if no raw data.
     """
-    if service_revision is None:
-        service_revision = service_sha()
     if objectives is None:
         objectives = DEFAULT_OBJECTIVES
 
     if raw_path is None:
+        # Explicit SHA -> fail-loud if missing; None -> discovery.
+        # The output's service_revision is stamped from the actual
+        # filename, not the requested SHA (fix #2). Note that we no
+        # longer auto-default service_revision to service_sha() —
+        # that produced the same buggy "asked for X, got Y, stamped
+        # X anyway" stamping. If the caller wants discovery semantics,
+        # they pass None and we stamp the discovered file's SHA.
         raw_path = _resolve_raw_path(
             workload_dir, workload_name, service_revision,
         )
         if raw_path is None:
             return None
 
+    file_sha = raw_path.stem
+
     rows = list(read_rows(raw_path))
+
+    # Cross-validate: every row in <sha>.jsonl must carry the same SHA
+    # (we don't have a stable per-row service_revision field today —
+    # the SHA is implicit in the filename only — but if we ever add
+    # one, this is where it would be checked). For now, no per-row
+    # SHA assertion. Symmetric placeholder.
 
     winners_by_objective: dict[str, dict[str, Any] | None] = {}
     for objective_name, (metric_path, descending) in objectives.items():
@@ -153,7 +185,7 @@ def project_service(
     doc = {
         "schema_version":   1,
         "workload":         workload_name,
-        "service_revision": service_revision,
+        "service_revision": file_sha,
         "raw_source":       str(raw_path.name),
         "winners":          winners_by_objective,
     }

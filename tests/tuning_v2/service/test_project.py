@@ -97,7 +97,17 @@ class TestProjectService(unittest.TestCase):
             4.79,
         )
 
-    def test_fallback_to_most_recent(self):
+    def test_explicit_sha_missing_raises(self):
+        """fix #2: explicit service_revision with no matching file
+        fails loud."""
+        old = self.raw_dir / "old.jsonl"
+        append_row(old, _row(mnb=8192, mns=128, req_per_sec=4.0,
+                             ttft_mean=300, ttft_p99=400))
+        with self.assertRaises(FileNotFoundError):
+            project_service(self.dir, "prefill_heavy",
+                            service_revision="nonexistent-sha")
+
+    def test_fallback_to_most_recent_when_revision_none(self):
         old = self.raw_dir / "old.jsonl"
         new = self.raw_dir / "new.jsonl"
         append_row(old, _row(mnb=8192, mns=128, req_per_sec=4.0,
@@ -106,9 +116,11 @@ class TestProjectService(unittest.TestCase):
         append_row(new, _row(mnb=131072, mns=1000, req_per_sec=4.9,
                              ttft_mean=100, ttft_p99=200))
         out = project_service(self.dir, "prefill_heavy",
-                              service_revision="nonexistent-sha")
+                              service_revision=None)
         doc = json.loads(out.read_text())
         self.assertEqual(doc["raw_source"], "new.jsonl")
+        # Stamped from the FILE, not None (fix #2).
+        self.assertEqual(doc["service_revision"], "new")
 
     def test_explicit_raw_path_bypasses_discovery(self):
         a = self.raw_dir / "a.jsonl"
