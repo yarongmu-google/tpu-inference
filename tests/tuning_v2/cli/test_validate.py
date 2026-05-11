@@ -29,6 +29,8 @@ VALID_WORKLOAD = """\
 : "${HEAD_DIM:=128}"
 : "${MAX_MODEL_LEN:=8192}"
 : "${MAX_NUM_SEQS:=128}"
+: "${INPUT_LEN:=8191}"
+: "${OUTPUT_LEN:=1}"
 """
 
 
@@ -51,17 +53,17 @@ class TestParseWorkloadEnv(unittest.TestCase):
 
     def test_handles_lines_without_equals(self):
         """If `env` ever output a non-K=V line (banner / warning), we
-        should skip it gracefully in both the snapshot and the sourced
-        pass."""
+        should skip it gracefully in both halves of the sentinel-split
+        output."""
         with mock.patch("subprocess.run") as run:
-            run.side_effect = [
-                # snapshot env
-                mock.Mock(stdout="A=1\nbanner without equals\nB=2\n",
-                          returncode=0),
-                # sourced env (workload set C=3, plus banner)
-                mock.Mock(stdout="A=1\nB=2\nC=3\nanother banner\n",
-                          returncode=0),
-            ]
+            run.return_value = mock.Mock(
+                stdout=(
+                    "A=1\nbanner without equals\nB=2\n"
+                    "@@@WORKLOAD_DIFF_SENTINEL@@@\n"
+                    "A=1\nB=2\nC=3\nanother banner\n"
+                ),
+                returncode=0,
+            )
             w = self.dir / "x.workload"
             w.write_text("placeholder")
             env = parse_workload_env(w)
@@ -70,12 +72,45 @@ class TestParseWorkloadEnv(unittest.TestCase):
 
     def test_filters_out_inherited_shell_env(self):
         """Env vars from the calling shell (e.g. PATH, HOME) must NOT
-        appear in the result; only vars actually set by the file."""
+        appear in the result; only vars actually set by the file. The
+        clean `env -i` subshell has no PATH/HOME to begin with, but
+        this guards against regression if anyone removes `env -i`."""
         w = self.dir / "x.workload"
         w.write_text(VALID_WORKLOAD)
         env = parse_workload_env(w)
         self.assertNotIn("PATH", env)
         self.assertNotIn("HOME", env)
+
+    def test_workload_var_surfaces_even_when_parent_shell_has_same_value(
+        self,
+    ):
+        """fix #4: pre-set parent-shell vars must NOT mask workload
+        vars that happen to carry the same value. The old
+        snapshot-against-parent diff dropped them silently; the
+        clean-subshell same-shell diff fixes this."""
+        w = self.dir / "x.workload"
+        w.write_text('MAX_MODEL_LEN="8192"\nNUM_Q_HEADS="32"\n')
+        with mock.patch.dict(
+            os.environ,
+            {"MAX_MODEL_LEN": "8192", "NUM_Q_HEADS": "32"},
+        ):
+            env = parse_workload_env(w)
+        self.assertEqual(env.get("MAX_MODEL_LEN"), "8192")
+        self.assertEqual(env.get("NUM_Q_HEADS"), "32")
+
+    def test_no_sentinel_in_output_treats_all_as_post_source(self):
+        """Defensive: if the sentinel is somehow swallowed (unlikely),
+        fall back to treating all output as workload-set rather than
+        crashing or returning empty."""
+        with mock.patch("subprocess.run") as run:
+            run.return_value = mock.Mock(
+                stdout="X=1\nY=2\n",   # no sentinel
+                returncode=0,
+            )
+            w = self.dir / "x.workload"
+            w.write_text("placeholder")
+            env = parse_workload_env(w)
+        self.assertEqual(env, {"X": "1", "Y": "2"})
 
 
 class TestValidate(unittest.TestCase):
@@ -108,10 +143,101 @@ class TestValidate(unittest.TestCase):
 : "${HEAD_DIM:=128}"
 : "${MAX_MODEL_LEN:=8192}"
 : "${MAX_NUM_SEQS:=128}"
+: "${INPUT_LEN:=8191}"
+: "${OUTPUT_LEN:=1}"
 """)
         issues = validate(w)
         errs = [m for sev, m in issues if sev == "error"]
         self.assertTrue(any("NUM_KV_HEADS" in m for m in errs))
+
+    def test_missing_input_len_reports_error(self):
+        """fix #4: INPUT_LEN is now required."""
+        w = self.dir / "x.workload"
+        w.write_text("""\
+: "${MODEL:=foo}"
+: "${TENSOR_PARALLEL_SIZE:=1}"
+: "${NUM_Q_HEADS:=32}"
+: "${NUM_KV_HEADS:=8}"
+: "${HEAD_DIM:=128}"
+: "${MAX_MODEL_LEN:=8192}"
+: "${MAX_NUM_SEQS:=128}"
+: "${OUTPUT_LEN:=1}"
+""")
+        issues = validate(w)
+        errs = [m for sev, m in issues if sev == "error"]
+        self.assertTrue(any("INPUT_LEN" in m for m in errs))
+
+    def test_missing_output_len_reports_error(self):
+        """fix #4: OUTPUT_LEN is now required."""
+        w = self.dir / "x.workload"
+        w.write_text("""\
+: "${MODEL:=foo}"
+: "${TENSOR_PARALLEL_SIZE:=1}"
+: "${NUM_Q_HEADS:=32}"
+: "${NUM_KV_HEADS:=8}"
+: "${HEAD_DIM:=128}"
+: "${MAX_MODEL_LEN:=8192}"
+: "${MAX_NUM_SEQS:=128}"
+: "${INPUT_LEN:=8191}"
+""")
+        issues = validate(w)
+        errs = [m for sev, m in issues if sev == "error"]
+        self.assertTrue(any("OUTPUT_LEN" in m for m in errs))
+
+    def test_max_model_len_below_input_plus_output_reports_error(self):
+        """fix #4 invariant: MAX_MODEL_LEN >= INPUT_LEN + OUTPUT_LEN."""
+        w = self.dir / "x.workload"
+        w.write_text("""\
+: "${MODEL:=foo}"
+: "${TENSOR_PARALLEL_SIZE:=1}"
+: "${NUM_Q_HEADS:=32}"
+: "${NUM_KV_HEADS:=8}"
+: "${HEAD_DIM:=128}"
+: "${MAX_MODEL_LEN:=4096}"
+: "${MAX_NUM_SEQS:=128}"
+: "${INPUT_LEN:=4000}"
+: "${OUTPUT_LEN:=100}"
+""")
+        issues = validate(w)
+        errs = [m for sev, m in issues if sev == "error"]
+        self.assertTrue(any("MAX_MODEL_LEN" in m and "INPUT_LEN+OUTPUT_LEN"
+                            in m for m in errs))
+
+    def test_invariant_not_checked_when_inputs_missing(self):
+        """If INPUT_LEN is missing, the invariant check must NOT run
+        (it would crash on the missing key, or worse, report a
+        spurious second error)."""
+        w = self.dir / "x.workload"
+        w.write_text("""\
+: "${MODEL:=foo}"
+: "${TENSOR_PARALLEL_SIZE:=1}"
+: "${NUM_Q_HEADS:=32}"
+: "${NUM_KV_HEADS:=8}"
+: "${HEAD_DIM:=128}"
+: "${MAX_MODEL_LEN:=8192}"
+: "${MAX_NUM_SEQS:=128}"
+: "${OUTPUT_LEN:=1}"
+""")   # INPUT_LEN missing
+        issues = validate(w)
+        errs = [m for sev, m in issues if sev == "error"]
+        # Only the missing-INPUT_LEN error; no invariant cascade.
+        self.assertEqual(
+            sum(1 for m in errs if "INPUT_LEN+OUTPUT_LEN" in m),
+            0,
+        )
+
+    def test_invariant_not_checked_when_non_integer(self):
+        """If MAX_MODEL_LEN isn't an integer, the int-check error fires
+        but the invariant must NOT run (and must NOT crash)."""
+        w = self.dir / "x.workload"
+        w.write_text(VALID_WORKLOAD + 'MAX_MODEL_LEN="abc"\n')
+        issues = validate(w)
+        errs = [m for sev, m in issues if sev == "error"]
+        # No invariant error.
+        self.assertEqual(
+            sum(1 for m in errs if "INPUT_LEN+OUTPUT_LEN" in m),
+            0,
+        )
 
     def test_empty_value_reports_error(self):
         w = self.dir / "x.workload"

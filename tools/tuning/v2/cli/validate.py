@@ -18,6 +18,13 @@ common typos at spec-load time (item 6 of the §12 migration plan):
     HEAD_DIM                    — required int >= 1
   - MAX_MODEL_LEN               — required int >= 1
   - MAX_NUM_SEQS                — required int >= 1
+  - INPUT_LEN                   — required int >= 1
+  - OUTPUT_LEN                  — required int >= 1
+
+Plus the invariant: `MAX_MODEL_LEN >= INPUT_LEN + OUTPUT_LEN`. Below
+that, vllm bench will refuse the request at runtime; the validator
+catches it at spec-load time so operators don't burn a sweep slot
+on a guaranteed-fail config.
 
 `MAX_NUM_BATCHED_TOKENS` is NOT required at the workload layer (it's
 a service-sweep dimension per §2 of `docs/tuning_architecture.md`);
@@ -43,6 +50,11 @@ REQUIRED: dict[str, tuple[bool, int]] = {
     "HEAD_DIM":              (True, 1),
     "MAX_MODEL_LEN":         (True, 1),
     "MAX_NUM_SEQS":          (True, 1),
+    # fix #4: INPUT_LEN / OUTPUT_LEN drive bench prompt shape and gate
+    # the MAX_MODEL_LEN invariant below. Required so operators can't
+    # silently omit them and have bench fall back to defaults.
+    "INPUT_LEN":             (True, 1),
+    "OUTPUT_LEN":            (True, 1),
 }
 
 # Vars that warn-on-presence: they straddle .workload (legacy) and
@@ -60,40 +72,55 @@ WARN_PRESENT: tuple[str, ...] = (
 
 
 def parse_workload_env(workload_path: Path) -> dict[str, str]:
-    """Source the `.workload` bash file and return its env as a dict.
+    """Source the `.workload` bash file in a clean sub-shell.
 
-    Uses `set -a; source <file>; env` in a sub-shell. Returns only the
-    keys the file actually set (filters out the inherited shell env
-    by snapshot-diffing).
+    Runs `env -i bash --noprofile --norc -c 'env; <SENTINEL>; source
+    <file>; env'` and diffs the two env snapshots. Using `env -i` (no
+    inherited environment) plus a same-shell diff fixes two prior bugs
+    (fix #4):
+
+      1. Pre-set parent-shell vars masking workload vars. Old code
+         snapshot-diffed against the calling shell — if the parent
+         had `MAX_MODEL_LEN=8192` exported and the workload also set
+         `MAX_MODEL_LEN=8192`, the diff returned EMPTY for that var,
+         silently dropping it from the validator and from migrate.
+      2. Bash-internal seeds (PWD, SHLVL, BASH_*, etc.) leaking into
+         the result. Diffing the same clean subshell pre/post-source
+         cancels these out automatically — no hard-coded skip list to
+         go stale across bash versions.
     """
     import subprocess
-    # Snapshot the parent shell's env first so we can subtract it.
-    snapshot_proc = subprocess.run(
-        ["bash", "-c", "env"],
+    sentinel = "@@@WORKLOAD_DIFF_SENTINEL@@@"
+    script = (
+        f"set -a; env; echo '{sentinel}'; "
+        f"source '{workload_path}'; env"
+    )
+    proc = subprocess.run(
+        ["env", "-i", "bash", "--noprofile", "--norc", "-c", script],
         capture_output=True, text=True, check=True,
     )
-    before: dict[str, str] = {}
-    for line in snapshot_proc.stdout.splitlines():
-        if "=" in line:
-            k, _, v = line.partition("=")
-            before[k] = v
+    parts = proc.stdout.split(sentinel + "\n", 1)
+    if len(parts) != 2:
+        # Sentinel split failed — treat the whole output as post-source
+        # (no before-state to filter against, so every var surfaces).
+        before_text, after_text = "", proc.stdout
+    else:
+        before_text, after_text = parts
 
-    sourced_proc = subprocess.run(
-        ["bash", "-c", f"set -a; source '{workload_path}'; env"],
-        capture_output=True, text=True, check=True,
-    )
-    after: dict[str, str] = {}
-    for line in sourced_proc.stdout.splitlines():
-        if "=" in line:
-            k, _, v = line.partition("=")
-            after[k] = v
+    def _parse(text: str) -> dict[str, str]:
+        out: dict[str, str] = {}
+        for line in text.splitlines():
+            if "=" in line:
+                k, _, v = line.partition("=")
+                out[k] = v
+        return out
 
-    # Vars the workload file set or changed.
-    set_by_workload: dict[str, str] = {}
-    for k, v in after.items():
-        if k not in before or before[k] != v:
-            set_by_workload[k] = v
-    return set_by_workload
+    before = _parse(before_text)
+    after = _parse(after_text)
+    return {
+        k: v for k, v in after.items()
+        if k not in before or before[k] != v
+    }
 
 
 def _validate_int(name: str, raw: str, min_value: int) -> str | None:
@@ -141,6 +168,27 @@ def validate(workload_path: Path) -> list[tuple[str, str]]:
                 f"docs/tuning_architecture.md §2 for the variable "
                 f"classification.",
             ))
+
+    # fix #4: invariant — MAX_MODEL_LEN must accommodate prompt + decode.
+    # Only checked if all three vars validated OK (no point cascading
+    # invariants on top of "missing" or "non-integer" errors).
+    if all(v in env and env[v] for v in
+           ("MAX_MODEL_LEN", "INPUT_LEN", "OUTPUT_LEN")):
+        try:
+            mml = int(env["MAX_MODEL_LEN"])
+            inp = int(env["INPUT_LEN"])
+            out = int(env["OUTPUT_LEN"])
+        except ValueError:
+            pass
+        else:
+            if mml < inp + out:
+                issues.append((
+                    "error",
+                    f"MAX_MODEL_LEN={mml} < INPUT_LEN+OUTPUT_LEN="
+                    f"{inp}+{out}={inp + out}. vllm bench will reject "
+                    f"requests at runtime; raise MAX_MODEL_LEN to at "
+                    f"least {inp + out}.",
+                ))
 
     return issues
 
