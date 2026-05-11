@@ -30,8 +30,16 @@ from typing import Any
 
 from tools.tuning.v2.core.git_atomic import commit_and_push
 from tools.tuning.v2.core.projection import project_winners
-from tools.tuning.v2.core.raw_store import read_rows
+from tools.tuning.v2.core.raw_store import prune_raw_ttl, read_rows
 from tools.tuning.v2.core.sha import kernel_sha
+
+
+class DiscriminatorMismatchError(RuntimeError):
+    """Raised when rows in a single `.raw/<sha>.jsonl` partition
+    carry conflicting kernel_variant / hardware / schema_version
+    values (architecture doc §13.4 line 452). Silent acceptance
+    would merge cross-plugin or cross-hardware rows in
+    `project_winners`, producing a meaningless winner."""
 
 
 class CodeRevisionMismatchError(RuntimeError):
@@ -195,6 +203,14 @@ def project_kernel(
                 f"across kernel SHAs — re-run the tune.",
             )
 
+    # Discriminator cross-validation (architecture doc §13.4 line
+    # 452): kernel_variant / hardware / schema_version must be
+    # consistent across the file. Mixing rpa_v3 + rpa_v3_hd64 rows
+    # (or schema_version=1 + schema_version=2) in one partition
+    # would silently merge in project_winners. Missing is tolerable
+    # (older partitions predate the stamp); mismatching is fatal.
+    _assert_discriminators_consistent(rows, raw_path)
+
     winners = project_winners(
         rows,
         group_fn=_kernel_group_key,
@@ -216,7 +232,40 @@ def project_kernel(
         json.dumps(doc, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
+
+    # TTL=2 prune (architecture doc §8 line 241) — keep the 2
+    # most-recent .raw/<sha>.jsonl files, drop older ones. Runs
+    # AFTER the projection wrote its output so a successful round
+    # leaves disk in steady state.
+    prune_raw_ttl(raw_path.parent, keep=2)
+
     return out_path
+
+
+def _assert_discriminators_consistent(
+    rows: list[dict[str, Any]], raw_path: Path,
+) -> None:
+    """Raise DiscriminatorMismatchError if rows disagree on
+    `kernel_variant`, `hardware`, or `schema_version`. Rows missing
+    a field don't contribute — forward-compat with raw files that
+    predate a stamp."""
+    for field in ("kernel_variant", "hardware", "schema_version"):
+        seen: dict[Any, int] = {}
+        for i, row in enumerate(rows):
+            v = (row.get("tuning_key") or {}).get(field)
+            if v is None:
+                continue
+            seen.setdefault(v, i)
+        if len(seen) > 1:
+            raise DiscriminatorMismatchError(
+                f"{raw_path}: rows disagree on {field!r}: "
+                f"{sorted(seen.keys())} (first-seen parsed-row "
+                f"indices {sorted(seen.values())}). A single "
+                f".raw/<sha>.jsonl partition must hold one variant "
+                f"only — cross-plugin / cross-hardware merging "
+                f"would poison the projection. Re-tune cleanly into "
+                f"separate partitions.",
+            )
 
 
 def main(argv: list[str] | None = None) -> int:

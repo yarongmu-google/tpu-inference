@@ -31,8 +31,17 @@ from typing import Any
 
 from tools.tuning.v2.core.git_atomic import commit_and_push
 from tools.tuning.v2.core.projection import project_winners
-from tools.tuning.v2.core.raw_store import read_rows
+from tools.tuning.v2.core.raw_store import prune_raw_ttl, read_rows
 from tools.tuning.v2.core.sha import service_sha
+
+
+class ServiceDiscriminatorMismatchError(RuntimeError):
+    """Raised when rows in one `.service.raw/<sha>.jsonl` partition
+    carry conflicting `kernel_pin_keys.kernel_variant` /
+    `kernel_pin_keys.hardware` values (arch doc §13.4 line 452).
+    The service-side discriminators live inside the pin_keys
+    handoff because the service sweep doesn't have its own concept
+    of variant — it inherits from the kernel winner."""
 
 
 # (objective_name -> (metric_field_path_as_tuple, descending))
@@ -181,6 +190,12 @@ def project_service(
                 f"rename the file.",
             )
 
+    # Discriminator cross-validation (arch doc §13.4 line 452). On
+    # the service side the discriminators are inherited via
+    # kernel_pin_keys (kernel_variant, hardware). Each .raw/<sha>
+    # partition must hold rows from one plugin/hardware only.
+    _assert_pin_key_discriminators_consistent(rows, raw_path)
+
     winners_by_objective: dict[str, dict[str, Any] | None] = {}
     for objective_name, (metric_path, descending) in objectives.items():
         candidates = project_winners(
@@ -209,7 +224,37 @@ def project_service(
         json.dumps(doc, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
+
+    # TTL=2 prune (arch doc §8 line 241).
+    prune_raw_ttl(raw_path.parent, keep=2)
+
     return out_path
+
+
+def _assert_pin_key_discriminators_consistent(
+    rows: list[dict[str, Any]], raw_path: Path,
+) -> None:
+    """Service-side discriminator gate. The variant/hardware come
+    from `kernel_pin_keys` (stamped per row by run_service_sweep
+    from the kernel-tune winner). Mixing rpa_v3 + rpa_v3_hd64
+    rows in one partition would silently merge in projection."""
+    for field in ("kernel_variant", "hardware"):
+        seen: dict[Any, int] = {}
+        for i, row in enumerate(rows):
+            pin = row.get("kernel_pin_keys") or {}
+            v = pin.get(field)
+            if v is None:
+                continue
+            seen.setdefault(v, i)
+        if len(seen) > 1:
+            raise ServiceDiscriminatorMismatchError(
+                f"{raw_path}: rows disagree on "
+                f"kernel_pin_keys.{field!r}: "
+                f"{sorted(seen.keys())} (first-seen parsed-row "
+                f"indices {sorted(seen.values())}). A single "
+                f".raw/<sha>.jsonl partition must hold one plugin/"
+                f"hardware only — re-sweep cleanly.",
+            )
 
 
 def main(argv: list[str] | None = None) -> int:

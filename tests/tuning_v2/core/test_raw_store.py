@@ -25,6 +25,7 @@ from unittest import mock
 from tools.tuning.v2.core.raw_store import (
     append_row,
     build_skip_set,
+    prune_raw_ttl,
     read_rows,
 )
 
@@ -223,6 +224,87 @@ class TestRawStore(unittest.TestCase):
         )
         # Row 1 has no status, falls through filter, NOT added.
         self.assertEqual(skip, {2})
+
+
+class TestPruneRawTtl(unittest.TestCase):
+    """fix: arch doc §8 line 241 — TTL=2 prune. Was promised but
+    unimplemented; old .raw/<sha>.jsonl partitions accumulated."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _make_files(self, names: list[str]) -> list[Path]:
+        """Create files in mtime order: first listed = oldest."""
+        import time
+        paths = []
+        for n in names:
+            p = self.dir / n
+            p.write_text("{}\n")
+            paths.append(p)
+            time.sleep(0.01)   # ensure distinct mtimes
+        return paths
+
+    def test_keeps_two_most_recent(self):
+        old, mid, new = self._make_files(["a.jsonl", "b.jsonl", "c.jsonl"])
+        deleted = prune_raw_ttl(self.dir, keep=2)
+        self.assertEqual(deleted, [old])
+        self.assertFalse(old.exists())
+        self.assertTrue(mid.exists())
+        self.assertTrue(new.exists())
+
+    def test_default_keep_is_two(self):
+        """Per arch doc §8 — TTL=2."""
+        paths = self._make_files(["a.jsonl", "b.jsonl", "c.jsonl", "d.jsonl"])
+        deleted = prune_raw_ttl(self.dir)   # no explicit keep
+        # Two oldest deleted.
+        self.assertEqual(sorted(p.name for p in deleted),
+                         ["a.jsonl", "b.jsonl"])
+
+    def test_no_files_to_prune_returns_empty(self):
+        self._make_files(["a.jsonl", "b.jsonl"])
+        # Exactly 2 files; keep=2 → nothing to delete.
+        self.assertEqual(prune_raw_ttl(self.dir, keep=2), [])
+
+    def test_missing_dir_returns_empty(self):
+        self.assertEqual(prune_raw_ttl(self.dir / "no", keep=2), [])
+
+    def test_keep_zero_deletes_all(self):
+        paths = self._make_files(["a.jsonl", "b.jsonl"])
+        deleted = prune_raw_ttl(self.dir, keep=0)
+        self.assertEqual(sorted(p.name for p in deleted),
+                         ["a.jsonl", "b.jsonl"])
+
+    def test_ignores_non_jsonl_files(self):
+        self._make_files(["a.jsonl", "b.jsonl"])
+        (self.dir / "readme.txt").write_text("nope")
+        prune_raw_ttl(self.dir, keep=1)
+        # Non-jsonl untouched.
+        self.assertTrue((self.dir / "readme.txt").exists())
+
+    def test_oserror_does_not_crash(self):
+        """If unlink fails for one file (e.g. permission denied on
+        a network FS), keep going for the rest. Tune shouldn't die
+        because the prune step hiccupped."""
+        old, _ = self._make_files(["a.jsonl", "b.jsonl"])
+        # Patch unlink to raise once.
+        original_unlink = Path.unlink
+        def flaky_unlink(self_p, *a, **kw):
+            if self_p == old:
+                raise OSError("simulated EIO")
+            return original_unlink(self_p, *a, **kw)
+        import io
+        captured = io.StringIO()
+        with mock.patch("pathlib.Path.unlink", flaky_unlink), \
+             mock.patch("sys.stderr", new=captured):
+            deleted = prune_raw_ttl(self.dir, keep=0)
+        # The unflaky file got deleted; the flaky one didn't, but
+        # no crash and the failure logged.
+        self.assertEqual(len(deleted), 1)
+        self.assertIn("prune failed", captured.getvalue())
 
 
 class TestAtomicityGuarantees(unittest.TestCase):

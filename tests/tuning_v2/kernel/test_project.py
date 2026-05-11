@@ -283,6 +283,129 @@ class TestCodeRevisionCrossValidation(unittest.TestCase):
         self.assertIsNotNone(out)
 
 
+class TestDiscriminatorCrossValidation(unittest.TestCase):
+    """fix: arch doc §13.4 line 452 — kernel_variant / hardware /
+    schema_version mismatches across rows in one .raw partition
+    must be caught at projection time (was only documented; never
+    enforced)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.raw_dir = self.dir / "x.kernel.raw"
+        self.raw_dir.mkdir()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _stamp(self, row: dict, **discriminators) -> dict:
+        row["tuning_key"].update(discriminators)
+        return row
+
+    def test_mixed_kernel_variant_raises(self):
+        from tools.tuning.v2.kernel.project import (
+            DiscriminatorMismatchError, project_kernel,
+        )
+        path = self.raw_dir / "abc12345.jsonl"
+        append_row(path, self._stamp(
+            _sample_row(100.0, mnss=4224), kernel_variant="rpa_v3",
+        ))
+        append_row(path, self._stamp(
+            _sample_row(110.0, mnss=4224),
+            kernel_variant="rpa_v3_hd64",
+        ))
+        with self.assertRaisesRegex(DiscriminatorMismatchError,
+                                    "kernel_variant"):
+            project_kernel(self.dir, "x", code_revision="abc12345")
+
+    def test_mixed_hardware_raises(self):
+        from tools.tuning.v2.kernel.project import (
+            DiscriminatorMismatchError, project_kernel,
+        )
+        path = self.raw_dir / "abc12345.jsonl"
+        append_row(path, self._stamp(
+            _sample_row(100.0, mnss=4224), hardware="tpu_v7x",
+        ))
+        append_row(path, self._stamp(
+            _sample_row(110.0, mnss=4224), hardware="tpu_v6e",
+        ))
+        with self.assertRaisesRegex(DiscriminatorMismatchError,
+                                    "hardware"):
+            project_kernel(self.dir, "x", code_revision="abc12345")
+
+    def test_mixed_schema_version_raises(self):
+        from tools.tuning.v2.kernel.project import (
+            DiscriminatorMismatchError, project_kernel,
+        )
+        path = self.raw_dir / "abc12345.jsonl"
+        append_row(path, self._stamp(
+            _sample_row(100.0, mnss=4224), schema_version=1,
+        ))
+        append_row(path, self._stamp(
+            _sample_row(110.0, mnss=4224), schema_version=2,
+        ))
+        with self.assertRaisesRegex(DiscriminatorMismatchError,
+                                    "schema_version"):
+            project_kernel(self.dir, "x", code_revision="abc12345")
+
+    def test_consistent_discriminators_pass(self):
+        from tools.tuning.v2.kernel.project import project_kernel
+        path = self.raw_dir / "abc12345.jsonl"
+        for _ in range(3):
+            append_row(path, self._stamp(
+                _sample_row(100.0, mnss=4224),
+                kernel_variant="rpa_v3",
+                hardware="tpu_v7x",
+                schema_version=1,
+            ))
+        out = project_kernel(self.dir, "x", code_revision="abc12345")
+        self.assertIsNotNone(out)
+
+    def test_missing_discriminator_field_tolerated(self):
+        """Forward-compat: rows produced before the stamp landed
+        won't carry the field. They don't contribute to the check
+        — only rows that DO carry conflicting values fail."""
+        from tools.tuning.v2.kernel.project import project_kernel
+        path = self.raw_dir / "abc12345.jsonl"
+        # First row: stamped.
+        append_row(path, self._stamp(
+            _sample_row(100.0, mnss=4224), kernel_variant="rpa_v3",
+        ))
+        # Second row: legacy, no kernel_variant.
+        append_row(path, _sample_row(110.0, mnss=4224))
+        out = project_kernel(self.dir, "x", code_revision="abc12345")
+        self.assertIsNotNone(out)
+
+
+class TestRawPrunePostProjection(unittest.TestCase):
+    """TTL=2 prune runs after a successful kernel projection (arch
+    doc §8 line 241)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.raw_dir = self.dir / "x.kernel.raw"
+        self.raw_dir.mkdir()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_third_oldest_partition_pruned(self):
+        from tools.tuning.v2.kernel.project import project_kernel
+        import time
+        # Three partitions, ascending mtime.
+        for sha in ("oldsha00", "midsha00", "newsha00"):
+            p = self.raw_dir / f"{sha}.jsonl"
+            append_row(p, _sample_row(100.0, mnss=4224,
+                                      code_revision=sha))
+            time.sleep(0.01)
+        # Project against the newest.
+        project_kernel(self.dir, "x", code_revision="newsha00")
+        # Oldest gone, two newest remain.
+        remaining = sorted(p.name for p in self.raw_dir.glob("*.jsonl"))
+        self.assertEqual(remaining, ["midsha00.jsonl", "newsha00.jsonl"])
+
+
 class TestHashableHelper(unittest.TestCase):
     """Cover _hashable for dict/list values inside a tuning_key."""
 

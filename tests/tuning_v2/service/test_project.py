@@ -398,6 +398,127 @@ class TestServiceRevisionCrossValidation(unittest.TestCase):
         self.assertIsNotNone(out)
 
 
+class TestServicePinKeyDiscriminatorValidation(unittest.TestCase):
+    """fix: arch doc §13.4 line 452 — service-side discriminators
+    come from kernel_pin_keys. Mixing rpa_v3 + rpa_v3_hd64 rows in
+    one .service.raw partition must be caught at projection time."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.raw_dir = self.dir / "x.service.raw"
+        self.raw_dir.mkdir()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _row(self, *, kernel_variant="rpa_v3", hardware="tpu_v7x",
+             mnb=8192, req_per_sec=4.0) -> dict:
+        return {
+            "status": "SUCCESS",
+            "combo": {"MAX_NUM_BATCHED_TOKENS": mnb,
+                      "MAX_NUM_SEQS": 128},
+            "metrics": {"req_per_sec": req_per_sec,
+                        "ttft_mean_ms": 100.0,
+                        "ttft_p99_ms": 200.0},
+            "service_revision": "sha",
+            "kernel_pin_keys": {
+                "case": "logical", "page_size": 128,
+                "kernel_K": 256, "mnss": 4224,
+                "code_revision": "kabc",
+                "kernel_variant": kernel_variant,
+                "hardware": hardware,
+            },
+        }
+
+    def test_mixed_kernel_variant_raises(self):
+        from tools.tuning.v2.service.project import (
+            ServiceDiscriminatorMismatchError, project_service,
+        )
+        path = self.raw_dir / "sha.jsonl"
+        append_row(path, self._row(kernel_variant="rpa_v3"))
+        append_row(path, self._row(kernel_variant="rpa_v3_hd64"))
+        with self.assertRaisesRegex(
+            ServiceDiscriminatorMismatchError, "kernel_variant",
+        ):
+            project_service(self.dir, "x",
+                            service_revision="sha")
+
+    def test_mixed_hardware_raises(self):
+        from tools.tuning.v2.service.project import (
+            ServiceDiscriminatorMismatchError, project_service,
+        )
+        path = self.raw_dir / "sha.jsonl"
+        append_row(path, self._row(hardware="tpu_v7x"))
+        append_row(path, self._row(hardware="tpu_v6e"))
+        with self.assertRaisesRegex(
+            ServiceDiscriminatorMismatchError, "hardware",
+        ):
+            project_service(self.dir, "x",
+                            service_revision="sha")
+
+    def test_consistent_discriminators_pass(self):
+        from tools.tuning.v2.service.project import project_service
+        path = self.raw_dir / "sha.jsonl"
+        for r in range(3):
+            append_row(path, self._row(req_per_sec=4.0 + 0.1 * r))
+        out = project_service(self.dir, "x", service_revision="sha")
+        self.assertIsNotNone(out)
+
+    def test_row_without_pin_keys_tolerated(self):
+        """Forward-compat: pre-stamping service rows had no
+        kernel_pin_keys. Don't fail on absence — only on conflict."""
+        from tools.tuning.v2.service.project import project_service
+        path = self.raw_dir / "sha.jsonl"
+        # First row: stamped.
+        append_row(path, self._row(kernel_variant="rpa_v3"))
+        # Second row: no kernel_pin_keys at all.
+        legacy = {
+            "status": "SUCCESS",
+            "combo": {"MAX_NUM_BATCHED_TOKENS": 8192,
+                      "MAX_NUM_SEQS": 128},
+            "metrics": {"req_per_sec": 4.0,
+                        "ttft_mean_ms": 100.0,
+                        "ttft_p99_ms": 200.0},
+            "service_revision": "sha",
+        }
+        append_row(path, legacy)
+        out = project_service(self.dir, "x", service_revision="sha")
+        self.assertIsNotNone(out)
+
+
+class TestServiceRawPrunePostProjection(unittest.TestCase):
+    """TTL=2 prune runs after a successful service projection."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.raw_dir = self.dir / "x.service.raw"
+        self.raw_dir.mkdir()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_third_oldest_partition_pruned(self):
+        from tools.tuning.v2.service.project import project_service
+        import time
+        for sha in ("oldsha", "midsha", "newsha"):
+            p = self.raw_dir / f"{sha}.jsonl"
+            append_row(p, {
+                "status": "SUCCESS",
+                "combo": {"MAX_NUM_BATCHED_TOKENS": 8192,
+                          "MAX_NUM_SEQS": 128},
+                "metrics": {"req_per_sec": 4.0,
+                            "ttft_mean_ms": 100.0,
+                            "ttft_p99_ms": 200.0},
+                "service_revision": sha,
+            })
+            time.sleep(0.01)
+        project_service(self.dir, "x", service_revision="newsha")
+        remaining = sorted(p.name for p in self.raw_dir.glob("*.jsonl"))
+        self.assertEqual(remaining, ["midsha.jsonl", "newsha.jsonl"])
+
+
 class TestResolveRawPath(unittest.TestCase):
 
     def test_none_service_revision_falls_back_to_mtime(self):

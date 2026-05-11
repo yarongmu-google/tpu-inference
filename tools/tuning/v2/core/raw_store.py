@@ -98,6 +98,53 @@ def read_rows(raw_path: Path) -> Iterator[dict[str, Any]]:
                 )
 
 
+def prune_raw_ttl(raw_dir: Path, keep: int = 2) -> list[Path]:
+    """Delete all but the `keep` most-recent `.jsonl` files in `raw_dir`.
+
+    Architecture doc §8 line 241: "TTL = 2. Keep the 2 most-recent
+    kernel (or service) SHA's .raw files. Older ones are pruned.
+    This survives one rollback (current → previous) without losing
+    data."
+
+    Recency is by mtime — the most-recent activity wins, not the
+    SHA's git history. (The two usually agree, but a touch /
+    re-tune of an older partition would refresh its mtime; that's
+    intended.) Callers typically run this after a successful
+    projection so a successful round leaves disk in steady state.
+
+    Args:
+      raw_dir: directory holding `<sha>.jsonl` files (e.g.
+               `<workload>.kernel.raw/`). Missing dir → no-op.
+      keep: number of most-recent files to retain. Default 2 per
+            §8. `keep <= 0` is treated as "keep none" (deletes
+            everything).
+
+    Returns:
+      List of paths that were deleted. Empty if nothing to prune.
+    """
+    if not raw_dir.exists():
+        return []
+    files = sorted(
+        raw_dir.glob("*.jsonl"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    to_delete = files[max(keep, 0):]
+    deleted: list[Path] = []
+    for p in to_delete:
+        try:
+            p.unlink()
+            deleted.append(p)
+        except OSError as e:
+            # Don't take down a tune just because an old prune
+            # failed. Log and continue — next run retries.
+            print(
+                f"raw_store: prune failed for {p}: {e}",
+                file=sys.stderr,
+            )
+    return deleted
+
+
 def build_skip_set(
     raw_path: Path,
     key_fn: Callable[[dict[str, Any]], Any],
