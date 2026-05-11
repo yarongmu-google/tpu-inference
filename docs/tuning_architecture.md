@@ -68,6 +68,8 @@ At deploy: read `.workload` → look up `.service` by the workload keys → get 
 | `NUM_PROMPTS`, `REQUEST_RATE` |
 | `--seed`, `--no-enable-prefix-caching`, other vLLM CLI flags |
 
+**`MAX_NUM_BATCHED_TOKENS` is definitively a sweep variable.** It MUST live in `.service`, not in `.workload`. The kernel-tune's chosen `mnss` only realizes its capacity at a specific MNB (per-call iters = packed_prefills × ceil(prompt/kernel_K), where packed_prefills is capped by MNB / prompt_len). Hand-coding MNB in `.workload` decouples the kernel tune from the workload it actually serves: e.g., the L kernel was tuned with `mnss=4224` (designed for ~4096 iters/call at MNB ≈ mnss × kernel_K ≈ 1M) but deployed at MNB=8192 (32 iters/call, 130x over-provisioned, paying SMEM cost for capacity that's never used). The sweep is the layer that decides MNB; the kernel-tune must be aware of, or recomputed against, the sweep's MNB candidates — a coupling the refactor needs to handle (today the two layers don't talk).
+
 **Today vs proposed end-state.** Today, `page_size`, `chunk_prefill_size`, `RPA_KERNEL_K`, and `BLOCK_SIZE` straddle `.workload` (user-pinned) and `.kernel` (Pinned var). The refactor moves them cleanly into `.kernel`: the kernel tuner sweeps `page_size` and `kernel_K` as part of `tunable_params`, the registry returns ONE winner per workload, and `sweep.py:_apply_auto_link` sets `BLOCK_SIZE` and `RPA_KERNEL_K` from that winner. See §11 migration for the mechanics.
 
 ## 3. Four files per workload
