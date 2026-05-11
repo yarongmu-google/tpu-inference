@@ -103,58 +103,18 @@ class TestServiceSearchSpace(unittest.TestCase):
         with self.assertRaises(OverlayValidationError):
             service_search_space(self.dir, "x")
 
-    def test_smoke_test_env_truncates_every_axis_to_one(self):
-        """fix #11: SMOKE_TEST=1 -> one value per axis -> one combo
-        total. Same contract as v1's benchmark/sweep.py."""
+    def test_smoke_test_env_does_NOT_truncate_search_space(self):
+        """SMOKE_TEST behavior moved from the search-space layer to
+        the runner (service/sweep.run_service_sweep stops at the
+        first SUCCESS row). The search space itself is identical
+        with or without SMOKE_TEST=1."""
         import os as _os
         from unittest import mock as _m
         with _m.patch.dict(_os.environ, {"SMOKE_TEST": "1"}):
-            space = service_search_space(self.dir, "x")
-        for axis, values in space.items():
-            with self.subTest(axis=axis):
-                self.assertEqual(
-                    len(values), 1,
-                    f"axis {axis} has {len(values)} values under SMOKE_TEST",
-                )
-        self.assertEqual(
-            space["MAX_NUM_BATCHED_TOKENS"],
-            [DEFAULT_MAX_NUM_BATCHED_TOKENS[0]],
-        )
-
-    def test_smoke_test_env_unset_uses_full_space(self):
-        import os as _os
-        from unittest import mock as _m
-        with _m.patch.dict(_os.environ, {}, clear=False):
-            _os.environ.pop("SMOKE_TEST", None)
-            space = service_search_space(self.dir, "x")
-        self.assertEqual(
-            space["MAX_NUM_BATCHED_TOKENS"],
-            DEFAULT_MAX_NUM_BATCHED_TOKENS,
-        )
-
-    def test_smoke_test_env_non_one_value_does_not_truncate(self):
-        import os as _os
-        from unittest import mock as _m
-        for val in ("0", "true", "yes", ""):
-            with self.subTest(val=val):
-                with _m.patch.dict(_os.environ, {"SMOKE_TEST": val}):
-                    space = service_search_space(self.dir, "x")
-                self.assertEqual(
-                    space["MAX_NUM_BATCHED_TOKENS"],
-                    DEFAULT_MAX_NUM_BATCHED_TOKENS,
-                )
-
-    def test_smoke_test_env_respects_overlay_choice_of_first_value(self):
-        """Overlay applies BEFORE smoke truncation, so an operator can
-        pin which single value smoke picks via a 1-element overlay."""
-        import os as _os
-        from unittest import mock as _m
-        (self.dir / "x.service_axes.json").write_text(
-            json.dumps({"MAX_NUM_SEQS": [1000, 128]}),
-        )
-        with _m.patch.dict(_os.environ, {"SMOKE_TEST": "1"}):
-            space = service_search_space(self.dir, "x")
-        self.assertEqual(space["MAX_NUM_SEQS"], [1000])
+            space_smoke = service_search_space(self.dir, "x")
+        _os.environ.pop("SMOKE_TEST", None)
+        space_full = service_search_space(self.dir, "x")
+        self.assertEqual(space_smoke, space_full)
 
     def test_workload_name_used_in_overlay_filename(self):
         (self.dir / "alpha.service_axes.json").write_text(

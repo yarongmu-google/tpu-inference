@@ -41,18 +41,18 @@ This module is pure-data + filesystem. No TPU/JAX imports.
 """
 
 import json
-import os
 from pathlib import Path
 
 from tools.tuning.v2.core.overlay import validate_overlay_schema
 
 
-# v1 parity: SMOKE_TEST=1 truncates every axis to its first value so
-# the tuner runs exactly one combo. Same env-var contract as v1's
-# rpa_v3_kernel_tuner.py — operators reading existing scripts already
-# know it. Applied AFTER overlay merge so a `.kernel_axes.json` still
-# selects WHICH single value smoke mode picks.
-SMOKE_TEST_ENV = "SMOKE_TEST"
+# Note: SMOKE_TEST=1 is honored by the RUNNER (kernel/tune.py +
+# service/sweep.py), not by the search-space module. The earlier
+# truncation strategy ("first value of each axis") could pick an
+# infeasible combo (SMEM/VMEM above limit) and dead-end the
+# pipeline. The runner-side approach — enumerate fully, stop at
+# the first SUCCESS row — is robust against unfortunate first-axis
+# values.
 
 # v1-inherited defaults. Wider than what any single workload typically
 # wants (~thousands of combos pre-prune); the kernel-tune SMEM/VMEM
@@ -122,9 +122,14 @@ def kernel_search_space(
     }
     overlay = _load_overlay(workload_dir, workload_name)
     space.update(overlay)
-    if os.environ.get(SMOKE_TEST_ENV) == "1":
-        # Smoke: one value per axis -> exactly one combo total.
-        space = {k: v[:1] for k, v in space.items()}
+    # NOTE: SMOKE_TEST no longer truncates the search space here.
+    # The earlier truncation strategy ("first value of each axis")
+    # produced infeasible combos (SMEM/VMEM estimator above limit)
+    # so the smoke run wrote one SKIPPED row and dead-ended at the
+    # service step. The runner-side fix (kernel/tune.run_kernel_tune
+    # stops at the first SUCCESS row when SMOKE_TEST=1) achieves the
+    # original intent — one measurement, fast wiring check — without
+    # requiring the truncated combo to be feasible.
     return space
 
 

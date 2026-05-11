@@ -319,11 +319,38 @@ class TestRunKernelTune(unittest.TestCase):
         self.assertGreater(n, 0)
         self.assertEqual(calls[0][0]["max_num_seqs"], 1000)
 
-    def test_smoke_test_env_runs_exactly_one_combo(self):
-        """fix #11: SMOKE_TEST=1 truncates the search space to one
-        combo end-to-end through run_kernel_tune. Removes the narrow
-        overlay so the full default space (~thousands of combos) is
-        what smoke is actually compressing."""
+    def test_smoke_test_env_stops_at_first_success(self):
+        """SMOKE_TEST=1: enumerate the full space, run combos until
+        one returns SUCCESS, then break. Robust against unfortunate
+        first-axis combos that would otherwise dead-end the
+        pipeline at the service step (zero winners)."""
+        (self.workload_dir / "test.kernel_axes.json").unlink()
+        results_to_return = [
+            {"status": "SKIPPED"},
+            {"status": "SKIPPED"},
+            {"status": "SUCCESS", "latency_us": 100.0},
+            # Below should never be reached.
+            {"status": "SUCCESS", "latency_us": 200.0},
+        ]
+        calls = []
+        def measure(tk, tp):
+            calls.append((tk, tp))
+            return results_to_return[len(calls) - 1]
+        with mock.patch.dict(os.environ, {"SMOKE_TEST": "1"}):
+            n = run_kernel_tune(
+                workload_env=self.WORKLOAD_ENV_BASE,
+                workload_dir=self.workload_dir,
+                workload_name="test",
+                raw_path=self.raw_path,
+                measurement_fn=measure,
+                code_revision="abc12345",
+            )
+        # Three rows written: two SKIPPED + one SUCCESS, then break.
+        self.assertEqual(n, 3)
+        self.assertEqual(len(calls), 3)
+
+    def test_smoke_test_env_stops_immediately_if_first_succeeds(self):
+        """If the first combo is feasible, smoke writes one row."""
         (self.workload_dir / "test.kernel_axes.json").unlink()
         calls = []
         def measure(tk, tp):

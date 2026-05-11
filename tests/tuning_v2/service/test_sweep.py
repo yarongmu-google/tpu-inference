@@ -238,15 +238,24 @@ class TestRunServiceSweep(unittest.TestCase):
         )
         self.assertEqual(n, 2)
 
-    def test_smoke_test_env_runs_exactly_one_combo(self):
-        """fix #11: SMOKE_TEST=1 truncates the sweep to one combo
-        end-to-end through run_service_sweep. Removes the narrow
-        overlay so the full default space is what smoke compresses."""
+    def test_smoke_test_env_stops_at_first_success(self):
+        """SMOKE_TEST=1: enumerate combos until one returns SUCCESS,
+        then break. Mirror of kernel-side smoke behavior."""
         (self.workload_dir / "test.service_axes.json").unlink()
+        results = [
+            {"status": "FAILED", "error": "bench failed"},
+            {"status": "SUCCESS",
+             "metrics": {"req_per_sec": 4.0,
+                         "ttft_mean_ms": 100.0, "ttft_p99_ms": 200.0}},
+            # Below unreached.
+            {"status": "SUCCESS",
+             "metrics": {"req_per_sec": 5.0,
+                         "ttft_mean_ms": 50.0, "ttft_p99_ms": 100.0}},
+        ]
         calls = []
         def measure(c):
             calls.append(c)
-            return self._mock_measure(c)
+            return results[len(calls) - 1]
         with mock.patch.dict(os.environ, {"SMOKE_TEST": "1"}):
             n = run_service_sweep(
                 workload_env={},
@@ -256,8 +265,9 @@ class TestRunServiceSweep(unittest.TestCase):
                 measurement_fn=measure,
                 service_revision="sha1-sha2",
             )
-        self.assertEqual(n, 1)
-        self.assertEqual(len(calls), 1)
+        # Two rows: FAILED + SUCCESS, then break.
+        self.assertEqual(n, 2)
+        self.assertEqual(len(calls), 2)
 
     def test_measurement_returns_non_dict_recorded_as_unknown_error(self):
         """fix #24: a buggy measurement_fn returning None / list / etc.
@@ -465,9 +475,34 @@ class TestResolveKernelPinKeys(unittest.TestCase):
         with self.assertRaises(KernelRegistryMissingError):
             resolve_kernel_pin_keys(self.dir, "x")
 
-    def test_empty_winners_raises(self):
+    def test_empty_winners_raises_with_diagnostic_hint(self):
+        """Surface the actual root cause: 0 winners means the
+        kernel-tune produced no SUCCESS rows. Operator needs to
+        check .kernel.raw, not the winners list."""
         (self.dir / "x.kernel").write_text(json.dumps({"winners": []}))
-        with self.assertRaises(KernelRegistryMissingError):
+        with self.assertRaisesRegex(
+            KernelRegistryMissingError,
+            r"zero winners.*\.kernel\.raw",
+        ):
+            resolve_kernel_pin_keys(self.dir, "x")
+
+    def test_only_decode_mixed_lists_cases_present(self):
+        """When non-LOGICAL/PREFILL cases ARE present, the error
+        names them so the operator knows what's actually in the
+        file. Different signal from the zero-winners case."""
+        doc = {
+            "winners": [
+                {"tuning_key": {"case": "decode",
+                                "page_size": 128, "code_revision": "x"}},
+                {"tuning_key": {"case": "mixed",
+                                "page_size": 128, "code_revision": "x"}},
+            ],
+        }
+        (self.dir / "x.kernel").write_text(json.dumps(doc))
+        with self.assertRaisesRegex(
+            KernelRegistryMissingError,
+            r"only cases present.*decode.*mixed",
+        ):
             resolve_kernel_pin_keys(self.dir, "x")
 
     def test_logical_winner_includes_mnss_from_tunable_params(self):

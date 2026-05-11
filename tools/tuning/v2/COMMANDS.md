@@ -12,9 +12,15 @@ git pull
 
 Both scenarios share the same prelude. `KERNEL_TUNER_NO_COMMIT=1` keeps the
 working tree clean; `MOCK_BENCH=1` short-circuits the sweep step to synthetic
-metrics so no vLLM server is needed; `SMOKE_TEST=1` truncates every axis to
-one value; `EXTRA_TUNE_FLAGS="--iters 1 --warmup 0"` makes the tune step fire
-exactly one TPU measurement.
+metrics so no vLLM server is needed; `SMOKE_TEST=1` makes the runner stop at
+the first SUCCESS row (the search space is unchanged — earlier "truncate to
+one combo" picked infeasible configs and dead-ended the pipeline);
+`EXTRA_TUNE_FLAGS="--iters 1 --warmup 0"` makes each TPU measurement fast.
+
+Under SMOKE_TEST, the kernel-tune may write a handful of SKIPPED rows
+before landing a SUCCESS — that's the SMEM/VMEM estimator correctly
+rejecting some combos. The first SUCCESS is what the rest of the pipeline
+consumes.
 
 ### Throughput (MNS swept at service level)
 

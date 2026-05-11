@@ -37,6 +37,7 @@ deterministic values without touching JAX/TPU. The runner itself
 imports zero TPU-side code.
 """
 
+import os
 import sys
 from pathlib import Path
 from typing import Any, Callable, Iterator
@@ -231,6 +232,18 @@ def run_kernel_tune(
                 [raw_path],
                 f"[Tune-v2] progress: {n_new} cases ({workload_name})",
             )
+
+        # SMOKE_TEST=1 (arch doc + v1 parity): stop at the first
+        # SUCCESS row. The original "truncate axes to one combo"
+        # strategy could pick an infeasible config (SMEM/VMEM
+        # estimator above limit) and dead-end the pipeline at the
+        # service step with zero winners. Enumerating until one
+        # combo succeeds achieves the smoke intent (one
+        # measurement, fast wiring check) and is robust against
+        # whichever first-axis values happen to be unfortunate.
+        if (os.environ.get("SMOKE_TEST") == "1"
+                and result.get("status") == "SUCCESS"):
+            break
 
     # Final commit fires only if the last batch of rows wasn't already
     # picked up by a periodic commit. When n_new is an exact multiple

@@ -50,6 +50,7 @@ every 5 keeps the remote close to up-to-date without spam.
 
 import itertools
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Callable, Iterator
@@ -177,9 +178,32 @@ def resolve_kernel_pin_keys(
             prefill = w
     chosen = logical if logical is not None else prefill
     if chosen is None:
+        # Surface the most-likely root cause: an empty winners list
+        # means the kernel-tune produced zero SUCCESS rows. Tell the
+        # operator where to look (the .kernel.raw partition) rather
+        # than just naming the absent winners.
+        n_winners = len(kernel_doc.get("winners", []))
+        if n_winners == 0:
+            raise KernelRegistryMissingError(
+                f"{kernel_path} has zero winners (n_winners=0). The "
+                f"kernel-tune produced no SUCCESS rows — every "
+                f"measurement was SKIPPED / FAILED_OOM / UNKNOWN_ERROR. "
+                f"Inspect {kernel_path.parent}/"
+                f"{kernel_path.stem}.kernel.raw/<sha>.jsonl rows for "
+                f"their `status` (and `error` if present) to "
+                f"diagnose. Common causes: SMEM/VMEM estimator above "
+                f"limit (mnss too large), or pallas_call failure.",
+            )
+        cases = sorted({
+            (w.get("tuning_key") or {}).get("case") for w in
+            kernel_doc.get("winners", [])
+        })
         raise KernelRegistryMissingError(
-            f"no LOGICAL or PREFILL winner in {kernel_path}; service "
-            f"sweep cannot resolve kernel_pin_keys.",
+            f"no LOGICAL or PREFILL winner in {kernel_path}; only "
+            f"cases present: {cases}. Service sweep cannot resolve "
+            f"kernel_pin_keys without one of the chunked-prefill "
+            f"cases. (The pipeline currently only enumerates LOGICAL "
+            f"— D/M/P enumerators not yet implemented.)",
         )
     tk = chosen["tuning_key"]
     tp = chosen.get("tunable_params", {})
@@ -365,6 +389,14 @@ def run_service_sweep(
                 [raw_path],
                 f"[Sweep-v2] progress: {n_new} combos ({workload_name})",
             )
+
+        # SMOKE_TEST=1: stop at the first SUCCESS row. Mirrors the
+        # kernel-tune behavior — see kernel/tune.run_kernel_tune
+        # for the rationale (truncation to one combo could pick an
+        # infeasible config; first-SUCCESS is robust).
+        if (os.environ.get("SMOKE_TEST") == "1"
+                and result.get("status") == "SUCCESS"):
+            break
 
     # Final commit fires only if there are uncommitted rows since the
     # last periodic checkpoint. When n_new is an exact multiple of
