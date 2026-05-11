@@ -666,6 +666,77 @@ chunks into ONE pallas_call (mnss=33 fits all of them in one
 prefetch-array fill), whereas M handles 8191 q-tokens in one MIXED
 call but with dynamic-q-len overhead the L kernel doesn't have.
 
+#### Phase 5 — Re-tune L throughput at the MNB that matches mnss
+
+Phase 3's L throughput tune was done at the workload's
+`MAX_NUM_BATCHED_TOKENS=8192`. With the L winner mnss=4224, only
+`mnss × kernel_K = 1,081,344` q-tokens per pallas_call could *actually*
+exercise the prefetch-array capacity — but vLLM's MNB=8192 caps the
+scheduler at 32 iters per call (0.76% utilization). The kernel was
+tuned for a workload shape it never saw at deploy. Phase 5 closes the
+loop: re-tune at MNB ≈ mnss × kernel_K so the synthetic-workload sizer
+packs ~4096 iters per call (~97% utilization), then re-sweep at the
+matching MNB to see whether L's actual capacity beats P at this
+regime.
+
+Step 1 — Re-tune the throughput L kernel at MNB=1,081,344. Same
+pinning shortcut as Phase 1, only the workload's MNB is overridden
+via env.
+
+```bash
+git pull origin rpa3_2
+
+MAX_NUM_BATCHED_TOKENS=1081344 \
+RPA_V3_BQ_SZ_LST=256 \
+RPA_V3_BKV_SZ_LST=2048 \
+RPA_V3_BQ_CSZ_LST=256 \
+RPA_V3_BKV_CSZ_LST=512 \
+RPA_V3_K_LST=256 \
+RPA_V3_PAGE_SIZE_LST=128 \
+CASES_TO_TUNE=logical RPA_V3_TUNER_CASES=logical \
+KERNEL_TUNER_FRESH=1 \
+  tools/kernel/tuner/v1/tune_all_cases.sh \
+    tools/benchmark/cases/v7x/llama3_8b/prefill_heavy.workload
+
+tools/kernel/tuner/v1/build_kernel_registry.sh \
+    tmp/log/tune_all_prefill_heavy.txt \
+    tools/benchmark/cases/v7x/llama3_8b/production.kernel
+```
+
+After the tune lands, inspect `production.kernel` to find the new
+LOGICAL entry's `max_num_subseqs` winner (likely 4224 still, but
+possibly smaller now that all six candidates produce valid synthetic
+workloads at this MNB).
+
+Step 2 — Wire the new tune into the throughput sweep. Edit
+`tools/benchmark/sweep_recipes.py`:
+- Add `1081344` to `("rpa_v3", "vllm")`'s `MAX_NUM_BATCHED_TOKENS`
+  sweep_axes.
+- Add `"RPA_MAX_NUM_SUBSEQS": <Step 1 winner>` to its `fixed:` block
+  (same auto-link disambiguation trick as Phase 4: the old LOGICAL
+  entries at mnss=4224 would otherwise win first-match-by-(page, K)
+  in `production.kernel`).
+
+Step 3 — Re-run the Phase 3 sweep flow:
+
+```bash
+python3 -m tools.benchmark.sweep_recipes \
+    --workload tools/benchmark/cases/v7x/llama3_8b/prefill_heavy.workload \
+    --out tmp/log/synthesized_prefill_heavy.service
+
+tools/benchmark/sweep.sh tmp/log/synthesized_prefill_heavy.service
+
+tools/benchmark/build_service_registry.sh \
+    tmp/bench_prefill_heavy_rpa_v3_vllm \
+    --metric metrics.RequestThroughput \
+    --export-production tools/benchmark/cases/v7x/llama3_8b/production.service \
+    --kernel-id rpa_v3 --service-id vllm
+```
+
+Compare the new throughput winner to the P baseline (4.79 req/s).
+If MNB=1,081,344 produces L throughput > 4.79, the prior 4.66 L
+ceiling was an over-provisioning artifact, not a kernel limitation.
+
 ### What we ruled out (and why)
 
 - **vLLM scheduler fork (rpa3 branch in vLLM)**: same runner-side
