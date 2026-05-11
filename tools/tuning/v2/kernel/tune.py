@@ -157,15 +157,27 @@ def run_kernel_tune(
                 "status": "UNKNOWN_ERROR",
                 "error": f"{type(e).__name__}: {e}",
             }
-        # Defensive (fix #24): a buggy measurement_fn returning None /
-        # non-dict would crash the `**result` spread below and take
-        # the whole tune down. Coerce to UNKNOWN_ERROR instead so the
-        # combo is recorded as retryable and the sweep continues.
+        # Defensive (fix #24 + followup): a buggy measurement_fn
+        # returning None / non-dict / partial dict would either crash
+        # the `**result` spread or land rows whose status is missing
+        # or None — those wedge the skip-set (no status match against
+        # PERMANENT_STATUSES means resume re-attempts them forever).
+        # Coerce all three failure modes to UNKNOWN_ERROR so resume
+        # treats them as retryable and the operator sees a typed
+        # error.
         if not isinstance(result, dict):
             result = {
                 "status": "UNKNOWN_ERROR",
                 "error":  f"measurement_fn returned non-dict: "
                           f"{type(result).__name__}",
+            }
+        elif result.get("status") is None:
+            result = {
+                **result,
+                "status": "UNKNOWN_ERROR",
+                "error":  result.get("error",
+                                     "measurement_fn returned dict "
+                                     "with missing or None status"),
             }
         row = {
             "tuning_key":     tuning_key,

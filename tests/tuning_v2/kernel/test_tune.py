@@ -313,6 +313,40 @@ class TestRunKernelTune(unittest.TestCase):
         self.assertEqual(rows[0]["status"], "UNKNOWN_ERROR")
         self.assertIn("list", rows[0]["error"])
 
+    def test_measurement_returns_dict_without_status_coerced_to_unknown(self):
+        """Review followup: a dict without `status` key would otherwise
+        land on disk with no status — wedging resume because the
+        skip-set never matches it against PERMANENT_STATUSES."""
+        n = run_kernel_tune(
+            workload_env=self.WORKLOAD_ENV_BASE,
+            workload_dir=self.workload_dir,
+            workload_name="test",
+            raw_path=self.raw_path,
+            measurement_fn=lambda tk, tp: {"latency_us": 100.0},
+            code_revision="abc12345",
+        )
+        self.assertEqual(n, 1)
+        rows = list(read_rows(self.raw_path))
+        self.assertEqual(rows[0]["status"], "UNKNOWN_ERROR")
+        # Other fields are preserved through the coercion.
+        self.assertEqual(rows[0]["latency_us"], 100.0)
+
+    def test_measurement_returns_dict_with_none_status_coerced_to_unknown(self):
+        """Same wedge concern: status=None never matches the filter."""
+        n = run_kernel_tune(
+            workload_env=self.WORKLOAD_ENV_BASE,
+            workload_dir=self.workload_dir,
+            workload_name="test",
+            raw_path=self.raw_path,
+            measurement_fn=lambda tk, tp: {
+                "status": None, "latency_us": 100.0,
+            },
+            code_revision="abc12345",
+        )
+        self.assertEqual(n, 1)
+        rows = list(read_rows(self.raw_path))
+        self.assertEqual(rows[0]["status"], "UNKNOWN_ERROR")
+
     def test_on_progress_callback_called_per_row(self):
         # Widen the overlay so we have multiple combos.
         (self.workload_dir / "test.kernel_axes.json").write_text(

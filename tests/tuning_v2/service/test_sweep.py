@@ -270,6 +270,54 @@ class TestRunServiceSweep(unittest.TestCase):
             self.assertEqual(r["status"], "UNKNOWN_ERROR")
             self.assertIn("NoneType", r["error"])
 
+    def test_measurement_returns_list_recorded_as_unknown_error(self):
+        """Review followup: parity with kernel-side coverage — list
+        return is also coerced to UNKNOWN_ERROR."""
+        run_service_sweep(
+            workload_env={},
+            workload_dir=self.workload_dir,
+            workload_name="test",
+            raw_path=self.raw_path,
+            measurement_fn=lambda c: [1, 2, 3],
+            service_revision="sha1-sha2",
+        )
+        rows = list(read_rows(self.raw_path))
+        for r in rows:
+            self.assertEqual(r["status"], "UNKNOWN_ERROR")
+            self.assertIn("list", r["error"])
+
+    def test_measurement_returns_dict_without_status_coerced_to_unknown(self):
+        """Review followup: a dict missing `status` would wedge the
+        resume skip-set — coerce to UNKNOWN_ERROR."""
+        run_service_sweep(
+            workload_env={},
+            workload_dir=self.workload_dir,
+            workload_name="test",
+            raw_path=self.raw_path,
+            measurement_fn=lambda c: {"metrics": {"req_per_sec": 1.0}},
+            service_revision="sha1-sha2",
+        )
+        rows = list(read_rows(self.raw_path))
+        for r in rows:
+            self.assertEqual(r["status"], "UNKNOWN_ERROR")
+            # Original fields preserved through coercion.
+            self.assertEqual(r["metrics"]["req_per_sec"], 1.0)
+
+    def test_measurement_returns_dict_with_none_status_coerced_to_unknown(self):
+        """status=None never matches PERMANENT_STATUSES — same wedge."""
+        run_service_sweep(
+            workload_env={},
+            workload_dir=self.workload_dir,
+            workload_name="test",
+            raw_path=self.raw_path,
+            measurement_fn=lambda c: {"status": None,
+                                      "metrics": {"req_per_sec": 1.0}},
+            service_revision="sha1-sha2",
+        )
+        rows = list(read_rows(self.raw_path))
+        for r in rows:
+            self.assertEqual(r["status"], "UNKNOWN_ERROR")
+
     def test_measurement_exception_recorded(self):
         def raise_(c):
             raise RuntimeError("boom")

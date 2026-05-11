@@ -259,13 +259,25 @@ def run_service_sweep(
                     "status": "UNKNOWN_ERROR",
                     "error": f"{type(e).__name__}: {e}",
                 }
-        # Defensive (fix #24): coerce non-dict return to UNKNOWN_ERROR
-        # so the `**result` spread doesn't crash the sweep.
+        # Defensive (fix #24 + followup): coerce non-dict and
+        # partial-dict (missing or None status) measurement returns
+        # to UNKNOWN_ERROR. Partial-dict is hostile because a row
+        # with status=None never matches PERMANENT_STATUSES, so
+        # resume re-attempts it forever. UNKNOWN_ERROR is retryable
+        # (the user might fix the bug) but at least typed.
         if not isinstance(result, dict):
             result = {
                 "status": "UNKNOWN_ERROR",
                 "error":  f"measurement_fn returned non-dict: "
                           f"{type(result).__name__}",
+            }
+        elif result.get("status") is None:
+            result = {
+                **result,
+                "status": "UNKNOWN_ERROR",
+                "error":  result.get("error",
+                                     "measurement_fn returned dict "
+                                     "with missing or None status"),
             }
         row = {
             "combo":            combo,
