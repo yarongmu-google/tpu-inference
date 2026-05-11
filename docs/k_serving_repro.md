@@ -679,47 +679,21 @@ packs ~4096 iters per call (~97% utilization), then re-sweep at the
 matching MNB to see whether L's actual capacity beats P at this
 regime.
 
-Step 1 — Re-tune the throughput L kernel at MNB=1,081,344. Same
-pinning shortcut as Phase 1, only the workload's MNB is overridden
-via env.
+The L kernel at mnss=4224 is already in `production.kernel` from
+Phase 1 — the JIT-compiled kernel artifact doesn't care about MNB at
+runtime, only at tune time (for synthetic-workload sizing). To
+validate the hypothesis we just need to *schedule* the deploy at the
+matching MNB. No kernel re-tune required.
+
+The `(rpa_v3, vllm)` sweep_axes now covers MNB ∈ {8192, 16384, 32768,
+65536, 131072, 262144, 524288, 1081344} — the bottom four were the
+original sweep; the top four span the over-provisioning curve up to
+the headline value `mnss × kernel_K = 1,081,344`. 8 MNB × 3 MNS =
+**24 combos**.
 
 ```bash
 git pull origin rpa3_2
 
-MAX_NUM_BATCHED_TOKENS=1081344 \
-RPA_V3_BQ_SZ_LST=256 \
-RPA_V3_BKV_SZ_LST=2048 \
-RPA_V3_BQ_CSZ_LST=256 \
-RPA_V3_BKV_CSZ_LST=512 \
-RPA_V3_K_LST=256 \
-RPA_V3_PAGE_SIZE_LST=128 \
-CASES_TO_TUNE=logical RPA_V3_TUNER_CASES=logical \
-KERNEL_TUNER_FRESH=1 \
-  tools/kernel/tuner/v1/tune_all_cases.sh \
-    tools/benchmark/cases/v7x/llama3_8b/prefill_heavy.workload
-
-tools/kernel/tuner/v1/build_kernel_registry.sh \
-    tmp/log/tune_all_prefill_heavy.txt \
-    tools/benchmark/cases/v7x/llama3_8b/production.kernel
-```
-
-After the tune lands, inspect `production.kernel` to find the new
-LOGICAL entry's `max_num_subseqs` winner (likely 4224 still, but
-possibly smaller now that all six candidates produce valid synthetic
-workloads at this MNB).
-
-Step 2 — Wire the new tune into the throughput sweep. Edit
-`tools/benchmark/sweep_recipes.py`:
-- Add `1081344` to `("rpa_v3", "vllm")`'s `MAX_NUM_BATCHED_TOKENS`
-  sweep_axes.
-- Add `"RPA_MAX_NUM_SUBSEQS": <Step 1 winner>` to its `fixed:` block
-  (same auto-link disambiguation trick as Phase 4: the old LOGICAL
-  entries at mnss=4224 would otherwise win first-match-by-(page, K)
-  in `production.kernel`).
-
-Step 3 — Re-run the Phase 3 sweep flow:
-
-```bash
 python3 -m tools.benchmark.sweep_recipes \
     --workload tools/benchmark/cases/v7x/llama3_8b/prefill_heavy.workload \
     --out tmp/log/synthesized_prefill_heavy.service
@@ -736,6 +710,19 @@ tools/benchmark/build_service_registry.sh \
 Compare the new throughput winner to the P baseline (4.79 req/s).
 If MNB=1,081,344 produces L throughput > 4.79, the prior 4.66 L
 ceiling was an over-provisioning artifact, not a kernel limitation.
+
+**⚠ Memory caveat.** At MNB=1,081,344, vLLM's per-step activation
+buffers scale to ~MNB × hidden × 2 bytes ≈ 8.9 GB per tensor for the
+8B model. Plus model weights (16 GB) and KV cache. v7x-1 has ~32 GB
+HBM; the upper MNB combos may OOM at startup. If so, the sweep
+records the failure and continues to the next combo.
+
+**Secondary experiment (deferred):** a separate kernel re-tune at
+MNB=1,081,344 — overriding the workload's MNB at tune time — would
+let the tuner compare all 6 mnss candidates with each producing a
+~equally-sized synthetic workload (vs Phase 1 where only mnss=4224
+filled MNB). Might pick a better mnss than 4224. Separate experiment;
+not needed for the first-pass throughput-hypothesis check.
 
 ### What we ruled out (and why)
 

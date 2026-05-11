@@ -65,7 +65,7 @@ from typing import Any
 RECIPES: dict[tuple[str, str], dict[str, Any]] = {
     ("rpa_v3", "vllm"): {
         "sweep_axes": {
-            "MAX_NUM_BATCHED_TOKENS":       [8192, 16384, 32768, 65536],
+            "MAX_NUM_BATCHED_TOKENS":       [8192, 16384, 32768, 65536, 131072, 262144, 524288, 1081344],
             "MAX_NUM_SEQS":                 [128, 256, 1000],
         },
         "fixed": {
