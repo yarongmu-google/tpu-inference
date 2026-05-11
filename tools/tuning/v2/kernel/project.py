@@ -180,12 +180,16 @@ def project_kernel(
     # Cross-validate: every row in <sha>.jsonl must carry tuning_key.
     # code_revision == sha. A mismatch means files were manually
     # concatenated or a buggy run stamped wrong SHAs into rows
-    # (fix #3).
+    # (fix #3). NOTE: `i` is the post-parse row index — read_rows
+    # silently skips malformed lines (logs a warning), so this index
+    # does NOT correspond to raw JSONL line numbers when the file is
+    # partially corrupt. Operators correlating against grep / sed
+    # output should re-derive line numbers from the row content.
     for i, row in enumerate(rows):
         row_sha = row.get("tuning_key", {}).get("code_revision")
         if row_sha is not None and row_sha != file_sha:
             raise CodeRevisionMismatchError(
-                f"row {i} in {raw_path} has "
+                f"parsed-row index {i} in {raw_path} has "
                 f"tuning_key.code_revision={row_sha!r} but the file "
                 f"is named {file_sha!r}. Files are not concatenable "
                 f"across kernel SHAs — re-run the tune.",

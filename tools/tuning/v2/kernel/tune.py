@@ -172,6 +172,12 @@ def run_kernel_tune(
                           f"{type(result).__name__}",
             }
         elif result.get("status") is None:
+            # Dict-literal precedence (same honesty as fix #14): the
+            # `status` and `error` keys below land AFTER the **result
+            # spread, so they unconditionally overwrite any same-named
+            # keys that came back from measurement_fn. The `.get("error",
+            # ...)` only matters if `error` was NOT in result; if it was,
+            # the explicit "error" key wins.
             result = {
                 **result,
                 "status": "UNKNOWN_ERROR",

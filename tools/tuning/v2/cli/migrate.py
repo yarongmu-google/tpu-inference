@@ -71,6 +71,17 @@ MATCH_KEYS = (
     "page_size",
 )
 
+# Effectiveness caveat: the seq/deployment + kernel-derived match
+# keys above only filter when the v1 entry's tuning_key actually
+# carries the field. Older v1 dumps that predate a particular stamp
+# (e.g. tuning_key without page_size or max_num_seqs) fall through
+# the conservative "missing on either side = match" rule and land
+# in every per-workload .kernel file. That's the safer failure mode
+# (some duplication, no lost data); the alternative — rejecting
+# unstamped entries — would erase real winners. v1 is a fixed
+# historical format and won't regrow stamps, so this caveat is
+# unlikely to bite future migrations.
+
 
 class MigrationResult(NamedTuple):
     """Outcome of `migrate_model_dir`. The `status` field lets callers

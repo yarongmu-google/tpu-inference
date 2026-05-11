@@ -166,15 +166,19 @@ def project_service(
     # per-row stamp); rows with a mismatching value are fatal — they
     # signal that the file was written under a different SHA than its
     # filename claims, which would silently poison the projection.
+    # NOTE: `i` is the post-parse row index — read_rows silently
+    # skips malformed lines, so this index does NOT match raw JSONL
+    # line numbers when the file is partially corrupt.
     for i, row in enumerate(rows):
         row_sha = row.get("service_revision")
         if row_sha is not None and row_sha != file_sha:
             raise ServiceRevisionMismatchError(
-                f"{raw_path}: row {i} has service_revision="
-                f"{row_sha!r} but filename claims {file_sha!r}. The "
-                f".raw file is corrupted (written under a different "
-                f"service SHA than its name). Re-run the sweep under "
-                f"the correct revision or rename the file.",
+                f"{raw_path}: parsed-row index {i} has "
+                f"service_revision={row_sha!r} but filename claims "
+                f"{file_sha!r}. The .raw file is corrupted (written "
+                f"under a different service SHA than its name). "
+                f"Re-run the sweep under the correct revision or "
+                f"rename the file.",
             )
 
     winners_by_objective: dict[str, dict[str, Any] | None] = {}

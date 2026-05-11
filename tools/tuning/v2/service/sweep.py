@@ -309,6 +309,11 @@ def run_service_sweep(
                           f"{type(result).__name__}",
             }
         elif result.get("status") is None:
+            # Dict-literal precedence (same honesty as fix #14): the
+            # `status` / `error` keys below land AFTER the **result
+            # spread, so they unconditionally overwrite same-named
+            # keys from measurement_fn. The `.get("error", ...)`
+            # only matters if `error` was absent in result.
             result = {
                 **result,
                 "status": "UNKNOWN_ERROR",
