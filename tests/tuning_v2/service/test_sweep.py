@@ -927,12 +927,53 @@ class TestCliMain(unittest.TestCase):
             rc = sweep_main([str(self.dir / "missing.workload")])
         self.assertEqual(rc, 1)
 
-    def test_placeholder_cli_returns_2(self):
-        w = self.dir / "x.workload"
-        w.write_text("MAX_NUM_SEQS=1\n")
-        with mock.patch.object(sys, "stderr", new=open(os.devnull, "w")):
-            rc = sweep_main([str(w)])
-        self.assertEqual(rc, 2)
+    def test_cli_invokes_bench_adapter(self):
+        """CLI is now functional (service/measurement_bench.py wired).
+        Mock the adapter to keep the test off-TPU; assert the CLI
+        sets up env vars and forwards combos to measurement_fn."""
+        repo = self.dir / "repo"
+        cases = repo / "cases" / "v7x" / "llama3_8b"
+        cases.mkdir(parents=True)
+        _init_git_repo(repo)
+        (cases / "x.service_axes.json").write_text(json.dumps({
+            "MAX_NUM_BATCHED_TOKENS": [8192],
+            "MAX_NUM_SEQS":           [128],
+        }))
+        (cases / "x.kernel").write_text(json.dumps(SAMPLE_KERNEL_DOC))
+        w = cases / "x.workload"
+        w.write_text(
+            'MAX_NUM_SEQS=128\nMAX_NUM_BATCHED_TOKENS=8192\n'
+            'NUM_Q_HEADS=32\nNUM_KV_HEADS=8\nHEAD_DIM=128\n'
+            'MAX_MODEL_LEN=8192\nINPUT_LEN=8191\nOUTPUT_LEN=1\n'
+        )
+        saved_no_push = os.environ.pop(NO_PUSH_ENV, None)
+        os.environ[NO_PUSH_ENV] = "1"
+        try:
+            measure_calls = []
+            def fake_measure(combo):
+                measure_calls.append(combo)
+                return {"status": "SUCCESS",
+                        "metrics": {"req_per_sec": 4.0,
+                                    "ttft_mean_ms": 100,
+                                    "ttft_p99_ms": 200}}
+            with mock.patch(
+                "tools.tuning.v2.service.measurement_bench.make_measurement_fn",
+                return_value=fake_measure,
+            ):
+                with mock.patch.object(
+                    sys, "stderr", new=open(os.devnull, "w"),
+                ):
+                    with mock.patch.object(
+                        sys, "stdout", new=open(os.devnull, "w"),
+                    ):
+                        rc = sweep_main([str(w)])
+        finally:
+            if saved_no_push is None:
+                os.environ.pop(NO_PUSH_ENV, None)
+            else:
+                os.environ[NO_PUSH_ENV] = saved_no_push
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(measure_calls), 1)
 
 
 if __name__ == "__main__":

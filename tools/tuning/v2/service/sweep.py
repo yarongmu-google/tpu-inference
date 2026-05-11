@@ -380,24 +380,63 @@ def run_service_sweep(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI placeholder. vLLM-bench binding is in a follow-up commit."""
+    """CLI entry. Reads `.workload`, sweeps service axes via vLLM bench.
+
+    Workload env vars are pushed into `os.environ` BEFORE the
+    measurement adapter is built so `run_benchmark.sh` (the v1
+    bench wrapper) sees them when it sources its own internals.
+    """
     import argparse
     p = argparse.ArgumentParser(
         description="Run a service sweep for one workload.",
     )
     p.add_argument("workload", type=Path)
-    p.add_argument("--commit-every", type=int, default=5)
+    p.add_argument("--commit-every", type=int, default=5,
+                   help="Commit raw store every N combos.")
+    p.add_argument("--timeout", type=int, default=1800,
+                   help="Per-combo bench timeout in seconds.")
     args = p.parse_args(argv)
     if not args.workload.exists():
         print(f"workload not found: {args.workload}", file=sys.stderr)
         return 1
-    print(
-        "tools.tuning.v2.service.sweep CLI: vLLM-bench binding is in "
-        "a follow-up commit. The runnable today is the library "
-        "function run_service_sweep(..., measurement_fn=...).",
-        file=sys.stderr,
+
+    # Parse workload + push into os.environ (run_benchmark.sh reads
+    # MAX_MODEL_LEN / TENSOR_PARALLEL_SIZE / etc. via bash sourcing).
+    from tools.tuning.v2.cli.validate import parse_workload_env
+    workload_env = parse_workload_env(args.workload)
+    import os as _os
+    _os.environ.update(workload_env)
+
+    workload_dir = args.workload.parent
+    workload_name = args.workload.stem
+
+    # Lazy import — bench adapter pulls tools.benchmark.parse_bench_log
+    # and (transitively) requires the bench shell script on disk.
+    from tools.tuning.v2.core.sha import service_sha
+    from tools.tuning.v2.service.measurement_bench import (
+        make_measurement_fn,
     )
-    return 2
+
+    service_revision = service_sha()
+    raw_path = (
+        workload_dir / f"{workload_name}.service.raw" /
+        f"{service_revision}.jsonl"
+    )
+    measurement_fn = make_measurement_fn(
+        args.workload, timeout_seconds=args.timeout,
+    )
+
+    n_new = run_service_sweep(
+        workload_env=workload_env,
+        workload_dir=workload_dir,
+        workload_name=workload_name,
+        raw_path=raw_path,
+        measurement_fn=measurement_fn,
+        service_revision=service_revision,
+        commit_every=args.commit_every,
+    )
+    print(f"Sweep-v2: {n_new} new rows written to {raw_path}")
+    return 0
 
 
 if __name__ == "__main__":   # pragma: no cover
