@@ -46,6 +46,13 @@
 #     winner (case=logical); cli/lookup.lookup_env will omit
 #     RPA_D_BLOCK_SIZES / RPA_M_BLOCK_SIZES until the missing
 #     enumerators land.
+#   - MOCK_BENCH=1 stamps `mock=True` on every synthetic row but
+#     NO automatic projection filter is wired — a smoke run that
+#     shares a .service.raw partition with real bench data will
+#     produce a mock winner that lookup_env will return as the
+#     deploy env. Operational guidance: run smoke against a
+#     throwaway workload directory (e.g. tools/benchmark/cases/smoke/...)
+#     so the .service.raw partition stays smoke-only.
 
 set -euo pipefail
 

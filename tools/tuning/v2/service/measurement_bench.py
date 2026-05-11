@@ -140,6 +140,20 @@ def make_measurement_fn(
         # non-zero so projection's "is there a metric?" check passes
         # — they are NOT real measurements; do not compare to past
         # winners.
+        #
+        # HONESTY: the `mock` field is stamped but NOT automatically
+        # filtered by service/project.py / cli/lookup.py today. If a
+        # MOCK_BENCH=1 smoke run is followed by `project_service`
+        # against the same .service.raw, the synthetic row will
+        # project as a winner and `lookup_env` will return its combo
+        # as the deploy env. Operational guidance: keep smoke runs
+        # on a throwaway workload directory (e.g.
+        # `cases/smoke/<model>/`) so they cannot poison real
+        # production data. A future filter
+        # (`skip_if r.get("mock"): continue` in service/project.py)
+        # would automate this, but introduces an opposing problem
+        # — the smoke flow would produce no winner — so it's left
+        # un-wired until the operational pattern demands it.
         if os.environ.get("MOCK_BENCH") == "1":
             return {
                 "status": "SUCCESS",
@@ -148,7 +162,7 @@ def make_measurement_fn(
                     "ttft_mean_ms": 100.0,
                     "ttft_p99_ms":  200.0,
                 },
-                "mock":   True,   # downstream can flag-filter mocks
+                "mock":   True,   # stamped; operator may grep-filter
             }
 
         # Lazy import so this module is import-able without
