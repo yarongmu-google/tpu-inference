@@ -157,3 +157,47 @@ Inspector commands to extract winners (run on the same TPU VM):
       --source=local --db-path=tmp/log/kernel_tuner_run/prefill_heavy_latency_logical_20260510_171915 \
       query_min_latency \
       --case_set_id=prefill_heavy_latency_logical_20260510_171915 --run_id=0
+===== 2026-05-10 17:20:15 Starting full kernel tune for prefill_heavy_latency =====
+Cases: decode -> prefill -> mixed
+Branch: rpa3_2
+Git commit: e41814569286458bc611e5aebbb7c061becdaae3
+
+
+===== 2026-05-10 17:20:15 Tuning logical (case_set_id=prefill_heavy_latency_logical_20260510_172015) =====
+DB path: tmp/log/kernel_tuner_run/prefill_heavy_latency_logical_20260510_172015
+WARNING:absl:Tensorflow library not found, tensorflow.io.gfile operations will use native shim calls. GCS paths (i.e. 'gs://...') cannot be accessed.
+INFO:numexpr.utils:Note: detected 224 virtual cores but NumExpr set to maximum of 64, check "NUMEXPR_MAX_THREADS" environment variable.
+INFO:numexpr.utils:Note: NumExpr detected 224 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+INFO:numexpr.utils:NumExpr defaulting to 16 threads.
+INFO 05-10 17:20:20 [__init__.py:59] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+I0510 17:20:20.950619 124278394300352 kernel_tuner_runner.py:115] Using case_set_id: prefill_heavy_latency_logical_20260510_172015, run_id: 0, case_set_desc: prefill_heavy_latency logical kernel tune for this tuning run.
+I0510 17:20:20.950794 124278394300352 local_db_manager.py:53] Database initialized at tmp/log/kernel_tuner_run/prefill_heavy_latency_logical_20260510_172015
+I0510 17:20:20.956030 124278394300352 rpa_v3_kernel_tuner.py:431] RPA_V3_BQ_SZ_LST override: [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192] -> [256]
+I0510 17:20:20.956090 124278394300352 rpa_v3_kernel_tuner.py:431] RPA_V3_BKV_SZ_LST override: [512, 1024, 2048, 4096, 8192] -> [2048]
+I0510 17:20:20.956122 124278394300352 rpa_v3_kernel_tuner.py:431] RPA_V3_BQ_CSZ_LST override: [32, 64, 128, 256, 512, 1024, 2048] -> [256]
+I0510 17:20:20.956147 124278394300352 rpa_v3_kernel_tuner.py:431] RPA_V3_BKV_CSZ_LST override: [128, 256, 512, 1024, 2048] -> [512]
+I0510 17:20:20.956167 124278394300352 rpa_v3_kernel_tuner.py:431] RPA_V3_K_LST override: [128, 256, 512, 1024, 2048, 4096, 8192] -> [256]
+I0510 17:20:20.956185 124278394300352 rpa_v3_kernel_tuner.py:431] RPA_V3_MAX_NUM_SUBSEQS_LST override: [2, 3, 5, 9, 17, 33] -> [33]
+I0510 17:20:20.956202 124278394300352 rpa_v3_kernel_tuner.py:431] RPA_V3_PAGE_SIZE_LST override: [64, 128, 256] -> [128]
+I0510 17:20:20.956222 124278394300352 kernel_tuner_runner.py:135] Running in locally mode. Skipping Buildkite pipeline generation and running tuning jobs directly.
+I0510 17:20:20.956394 124278394300352 local_db_manager.py:102] Initialized case set: {'ID': 'prefill_heavy_latency_logical_20260510_172015', 'Description': 'prefill_heavy_latency logical kernel tune', 'Status': 'CREATING', 'ScanSpace': 0}
+I0510 17:20:20.956422 124278394300352 kernel_tuner_base.py:141] Initialized new CaseSet with ID: prefill_heavy_latency_logical_20260510_172015 and description: prefill_heavy_latency logical kernel tune
+I0510 17:20:20.956553 124278394300352 rpa_v3_kernel_tuner.py:607] [Debug] Generated 1 cases
+I0510 17:20:20.956681 124278394300352 local_db_manager.py:164] Flushed: wrote 1 cases to KernelTuningCases
+I0510 17:20:20.956908 124278394300352 local_db_manager.py:136] Finished case set: ID=prefill_heavy_latency_logical_20260510_172015, valid=1, invalid=0, duration=0.0s
+I0510 17:20:20.956936 124278394300352 kernel_tuner_base.py:196] 
+Complete Generate Tuning Cases for prefill_heavy_latency_logical_20260510_172015, Valid Cases: 1 | Duration: 0s
+I0510 17:20:20.956960 124278394300352 kernel_tuner_base.py:356] Worker [unknown] Claimed CaseSetId: prefill_heavy_latency_logical_20260510_172015, RunId: 0, Bucket 0 (0-1) for processing.
+I0510 17:20:20.957054 124278394300352 local_db_manager.py:236] Marked bucket as in progress: cs_id=prefill_heavy_latency_logical_20260510_172015, r_id=0, b_id=0, worker=None
+I0510 17:20:20.957159 124278394300352 rpa_v3_kernel_tuner.py:860] Running rpa_v3 case=logical K=256 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='logical', chunk_prefill_size=256, code_revision='e41814569286') params=TunableParams(bq_sz=256, bkv_sz=2048, bq_csz=256, bkv_csz=512, max_num_subseqs=33) iters=1
+I0510 17:20:26.011137 124278394300352 rpa_v3_kernel_tuner.py:769] [Debug] case=logical K=256 actual_num_seqs=32 distribution=Array([ 0, 32, 32], dtype=int32)
+I0510 17:20:30.302371 124278394300352 rpa_v3_kernel_tuner.py:860] Running rpa_v3 case=logical K=256 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='logical', chunk_prefill_size=256, code_revision='e41814569286') params=TunableParams(bq_sz=256, bkv_sz=2048, bq_csz=256, bkv_csz=512, max_num_subseqs=33) iters=10
+I0510 17:20:30.373811 124278394300352 local_db_manager.py:300] Saved 1 results to CaseResults
+I0510 17:20:30.374125 124278394300352 local_db_manager.py:252] Marked bucket as completed: cs_id=prefill_heavy_latency_logical_20260510_172015, r_id=0, b_id=0, tt_us=9416764
+I0510 17:20:30.374174 124278394300352 kernel_tuner_base.py:433] Worker [unknown] Completed Bucket 0 (0-1) for CaseSetId: prefill_heavy_latency_logical_20260510_172015, RunId: 0. Total time: 9.42s.
+I0510 17:20:30.374203 124278394300352 local_db_manager.py:313] Database at tmp/log/kernel_tuner_run/prefill_heavy_latency_logical_20260510_172015 finalized with 1 cases, 0 invalid cases.
+I0510 17:20:30.374254 124278394300352 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_latency_logical_20260510_172015/CaseSet.json
+I0510 17:20:30.374276 124278394300352 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_latency_logical_20260510_172015/KernelTuningCases.json
+I0510 17:20:30.374291 124278394300352 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_latency_logical_20260510_172015/WorkBuckets.json
+I0510 17:20:30.374304 124278394300352 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_latency_logical_20260510_172015/CaseResults.json
+===== 2026-05-10 17:20:34 logical done in 19s =====
