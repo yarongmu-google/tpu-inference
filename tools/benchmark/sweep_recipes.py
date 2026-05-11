@@ -147,6 +147,13 @@ RECIPES: dict[tuple[str, str], dict[str, Any]] = {
             "BLOCK_SIZE": 128,
             "MAX_NUM_SEQS": 1,
             "RPA_KERNEL_K": 256,
+            # The latency tune produced mnss=33 (the only valid value at
+            # MNS=1 / MNB=8192 / K=256). production.kernel still carries
+            # older LOGICAL entries with mnss=4224 (Phase 1 throughput
+            # tune); sweep.py:_apply_auto_link does first-match-by-
+            # (page, K) and would otherwise grab the wrong mnss. Pin
+            # here until auto-link learns to filter by code_revision.
+            "RPA_MAX_NUM_SUBSEQS": 33,
         },
         "timeout_seconds": 600,
         "rank_metric": "metrics.MeanTTFT",
