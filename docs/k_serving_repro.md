@@ -767,6 +767,26 @@ subsumes P's role with a cleaner decoupled-K design, simpler
 deployment story (no P+M split needed), and comparable-or-better
 numbers across regimes.
 
+**P collapses at high MNS, L scales.** Verification at the
+high-MNS configurations confirmed the architectural fragility of P:
+
+| Config | req/s | vs P-baseline |
+|---|---:|---:|
+| P baseline (MNS=128, MNB=8192, LPTT=256) | 4.78 | — |
+| P at MNS=1000 + MNB=65536 + LPTT=256 | **2.21** | **−54%** |
+| P at MNS=1000 + MNB=131072 + LPTT=256 | **1.80** | **−62%** |
+| **L at MNS=1000 + MNB=131072** | **4.90** | **+2.5%** |
+
+At MNS=1000 P cannot use the additional concurrency: kernel block
+sizes tuned for q=8192 don't transfer to q=131072; HBM pressure from
+admitting many partial-prefill slots forces eviction/recompute churn.
+The same configuration runs cleanly under L because L's
+multi-chunk-per-call packing matches its block-size tune AND its
+one-shot-per-prefill turnover keeps KV pressure bounded. So **at the
+same deployment config, L is ~2.7× faster than P** — the +2.5%
+steady-state gap was an underestimate, masking the deeper truth that
+the high-MNS regime is L-only.
+
 **⚠ Memory caveat.** At MNB=1,081,344, vLLM's per-step activation
 buffers scale to ~MNB × hidden × 2 bytes ≈ 8.9 GB per tensor for the
 8B model. Plus model weights (16 GB) and KV cache. v7x-1 has ~32 GB
