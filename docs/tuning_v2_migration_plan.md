@@ -96,22 +96,60 @@ Coverage target: 100% line coverage on `tools/tuning/v2/` modules. Actual TPU ru
 
 Each item lands as its own commit with tests passing. Auto-commit + auto-push enabled (`PIPELINE_AUTOPUSH=1` default).
 
-| # | Commit | Adds |
-|---|---|---|
-| a | `[Tune-v2] Init branch + plan doc + skeleton` | this file + empty directory tree + test scaffold |
-| b | `[Tune-v2] core/raw_store: append-only JSONL store` | append, read, skip-set, status filter, crash-atomic |
-| c | `[Tune-v2] core/projection: raw → winners` | pure-CPU projector, idempotent, deterministic |
-| d | `[Tune-v2] core/accumulator: per-workload → production` | aggregate across all workloads under a model |
-| e | `[Tune-v2] core/git_atomic: periodic + once commit helpers` | shared by long-running tune/sweep + short-running project/aggregate |
-| f | `[Tune-v2] core/sha + core/keyset: identity helpers` | kernel_sha, service_sha, workload/tuning_key/combo keys |
-| g | `[Tune-v2] kernel/search_space: defaults + per-workload overlay` | liberal default ranges + .kernel_axes.json reader |
-| h | `[Tune-v2] kernel/tune + kernel/project: kernel layer` | standalone runnable, mocks TPU at pallas_call boundary |
-| i | `[Tune-v2] service/search_space + service/sweep + service/project: service layer` | standalone runnable, mocks bench at vllm-serve boundary |
-| j | `[Tune-v2] cli/aggregate + lookup + validate` | impact-analysis + deploy-lookup + schema-check |
-| k | `[Tune-v2] Shell wrappers + run_pipeline.sh` | thin entry-points for the orchestrator and each primitive |
-| l | `[Tune-v2] cli/migrate: one-shot rpa3_2 → v2 data move` | splits today's shared `production.kernel`/`production.service` into per-workload files for all existing workloads |
-| m | `[Tune-v2] End-to-end validation: re-tune 8B at wider ranges` | run the v2 pipeline against `prefill_heavy.workload` with item 7+8's wider grid; compare numbers to rpa3_2's 4.90 winner |
-| n | `[Tune-v2] Retire v1` | delete `tools/kernel/tuner/v1/`, `tools/benchmark/sweep_recipes.py`, etc. once v2 demonstrates parity |
+| # | Status | Commit | Adds |
+|---|---|---|---|
+| a | ✅ done | `[Tune-v2] Init branch + plan doc + skeleton (item a)` (`11e2a6e2`) | this file + empty directory tree + test scaffold |
+| b | ✅ done | `[Tune-v2] core/raw_store: append-only JSONL store (item b)` (`7df22263`) | append, read, skip-set, status filter, crash-atomic |
+| c | ✅ done | `[Tune-v2] core/projection: raw -> winners (item c)` (`ad610061`) | pure-CPU projector, idempotent, deterministic |
+| d | ✅ done | `[Tune-v2] core/accumulator: per-workload -> production (item d)` (`0a19b178`) | aggregate across all workloads under a model |
+| e | ✅ done | `[Tune-v2] core/git_atomic: periodic + once commit helpers (item e)` (`369e2870`) | shared by long-running tune/sweep + short-running project/aggregate |
+| f | ✅ done | `[Tune-v2] core/sha + core/keyset: identity helpers (item f)` (`2aad894d`) | kernel_sha, service_sha, workload/tuning_key/combo keys |
+| g | ✅ done | `[Tune-v2] kernel/search_space (item g)` (`2a072d72`) | liberal default ranges + .kernel_axes.json reader |
+| h | ✅ done | `[Tune-v2] kernel/tune + kernel/project + enumerate_logical (item h)` (`ac44aed2`) | standalone runnable; mocks TPU at pallas_call boundary |
+| i | ✅ done | `[Tune-v2] service/search_space + sweep + project (item i)` (`2ab350de`) | standalone runnable; mocks bench at vllm-serve boundary |
+| j | ✅ done | `[Tune-v2] cli/aggregate + cli/lookup + cli/validate (item j)` (`be83e33b`) | impact-analysis + deploy-lookup + schema-check |
+| k | ✅ done | `[Tune-v2] Shell wrappers + run_pipeline.sh (item k)` (`c40215c9`) | thin entry-points for the orchestrator and each primitive |
+| l | ✅ done | `[Tune-v2] cli/migrate (item l)` (`34ab4eac`) | splits today's shared `production.kernel`/`production.service` into per-workload files |
+| **TPU-wire** | ⏸ blocked | `kernel/measurement_tpu.py` + `service/measurement_bench.py` | adapters from v2's `measurement_fn(tk_dict, tp_dict) -> result_dict` to v1's `RpaV3KernelTuner.run()` and `run_benchmark.sh`. Touches JAX/Pallas/vLLM — needs real TPU to exercise. See "TPU wiring contract" below. |
+| m | ⏸ blocked | `[Tune-v2] End-to-end validation: re-tune 8B at wider ranges` | run the v2 pipeline against `prefill_heavy.workload` with item 7+8's wider grid; compare numbers to rpa3_2's 4.90 winner. Hardware-blocked. |
+| n | ⏸ blocked | `[Tune-v2] Retire v1` | delete `tools/kernel/tuner/v1/`, `tools/benchmark/sweep_recipes.py`, etc. once v2 demonstrates parity. After (m). |
+
+**Status snapshot at the end of (l):** 12 commits on the `tune` branch, **309 tests, 100% line + branch coverage** across 22 modules (763 stmts / 294 branches). Library + CLI + shell wrappers are runnable; only the TPU-side measurement bindings + the actual end-to-end perf comparison remain.
+
+## TPU wiring contract
+
+Items (h) and (i) export library functions that take a `measurement_fn` parameter:
+
+```python
+# kernel/tune.py:run_kernel_tune(...)
+measurement_fn: Callable[[dict, dict], dict]
+    # (tuning_key, tunable_params) -> {"status": str, "latency_us": float, ...}
+
+# service/sweep.py:run_service_sweep(...)
+measurement_fn: Callable[[dict], dict]
+    # combo -> {"status": str, "metrics": {"req_per_sec": float, ...}, ...}
+```
+
+The v2 library is TPU-free — production wires a real `measurement_fn` at call time. Recommended adapter location:
+
+```
+tools/tuning/v2/kernel/measurement_tpu.py
+    make_kernel_measurement_fn(*, v1_runner_factory, workload_env, iters=10)
+        -> Callable[[dict, dict], dict]
+    Wraps v1's RpaV3KernelTuner.run(tk_dataclass, tp_dataclass, iters)
+    via SimpleNamespace duck-typing. v1_runner_factory takes the
+    workload_env and returns a configured RpaV3KernelTuner. Production
+    binds this to v1's constructor; tests inject a no-op factory.
+
+tools/tuning/v2/service/measurement_bench.py
+    make_bench_measurement_fn(*, workload_path, vllm_dir, ...)
+        -> Callable[[dict], dict]
+    Forks run_benchmark.sh as a subprocess per combo, parses the
+    resulting metrics.txt + meta.txt, returns the v2-format dict.
+    Production wires this; tests can mock via subprocess.run.
+```
+
+These should land in the same branch but as separate commits (likely under a `tpu-wire` sub-task). They're small (~50 lines each) but their tests don't actually exercise the kernel — the test surface is the dict↔dataclass conversion only.
 
 ## Lifecycle per generated file
 
