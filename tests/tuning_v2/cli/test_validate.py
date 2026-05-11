@@ -31,6 +31,9 @@ VALID_WORKLOAD = """\
 : "${MAX_NUM_SEQS:=128}"
 : "${INPUT_LEN:=8191}"
 : "${OUTPUT_LEN:=1}"
+: "${DATASET:=sonnet}"
+: "${NUM_PROMPTS:=1000}"
+: "${REQUEST_RATE:=inf}"
 """
 
 
@@ -132,6 +135,53 @@ class TestValidate(unittest.TestCase):
         self.assertEqual(len(issues), 1)
         self.assertEqual(issues[0][0], "error")
         self.assertIn("not found", issues[0][1])
+
+    def test_missing_dataset_reports_error(self):
+        """Category-2 measurement vars (arch doc §2 line 46) are
+        REQUIRED — a typo like DATSET=sonnet should error at
+        validation, not let bench fall back to defaults."""
+        w = self.dir / "x.workload"
+        wl = VALID_WORKLOAD.replace(': "${DATASET:=sonnet}"\n', "")
+        w.write_text(wl)
+        errs = [m for sev, m in validate(w) if sev == "error"]
+        self.assertTrue(any("DATASET" in m for m in errs))
+
+    def test_missing_num_prompts_reports_error(self):
+        w = self.dir / "x.workload"
+        wl = VALID_WORKLOAD.replace(': "${NUM_PROMPTS:=1000}"\n', "")
+        w.write_text(wl)
+        errs = [m for sev, m in validate(w) if sev == "error"]
+        self.assertTrue(any("NUM_PROMPTS" in m for m in errs))
+
+    def test_missing_request_rate_reports_error(self):
+        w = self.dir / "x.workload"
+        wl = VALID_WORKLOAD.replace(': "${REQUEST_RATE:=inf}"\n', "")
+        w.write_text(wl)
+        errs = [m for sev, m in validate(w) if sev == "error"]
+        self.assertTrue(any("REQUEST_RATE" in m for m in errs))
+
+    def test_request_rate_accepts_inf(self):
+        """REQUEST_RATE accepts the string 'inf' (send-as-fast)
+        as well as numerics. Validate only checks non-empty; the
+        bench tool parses the actual value."""
+        w = self.dir / "x.workload"
+        w.write_text(VALID_WORKLOAD)   # default is inf
+        self.assertEqual(validate(w), [])
+
+    def test_request_rate_accepts_numeric(self):
+        w = self.dir / "x.workload"
+        w.write_text(VALID_WORKLOAD.replace(
+            ': "${REQUEST_RATE:=inf}"\n',
+            ': "${REQUEST_RATE:=10.5}"\n',
+        ))
+        self.assertEqual(validate(w), [])
+
+    def test_num_prompts_zero_errors(self):
+        w = self.dir / "x.workload"
+        w.write_text(VALID_WORKLOAD + "NUM_PROMPTS=0\n")
+        errs = [m for sev, m in validate(w) if sev == "error"]
+        self.assertTrue(any("NUM_PROMPTS" in m and ">= 1" in m
+                            for m in errs))
 
     def test_missing_required_var_reports_error(self):
         w = self.dir / "x.workload"

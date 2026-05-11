@@ -49,11 +49,20 @@ REQUIRED: dict[str, tuple[bool, int]] = {
     "NUM_KV_HEADS":          (True, 1),
     "HEAD_DIM":              (True, 1),
     "MAX_MODEL_LEN":         (True, 1),
-    # fix #4: INPUT_LEN / OUTPUT_LEN drive bench prompt shape and gate
-    # the MAX_MODEL_LEN invariant below. Required so operators can't
-    # silently omit them and have bench fall back to defaults.
+    # Category-2 measurement vars (architecture-doc §2 line 46-47):
+    # "DATASET, INPUT_LEN, OUTPUT_LEN, NUM_PROMPTS, REQUEST_RATE
+    # — load shape used by bench driver, bench duration / arrival
+    # pattern." All five required so a typo (DATSET=sonnet) errors
+    # at validation time instead of silently letting the bench fall
+    # back to defaults and characterizing the wrong workload.
     "INPUT_LEN":             (True, 1),
     "OUTPUT_LEN":            (True, 1),
+    "DATASET":               (False, 0),
+    "NUM_PROMPTS":           (True, 1),
+    # REQUEST_RATE accepts either a numeric (e.g. 10, 10.5) or the
+    # string "inf" (send-as-fast-as-possible). Non-empty-string
+    # check only; the bench tool does the numeric/string parsing.
+    "REQUEST_RATE":          (False, 0),
 }
 
 # MAX_NUM_SEQS: OPTIONAL per architecture-doc §2 line 73 — it's

@@ -60,3 +60,7 @@
 : "${INPUT_LEN:=8191}"
 : "${OUTPUT_LEN:=1}"
 : "${NUM_PROMPTS:=1000}"
+# REQUEST_RATE: "inf" = send all prompts as fast as the server
+# accepts (throughput-style). For latency / SLA-bounded characterization
+# set a finite Poisson rate (e.g. "10" req/s).
+: "${REQUEST_RATE:=inf}"

@@ -274,6 +274,9 @@ class TestRealExecValidate(unittest.TestCase):
             ': "${MAX_NUM_SEQS:=128}"\n'
             ': "${INPUT_LEN:=8191}"\n'
             ': "${OUTPUT_LEN:=1}"\n'
+            ': "${DATASET:=sonnet}"\n'
+            ': "${NUM_PROMPTS:=1000}"\n'
+            ': "${REQUEST_RATE:=inf}"\n'
         )
         result = self._run(str(wl))
         self.assertEqual(
@@ -295,6 +298,9 @@ class TestRealExecValidate(unittest.TestCase):
             ': "${MAX_NUM_SEQS:=128}"\n'
             ': "${INPUT_LEN:=8000}"\n'
             ': "${OUTPUT_LEN:=1}"\n'
+            ': "${DATASET:=sonnet}"\n'
+            ': "${NUM_PROMPTS:=1000}"\n'
+            ': "${REQUEST_RATE:=inf}"\n'
         )
         result = self._run(str(wl))
         self.assertNotEqual(result.returncode, 0)

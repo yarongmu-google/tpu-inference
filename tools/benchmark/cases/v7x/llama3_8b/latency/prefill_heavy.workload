@@ -32,3 +32,7 @@
 : "${INPUT_LEN:=8191}"
 : "${OUTPUT_LEN:=1}"
 : "${NUM_PROMPTS:=1000}"
+# Latency scenario: send one request at a time (serialised) so
+# each measurement is a clean single-prompt TTFT. "1" req/s with
+# MNS=1 means strict serial.
+: "${REQUEST_RATE:=1}"
