@@ -26,6 +26,17 @@ this with their domain-specific group / objective / skip functions.
 
 The projector is **idempotent**: same input rows + same parameters →
 same output. No side effects, no I/O, no globals. Easy to test.
+
+**TODO when the second plugin lands** (architecture doc §13): the
+kernel-side group_fn in `kernel/project._kernel_group_key` does NOT
+include `kernel_variant` / `hardware` today, because only one valid
+value of each exists. If two plugins ever produce rows for the same
+workload (e.g. an rpa_v3 winner and an rpa_v3_hd64 winner during a
+migration window), their rows collapse into one group and one of
+the two winners gets silently dropped. Add `kernel_variant` and
+`hardware` to the group key as soon as KNOWN_KERNEL_VARIANTS grows
+past size 1. Same concern applies to `service/project` if service
+sweeps ever cross-pollinate plugins through pin_keys.
 """
 
 from typing import Any, Callable, Hashable, Iterable

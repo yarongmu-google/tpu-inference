@@ -33,9 +33,11 @@ this signature, so each case is pluggable.
 from typing import Any, Iterator
 
 
-SCHEMA_VERSION = 1
-DEFAULT_KERNEL_VARIANT = "rpa_v3"
-DEFAULT_HARDWARE = "tpu_v7x"
+from tools.tuning.v2.core.discriminator import (
+    DEFAULT_HARDWARE,
+    DEFAULT_KERNEL_VARIANT,
+    ROW_SCHEMA_VERSION,
+)
 
 
 def enumerate_logical_combos(
@@ -113,7 +115,15 @@ def enumerate_logical_combos(
                                     # (architecture doc §13.4).
                                     "kernel_variant":  kernel_variant,
                                     "hardware":        hardware,
-                                    "schema_version":  SCHEMA_VERSION,
+                                    # ROW_SCHEMA_VERSION (distinct
+                                    # from the production-envelope
+                                    # schema_version in accumulator /
+                                    # migrate — same name, different
+                                    # schema). Stamped today but not
+                                    # YET read; the version-2 reader
+                                    # arrives with the next row-shape
+                                    # change.
+                                    "schema_version":  ROW_SCHEMA_VERSION,
                                     # Tier 3 (highest precedence):
                                     # explicit tuning identity.
                                     "case":            "logical",

@@ -216,6 +216,10 @@ def split_v1_production_kernel(
             if "case" not in new_row["tuning_key"]:
                 new_row["tuning_key"]["case"] = case_name
             winners.append(new_row)
+    # `schema_version` = ENVELOPE schema version for the .kernel
+    # file (matches accumulator.build_production), NOT the per-row
+    # ROW_SCHEMA_VERSION stamped inside tuning_key. Same name, two
+    # schemas — see core/discriminator.py docstring.
     return {
         "schema_version": 1,
         "workload":       "<set by caller>",

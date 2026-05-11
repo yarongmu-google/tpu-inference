@@ -54,6 +54,11 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
+from tools.tuning.v2.core.discriminator import (
+    DEFAULT_HARDWARE,
+    DEFAULT_KERNEL_VARIANT,
+    KNOWN_KERNEL_VARIANTS,
+)
 from tools.tuning.v2.core.git_atomic import commit_and_push
 from tools.tuning.v2.core.keyset import service_combo_key
 from tools.tuning.v2.core.raw_store import append_row, build_skip_set
@@ -186,16 +191,34 @@ def resolve_kernel_pin_keys(
         mnss = tk.get("max_num_seqs")
     # Discriminators (architecture doc §13.4.1): forward-compat
     # defaults for older .kernel files predating the stamp — missing
-    # is tolerable history, mismatching would be corruption (caller
-    # cross-validates downstream).
+    # is tolerable history.
+    kernel_variant = tk.get("kernel_variant", DEFAULT_KERNEL_VARIANT)
+    hardware = tk.get("hardware", DEFAULT_HARDWARE)
+
+    # Symmetric gate with cli/lookup: fail loud at sweep startup if
+    # the .kernel file came from a plugin we don't know how to drive.
+    # Catches "wrong .kernel was committed under this workload"
+    # BEFORE the sweep accumulates thousands of FAILED rows
+    # tagged with the foreign variant. Same KNOWN_KERNEL_VARIANTS
+    # gate cli/lookup uses at deploy time — defense in depth.
+    if kernel_variant not in KNOWN_KERNEL_VARIANTS:
+        raise KernelRegistryMissingError(
+            f"{kernel_path} winner has kernel_variant="
+            f"{kernel_variant!r}, not in KNOWN_KERNEL_VARIANTS="
+            f"{sorted(KNOWN_KERNEL_VARIANTS)}. The .kernel file is "
+            f"from a plugin this codebase doesn't dispatch on yet — "
+            f"add an emit branch in cli/lookup.py and the variant "
+            f"to core/discriminator.KNOWN_KERNEL_VARIANTS first.",
+        )
+
     return {
         "case":           tk.get("case"),
         "page_size":      tk.get("page_size"),
         "kernel_K":       tk.get("kernel_K"),
         "code_revision":  tk.get("code_revision"),
         "mnss":           mnss,
-        "kernel_variant": tk.get("kernel_variant", "rpa_v3"),
-        "hardware":       tk.get("hardware", "tpu_v7x"),
+        "kernel_variant": kernel_variant,
+        "hardware":       hardware,
     }
 
 

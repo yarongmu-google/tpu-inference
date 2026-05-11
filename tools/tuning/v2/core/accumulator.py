@@ -149,6 +149,11 @@ def build_production(
             topo = inferred_topo
         if model is None:
             model = inferred_model
+    # `schema_version` here = PRODUCTION-envelope schema version,
+    # distinct from the per-row ROW_SCHEMA_VERSION stamped inside
+    # tuning_key (core/discriminator.py). Same field name, different
+    # schema: this one versions the `{topo, model, by_workload}`
+    # wrapper; the row one versions individual tuning_key shapes.
     return {
         "schema_version": 1,
         "topo": topo,

@@ -510,17 +510,20 @@ class TestResolveKernelPinKeys(unittest.TestCase):
         self.assertEqual(pk["kernel_variant"], "rpa_v3")
         self.assertEqual(pk["hardware"], "tpu_v7x")
 
-    def test_pin_keys_carry_explicit_kernel_variant_through(self):
-        """When a future plugin tunes against this codebase, the
-        winner's tuning_key.kernel_variant flows into pin_keys."""
+    def test_unknown_kernel_variant_in_winner_raises_at_sweep_startup(self):
+        """Symmetric gate (architecture doc §13.4.1): a .kernel file
+        from a plugin this codebase doesn't dispatch on must fail
+        loud at sweep startup, BEFORE the sweep accumulates thousands
+        of FAILED rows tagged with the foreign variant. Same gate
+        cli/lookup uses at deploy time — defense in depth."""
         doc = {
             "winners": [{
                 "tuning_key": {
                     "case": "logical",
                     "page_size": 128, "kernel_K": 256,
                     "code_revision": "x",
-                    "kernel_variant": "rpa_v3_hd64",
-                    "hardware":       "tpu_v6e",
+                    "kernel_variant": "flash_attn_cuda",   # not known
+                    "hardware":       "cuda_h100",
                 },
                 "tunable_params": {
                     "bq_sz": 256, "bkv_sz": 2048,
@@ -530,9 +533,9 @@ class TestResolveKernelPinKeys(unittest.TestCase):
             }],
         }
         (self.dir / "x.kernel").write_text(json.dumps(doc))
-        pk = resolve_kernel_pin_keys(self.dir, "x")
-        self.assertEqual(pk["kernel_variant"], "rpa_v3_hd64")
-        self.assertEqual(pk["hardware"], "tpu_v6e")
+        with self.assertRaisesRegex(KernelRegistryMissingError,
+                                    "flash_attn_cuda"):
+            resolve_kernel_pin_keys(self.dir, "x")
 
     def test_prefill_winner_includes_mnss_equal_to_max_num_seqs(self):
         """For PREFILL (coupled-K, no decoupling), the iter capacity

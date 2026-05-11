@@ -419,7 +419,7 @@ Three fields go into `tuning_key` at row-construction time, even though there's 
 
 Per-SHA partitioning makes this risk-free: old `.raw/<sha>.jsonl` files without these fields are read with implicit defaults (`kernel_variant="rpa_v3"`, `hardware="tpu_v7x"`, `schema_version=1`); new files include them explicitly. **No migration needed** — the old SHA partitions remain readable and any new tuning run on a new SHA produces stamped rows.
 
-Concrete sketch (additions to `tools/tuning/v2/kernel/enumerate_logical.py:93-100`):
+Concrete sketch (additions to `tools/tuning/v2/kernel/enumerate_logical.py`'s tuning_key literal):
 
 ```python
 tuning_key = {
@@ -435,7 +435,9 @@ tuning_key = {
 }
 ```
 
-Today these are literal constants because there's exactly one plugin / hardware / schema. When a second plugin lands (next TPU kernel variant — e.g. `rpa_v3_hd64`, MLA — or a CUDA / ROCm port), `kernel_variant` becomes a parameter of `run_kernel_tune` (passed by the caller, defaulted to the plugin's own identifier). `hardware` comes from the workload env or path (`cases/v7x/...` → `tpu_v7x`; `cases/h100/...` → `cuda_h100`). `schema_version` only changes when the row schema does — a deliberate, reviewed event.
+Today's defaults come from `core/discriminator.py` — single source of truth for `DEFAULT_KERNEL_VARIANT`, `DEFAULT_HARDWARE`, `ROW_SCHEMA_VERSION`, and the `KNOWN_KERNEL_VARIANTS` gate. Three sites import from here: `kernel/enumerate_logical.py` (stamping), `service/sweep.py` (pin_keys + sweep-time gate), `cli/lookup.py` (deploy-time emit dispatch). A future TPU-gen bump or plugin rename is a one-file diff.
+
+`kernel_variant` and `hardware` are parameterizable from day 1 — `run_kernel_tune` and `enumerate_logical_combos` accept them as kwargs, defaulted to the plugin's identity. When the second plugin (next TPU kernel variant — e.g. `rpa_v3_hd64`, MLA — or a CUDA / ROCm port) lands, the caller passes its own identifier; no signature change needed. `hardware` typically comes from the workload's path (`cases/v7x/...` → `tpu_v7x`; `cases/h100/...` → `cuda_h100`). `ROW_SCHEMA_VERSION` is stamped now but **not yet read** — it's known dead-weight-with-purpose until the version-2 reader arrives, at which point `kernel/project.py` gains a per-version row adapter.
 
 **Three-tier precedence.** The dict-literal positioning above is load-bearing, not cosmetic. Same rule as the existing `**model_shape` reordering (fix #14): later keys win. Tiers, lowest to highest precedence:
 

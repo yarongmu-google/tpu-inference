@@ -30,13 +30,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
-# Currently supported kernel_variant values for the env-var dispatch.
-# Adding a new TPU kernel variant (e.g. "rpa_v3_hd64", "mla") or a
-# cross-HW plugin ("flash_attn_cuda") extends this — see the
-# `emit_env_vars` block in `lookup_env`. Architecture doc §13.4.1.
-KNOWN_KERNEL_VARIANTS = frozenset({"rpa_v3"})
-DEFAULT_KERNEL_VARIANT = "rpa_v3"
+from tools.tuning.v2.core.discriminator import (
+    DEFAULT_KERNEL_VARIANT,
+    KNOWN_KERNEL_VARIANTS,
+)
 
 
 def _read_json(path: Path) -> dict[str, Any]:
