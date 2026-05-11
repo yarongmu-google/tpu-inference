@@ -631,6 +631,8 @@ Step 2 — Synthesize the L+latency sweep spec, sweep MNB ∈ {8192,
 auto-commits + pushes.
 
 ```bash
+git pull origin rpa3_2
+
 python3 -m tools.benchmark.sweep_recipes \
     --workload tools/benchmark/cases/v7x/llama3_8b/prefill_heavy_latency.workload \
     --service vllm_latency_decoupled_k \
