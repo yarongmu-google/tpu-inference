@@ -145,6 +145,24 @@ def make_measurement_fn(
         tuning_key: dict[str, Any],
         tunable_params: dict[str, Any],
     ) -> dict[str, Any]:
+        # MOCK_TPU=1 (mirror of MOCK_BENCH=1 in service/measurement_bench):
+        # bypass the v1 tuner + JAX entirely and return synthetic
+        # deterministic latency. Lets the full v2 pipeline run on a
+        # non-TPU host for wiring / progress-line / file-layout
+        # verification.
+        # Latency varies deterministically per combo so the projection
+        # has a real ordering signal — picks the "fastest" mock combo
+        # consistently across runs. Not real measurements.
+        if os.environ.get("MOCK_TPU") == "1":
+            mnss = tunable_params.get("mnss") or 1
+            bq_sz = tunable_params.get("bq_sz") or 1
+            fake_latency_us = 1000.0 + 0.1 * mnss + 0.01 * bq_sz
+            return {
+                "status":     "SUCCESS",
+                "latency_us": fake_latency_us,
+                "mock":       True,
+            }
+
         variant = tuning_key.get("kernel_variant", "rpa_v3")
         if variant != "rpa_v3":
             return {

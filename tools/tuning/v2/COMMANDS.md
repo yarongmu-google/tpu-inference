@@ -22,6 +22,28 @@ before landing a SUCCESS — that's the SMEM/VMEM estimator correctly
 rejecting some combos. The first SUCCESS is what the rest of the pipeline
 consumes.
 
+### Local (off-TPU) end-to-end — `MOCK_TPU=1`
+
+Same recipe with `MOCK_TPU=1` added. The kernel measurement is short-
+circuited to synthetic latency (no JAX / Pallas / TPU touched); the bench
+side already short-circuits via `MOCK_BENCH=1`. The whole pipeline runs on
+a Mac in under a second, useful for verifying progress lines, file layout,
+or testing pipeline changes without a TPU VM.
+
+```bash
+SMOKE_TEST=1 KERNEL_TUNER_NO_COMMIT=1 \
+MOCK_TPU=1 MOCK_BENCH=1 \
+EXTRA_TUNE_FLAGS="--iters 1 --warmup 0" \
+tools/tuning/v2/scripts/run_pipeline.sh \
+  tools/benchmark/cases/v7x/llama3_8b/throughput/prefill_heavy.workload
+```
+
+Rows produced under `MOCK_TPU=1` carry `mock: true` on the .kernel.raw side
+(same shape as `MOCK_BENCH=1` does on the .service.raw side); per-combo
+progress lines tag the row with `(MOCK)` so they don't blend with real
+measurements. Don't mix MOCK rows into a real workload partition — the
+projection has no auto-filter.
+
 ### Throughput (MNS swept at service level)
 
 ```bash

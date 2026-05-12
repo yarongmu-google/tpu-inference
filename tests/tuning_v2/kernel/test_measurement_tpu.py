@@ -231,6 +231,49 @@ class TestMeasurementAdapter(unittest.TestCase):
 
     # ---- error paths ----
 
+    def test_mock_tpu_env_bypasses_v1_tuner(self):
+        """MOCK_TPU=1 short-circuits before any v1 import. Lets the
+        full v2 pipeline run on a non-TPU host for wiring tests."""
+        # Even if the v1 tuner is broken, MOCK_TPU bypasses it.
+        self.stubs["tuner_class"].side_effect = RuntimeError(
+            "v1 should not be touched under MOCK_TPU",
+        )
+        tk, tp = _v2_combo()
+        fn = self._make_fn(iters=1, warmup_iters=0)
+        import os as _os
+        with mock.patch.dict(_os.environ, {"MOCK_TPU": "1"}):
+            result = fn(tk, tp)
+        self.assertEqual(result["status"], "SUCCESS")
+        self.assertTrue(result["mock"])
+        self.assertIn("latency_us", result)
+        # v1 tuner constructor was NOT called.
+        self.stubs["tuner_class"].assert_not_called()
+
+    def test_mock_tpu_latency_varies_per_combo_for_projection(self):
+        """Synthetic latency depends on (mnss, bq_sz) so different
+        combos in a MOCK_TPU sweep get a real ordering, not all
+        tied at one value. Projection's argmin still works."""
+        import os as _os
+        fn = self._make_fn(iters=1, warmup_iters=0)
+        with mock.patch.dict(_os.environ, {"MOCK_TPU": "1"}):
+            tk, tp = _v2_combo()
+            tp_a = dict(tp); tp_a["mnss"] = 100
+            tp_b = dict(tp); tp_b["mnss"] = 9999
+            la = fn(tk, tp_a)["latency_us"]
+            lb = fn(tk, tp_b)["latency_us"]
+        self.assertLess(la, lb)
+
+    def test_mock_tpu_env_non_one_does_not_bypass(self):
+        """Only literal '1' enables mock — same contract as the
+        other SMOKE_TEST / NO_PUSH / NO_COMMIT / MOCK_BENCH knobs."""
+        tk, tp = _v2_combo()
+        fn = self._make_fn(iters=1, warmup_iters=0)
+        import os as _os
+        with mock.patch.dict(_os.environ, {"MOCK_TPU": "true"}):
+            fn(tk, tp)
+        # v1 tuner WAS constructed (mock didn't trip).
+        self.stubs["tuner_class"].assert_called_once()
+
     def test_unknown_kernel_variant_refuses(self):
         """Cross-plugin guard (architecture doc §13.4.1)."""
         tk, tp = _v2_combo()

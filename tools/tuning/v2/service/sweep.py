@@ -342,6 +342,16 @@ def run_service_sweep(
             # doesn't re-attempt next sweep. Don't call measurement_fn.
             result = {"status": "SKIPPED", "reason": skip_reason}
         else:
+            # Pre-measurement progress line — see kernel/tune for the
+            # same pattern. A bench combo can take 10+ min; without
+            # this print the operator can't tell what's happening.
+            print(
+                f"[sweep  *] "
+                f"MNB={combo.get('MAX_NUM_BATCHED_TOKENS'):<7} "
+                f"MNS={combo.get('MAX_NUM_SEQS'):<5} "
+                f"→ measuring...",
+                file=sys.stderr, flush=True,
+            )
             try:
                 result = measurement_fn(combo)
             except Exception as e:    # pylint: disable=broad-except

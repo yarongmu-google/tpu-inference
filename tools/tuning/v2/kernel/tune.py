@@ -183,6 +183,22 @@ def run_kernel_tune(
     for tuning_key, tunable_params in combos:
         if combo_key(tuning_key, tunable_params) in skip_set:
             continue
+
+        # Pre-measurement progress line so a hung combo is visible.
+        # The post-measurement line confirms completion + status; this
+        # one names the combo BEFORE we call into pallas_call, so a
+        # multi-minute JIT compile doesn't look like a hang.
+        print(
+            f"[tune   *] "
+            f"case={tuning_key.get('case'):<7} "
+            f"page={tuning_key.get('page_size'):<3} "
+            f"K={tuning_key.get('kernel_K'):<5} "
+            f"mnss={tunable_params.get('mnss'):<6} "
+            f"bq={tunable_params.get('bq_sz'):<5} "
+            f"→ measuring...",
+            file=sys.stderr, flush=True,
+        )
+
         try:
             result = measurement_fn(tuning_key, tunable_params)
         except Exception as e:    # pylint: disable=broad-except
