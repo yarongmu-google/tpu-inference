@@ -61,8 +61,38 @@ logger = logging.getLogger(__spec__.name if __spec__ is not None else __name__)
 # Statuses that are permanent for resume — i.e., re-running them is a
 # waste of time or will fail identically. UNKNOWN_ERROR is intentionally
 # excluded so post-bugfix re-runs retry it (the regression that
-# 35b570d7 fixed in v1).
-PERMANENT_STATUSES = frozenset({"SUCCESS", "FAILED_OOM", "SKIPPED"})
+# 35b570d7 fixed in v1). SKIPPED_DYNAMIC_PRUNE is permanent because the
+# subspace was demonstrated infeasible — block-size variation within
+# the same (case, page_size, kernel_K, mnss) can't recover it.
+PERMANENT_STATUSES = frozenset(
+    {"SUCCESS", "FAILED_OOM", "SKIPPED", "SKIPPED_DYNAMIC_PRUNE"}
+)
+
+# prev-4: dynamic prune threshold. After N consecutive non-SUCCESS
+# results in the SAME (case, page_size, kernel_K, mnss) subspace, the
+# remaining combos in that subspace are written as SKIPPED_DYNAMIC_PRUNE
+# without measuring. The May-11 incident had 45 consecutive UNKNOWN_ERROR
+# at one subspace; with N=5 the abort would have fired after ~15 minutes
+# instead of 3.5 hours. Configurable via env var KERNEL_TUNE_DYN_PRUNE_N
+# (set to 0 to disable).
+_DYN_PRUNE_DEFAULT_N = 5
+NON_SUCCESS_STATUSES = frozenset(
+    {"FAILED_OOM", "UNKNOWN_ERROR"}
+)
+
+
+def _subspace_of(tuning_key: dict[str, Any],
+                 tunable_params: dict[str, Any]) -> tuple:
+    """Subspace key for dynamic-prune grouping. Combos sharing this
+    tuple share the kernel program-memory ask (mnss × K dominates) so
+    if one OOMs, block-size variation within the same key won't help.
+    """
+    return (
+        tuning_key.get("case"),
+        tuning_key.get("page_size"),
+        tuning_key.get("kernel_K"),
+        tunable_params.get("mnss"),
+    )
 
 
 def model_shape_from_workload(workload_env: dict[str, str]) -> dict[str, Any]:
@@ -199,6 +229,18 @@ def run_kernel_tune(
             f"worker_count={worker_count} — require 1 <= count and "
             f"0 <= id < count.",
         )
+
+    # prev-4: dynamic-prune state. `_subspace_fails` accumulates
+    # consecutive non-SUCCESS rows per subspace; once a subspace
+    # exceeds the threshold it enters `_aborted_subspaces` and
+    # subsequent combos in it skip measurement (written as
+    # SKIPPED_DYNAMIC_PRUNE rows so resume treats them as permanent).
+    dyn_prune_n = int(os.environ.get(
+        "KERNEL_TUNE_DYN_PRUNE_N", str(_DYN_PRUNE_DEFAULT_N),
+    ))
+    _subspace_fails: dict[tuple, int] = {}
+    _aborted_subspaces: set[tuple] = set()
+
     for tuning_key, tunable_params in combos:
         case = tuning_key.get("case")
         if (os.environ.get("SMOKE_TEST") == "1"
@@ -206,6 +248,24 @@ def run_kernel_tune(
             continue
         ck = combo_key(tuning_key, tunable_params)
         if ck in skip_set:
+            continue
+
+        # Dynamic-prune fast-path: subspace already aborted →
+        # write a permanent SKIPPED_DYNAMIC_PRUNE row and continue.
+        # No measurement, no HBM allocation.
+        subspace = _subspace_of(tuning_key, tunable_params)
+        if dyn_prune_n > 0 and subspace in _aborted_subspaces:
+            row = {
+                "tuning_key":     tuning_key,
+                "tunable_params": tunable_params,
+                "status":         "SKIPPED_DYNAMIC_PRUNE",
+                "error": (
+                    f"subspace {subspace} aborted after "
+                    f"{dyn_prune_n} consecutive non-SUCCESS rows"
+                ),
+            }
+            append_row(raw_path, row)
+            n_new += 1
             continue
         # Multi-worker partitioning (arch §8): hash-based bucket
         # assignment. Each worker measures only its own bucket;
@@ -275,6 +335,28 @@ def run_kernel_tune(
         }
         append_row(raw_path, row)
         n_new += 1
+
+        # prev-4: dynamic-prune accounting. SUCCESS resets the
+        # subspace's fail counter; non-SUCCESS increments it.
+        # Crossing the threshold marks the subspace aborted; future
+        # combos in this subspace hit the fast-path above.
+        if dyn_prune_n > 0:
+            _status_now = result.get("status")
+            if _status_now == "SUCCESS":
+                _subspace_fails[subspace] = 0
+            elif _status_now in NON_SUCCESS_STATUSES:
+                _subspace_fails[subspace] = (
+                    _subspace_fails.get(subspace, 0) + 1
+                )
+                if _subspace_fails[subspace] >= dyn_prune_n:
+                    _aborted_subspaces.add(subspace)
+                    logger.warning(
+                        "[tune dynamic prune] subspace %s aborted "
+                        "after %d consecutive non-SUCCESS rows — "
+                        "remaining combos in this subspace will be "
+                        "SKIPPED_DYNAMIC_PRUNE",
+                        subspace, dyn_prune_n,
+                    )
 
         # Post-measurement progress line — see the pre-measurement
         # block above. Raw JSONL stays the source of truth.

@@ -734,6 +734,150 @@ class TestRunKernelTune(unittest.TestCase):
         self.assertEqual(cap.call_count, 2)
 
 
+class TestDynamicPrune(unittest.TestCase):
+    """prev-4: after N consecutive non-SUCCESS in the same (case,
+    page_size, kernel_K, mnss) subspace, remaining combos in that
+    subspace are SKIPPED_DYNAMIC_PRUNE without measurement.
+
+    The May-11 incident: 45 consecutive UNKNOWN_ERROR at one subspace
+    burned 3.5 hours. With N=5 the abort fires after ~15 minutes.
+    """
+
+    WORKLOAD_ENV_BASE = {
+        "MAX_NUM_SEQS":           "128",
+        "MAX_NUM_BATCHED_TOKENS": "8192",
+        "NUM_Q_HEADS":            "32",
+        "NUM_KV_HEADS":           "8",
+        "HEAD_DIM":               "128",
+        "MAX_MODEL_LEN":          "8192",
+    }
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self.tmp.name)
+        _init_git_repo(self.repo)
+        self.workload_dir = self.repo / "cases" / "v7x" / "llama3_8b"
+        self.workload_dir.mkdir(parents=True)
+        self._saved_no_push = os.environ.pop(NO_PUSH_ENV, None)
+        os.environ[NO_PUSH_ENV] = "1"
+        # Wide-ish overlay at ONE (page, K, mnss) outer combo with
+        # many inner block-size combos. All combos share the same
+        # subspace tuple — the failure mode dynamic-prune is designed
+        # for.
+        (self.workload_dir / "test.kernel_axes.json").write_text(json.dumps({
+            "page_size": [128],
+            "kernel_K":  [256],
+            "mnss":      [4224],
+            "bq_sz":     [128, 256],
+            "bkv_sz":    [1024, 2048],
+            "bq_csz":    [64, 128, 256],
+            "bkv_csz":   [256, 512],
+        }))
+        self.raw_path = (
+            self.workload_dir / "test.kernel.raw" / "abc12345.jsonl"
+        )
+
+    def tearDown(self):
+        if self._saved_no_push is None:
+            os.environ.pop(NO_PUSH_ENV, None)
+        else:
+            os.environ[NO_PUSH_ENV] = self._saved_no_push
+        os.environ.pop("KERNEL_TUNE_DYN_PRUNE_N", None)
+        self.tmp.cleanup()
+
+    def test_aborts_after_threshold_consecutive_fails(self):
+        """All combos OOM. Threshold N=3. Only first 3 should call
+        measurement_fn; the remaining combos in the same subspace
+        write SKIPPED_DYNAMIC_PRUNE rows without measuring."""
+        os.environ["KERNEL_TUNE_DYN_PRUNE_N"] = "3"
+        calls = []
+        def measure(tk, tp):
+            calls.append((tk, tp))
+            return {"status": "FAILED_OOM"}
+        run_kernel_tune(
+            workload_env=self.WORKLOAD_ENV_BASE,
+            workload_dir=self.workload_dir,
+            workload_name="test",
+            raw_path=self.raw_path,
+            measurement_fn=measure,
+            code_revision="abc12345",
+        )
+        rows = list(read_rows(self.raw_path))
+        # measurement_fn called exactly N times before abort.
+        self.assertEqual(len(calls), 3)
+        # All remaining rows are SKIPPED_DYNAMIC_PRUNE.
+        self.assertEqual(
+            sum(1 for r in rows if r["status"] == "FAILED_OOM"), 3,
+        )
+        n_dyn_pruned = sum(
+            1 for r in rows
+            if r["status"] == "SKIPPED_DYNAMIC_PRUNE"
+        )
+        self.assertGreater(n_dyn_pruned, 0)
+        self.assertEqual(len(rows), len(calls) + n_dyn_pruned)
+
+    def test_success_resets_counter(self):
+        """Intermittent non-SUCCESS interleaved with SUCCESS shouldn't
+        trip the abort — the counter resets on each SUCCESS."""
+        os.environ["KERNEL_TUNE_DYN_PRUNE_N"] = "3"
+        statuses = iter([
+            "FAILED_OOM", "FAILED_OOM", "SUCCESS",  # reset
+            "FAILED_OOM", "FAILED_OOM", "SUCCESS",  # reset
+            "FAILED_OOM", "SUCCESS",                # reset
+        ] + ["SUCCESS"] * 100)
+        def measure(tk, tp):
+            s = next(statuses)
+            r = {"status": s}
+            if s == "SUCCESS":
+                r["latency_us"] = 100.0
+            return r
+        run_kernel_tune(
+            workload_env=self.WORKLOAD_ENV_BASE,
+            workload_dir=self.workload_dir,
+            workload_name="test",
+            raw_path=self.raw_path,
+            measurement_fn=measure,
+            code_revision="abc12345",
+        )
+        rows = list(read_rows(self.raw_path))
+        # No dynamic-prune rows — counter never crossed the threshold.
+        self.assertEqual(
+            sum(1 for r in rows if r["status"] == "SKIPPED_DYNAMIC_PRUNE"),
+            0,
+        )
+
+    def test_disabled_when_threshold_is_zero(self):
+        """Env override to 0 disables dynamic prune entirely. Useful
+        when an operator wants the legacy behavior (measure every
+        combo even if all fail) for diagnostic purposes."""
+        os.environ["KERNEL_TUNE_DYN_PRUNE_N"] = "0"
+        calls = []
+        def measure(tk, tp):
+            calls.append(1)
+            return {"status": "FAILED_OOM"}
+        run_kernel_tune(
+            workload_env=self.WORKLOAD_ENV_BASE,
+            workload_dir=self.workload_dir,
+            workload_name="test",
+            raw_path=self.raw_path,
+            measurement_fn=measure,
+            code_revision="abc12345",
+        )
+        rows = list(read_rows(self.raw_path))
+        # Every row is FAILED_OOM; none dynamic-pruned.
+        self.assertGreater(len(calls), 3)
+        self.assertEqual(
+            sum(1 for r in rows if r["status"] == "FAILED_OOM"),
+            len(calls),
+        )
+
+    def test_pruned_rows_in_permanent_statuses(self):
+        """SKIPPED_DYNAMIC_PRUNE must be in PERMANENT_STATUSES so
+        resume doesn't re-attempt the doomed combos."""
+        from tools.tuning.v2.kernel.tune import PERMANENT_STATUSES
+        self.assertIn("SKIPPED_DYNAMIC_PRUNE", PERMANENT_STATUSES)
+
+
 class TestParseWorkloadEnv(unittest.TestCase):
     """Cover the workload-env parser's branches."""
 

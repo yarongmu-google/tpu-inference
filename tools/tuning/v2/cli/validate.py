@@ -224,7 +224,95 @@ def validate(workload_path: Path) -> list[tuple[str, str]]:
                     f"least {inp + out}.",
                 ))
 
+    # prev-3: feasibility precheck. The May-11 incident's lesson — a
+    # workload at MNS=1000 with default mnss multipliers {1,2,4,8,16,32}
+    # yields zero combos that fit in v7x's bottom-of-memory region at
+    # K_kernel >= 128. Validate-step is the right place to fail fast
+    # rather than burn TPU-hours producing UNKNOWN_ERROR rows.
+    if not any(sev == "error" for sev, _ in issues):
+        issues.extend(_feasibility_issues(workload_path, env))
+
     return issues
+
+
+def _feasibility_issues(
+    workload_path: Path, env: dict[str, str],
+) -> list[tuple[str, str]]:
+    """Check that the workload's full kernel search space contains at
+    least some feasible combos against VMEM/SMEM/HBM budgets.
+
+    Returns issue tuples (no exceptions). Falls open if the kernel
+    module isn't importable (e.g. laptop without vllm) — the actual
+    TPU host has the deps and gets the real check; dev hosts don't
+    need to.
+    """
+    try:
+        from tools.tuning.v2.kernel.search_space import (
+            kernel_search_space,
+        )
+        from tools.tuning.v2.kernel.enumerate_logical import (
+            _STATIC_PRUNE_AVAILABLE,
+            enumerate_logical_combos,
+        )
+    except ImportError:
+        # Dev host without vllm/TPU deps — silent skip. The TPU host
+        # has the deps and gets the real check; surfacing a warning
+        # here would just be noise on laptops.
+        return []
+    if not _STATIC_PRUNE_AVAILABLE:
+        # Same as above but the inner kernel-module import failed,
+        # not the v2 modules. Silent skip — v1's runtime check is
+        # the backstop for any combo that would have been pruned.
+        return []
+    try:
+        max_num_seqs = int(env.get("MAX_NUM_SEQS", "1"))
+        max_num_batched_tokens = int(
+            env.get("MAX_NUM_BATCHED_TOKENS", str(max_num_seqs))
+        )
+    except ValueError:
+        return []  # the schema check above will have caught this
+
+    model_shape = {
+        "num_q_heads":    int(env["NUM_Q_HEADS"]),
+        "num_kv_heads":   int(env["NUM_KV_HEADS"]),
+        "head_dim":       int(env["HEAD_DIM"]),
+        "max_model_len":  int(env["MAX_MODEL_LEN"]),
+        "q_dtype":        env.get("Q_DTYPE", "bfloat16"),
+        "kv_dtype":       env.get("KV_DTYPE", "bfloat16"),
+        "sliding_window": None,
+    }
+    search_space = kernel_search_space(
+        workload_dir=workload_path.parent,
+        workload_name=workload_path.stem,
+        max_num_seqs=max_num_seqs,
+    )
+    feasible = 0
+    for _tk, _tp in enumerate_logical_combos(
+        max_num_seqs=max_num_seqs,
+        max_num_batched_tokens=max_num_batched_tokens,
+        model_shape=model_shape,
+        code_revision="00000000",
+        search_space=search_space,
+    ):
+        feasible += 1
+        # Early-out — we only need to know feasible_count > 0 vs 0.
+        # Don't enumerate the entire space (could be 10k+ combos).
+        if feasible >= 5:
+            break
+    if feasible == 0:
+        return [(
+            "error",
+            f"feasibility precheck: workload yields ZERO combos that "
+            f"fit in VMEM/SMEM/HBM budgets. Common cause: mnss × "
+            f"kernel_K exceeds the bottom-of-memory region (~13 GB "
+            f"on v7x-1) for every (mnss, K) pair in the search space. "
+            f"Lower mnss or kernel_K in the .kernel_axes.json overlay; "
+            f"or, on v7x with MNS={max_num_seqs}, the default mnss "
+            f"multipliers {{1,2,4,8,16,32}} may be too large — try "
+            f"a narrow overlay like mnss=[{max_num_seqs}, "
+            f"{max_num_seqs * 2}] and kernel_K=[256] first.",
+        )]
+    return []
 
 
 def main(argv: list[str] | None = None) -> int:

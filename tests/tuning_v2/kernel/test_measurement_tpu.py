@@ -304,6 +304,81 @@ class TestMeasurementAdapter(unittest.TestCase):
         # Only the warmup call fired; no timed measure attempted.
         self.assertEqual(self.stubs["run_mock"].call_count, 1)
 
+    # ---- OOM classification (prev-1) ----
+    # XLA TPU JIT emits RESOURCE_EXHAUSTED (uppercase + underscore);
+    # JAX device-buffer alloc emits ResourceExhausted (Pascal case);
+    # both must map to FAILED_OOM so resume doesn't re-attempt the
+    # combo. The May-11 prefill_heavy incident was 45 doomed combos
+    # at mnss=2000+K=128, all the uppercase-underscore form, all
+    # mis-classified as UNKNOWN_ERROR by a case-sensitive substring
+    # match on the Pascal form. Permanent classification is the
+    # correctness fix; covering all observed spellings is the
+    # robustness fix.
+
+    def test_xla_tpu_jit_resource_exhausted_classified_as_failed_oom(self):
+        """The May-11 incident's exact error format: XLA TPU JIT's
+        program-memory allocation failure uses uppercase + underscore."""
+        xla_msg = (
+            "RESOURCE_EXHAUSTED: E0101: RuntimeProgramAllocationFailure:"
+            " Error loading program 'jit_ragged_paged_attention': "
+            "Attempting to reserve 16.50G at the bottom of memory. "
+            "That was not possible. There are 14.00G free, 0B reserved, "
+            "and 14.00G reservable."
+        )
+        self.stubs["run_mock"].side_effect = ValueError(xla_msg)
+        tk, tp = _v2_combo()
+        fn = self._make_fn(iters=1, warmup_iters=0)
+        result = fn(tk, tp)
+        self.assertEqual(result["status"], "FAILED_OOM")
+        self.assertIn("OOM", result["error"])
+
+    def test_jax_pascal_case_resource_exhausted_classified_as_failed_oom(self):
+        """JAX device-buffer OOM (the 6ad23404 70B/32K case) uses
+        Pascal case — must also classify as FAILED_OOM."""
+        jax_msg = (
+            "ResourceExhausted: Error allocating device buffer: "
+            "Attempting to allocate 32.00GB. That was not possible. "
+            "There are 30.43GB free."
+        )
+        self.stubs["run_mock"].side_effect = RuntimeError(jax_msg)
+        tk, tp = _v2_combo()
+        fn = self._make_fn(iters=1, warmup_iters=0)
+        result = fn(tk, tp)
+        self.assertEqual(result["status"], "FAILED_OOM")
+
+    def test_out_of_memory_phrase_classified_as_failed_oom(self):
+        self.stubs["run_mock"].side_effect = RuntimeError(
+            "Out of memory while allocating XYZ"
+        )
+        tk, tp = _v2_combo()
+        fn = self._make_fn(iters=1, warmup_iters=0)
+        self.assertEqual(fn(tk, tp)["status"], "FAILED_OOM")
+
+    def test_warmup_oom_classified_as_failed_oom_not_unknown_error(self):
+        """OOM during warmup is permanent — no point in trying the
+        timed measure or re-attempting on resume."""
+        self.stubs["run_mock"].side_effect = ValueError(
+            "RESOURCE_EXHAUSTED: E0101: at JIT"
+        )
+        tk, tp = _v2_combo()
+        fn = self._make_fn(iters=10, warmup_iters=2)
+        result = fn(tk, tp)
+        self.assertEqual(result["status"], "FAILED_OOM")
+        self.assertIn("warmup", result["error"])
+        # No timed measure attempted after warmup OOM.
+        self.assertEqual(self.stubs["run_mock"].call_count, 1)
+
+    def test_non_oom_exception_still_unknown_error(self):
+        """Confirm we didn't over-broaden: a normal RuntimeError without
+        OOM signatures stays UNKNOWN_ERROR (retryable)."""
+        self.stubs["run_mock"].side_effect = RuntimeError(
+            "transient host network blip"
+        )
+        tk, tp = _v2_combo()
+        fn = self._make_fn(iters=1, warmup_iters=0)
+        result = fn(tk, tp)
+        self.assertEqual(result["status"], "UNKNOWN_ERROR")
+
     def test_tuner_construction_failure_caught(self):
         self.stubs["tuner_class"].side_effect = ValueError(
             "MAX_NUM_SEQS env var not set",

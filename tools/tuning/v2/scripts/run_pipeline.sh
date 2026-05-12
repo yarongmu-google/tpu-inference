@@ -148,6 +148,30 @@ run_step() {
 
 run_step 0 validate         validate.sh         "$WORKLOAD"     EXTRA_VALIDATE_FLAGS
 run_step 1 "tune kernel"    tune_kernel.sh      "$WORKLOAD"     EXTRA_TUNE_FLAGS
+
+# prev-5: post-tune health check. The May-11 incident: tune.py died
+# silently at 22:20:11 after producing 45 UNKNOWN_ERROR rows and zero
+# SUCCESS rows. The bash orchestrator's set -e couldn't catch it (the
+# python may have exited 0 OR been SIGKILLed). This check reads the
+# kernel.raw JSONL and exits non-zero if there are no rows (silent
+# death) OR zero SUCCESS rows (subsequent sweep step would fail with
+# a less-pointed error).
+#
+# Skip when:
+#   - `--from` is past tune_kernel (the raw store may legitimately be
+#     unchanged in that case);
+#   - KERNEL_TUNE_SKIP_HEALTH=1 (e2e tests, debugging — bypass the
+#     gate without faking a raw store).
+#
+# Path: walk up 4 levels from SCRIPT_DIR (.../tools/tuning/v2/scripts)
+# to the repo root inline — fix #15 (don't reintroduce a REPO_ROOT var
+# that prior cleanup removed; tested by test_no_dead_repo_root_variable).
+if [ "$start_idx" -le 1 ] && [ "${KERNEL_TUNE_SKIP_HEALTH:-0}" != "1" ]; then
+    echo "--- Health check: tune-step output ---"
+    ( cd "$SCRIPT_DIR/../../../.." \
+      && python3 -m tools.tuning.v2.cli.tune_step_health "$WORKLOAD" )
+fi
+
 run_step 2 "project kernel" project_kernel.sh   "$WORKLOAD"     EXTRA_PROJECT_KERNEL_FLAGS
 run_step 3 "sweep service"  sweep_service.sh    "$WORKLOAD"     EXTRA_SWEEP_FLAGS
 run_step 4 "project service" project_service.sh "$WORKLOAD"     EXTRA_PROJECT_SERVICE_FLAGS

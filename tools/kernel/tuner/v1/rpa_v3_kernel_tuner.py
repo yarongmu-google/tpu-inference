@@ -70,6 +70,34 @@ def next_power_of_2(x):
     return 1 << (x - 1).bit_length()
 
 
+# OOM-signature substrings emitted by XLA / JAX when a kernel can't
+# fit. We MUST match all of them so that:
+#   - `RESOURCE_EXHAUSTED: E0101: RuntimeProgramAllocationFailure`
+#     (XLA TPU JIT, "bottom of memory" region — the May-11 prefill_heavy
+#     incident, mnss=2000+K=128 → 16.5G ask vs 14G region cap)
+#   - `ResourceExhausted: Error allocating device buffer` (JAX device
+#     buffer alloc — the 70B/32K 8 GB transient case fixed by 6ad23404)
+#   - `Out of memory` (XLA fallback wording)
+# all classify as FAILED_OOM (permanent) instead of UNKNOWN_ERROR
+# (retryable). The PRIOR string match was case-sensitive on the literal
+# "ResourceExhausted" (Pascal case), which silently missed the XLA TPU
+# JIT format `RESOURCE_EXHAUSTED` (uppercase + underscore) — every
+# kernel-program-memory OOM became UNKNOWN_ERROR and was retried on
+# resume. Case-insensitive lower() comparison covers both spellings
+# plus future variants. Tested against both observed formats.
+_OOM_SIGNATURES = (
+    "resource_exhausted",
+    "resourceexhausted",
+    "out of memory",
+    "runtimeprogramallocationfailure",
+)
+
+
+def _looks_like_oom(err: BaseException) -> bool:
+    msg = str(err).lower()
+    return any(sig in msg for sig in _OOM_SIGNATURES)
+
+
 def get_simplified_raw_key(
     page_size,
     q_dtype,
@@ -911,6 +939,15 @@ class RpaV3KernelTuner(KernelTunerBase):
                         f"{smem_estimate=} > {SMEM_LIMIT_BYTES=}")
             return TuningStatus.SKIPPED, float("inf"), float("inf")
 
+        # NOTE: no HBM-program-memory check here. An empirical
+        # estimator was attempted but over-rejects known-working
+        # configs (the Phase 5 LOGICAL winner at mnss=4224, K=256
+        # passes runtime but the formula predicted 66 GB > region).
+        # The OOM mode is still classified as FAILED_OOM by
+        # _looks_like_oom in the run() catch blocks below, and the
+        # v2 dynamic-prune layer aborts a subspace after N
+        # consecutive non-SUCCESS rows.
+
         # ragged_paged_attention donates (queries, keys, values, kv_cache).
         # kv_cache is also returned with matching shape — JAX aliases it to
         # the return, so we chain it iter-to-iter (same trick as the old
@@ -952,13 +989,13 @@ class RpaV3KernelTuner(KernelTunerBase):
             inputs["kv_cache"] = args[3]
             return TuningStatus.SUCCESS, latency_ns / iters, latency_ns
         except jax.errors.JaxRuntimeError as err:
-            if "ResourceExhausted" in str(err) or "Out of memory" in str(err):
+            if _looks_like_oom(err):
                 logger.info(f"[Debug] Run OOM (empirical bound hit): {err=}")
                 return TuningStatus.FAILED_OOM, float("inf"), float("inf")
             logger.info(f"[Debug] Run JAX runtime error: {err=}")
             return TuningStatus.UNKNOWN_ERROR, float("inf"), float("inf")
         except Exception as err:
-            if "ResourceExhausted" in str(err):
+            if _looks_like_oom(err):
                 logger.info(f"[Debug] Compilation OOM: {err=}")
                 return TuningStatus.FAILED_OOM, float("inf"), float("inf")
             logger.info(f"[Debug] Run failed: {err=}")

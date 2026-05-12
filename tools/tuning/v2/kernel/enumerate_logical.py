@@ -40,6 +40,117 @@ from tools.tuning.v2.core.discriminator import (
 )
 
 
+# Static-prune estimators from the kernel module. Lazy/optional so this
+# enumerator stays importable on a laptop without vllm/TPU deps (the
+# MOCK_TPU path uses enumerate to verify pipeline wiring without ever
+# calling the estimators in anger). On a TPU host the imports succeed
+# and we filter infeasible combos at enumeration time.
+#
+# Scope: only VMEM (block-size-dependent tile footprint) and SMEM
+# (scalar-prefetch arrays). NOT HBM program memory — the
+# `get_hbm_program_memory_estimate_bytes` formula in the kernel module
+# is empirical and was found to over-reject known-working configs (the
+# Phase 5 LOGICAL winner at mnss=4224, K=256 fits in v7x's region but
+# the formula predicts 66 GB). Including it here would block legit
+# winners. Future: replace with a first-principles estimator derived
+# from the actual pallas_call BlockSpec.
+try:
+    from tpu_inference.kernels.ragged_paged_attention.v3.kernel import (
+        get_smem_estimate_bytes,
+        get_vmem_estimate_bytes,
+    )
+    _STATIC_PRUNE_AVAILABLE = True
+except ImportError:
+    _STATIC_PRUNE_AVAILABLE = False
+
+
+# Same as v1's `tools/kernel/tuner/v1/rpa_v3_kernel_tuner.py`:
+# VMEM_LIMIT_BYTES = 60 MB, SMEM_LIMIT_BYTES = 0.9 MB. Duplicated here
+# rather than imported from v1 because v2 should not depend on v1 for
+# constants — when v1 retires (task #14), these stay valid.
+# TODO: hardware-aware. v6e has ~16 MB VMEM; this 60 MB ceiling
+# silently lets v6e-infeasible combos through to the runtime check.
+_VMEM_LIMIT_BYTES = 60 * 1024 * 1024
+_SMEM_LIMIT_BYTES = int(0.9 * 1024 * 1024)
+
+
+def _cdiv(a: int, b: int) -> int:
+    return (a + b - 1) // b
+
+
+def _static_prune_pass(
+    *,
+    model_shape: dict[str, Any],
+    max_num_seqs: int,
+    page_size: int,
+    kernel_K: int,
+    mnss: int,
+    bq_sz: int,
+    bkv_sz: int,
+) -> bool:
+    """Return True if the combo is feasible against VMEM/SMEM/HBM
+    budgets (or the estimators aren't available locally — fall open).
+
+    Skipped combos: caller `continue`s the inner loop, so the row is
+    never yielded and never round-trips through the measurement
+    pipeline. v1's run() runtime check is the backstop for anything
+    that slips through (e.g. an estimator under-counts).
+    """
+    if not _STATIC_PRUNE_AVAILABLE:
+        return True
+    num_q_heads = model_shape["num_q_heads"]
+    num_kv_heads = model_shape["num_kv_heads"]
+    head_dim = model_shape["head_dim"]
+    max_model_len = model_shape["max_model_len"]
+    # CRITICAL: dtypes come from workload env as STRINGS ("bfloat16"),
+    # but the kernel-module estimators call get_dtype_packing(dtype)
+    # which expects a JAX dtype object (jax.dtypes.itemsize_bits would
+    # raise on a raw string). Without this translation the prune
+    # would crash on TPU — falling open silently because the caller
+    # has no exception handler, putting us right back in the May-11
+    # failure mode. Mirror the same translation v2/kernel/measurement_tpu
+    # does for the TuningKey construction path.
+    import jax.numpy as jnp
+    _DTYPE_MAP = {
+        "bfloat16":      jnp.bfloat16,
+        "float16":       jnp.float16,
+        "float32":       jnp.float32,
+        "float8_e4m3fn": jnp.float8_e4m3fn,
+    }
+    q_dtype = _DTYPE_MAP.get(model_shape["q_dtype"], model_shape["q_dtype"])
+    kv_dtype = _DTYPE_MAP.get(model_shape["kv_dtype"], model_shape["kv_dtype"])
+    pages_per_seq = _cdiv(max_model_len, page_size)
+
+    vmem = get_vmem_estimate_bytes(
+        actual_num_kv_heads=num_kv_heads,
+        actual_num_q_heads_per_kv_head=num_q_heads // num_kv_heads,
+        actual_head_dim=head_dim,
+        bq_sz=bq_sz,
+        bkv_sz=bkv_sz,
+        q_dtype=q_dtype,
+        kv_dtype=kv_dtype,
+    )
+    if vmem > _VMEM_LIMIT_BYTES:
+        return False
+    smem = get_smem_estimate_bytes(
+        max_num_seqs,
+        pages_per_seq,
+        max_num_subseqs=mnss,
+    )
+    if smem > _SMEM_LIMIT_BYTES:
+        return False
+    # HBM program-memory check INTENTIONALLY OMITTED — the empirical
+    # formula in `get_hbm_program_memory_estimate_bytes` over-rejects
+    # known-working winners (Phase 5 LOGICAL at mnss=4224, K=256). The
+    # May-11 OOM mode is still caught by: v1's runtime check (after
+    # buffer alloc), prev-1 (FAILED_OOM classification), prev-4
+    # (dynamic prune after N consecutive non-SUCCESS in the same
+    # subspace), and prev-5 (zero-SUCCESS health check at end of tune).
+    # Adding a correct HBM static prune requires a first-principles
+    # estimator from the kernel author.
+    return True
+
+
 def enumerate_logical_combos(
     *,
     max_num_seqs: int,
@@ -88,6 +199,22 @@ def enumerate_logical_combos(
                     if bq_sz > kernel_K:
                         continue
                     for bkv_sz in search_space["bkv_sz"]:
+                        # Static VMEM/SMEM/HBM prune: every doomed combo
+                        # caught here is one less round-trip through
+                        # generate_inputs (GB-scale HBM alloc) + v1's
+                        # runtime checks. Block-size-independent
+                        # bounds (SMEM, HBM) are still re-evaluated per
+                        # bkv_sz — cheap; structurally clean.
+                        if not _static_prune_pass(
+                            model_shape=model_shape,
+                            max_num_seqs=max_num_seqs,
+                            page_size=page_size,
+                            kernel_K=kernel_K,
+                            mnss=mnss,
+                            bq_sz=bq_sz,
+                            bkv_sz=bkv_sz,
+                        ):
+                            continue
                         for bq_csz in search_space["bq_csz"]:
                             if bq_csz > bq_sz:
                                 continue

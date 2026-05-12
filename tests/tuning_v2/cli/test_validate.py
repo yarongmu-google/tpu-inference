@@ -382,6 +382,100 @@ class TestValidate(unittest.TestCase):
         self.assertTrue(any("RPA_KERNEL_K" in m for m in warns))
 
 
+class TestFeasibilityPrecheck(unittest.TestCase):
+    """prev-3: validate-step catches zero-feasible-combos workloads
+    BEFORE any TPU time is spent. The May-11 prefill_heavy workload
+    at MNS=1000 + default mnss multipliers yielded zero combos
+    feasible against v7x's 13 GB bottom-of-memory cap; this check
+    would have failed validate-step in milliseconds instead of
+    burning 3.5 hours of tune time."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_silent_skip_when_kernel_module_unavailable(self):
+        """On dev hosts without vllm/TPU deps, the feasibility check
+        falls open silently — no spurious warnings on every laptop
+        invocation. Verified by VALID_WORKLOAD returning []."""
+        w = self.dir / "x.workload"
+        w.write_text(VALID_WORKLOAD)
+        # On this laptop, kernel module isn't importable. Precheck
+        # must NOT emit a warning. Result must remain empty.
+        self.assertEqual(validate(w), [])
+
+    def test_error_when_zero_feasible_combos(self):
+        """The May-11 failure mode. We mock the enumerator (and the
+        flag) to act as though we're on TPU but yield no combos."""
+        from unittest import mock
+        w = self.dir / "x.workload"
+        w.write_text(VALID_WORKLOAD)
+
+        with mock.patch(
+            "tools.tuning.v2.kernel.enumerate_logical."
+            "_STATIC_PRUNE_AVAILABLE", True,
+        ), mock.patch(
+            "tools.tuning.v2.kernel.enumerate_logical."
+            "enumerate_logical_combos", return_value=iter([]),
+        ):
+            issues = validate(w)
+
+        errs = [m for sev, m in issues if sev == "error"]
+        self.assertEqual(len(errs), 1)
+        self.assertIn("feasibility precheck", errs[0])
+        self.assertIn("ZERO combos", errs[0])
+
+    def test_ok_when_at_least_one_feasible_combo(self):
+        """Precheck early-outs after the first feasible combo —
+        enumerator yields one, no error."""
+        from unittest import mock
+        w = self.dir / "x.workload"
+        w.write_text(VALID_WORKLOAD)
+
+        fake_combo = ({"case": "logical"}, {"mnss": 1000})
+        with mock.patch(
+            "tools.tuning.v2.kernel.enumerate_logical."
+            "_STATIC_PRUNE_AVAILABLE", True,
+        ), mock.patch(
+            "tools.tuning.v2.kernel.enumerate_logical."
+            "enumerate_logical_combos", return_value=iter([fake_combo]),
+        ):
+            issues = validate(w)
+
+        errs = [m for sev, m in issues if sev == "error"]
+        self.assertEqual(errs, [])
+
+    def test_skipped_when_prior_errors_present(self):
+        """Don't cascade feasibility complaints on top of schema
+        errors — they're confusing and feasibility may be malformed
+        too. We force a schema error (missing required MODEL) and
+        ALSO mock the enumerator to yield zero combos; the feasibility
+        error must NOT appear because the prior schema error short-
+        circuits the precheck."""
+        from unittest import mock
+        w = self.dir / "x.workload"
+        # Strip the MODEL var → schema error.
+        wl = VALID_WORKLOAD.replace(
+            ': "${MODEL:=meta-llama/Meta-Llama-3-8B-Instruct}"\n', ""
+        )
+        w.write_text(wl)
+        with mock.patch(
+            "tools.tuning.v2.kernel.enumerate_logical."
+            "_STATIC_PRUNE_AVAILABLE", True,
+        ), mock.patch(
+            "tools.tuning.v2.kernel.enumerate_logical."
+            "enumerate_logical_combos", return_value=iter([]),
+        ):
+            issues = validate(w)
+        errs = [m for sev, m in issues if sev == "error"]
+        # MODEL error present, feasibility error NOT present.
+        self.assertTrue(any("MODEL" in m for m in errs))
+        self.assertFalse(any("feasibility" in m for m in errs))
+
+
 class TestCliMain(unittest.TestCase):
 
     def setUp(self):

@@ -301,5 +301,75 @@ class TestEnumerateLogical(unittest.TestCase):
         self.assertEqual(first, second)
 
 
+class TestStaticPrune(unittest.TestCase):
+    """prev-2a: VMEM / SMEM estimators called at enumeration time.
+
+    HBM program-memory check is INTENTIONALLY OMITTED — the empirical
+    formula in the kernel module over-rejects known-working winners
+    (Phase 5 LOGICAL at mnss=4224, K=256 predicts 66 GB but runs
+    successfully on v7x-1's ~14 GB region). Catching the May-11
+    OOM mode is handled at runtime via prev-1 (OOM classification),
+    prev-4 (dynamic prune), and prev-5 (health check) instead of
+    here.
+
+    We mock the kernel-module imports because vllm isn't installed
+    on every dev host. The fall-open path (when the imports fail)
+    is covered by the existing 17 tests above — they pass on this
+    laptop precisely because _STATIC_PRUNE_AVAILABLE = False.
+    """
+
+    def _enum_with_prune(self, *, vmem_returns=1, smem_returns=1,
+                         **enum_kw):
+        """Re-import the enumerator with prune ENABLED via mocks."""
+        from unittest import mock
+        with mock.patch(
+            "tools.tuning.v2.kernel.enumerate_logical."
+            "_STATIC_PRUNE_AVAILABLE", True,
+        ), mock.patch(
+            "tools.tuning.v2.kernel.enumerate_logical."
+            "get_vmem_estimate_bytes", return_value=vmem_returns,
+            create=True,
+        ), mock.patch(
+            "tools.tuning.v2.kernel.enumerate_logical."
+            "get_smem_estimate_bytes", return_value=smem_returns,
+            create=True,
+        ):
+            return _enum(**enum_kw)
+
+    def test_vmem_estimate_over_limit_skips_combo(self):
+        """v1-parity: kernel's own VMEM estimator above 60 MB v7x cap
+        → combo skipped at enumeration."""
+        combos = self._enum_with_prune(
+            vmem_returns=70 * 1024**2,          # 70 MB > 60 MB v7x cap
+        )
+        self.assertEqual(combos, [])
+
+    def test_smem_estimate_over_limit_skips_combo(self):
+        combos = self._enum_with_prune(
+            smem_returns=2 * 1024**2,           # 2 MB > 0.9 MB cap
+        )
+        self.assertEqual(combos, [])
+
+    def test_under_limits_yields_combo(self):
+        """When VMEM and SMEM are both under budget, the combo is
+        yielded. (HBM no longer gated at enumeration.)"""
+        combos = self._enum_with_prune(
+            vmem_returns=10 * 1024**2,          # 10 MB < 60 MB
+            smem_returns=512 * 1024,            # 512 KB < 0.9 MB
+        )
+        self.assertEqual(len(combos), 1)
+
+    def test_fall_open_when_estimators_unavailable(self):
+        """If the kernel module isn't importable (laptop, CI without
+        vllm), the prune must fall open — never block a valid combo.
+        Implicit in the OTHER 17 tests passing on this laptop, but
+        worth an explicit test."""
+        from tools.tuning.v2.kernel import enumerate_logical
+        # On this host, kernel module isn't importable.
+        self.assertFalse(enumerate_logical._STATIC_PRUNE_AVAILABLE)
+        combos = _enum()
+        self.assertEqual(len(combos), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

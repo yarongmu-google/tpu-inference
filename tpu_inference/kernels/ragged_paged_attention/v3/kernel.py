@@ -562,6 +562,56 @@ def get_vmem_estimate_bytes(
     return cdiv(total_bits, 8)
 
 
+def get_hbm_program_memory_estimate_bytes(
+    num_q_heads,
+    head_dim,
+    max_num_subseqs,
+    K_kernel,
+    q_dtype,
+    num_buffers: int = 4,
+    double_buffer: bool = True,
+):
+    """**EMPIRICAL — DO NOT RELY ON IN A PRUNE PATH.**
+
+    This formula was an attempt to predict the kernel's HBM
+    program-memory ask. It coincidentally matches one observed
+    OOM (mnss=2000 + K=128 + bq=32/64 → predicted 15.62 GB vs
+    observed 16.50 GB), but it OVER-REJECTS known-working configs
+    by 5×+ (Phase 5 LOGICAL winner at mnss=4224 + K=256 + bq=256:
+    predicted 66 GB but runs successfully on v7x-1 in the
+    ~14 GB bottom-of-memory region).
+
+    The actual ask depends on factors not captured here — most
+    likely the kernel materializes data block-by-block via the
+    pallas_call grid spec rather than allocating `mnss × K`-sized
+    static tensors. A correct estimator needs to walk the
+    BlockSpec closures and account for double-buffered tile
+    streams, similar to how `get_vmem_estimate_bytes` does for
+    per-tile VMEM.
+
+    Kept as a placeholder so callers can be wired once a correct
+    version lands. NO CURRENT CALLER. Do NOT add to the v2
+    enumerator or the v1 tuner's runtime check until verified
+    against both Phase 5 (must pass) and May-11 (must reject).
+    """
+    q_packing = get_dtype_packing(q_dtype)
+    aligned_head_dim = align_to(head_dim, 128)
+    aligned_heads = align_to(num_q_heads, q_packing)
+    bytes_per_elem = (32 // q_packing) // 8 or 1
+    per_buffer_bytes = (
+        max_num_subseqs * K_kernel * aligned_heads
+        * aligned_head_dim * bytes_per_elem
+    )
+    db_factor = 2 if double_buffer else 1
+    return per_buffer_bytes * num_buffers * db_factor
+
+
+# Placeholder limit — see `get_hbm_program_memory_estimate_bytes`
+# docstring. Not currently used by any caller; kept so a future
+# accurate estimator has a hook to land alongside.
+HBM_PROGRAM_MEM_LIMIT_BYTES = 13 * 1024 * 1024 * 1024
+
+
 def get_kv_cache_shape(
     total_num_pages,
     page_size,

@@ -201,6 +201,14 @@ class TestRunPipelineComposition(unittest.TestCase):
                 **os.environ,
                 "EXTRA_TUNE_FLAGS":  "--iters 1 --warmup 0",
                 "EXTRA_SWEEP_FLAGS": "--timeout 60",
+                # prev-5: the orchestrator's post-tune health check
+                # reads the workload's kernel.raw to verify the tune
+                # step actually produced rows. Stub wrappers don't
+                # produce a raw store, so the check would fail this
+                # composition test. KERNEL_TUNE_SKIP_HEALTH=1 bypasses
+                # the check — appropriate for e2e composition tests
+                # where we're verifying arg threading, not tune output.
+                "KERNEL_TUNE_SKIP_HEALTH": "1",
             }
             subprocess.run(
                 ["bash", str(scripts_dir / "run_pipeline.sh"),

@@ -74,6 +74,36 @@ class _MinimalStorageManager:
     """
 
 
+# OOM-signature substrings emitted by XLA and JAX. Must match all of
+# them case-insensitively because XLA's TPU JIT emits
+# `RESOURCE_EXHAUSTED` (uppercase + underscore) while JAX emits
+# `ResourceExhausted` (Pascal case). Matching only one silently
+# misclassifies the other as retryable UNKNOWN_ERROR — May-11
+# incident: 45 prefill_heavy rows where the kernel JIT exceeded the
+# 14 GB bottom-of-memory region were recorded as UNKNOWN_ERROR
+# (retryable), so any resume would re-attempt every doomed combo.
+_OOM_SIGNATURES = (
+    "resource_exhausted",
+    "resourceexhausted",
+    "out of memory",
+    "runtimeprogramallocationfailure",
+)
+
+
+def _classify_exception(err: BaseException, *, phase: str) -> dict[str, Any]:
+    msg = str(err)
+    msg_lower = msg.lower()
+    if any(sig in msg_lower for sig in _OOM_SIGNATURES):
+        return {
+            "status": "FAILED_OOM",
+            "error":  f"{phase} OOM: {type(err).__name__}: {msg}",
+        }
+    return {
+        "status": "UNKNOWN_ERROR",
+        "error":  f"{phase} raised: {type(err).__name__}: {msg}",
+    }
+
+
 def _translate_jax_dtype(dt: Any) -> Any:
     """Map a JSON-string dtype back to the jnp.dtype the v1 tuner
     expects. v2 stamps `"bfloat16"` as a string; v1 dataclasses hold
@@ -229,26 +259,25 @@ def make_measurement_fn(
         # Warmup (untimed). Surface warmup failures as UNKNOWN_ERROR
         # so the runner records them and operators can investigate;
         # don't silently drop and proceed to a meaningless measure.
+        # Exception is: HBM OOMs (XLA `RESOURCE_EXHAUSTED`, JAX
+        # `Out of memory`, etc.) get classified as FAILED_OOM
+        # (PERMANENT_STATUSES) so resume doesn't re-attempt the
+        # same doomed combo — May-11 incident: 45 UNKNOWN_ERROR rows
+        # would otherwise all be retried on `--from tune_kernel`.
+        # Defense-in-depth with v1's run() classification (which
+        # catches the same family inside the v1 measurement loop).
         if warmup_iters > 0:
             try:
                 tuner.run(v1_tk, v1_tp, iters=warmup_iters)
             except Exception as e:    # pylint: disable=broad-except
-                return {
-                    "status": "UNKNOWN_ERROR",
-                    "error":  f"warmup raised: "
-                              f"{type(e).__name__}: {e}",
-                }
+                return _classify_exception(e, phase="warmup")
 
         try:
             status, avg_latency_ns, _total_ns = tuner.run(
                 v1_tk, v1_tp, iters=iters,
             )
         except Exception as e:    # pylint: disable=broad-except
-            return {
-                "status": "UNKNOWN_ERROR",
-                "error":  f"measure raised: "
-                          f"{type(e).__name__}: {e}",
-            }
+            return _classify_exception(e, phase="measure")
 
         # v1 TuningStatus enum -> v2 string. Names match by design;
         # `.value` is the canonical string.

@@ -235,6 +235,13 @@ def enumerate_prefill_combos(
     LOGICAL `per_phys_q ≤ MNB` rule doesn't apply.
     """
     del max_num_batched_tokens
+    # prev-2a: PREFILL is coupled-K so max_num_subseqs collapses to
+    # max_num_seqs. Reuse the LOGICAL enumerator's VMEM/SMEM prune
+    # helper for symmetry (audit's `feedback_symmetric_layer_hygiene`
+    # rule). The helper does NOT do an HBM-program-memory check
+    # because the available empirical formula over-rejects known-
+    # working winners — see _static_prune_pass docstring.
+    from tools.tuning.v2.kernel.enumerate_logical import _static_prune_pass
     max_model_len = model_shape.get("max_model_len", 0)
     for page_size in search_space["page_size"]:
         for kernel_K in search_space["kernel_K"]:
@@ -244,6 +251,24 @@ def enumerate_prefill_combos(
                 if kernel_K % bq_sz != 0:
                     continue
                 for bkv_sz in search_space["bkv_sz"]:
+                    # Static prune (block-size-dependent VMEM + the
+                    # MNS-coupled HBM check). Cheap; clamps the inner
+                    # bq_csz / bkv_csz loops below to combos that can
+                    # actually compile.
+                    if not _static_prune_pass(
+                        model_shape=model_shape,
+                        max_num_seqs=max_num_seqs,
+                        page_size=page_size,
+                        kernel_K=kernel_K,
+                        # PREFILL is coupled-K — pass max_num_seqs in
+                        # place of mnss so the SMEM/HBM estimators
+                        # treat each iter as one phys seq (the
+                        # coupled-K identity).
+                        mnss=max_num_seqs,
+                        bq_sz=bq_sz,
+                        bkv_sz=bkv_sz,
+                    ):
+                        continue
                     for bq_csz in search_space["bq_csz"]:
                         if bq_csz > bq_sz:
                             continue
