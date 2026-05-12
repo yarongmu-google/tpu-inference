@@ -448,6 +448,58 @@ class TestFeasibilityPrecheck(unittest.TestCase):
         errs = [m for sev, m in issues if sev == "error"]
         self.assertEqual(errs, [])
 
+    def test_throughput_workload_resolves_mns_from_service_sweep(self):
+        """Regression for the 2026-05-12 14:31 fail: a throughput
+        workload (no MAX_NUM_SEQS pin) was getting MNS=1 / MNB=1
+        defaulted inside _feasibility_issues, so every combo failed
+        the `per_phys_q > MNB` constraint and validate reported
+        'ZERO combos'.
+
+        Now: when MAX_NUM_SEQS isn't pinned in the workload env, we
+        resolve via service_search_space (mirroring tune.py). MNB
+        always from service-sweep max.
+        """
+        from unittest import mock
+        w = self.dir / "x.workload"
+        # Strip MAX_NUM_SEQS from the workload (throughput scenario).
+        # The real prefill_heavy.workload omits MAX_NUM_SEQS so that
+        # the service sweep picks the value; this test mirrors that.
+        wl = VALID_WORKLOAD.replace(': "${MAX_NUM_SEQS:=128}"\n', "")
+        w.write_text(wl)
+
+        captured_kwargs: dict = {}
+
+        def _capture(*, max_num_seqs, max_num_batched_tokens, **_kw):
+            captured_kwargs["mns"] = max_num_seqs
+            captured_kwargs["mnb"] = max_num_batched_tokens
+            return iter([({"case": "logical"}, {"mnss": 1000})])
+
+        # The service_search_space module returns lists; max() gives
+        # us the upper bound. Patch the function call from validate.
+        with mock.patch(
+            "tools.tuning.v2.kernel.enumerate_logical."
+            "_STATIC_PRUNE_AVAILABLE", True,
+        ), mock.patch(
+            "tools.tuning.v2.service.search_space."
+            "service_search_space",
+            return_value={
+                "MAX_NUM_SEQS":           [128, 256, 1000],
+                "MAX_NUM_BATCHED_TOKENS": [8192, 16384, 131072],
+            },
+        ), mock.patch(
+            "tools.tuning.v2.kernel.enumerate_logical."
+            "enumerate_logical_combos", side_effect=_capture,
+        ):
+            issues = validate(w)
+
+        # No errors — feasibility passed.
+        errs = [m for sev, m in issues if sev == "error"]
+        self.assertEqual(errs, [])
+        # Confirms we passed the SERVICE-SWEEP MAX, not the
+        # nonsensical default-1 from before this fix.
+        self.assertEqual(captured_kwargs.get("mns"), 1000)
+        self.assertEqual(captured_kwargs.get("mnb"), 131072)
+
     def test_skipped_when_prior_errors_present(self):
         """Don't cascade feasibility complaints on top of schema
         errors — they're confusing and feasibility may be malformed

@@ -254,6 +254,9 @@ def _feasibility_issues(
             _STATIC_PRUNE_AVAILABLE,
             enumerate_logical_combos,
         )
+        from tools.tuning.v2.service.search_space import (
+            service_search_space,
+        )
     except ImportError:
         # Dev host without vllm/TPU deps — silent skip. The TPU host
         # has the deps and gets the real check; surfacing a warning
@@ -264,12 +267,36 @@ def _feasibility_issues(
         # not the v2 modules. Silent skip — v1's runtime check is
         # the backstop for any combo that would have been pruned.
         return []
+    # Resolve MAX_NUM_SEQS and MAX_NUM_BATCHED_TOKENS the same way
+    # tune.py:run_kernel_tune does (architecture-doc §2 line 73):
+    #   - workload pins MAX_NUM_SEQS → latency scenario, that value
+    #   - workload silent → throughput scenario, use max of the
+    #     service sweep's candidates
+    # MNB always comes from service-sweep max (it's category 5 —
+    # NEVER set in .workload).
+    # The earlier `env.get("MAX_NUM_SEQS", "1")` default was the bug
+    # that caused the first 14:31:02 retune to fail validate-step
+    # with "ZERO combos that fit" against MNS=1 and MNB=1.
     try:
-        max_num_seqs = int(env.get("MAX_NUM_SEQS", "1"))
-        max_num_batched_tokens = int(
-            env.get("MAX_NUM_BATCHED_TOKENS", str(max_num_seqs))
+        service_space = service_search_space(
+            workload_path.parent, workload_path.stem,
         )
-    except ValueError:
+    except Exception:
+        # Workload may not have a service overlay; fall back to
+        # defaults via service_search_space's empty-overlay path.
+        # Or the call itself may fail on a malformed workload —
+        # treat that as a separate validate concern (already covered
+        # by the schema checks above) and skip feasibility.
+        return []
+    try:
+        if env.get("MAX_NUM_SEQS"):
+            max_num_seqs = int(env["MAX_NUM_SEQS"])
+        else:
+            max_num_seqs = max(service_space["MAX_NUM_SEQS"])
+        max_num_batched_tokens = max(
+            service_space["MAX_NUM_BATCHED_TOKENS"]
+        )
+    except (ValueError, KeyError):
         return []  # the schema check above will have caught this
 
     model_shape = {
