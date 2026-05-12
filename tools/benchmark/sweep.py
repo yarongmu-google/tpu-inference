@@ -692,6 +692,64 @@ def run_one(
     )
 
 
+def _append_service_raw_jsonl(
+    raw_path: Path,
+    combo: dict[str, Any],
+    result: RunResult,
+) -> None:
+    """Append one durable JSONL row per combo to <sweep_dir>/service.raw.jsonl.
+
+    Symmetric counterpart to the kernel-tune `kernel.raw.jsonl` written
+    by `kernel_tuner_base.measure_latency`. Each row is flushed + fsync'd
+    immediately, so a Ctrl-C between combos loses nothing: every combo
+    that COMPLETED its run_one call before the signal has its outcome
+    on disk.
+
+    The per-combo `metrics.txt` (under each combo's own result_dir)
+    remains the bench's primary artifact — `is_completed()` and
+    `build_service_registry` both consume it. The service.raw.jsonl
+    is a SEPARATE aggregated log: one line per combo across the whole
+    sweep, durable, easy to grep, the source of truth for the
+    JSONL-driven sweep resume that lands in the next commit.
+
+    Row schema mirrors kernel.raw.jsonl's discipline: flat
+    dict-of-primitives, default=str on json.dumps so any non-JSON
+    field type can't crash the write.
+    """
+    raw_path.parent.mkdir(parents=True, exist_ok=True)
+    # Pull the key metrics from the combo's metrics.txt if it landed
+    # one — FAILED combos may not have it; SKIPPED_RESUMED combos
+    # always do (that's what was checked to mark them resumed).
+    metrics: dict[str, str] = {}
+    metrics_path = Path(result.result_dir) / METRICS_FILENAME
+    if metrics_path.exists():
+        try:
+            for line in metrics_path.read_text(encoding="utf-8").splitlines():
+                if "=" in line:
+                    k, _, v = line.partition("=")
+                    metrics[k.strip()] = v.strip()
+        except OSError:
+            # Race / permissions / corrupt — tolerate; the row still
+            # lands, just without metrics. Operator can re-inspect
+            # the per-combo dir directly.
+            pass
+    row = {
+        "combo":            combo,
+        "combo_id":         result.combo_id,
+        "status":           result.status.value,
+        "return_code":      result.return_code,
+        "duration_seconds": result.duration_seconds,
+        "error":            result.error,
+        "result_dir":       str(result.result_dir),
+        "metrics":          metrics,
+        "timestamp_sec":    int(time.time()),
+    }
+    with open(raw_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(row, default=str) + "\n")
+        f.flush()
+        os.fsync(f.fileno())
+
+
 def run_sweep(
     spec_path: str | os.PathLike,
     *,
@@ -709,11 +767,20 @@ def run_sweep(
     spec = load_spec(spec_path)
     apply_smoke_truncation_in_place(spec)
     combos = enumerate_combos(spec)
+    # Pre-compute the durable per-sweep JSONL log path. One file at
+    # sweep_dir root, append-only, fsync'd per row. See
+    # `_append_service_raw_jsonl` for the row schema.
+    case_name = case_name_from_path(spec["case_file"])
+    sweep_name = spec["sweep_name"]
+    raw_path = sweep_dir(
+        base_dir, case_name, sweep_name,
+    ) / "service.raw.jsonl"
     results: list[RunResult] = []
     for i, combo in enumerate(combos):
         result = run_one_fn(spec, combo, base_dir=base_dir,
                             script_path=script_path)
         results.append(result)
+        _append_service_raw_jsonl(raw_path, combo, result)
         if on_result is not None:
             on_result(result, i, len(combos))
     return results
