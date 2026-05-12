@@ -692,6 +692,55 @@ def run_one(
     )
 
 
+# Statuses where re-running the combo wastes time. FAILED stays OUT
+# so a transient bench failure retries on the next sweep — same
+# permanence policy as the kernel-tune resume in kernel_tuner_base.
+_SERVICE_SKIP_STATUSES = frozenset({"completed_fresh", "skipped_resumed"})
+
+
+def _load_service_raw_skip_set(raw_path: Path) -> set[str]:
+    """Build a combo_id skip-set from a prior sweep's service.raw.jsonl.
+
+    Symmetric to `KernelTunerBase._load_raw_jsonl_skip_set` — same JSONL
+    discipline, tolerates a truncated trailing line from a Ctrl-C mid-
+    write, logs a one-line summary so the operator can sanity-check.
+
+    Returns the empty set when the file is absent (fresh sweep) or
+    when nothing in it has a skip-worthy status.
+
+    FAILED rows are intentionally NOT in the skip-set: a sweep that
+    failed N combos and is re-run after a fix should re-attempt those
+    N. Operators who want to retain failures-as-skipped can manually
+    flip the status in the JSONL.
+    """
+    if not raw_path.exists():
+        return set()
+    skip: set[str] = set()
+    n_rows = n_skip = n_malformed = 0
+    with open(raw_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            n_rows += 1
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                n_malformed += 1
+                continue
+            if (row.get("status") in _SERVICE_SKIP_STATUSES
+                    and row.get("combo_id")):
+                skip.add(row["combo_id"])
+                n_skip += 1
+    print(
+        f"[Sweep] Resume from {raw_path}: {n_rows} rows "
+        f"({n_skip} skip, {n_rows - n_skip - n_malformed} retry, "
+        f"{n_malformed} malformed)",
+        file=sys.stderr, flush=True,
+    )
+    return skip
+
+
 def _append_service_raw_jsonl(
     raw_path: Path,
     combo: dict[str, Any],
@@ -772,13 +821,34 @@ def run_sweep(
     # `_append_service_raw_jsonl` for the row schema.
     case_name = case_name_from_path(spec["case_file"])
     sweep_name = spec["sweep_name"]
-    raw_path = sweep_dir(
-        base_dir, case_name, sweep_name,
-    ) / "service.raw.jsonl"
+    s_dir = sweep_dir(base_dir, case_name, sweep_name)
+    raw_path = s_dir / "service.raw.jsonl"
+    # Combo-id resume skip-set. Loaded once; checked per-combo before
+    # the run_one dispatch. JSONL-based, authoritative — trusts the
+    # prior log over a per-combo metrics.txt stat. Operators can
+    # `rm` the JSONL (or its rows) to force a fresh sweep.
+    skip_set = _load_service_raw_skip_set(raw_path)
     results: list[RunResult] = []
     for i, combo in enumerate(combos):
-        result = run_one_fn(spec, combo, base_dir=base_dir,
-                            script_path=script_path)
+        cid = combo_id(combo)
+        if cid in skip_set:
+            # Synthesize a SKIPPED_RESUMED result without invoking
+            # run_one — same shape as run_one returns when its
+            # internal is_completed(rdir) trips, so downstream code
+            # (build_service_registry, on_result callback, etc.) sees
+            # an identical-looking outcome.
+            result = RunResult(
+                status=RunStatus.SKIPPED_RESUMED,
+                combo_id=cid,
+                result_dir=result_dir(
+                    base_dir, case_name, sweep_name, cid,
+                ),
+            )
+        else:
+            result = run_one_fn(
+                spec, combo, base_dir=base_dir,
+                script_path=script_path,
+            )
         results.append(result)
         _append_service_raw_jsonl(raw_path, combo, result)
         if on_result is not None:
