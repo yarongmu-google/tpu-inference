@@ -41,10 +41,13 @@ Caller patterns:
                   f"[Tune-v2] Update {out_path.name}")
 """
 
+import logging
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+logger = logging.getLogger(__spec__.name if __spec__ is not None else __name__)
 
 
 # Env var that disables push. Honored verbatim from v1 so users with the
@@ -140,17 +143,14 @@ def commit_and_push(
     if repo_root is None:
         repo_root = _find_repo_root(paths[0])
         if repo_root is None:
-            print(
-                f"git_atomic: no git repo found for {paths[0]}; "
-                "skipping commit.",
-                file=sys.stderr,
+            logger.warning(
+                "no git repo found for %s; skipping commit.", paths[0],
             )
             return False
 
     if not _is_inside_git_repo(repo_root):
-        print(
-            f"git_atomic: {repo_root} is not a git repo; skipping commit.",
-            file=sys.stderr,
+        logger.warning(
+            "%s is not a git repo; skipping commit.", repo_root,
         )
         return False
 
@@ -159,10 +159,7 @@ def commit_and_push(
     add_args = ["add", "-f", "--"] + [str(p) for p in paths]
     add = _git(add_args, cwd=repo_root)
     if add.returncode != 0:
-        print(
-            f"git_atomic: git add failed: {add.stderr.strip()}",
-            file=sys.stderr,
-        )
+        logger.warning("git add failed: %s", add.stderr.strip())
         return False
 
     # Commit. Path-restricted so we don't pick up unrelated staged
@@ -179,19 +176,16 @@ def commit_and_push(
 
     branch = _current_branch(repo_root)
     if branch is None:
-        print(
-            "git_atomic: detached HEAD or branch lookup failed; "
-            "skipping push.",
-            file=sys.stderr,
+        logger.warning(
+            "detached HEAD or branch lookup failed; skipping push.",
         )
         return False
 
     push = _git(["push", "origin", branch], cwd=repo_root)
     if push.returncode != 0:
-        print(
-            f"git_atomic: push failed for branch {branch!r}: "
-            f"{push.stderr.strip()}",
-            file=sys.stderr,
+        logger.warning(
+            "push failed for branch %r: %s",
+            branch, push.stderr.strip(),
         )
         return False
     return True

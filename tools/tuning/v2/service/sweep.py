@@ -50,6 +50,7 @@ every 5 keeps the remote close to up-to-date without spam.
 
 import itertools
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -64,6 +65,8 @@ from tools.tuning.v2.core.git_atomic import commit_and_push
 from tools.tuning.v2.core.keyset import service_combo_key
 from tools.tuning.v2.core.raw_store import append_row, build_skip_set
 from tools.tuning.v2.service.search_space import service_search_space
+
+logger = logging.getLogger(__spec__.name if __spec__ is not None else __name__)
 
 
 # Statuses that are permanent for resume — re-running them wastes time
@@ -344,13 +347,11 @@ def run_service_sweep(
         else:
             # Pre-measurement progress line — see kernel/tune for the
             # same pattern. A bench combo can take 10+ min; without
-            # this print the operator can't tell what's happening.
-            print(
-                f"[sweep  *] "
-                f"MNB={combo.get('MAX_NUM_BATCHED_TOKENS'):<7} "
-                f"MNS={combo.get('MAX_NUM_SEQS'):<5} "
-                f"→ measuring...",
-                file=sys.stderr, flush=True,
+            # this log the operator can't tell what's happening.
+            logger.info(
+                "[sweep  *] MNB=%-7s MNS=%-5s → measuring...",
+                combo.get("MAX_NUM_BATCHED_TOKENS"),
+                combo.get("MAX_NUM_SEQS"),
             )
             try:
                 result = measurement_fn(combo)
@@ -393,7 +394,7 @@ def run_service_sweep(
         append_row(raw_path, row)
         n_new += 1
 
-        # Per-combo progress to stderr — mirror of kernel/tune.
+        # Per-combo progress log — mirror of kernel/tune.
         _status = result.get("status", "?")
         _metrics = result.get("metrics") or {}
         if _status == "SUCCESS":
@@ -408,12 +409,13 @@ def run_service_sweep(
             _summary = f"error={result['error'][:60]}"
         else:
             _summary = ""
-        print(
-            f"[sweep {n_new:>4}] "
-            f"MNB={combo.get('MAX_NUM_BATCHED_TOKENS'):<7} "
-            f"MNS={combo.get('MAX_NUM_SEQS'):<5} "
-            f"→ {_status:<13} {_summary}",
-            file=sys.stderr, flush=True,
+        logger.info(
+            "[sweep %4d] MNB=%-7s MNS=%-5s → %-13s %s",
+            n_new,
+            combo.get("MAX_NUM_BATCHED_TOKENS"),
+            combo.get("MAX_NUM_SEQS"),
+            _status,
+            _summary,
         )
 
         if on_progress is not None:
@@ -462,8 +464,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--timeout", type=int, default=1800,
                    help="Per-combo bench timeout in seconds.")
     args = p.parse_args(argv)
+    from tools.tuning.v2.core.logs import configure as configure_logging
+    configure_logging()
+
     if not args.workload.exists():
-        print(f"workload not found: {args.workload}", file=sys.stderr)
+        logger.error("workload not found: %s", args.workload)
         return 1
 
     # Parse workload + push into os.environ (run_benchmark.sh reads
@@ -501,7 +506,9 @@ def main(argv: list[str] | None = None) -> int:
         service_revision=service_revision,
         commit_every=args.commit_every,
     )
-    print(f"Sweep-v2: {n_new} new rows written to {raw_path}")
+    logger.info("Sweep-v2: %d new rows written to %s", n_new, raw_path)
+    # Machine-parseable result on stdout.
+    print(raw_path)
     return 0
 
 

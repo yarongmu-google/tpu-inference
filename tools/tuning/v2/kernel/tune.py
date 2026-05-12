@@ -37,6 +37,7 @@ deterministic values without touching JAX/TPU. The runner itself
 imports zero TPU-side code.
 """
 
+import logging
 import os
 import sys
 from pathlib import Path
@@ -52,6 +53,8 @@ from tools.tuning.v2.kernel.enumerate_logical import (
 )
 from tools.tuning.v2.kernel.search_space import kernel_search_space
 from tools.tuning.v2.service.search_space import service_search_space
+
+logger = logging.getLogger(__spec__.name if __spec__ is not None else __name__)
 
 
 # Statuses that are permanent for resume — i.e., re-running them is a
@@ -188,15 +191,14 @@ def run_kernel_tune(
         # The post-measurement line confirms completion + status; this
         # one names the combo BEFORE we call into pallas_call, so a
         # multi-minute JIT compile doesn't look like a hang.
-        print(
-            f"[tune   *] "
-            f"case={tuning_key.get('case'):<7} "
-            f"page={tuning_key.get('page_size'):<3} "
-            f"K={tuning_key.get('kernel_K'):<5} "
-            f"mnss={tunable_params.get('mnss'):<6} "
-            f"bq={tunable_params.get('bq_sz'):<5} "
-            f"→ measuring...",
-            file=sys.stderr, flush=True,
+        logger.info(
+            "[tune   *] case=%-7s page=%-3s K=%-5s mnss=%-6s "
+            "bq=%-5s → measuring...",
+            tuning_key.get("case"),
+            tuning_key.get("page_size"),
+            tuning_key.get("kernel_K"),
+            tunable_params.get("mnss"),
+            tunable_params.get("bq_sz"),
         )
 
         try:
@@ -242,10 +244,8 @@ def run_kernel_tune(
         append_row(raw_path, row)
         n_new += 1
 
-        # One-line per-combo progress to stderr so operators see the
-        # tune working instead of staring at silence. Format prefers
-        # human-readable over machine-parseable; the raw JSONL is the
-        # source of truth for downstream tooling.
+        # Post-measurement progress line — see the pre-measurement
+        # block above. Raw JSONL stays the source of truth.
         _status = result.get("status", "?")
         _summary = (
             f"latency_us={result['latency_us']:.1f}"
@@ -255,15 +255,17 @@ def run_kernel_tune(
                 if "error" in result else ""
             )
         )
-        print(
-            f"[tune {n_new:>4}] "
-            f"case={tuning_key.get('case'):<7} "
-            f"page={tuning_key.get('page_size'):<3} "
-            f"K={tuning_key.get('kernel_K'):<5} "
-            f"mnss={tunable_params.get('mnss'):<6} "
-            f"bq={tunable_params.get('bq_sz'):<5} "
-            f"→ {_status:<13} {_summary}",
-            file=sys.stderr, flush=True,
+        logger.info(
+            "[tune %4d] case=%-7s page=%-3s K=%-5s mnss=%-6s "
+            "bq=%-5s → %-13s %s",
+            n_new,
+            tuning_key.get("case"),
+            tuning_key.get("page_size"),
+            tuning_key.get("kernel_K"),
+            tunable_params.get("mnss"),
+            tunable_params.get("bq_sz"),
+            _status,
+            _summary,
         )
 
         if on_progress is not None:
@@ -348,8 +350,11 @@ def main(argv: list[str] | None = None) -> int:
                    help="Untimed warmup iterations per combo. 0 to skip.")
     args = p.parse_args(argv)
 
+    from tools.tuning.v2.core.logs import configure as configure_logging
+    configure_logging()
+
     if not args.workload.exists():
-        print(f"workload file not found: {args.workload}", file=sys.stderr)
+        logger.error("workload file not found: %s", args.workload)
         return 1
 
     workload_env = _parse_workload_env(args.workload)
@@ -406,7 +411,10 @@ def main(argv: list[str] | None = None) -> int:
         code_revision=code_revision,
         commit_every=args.commit_every,
     )
-    print(f"Tune-v2: {n_new} new rows written to {raw_path}")
+    logger.info("Tune-v2: %d new rows written to %s", n_new, raw_path)
+    # The path is the machine-parseable result — keep on stdout for
+    # shell-wrapper consumption (no timestamp).
+    print(raw_path)
     return 0
 
 

@@ -240,13 +240,13 @@ class TestRunServiceSweep(unittest.TestCase):
 
     def test_mock_bench_row_progress_line_tagged_mock(self):
         """Defense-in-depth: when a measurement returns mock=True
-        (MOCK_BENCH short-circuit), the per-combo progress line
+        (MOCK_BENCH short-circuit), the per-combo progress log
         appends a (MOCK) tag so the operator can distinguish
-        synthetic rows in the terminal output."""
+        synthetic rows from real ones."""
         (self.workload_dir / "test.service_axes.json").unlink()
-        import io
-        buf = io.StringIO()
-        with mock.patch.object(sys, "stderr", new=buf):
+        with self.assertLogs(
+            "tools.tuning.v2.service.sweep", level="INFO",
+        ) as cap:
             run_service_sweep(
                 workload_env={},
                 workload_dir=self.workload_dir,
@@ -262,8 +262,7 @@ class TestRunServiceSweep(unittest.TestCase):
                 service_revision="sha1-sha2",
                 commit_every=0,   # avoid noise from commits
             )
-        # The progress line for the mock row carries the tag.
-        self.assertIn("(MOCK)", buf.getvalue())
+        self.assertIn("(MOCK)", "\n".join(cap.output))
 
     def test_smoke_test_env_stops_at_first_success(self):
         """SMOKE_TEST=1: enumerate combos until one returns SUCCESS,

@@ -26,9 +26,12 @@ without re-enumerating combos.
 """
 
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__spec__.name if __spec__ is not None else __name__)
 
 from tools.tuning.v2.core.discriminator import (
     DEFAULT_KERNEL_VARIANT,
@@ -218,16 +221,20 @@ def main(argv: list[str] | None = None) -> int:
                         "throughput_max, ttft_min, p99_min).")
     args = p.parse_args(argv)
 
+    from tools.tuning.v2.core.logs import configure as configure_logging
+    configure_logging()
+
     if not args.workload.exists():
-        print(f"workload not found: {args.workload}", file=sys.stderr)
+        logger.error("workload not found: %s", args.workload)
         return 1
     workload_dir = args.workload.parent
     workload_name = args.workload.stem
     try:
         env = lookup_env(workload_dir, workload_name, objective=args.objective)
     except (FileNotFoundError, KeyError) as e:
-        print(f"lookup failed: {e}", file=sys.stderr)
+        logger.error("lookup failed: %s", e)
         return 1
+    # K=V env-var lines on stdout (machine-parseable, eval-able).
     for k in sorted(env.keys()):
         print(f"{k}={env[k]}")
     return 0

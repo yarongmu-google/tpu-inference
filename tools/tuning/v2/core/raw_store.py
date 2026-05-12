@@ -42,10 +42,13 @@ a winners JSON; that's the only consumer.
 """
 
 import json
+import logging
 import os
 import sys
 from pathlib import Path
 from typing import Any, Callable, Iterator
+
+logger = logging.getLogger(__spec__.name if __spec__ is not None else __name__)
 
 
 def append_row(raw_path: Path, row: dict[str, Any]) -> None:
@@ -91,10 +94,9 @@ def read_rows(raw_path: Path) -> Iterator[dict[str, Any]]:
             try:
                 yield json.loads(stripped)
             except json.JSONDecodeError as e:
-                print(
-                    f"raw_store: skipping malformed row "
-                    f"{raw_path}:{line_no}: {e}",
-                    file=sys.stderr,
+                logger.warning(
+                    "skipping malformed row %s:%d: %s",
+                    raw_path, line_no, e,
                 )
 
 
@@ -138,10 +140,7 @@ def prune_raw_ttl(raw_dir: Path, keep: int = 2) -> list[Path]:
         except OSError as e:
             # Don't take down a tune just because an old prune
             # failed. Log and continue — next run retries.
-            print(
-                f"raw_store: prune failed for {p}: {e}",
-                file=sys.stderr,
-            )
+            logger.warning("prune failed for %s: %s", p, e)
     return deleted
 
 

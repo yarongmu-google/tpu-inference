@@ -25,9 +25,12 @@ back to most-recent mtime).
 """
 
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__spec__.name if __spec__ is not None else __name__)
 
 from tools.tuning.v2.core.git_atomic import commit_and_push
 from tools.tuning.v2.core.projection import project_winners
@@ -268,8 +271,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-commit", action="store_true")
     args = p.parse_args(argv)
 
+    from tools.tuning.v2.core.logs import configure as configure_logging
+    configure_logging()
+
     if not args.workload.exists():
-        print(f"workload not found: {args.workload}", file=sys.stderr)
+        logger.error("workload not found: %s", args.workload)
         return 1
     workload_dir = args.workload.parent
     workload_name = args.workload.stem
@@ -278,13 +284,13 @@ def main(argv: list[str] | None = None) -> int:
         service_revision=args.service_revision,
     )
     if out is None:
-        print(
-            f"project_service: no raw data found for "
-            f"{workload_dir}/{workload_name}.service.raw/. Run the "
-            f"service sweep first.",
-            file=sys.stderr,
+        logger.error(
+            "no raw data found for %s/%s.service.raw/. Run the "
+            "service sweep first.",
+            workload_dir, workload_name,
         )
         return 1
+    # Path is the machine-parseable result — stdout, no timestamp.
     print(out)
     if not args.no_commit:
         commit_and_push(

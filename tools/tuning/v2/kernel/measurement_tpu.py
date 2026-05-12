@@ -279,6 +279,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--warmup", type=int, default=2)
     args = p.parse_args(argv)
 
+    from tools.tuning.v2.core.logs import configure as configure_logging
+    configure_logging()
+
     with open(args.combo_json, "r", encoding="utf-8") as f:
         combo = json.load(f)
     measure = make_measurement_fn(

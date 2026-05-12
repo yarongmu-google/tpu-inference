@@ -24,6 +24,7 @@ Idempotent: re-running on unchanged inputs rewrites the same bytes
 """
 
 import json
+import logging
 import sys
 from pathlib import Path
 
@@ -85,19 +86,21 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-commit", action="store_true")
     args = p.parse_args(argv)
 
+    from tools.tuning.v2.core.logs import configure as configure_logging
+    configure_logging()
+    logger = logging.getLogger(__name__)
+
     if not args.model_dir.exists() or not args.model_dir.is_dir():
-        print(f"model_dir not a directory: {args.model_dir}",
-              file=sys.stderr)
+        logger.error("model_dir not a directory: %s", args.model_dir)
         return 1
 
     kernel_path, service_path = aggregate(
         args.model_dir, topo=args.topo, model=args.model,
     )
     if kernel_path is None and service_path is None:
-        print(
-            f"aggregate: no per-workload .kernel or .service files in "
-            f"{args.model_dir}; nothing to do.",
-            file=sys.stderr,
+        logger.error(
+            "no per-workload .kernel or .service files in %s; "
+            "nothing to do.", args.model_dir,
         )
         return 1
 

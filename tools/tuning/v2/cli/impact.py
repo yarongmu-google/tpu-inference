@@ -242,6 +242,9 @@ def main(argv: list[str] | None = None) -> int:
 
     args = p.parse_args(argv)
 
+    from tools.tuning.v2.core.logs import configure as configure_logging
+    configure_logging()
+
     if args.cmd == "by-kernel-key":
         value = _coerce(args.value)
         matches = by_kernel_key(args.root, args.field, value)

@@ -112,7 +112,8 @@ class TestRawStore(unittest.TestCase):
         self.assertEqual(list(read_rows(path)), [{"a": 1}, {"b": 2}])
 
     def test_read_tolerates_malformed_row_at_end(self):
-        """Crashed-write leaves a partial last line; reader skips it."""
+        """Crashed-write leaves a partial last line; reader skips it
+        and emits a warning via logging."""
         path = self.dir / "crashed.jsonl"
         path.write_text(
             '{"a":1}\n'
@@ -120,17 +121,14 @@ class TestRawStore(unittest.TestCase):
             '{"partial":',  # crashed mid-write
             encoding="utf-8",
         )
-        # Capture stderr to verify warning emitted.
-        buf = io.StringIO()
-        old_stderr = sys.stderr
-        try:
-            sys.stderr = buf
+        with self.assertLogs(
+            "tools.tuning.v2.core.raw_store", level="WARNING",
+        ) as cap:
             rows = list(read_rows(path))
-        finally:
-            sys.stderr = old_stderr
         self.assertEqual(rows, [{"a": 1}, {"b": 2}])
-        self.assertIn("skipping malformed row", buf.getvalue())
-        self.assertIn(":3:", buf.getvalue())   # line 3 was the bad one
+        joined = "\n".join(cap.output)
+        self.assertIn("skipping malformed row", joined)
+        self.assertIn(":3:", joined)   # line 3 was the bad one
 
     def test_read_tolerates_malformed_row_in_middle(self):
         """Even a malformed line in the middle doesn't drop later good rows."""
@@ -296,15 +294,15 @@ class TestPruneRawTtl(unittest.TestCase):
             if self_p == old:
                 raise OSError("simulated EIO")
             return original_unlink(self_p, *a, **kw)
-        import io
-        captured = io.StringIO()
         with mock.patch("pathlib.Path.unlink", flaky_unlink), \
-             mock.patch("sys.stderr", new=captured):
+             self.assertLogs(
+                 "tools.tuning.v2.core.raw_store", level="WARNING",
+             ) as cap:
             deleted = prune_raw_ttl(self.dir, keep=0)
         # The unflaky file got deleted; the flaky one didn't, but
         # no crash and the failure logged.
         self.assertEqual(len(deleted), 1)
-        self.assertIn("prune failed", captured.getvalue())
+        self.assertIn("prune failed", "\n".join(cap.output))
 
 
 class TestAtomicityGuarantees(unittest.TestCase):

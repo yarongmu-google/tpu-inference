@@ -34,10 +34,13 @@ Status mapping:
   subprocess raise     → UNKNOWN_ERROR (caller may retry)
 """
 
+import logging
 import os
 import subprocess
 import sys
 import tempfile
+
+logger = logging.getLogger(__spec__.name if __spec__ is not None else __name__)
 from pathlib import Path
 from typing import Any, Callable
 
@@ -262,8 +265,11 @@ def main(argv: list[str] | None = None) -> int:
                    help="Per-bench timeout in seconds.")
     args = p.parse_args(argv)
 
+    from tools.tuning.v2.core.logs import configure as configure_logging
+    configure_logging()
+
     if not args.workload.exists():
-        print(f"workload not found: {args.workload}", file=sys.stderr)
+        logger.error("workload not found: %s", args.workload)
         return 1
 
     measure = make_measurement_fn(
@@ -273,6 +279,8 @@ def main(argv: list[str] | None = None) -> int:
         "MAX_NUM_BATCHED_TOKENS": args.mnb,
         "MAX_NUM_SEQS":           args.mns,
     })
+    # Result JSON is the machine-parseable output of this smoke
+    # entry — keep on stdout.
     print(json.dumps(result, indent=2))
     return 0 if result.get("status") == "SUCCESS" else 1
 

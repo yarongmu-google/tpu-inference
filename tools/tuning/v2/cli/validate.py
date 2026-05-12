@@ -36,9 +36,12 @@ Returns a list of `(severity, message)` tuples. Severity is "error"
 necessarily break things). The CLI exits 0 iff no errors.
 """
 
+import logging
 import sys
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__spec__.name if __spec__ is not None else __name__)
 
 
 # Required vars + their type constraints. Map var -> (is_int, min_value).
@@ -232,16 +235,21 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("workload", type=Path)
     args = p.parse_args(argv)
 
+    from tools.tuning.v2.core.logs import configure as configure_logging
+    configure_logging()
+
     issues = validate(args.workload)
     n_errors = sum(1 for sev, _ in issues if sev == "error")
     n_warnings = sum(1 for sev, _ in issues if sev == "warning")
     for severity, msg in issues:
-        prefix = "ERROR" if severity == "error" else "WARN "
-        print(f"{prefix}: {msg}", file=sys.stderr)
+        if severity == "error":
+            logger.error("%s", msg)
+        else:
+            logger.warning("%s", msg)
     if not issues:
-        print("OK", file=sys.stderr)
+        logger.info("OK")
     elif n_errors == 0:
-        print(f"{n_warnings} warning(s); no errors.", file=sys.stderr)
+        logger.info("%d warning(s); no errors.", n_warnings)
     return 1 if n_errors > 0 else 0
 
 

@@ -36,9 +36,12 @@ files first, then can run `aggregate.sh` to regenerate the v2-format
 """
 
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import Any, NamedTuple
+
+logger = logging.getLogger(__spec__.name if __spec__ is not None else __name__)
 
 from tools.tuning.v2.cli.validate import parse_workload_env
 
@@ -332,44 +335,43 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = p.parse_args(argv)
 
+    from tools.tuning.v2.core.logs import configure as configure_logging
+    configure_logging()
+
     if not args.model_dir.exists() or not args.model_dir.is_dir():
-        print(f"model_dir not a directory: {args.model_dir}",
-              file=sys.stderr)
+        logger.error("model_dir not a directory: %s", args.model_dir)
         return 1
 
     try:
         result = migrate_model_dir(args.model_dir, force=args.force)
     except MigrationRefusedError as e:
-        print(f"migrate refused: {e}", file=sys.stderr)
+        logger.error("migrate refused: %s", e)
         return 1
 
     # Library now returns a typed result with a status field — distinct
     # exit messages for the three empty states (review followup #18).
     if result.status == "no_v1_file":
-        print(
-            f"migrate: no v1 production.kernel in {args.model_dir}; "
-            "nothing to migrate.",
-            file=sys.stderr,
+        logger.error(
+            "no v1 production.kernel in %s; nothing to migrate.",
+            args.model_dir,
         )
         return 1
     if result.status == "no_workloads":
-        print(
-            f"migrate: production.kernel found, but no .workload files "
-            f"in {args.model_dir}; nothing to do.",
-            file=sys.stderr,
+        logger.error(
+            "production.kernel found, but no .workload files in %s; "
+            "nothing to do.", args.model_dir,
         )
         return 1
-    print(f"Migrated {result.n_migrated} workload(s):")
+    logger.info("Migrated %d workload(s).", result.n_migrated)
+    # Paths are the machine-parseable result — stdout, no timestamp.
     for p in result.paths:
-        print(f"  {p}")
-    print(
-        f"\nNext steps:\n"
-        f"  1. Inspect the per-workload .kernel files.\n"
-        f"  2. Run aggregate.sh {args.model_dir} to regenerate the "
-        f"v2-format production.kernel.\n"
-        f"     (This OVERWRITES the v1 production.kernel — back up "
-        f"first if you need it.)\n",
-        file=sys.stderr,
+        print(p)
+    logger.info(
+        "Next steps:  1. Inspect the per-workload .kernel files.  "
+        "2. Run aggregate.sh %s to regenerate the v2-format "
+        "production.kernel. (This OVERWRITES the v1 "
+        "production.kernel — back up first if you need it.)",
+        args.model_dir,
     )
     return 0
 
