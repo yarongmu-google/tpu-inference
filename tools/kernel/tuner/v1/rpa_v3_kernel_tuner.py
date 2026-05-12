@@ -909,6 +909,9 @@ class RpaV3KernelTuner(KernelTunerBase):
         try:
             dynamic_validate_inputs(*args, **kwargs)
         except Exception as err:
+            if _looks_like_oom(err):
+                logger.info(f"[Debug] Validate OOM: {err=}")
+                return TuningStatus.FAILED_OOM, float("inf"), float("inf")
             logger.info(f"[Debug] Validate failed: {err=}")
             return TuningStatus.UNKNOWN_ERROR, float("inf"), float("inf")
 
@@ -964,6 +967,18 @@ class RpaV3KernelTuner(KernelTunerBase):
             ) for _ in range(iters)]
             jax.block_until_ready(prepped_qkv)
         except Exception as err:
+            if _looks_like_oom(err):
+                # HBM exhaustion during the `iters` × jnp.array
+                # clones of q/k/v. For mnss × K large, each clone is
+                # ~GB-scale; if the bottom-of-memory / live-buffer
+                # region is tight, this is where the OOM lands —
+                # NOT in the kernel-call catch below. This was the
+                # uncaught case the user hit on TPU on 2026-05-12:
+                # tpu-info showed 60/13/189 GB so total HBM had
+                # room, but the clone allocation tripped the same
+                # XLA region cap that the kernel JIT would hit.
+                logger.info(f"[Debug] Clone OOM: {err=}")
+                return TuningStatus.FAILED_OOM, float("inf"), float("inf")
             logger.info(f"[Debug] Clone failed: {err=}")
             return TuningStatus.UNKNOWN_ERROR, float("inf"), float("inf")
 
