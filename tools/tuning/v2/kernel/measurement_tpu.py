@@ -122,7 +122,7 @@ def _translate_jax_dtype(dt: Any) -> Any:
 
 def make_measurement_fn(
     *,
-    iters: int = 10,
+    iters: int = 3,
     warmup_iters: int = 2,
 ) -> Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]:
     """Build a v2-shaped measurement_fn driving the rpa_v3 TPU kernel.
@@ -130,7 +130,10 @@ def make_measurement_fn(
     Args:
       iters: timed iterations per (tuning_key, tunable_params) combo.
              v2's `latency_us` is the average over these iters
-             (rpa_v3 returns total_ns / iters).
+             (rpa_v3 returns total_ns / iters). Default 3 = coarse
+             tune (enough to amortize JIT-dispatch overhead, ~3x
+             faster than v1-era iters=10). For final-pass winner
+             re-measurement, raise to 10.
       warmup_iters: untimed warmup iterations. JIT compile + cache
                     prime happens here so the timed pass is steady.
                     Set to 0 to skip (faster smoke tests; noisier).
@@ -304,7 +307,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("combo_json", help="Path to a JSON with keys "
                                       "tuning_key + tunable_params.")
-    p.add_argument("--iters", type=int, default=10)
+    p.add_argument("--iters", type=int, default=3,
+                   help="Coarse-tune default; use 10 for final winner "
+                        "re-measurement.")
     p.add_argument("--warmup", type=int, default=2)
     args = p.parse_args(argv)
 

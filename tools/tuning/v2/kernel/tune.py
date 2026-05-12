@@ -456,8 +456,12 @@ def main(argv: list[str] | None = None) -> int:
                    help="Path to a `.workload` file.")
     p.add_argument("--commit-every", type=int, default=25,
                    help="Commit raw store every N cases.")
-    p.add_argument("--iters", type=int, default=10,
-                   help="Timed iterations per combo.")
+    p.add_argument("--iters", type=int, default=3,
+                   help="Timed iterations per combo. Default 3 = "
+                        "coarse-tune mode: enough averaging to amortize "
+                        "JIT-dispatch overhead but ~3x faster than the "
+                        "v1-era iters=10. Use --iters 10 for fine-grained "
+                        "re-measurement around a promising config.")
     p.add_argument("--warmup", type=int, default=2,
                    help="Untimed warmup iterations per combo. 0 to skip.")
     p.add_argument(
