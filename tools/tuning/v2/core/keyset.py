@@ -29,6 +29,7 @@ Three composable helpers:
   combo dict. Used by the service-sweep skip-set.
 """
 
+import hashlib
 import json
 from typing import Any
 
@@ -59,3 +60,41 @@ def service_combo_key(combo: dict[str, Any]) -> str:
     `env-var → value`. Same canonical encoding as `canonical_json`.
     """
     return canonical_json(combo)
+
+
+def worker_bucket(key: Any, worker_count: int) -> int:
+    """Stable bucket assignment for distributed tuning.
+
+    Given any canonical-json-able key (a combo, a `(tk, tp)` tuple, a
+    plain string) and a worker count, return the bucket index in
+    `[0, worker_count)` that this key belongs to.
+
+    Architecture: v1 partitioned the enumeration into sequentially-
+    numbered `case_id` buckets and assigned each bucket to a worker.
+    v2 has no `case_id` — combos are identified by `(tuning_key,
+    tunable_params)`. Hashing the canonical encoding modulo
+    worker_count gives a stable bucket assignment that:
+      - works without a coordinator (every worker computes the same
+        bucket for the same combo),
+      - is reproducible across processes (`hashlib.sha256` is not
+        subject to Python's `PYTHONHASHSEED` randomization, unlike
+        the builtin `hash()`),
+      - balances load evenly to the limit of the hash's uniformity.
+
+    Multi-worker discipline: every worker enumerates the SAME combos
+    (same search space + overlay) and skips combos whose bucket
+    isn't theirs. All workers append to the SAME
+    `.raw/<sha>.jsonl` (POSIX O_APPEND is atomic for sub-PIPE_BUF
+    writes); the skip-set built from that shared file lets workers
+    coordinate without a lock.
+    """
+    if worker_count <= 0:
+        raise ValueError(
+            f"worker_count must be positive, got {worker_count}",
+        )
+    encoded = canonical_json(key).encode("utf-8")
+    digest = hashlib.sha256(encoded).digest()
+    # First 8 bytes as a big-endian int, then modulo. 64 bits gives
+    # uniform distribution for any reasonable worker_count.
+    bucket = int.from_bytes(digest[:8], "big") % worker_count
+    return bucket

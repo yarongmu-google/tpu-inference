@@ -219,6 +219,155 @@ class TestRunKernelTune(unittest.TestCase):
         self.assertEqual(n1, 1)
         self.assertEqual(n2, 0)
 
+    def test_two_workers_partition_combos_into_disjoint_sets(self):
+        """N workers, each only measures its hash-bucket of combos.
+        Combined measurements cover every combo exactly once."""
+        # Widen the overlay so we have ~8 combos to partition.
+        (self.workload_dir / "test.kernel_axes.json").write_text(
+            json.dumps({
+                "page_size": [64, 128],
+                "kernel_K":  [128, 256],
+                "mnss":      [4224],
+                "bq_sz": [64], "bkv_sz": [512],
+                "bq_csz": [64], "bkv_csz": [128],
+            }),
+        )
+        worker_calls: dict[int, list] = {0: [], 1: []}
+
+        def measure_factory(wid):
+            def fn(tk, tp):
+                worker_calls[wid].append(
+                    (tk["page_size"], tk["kernel_K"], tp["mnss"]),
+                )
+                return {"status": "SUCCESS", "latency_us": 100.0}
+            return fn
+
+        # Worker 0
+        run_kernel_tune(
+            workload_env=self.WORKLOAD_ENV_BASE,
+            workload_dir=self.workload_dir,
+            workload_name="test",
+            raw_path=self.raw_path,
+            measurement_fn=measure_factory(0),
+            code_revision="abc12345",
+            worker_id=0, worker_count=2,
+        )
+        # Worker 1 — shares the same .raw file.
+        run_kernel_tune(
+            workload_env=self.WORKLOAD_ENV_BASE,
+            workload_dir=self.workload_dir,
+            workload_name="test",
+            raw_path=self.raw_path,
+            measurement_fn=measure_factory(1),
+            code_revision="abc12345",
+            worker_id=1, worker_count=2,
+        )
+        # Each combo measured by exactly one worker.
+        w0 = set(worker_calls[0])
+        w1 = set(worker_calls[1])
+        self.assertEqual(w0 & w1, set(),
+                         f"workers double-measured: {w0 & w1}")
+        # Union covers every distinct combo that the runner produced.
+        final_rows = list(read_rows(self.raw_path))
+        all_combos = {(r["tuning_key"]["page_size"],
+                       r["tuning_key"]["kernel_K"],
+                       r["tunable_params"]["mnss"])
+                      for r in final_rows}
+        self.assertEqual(w0 | w1, all_combos)
+
+    def test_worker_count_zero_or_id_oob_raises(self):
+        def measure(tk, tp):
+            return {"status": "SUCCESS", "latency_us": 100.0}
+        with self.assertRaises(ValueError):
+            run_kernel_tune(
+                workload_env=self.WORKLOAD_ENV_BASE,
+                workload_dir=self.workload_dir,
+                workload_name="test",
+                raw_path=self.raw_path,
+                measurement_fn=measure,
+                code_revision="abc12345",
+                worker_id=0, worker_count=0,
+            )
+        with self.assertRaises(ValueError):
+            run_kernel_tune(
+                workload_env=self.WORKLOAD_ENV_BASE,
+                workload_dir=self.workload_dir,
+                workload_name="test",
+                raw_path=self.raw_path,
+                measurement_fn=measure,
+                code_revision="abc12345",
+                worker_id=2, worker_count=2,
+            )
+
+    def test_crash_and_restart_resumes_correctly(self):
+        """Real crash-and-restart simulation (broader than the
+        completed-combos test): N combos enumerated, runner crashes
+        midway via measurement_fn raising SystemExit, then a fresh
+        process re-runs and only the unmeasured combos get touched.
+        Mirrors v1's `case_set_id`-resume but on the v2 JSONL store."""
+        # Multi-combo overlay so we have something to crash partway.
+        (self.workload_dir / "test.kernel_axes.json").write_text(
+            json.dumps({
+                "page_size": [128, 64],
+                "kernel_K": [256],
+                "mnss":      [4224, 4225],
+                "bq_sz": [256], "bkv_sz": [2048],
+                "bq_csz": [256], "bkv_csz": [512],
+            }),
+        )
+        all_combos: list = []
+        # First pass: succeed 2 then crash on the 3rd.
+        crash_at = 3
+        def measure_crash(tk, tp):
+            all_combos.append((tk["page_size"], tp["mnss"]))
+            if len(all_combos) == crash_at:
+                raise KeyboardInterrupt("simulated Ctrl-C")
+            return {"status": "SUCCESS", "latency_us": 100.0}
+
+        with self.assertRaises(KeyboardInterrupt):
+            run_kernel_tune(
+                workload_env=self.WORKLOAD_ENV_BASE,
+                workload_dir=self.workload_dir,
+                workload_name="test",
+                raw_path=self.raw_path,
+                measurement_fn=measure_crash,
+                code_revision="abc12345",
+            )
+
+        # On-disk: 2 SUCCESS rows landed (the crash happened before
+        # the 3rd was appended).
+        rows_after_crash = list(read_rows(self.raw_path))
+        self.assertEqual(len(rows_after_crash), 2)
+
+        # Second pass: clean measurement_fn. Counts only un-measured
+        # combos — should hit the remaining (3 axes minus 2 already
+        # done in pass 1).
+        resumed_combos: list = []
+        def measure_ok(tk, tp):
+            resumed_combos.append((tk["page_size"], tp["mnss"]))
+            return {"status": "SUCCESS", "latency_us": 100.0}
+        n2 = run_kernel_tune(
+            workload_env=self.WORKLOAD_ENV_BASE,
+            workload_dir=self.workload_dir,
+            workload_name="test",
+            raw_path=self.raw_path,
+            measurement_fn=measure_ok,
+            code_revision="abc12345",
+        )
+        # n2 = (total - already-done) — exactly the missing combos.
+        # No double-measurement of the 2 pre-crash combos.
+        already = {c for c in all_combos[:2]}
+        re_measured = {c for c in resumed_combos}
+        self.assertFalse(already & re_measured,
+                         f"resume re-measured: {already & re_measured}")
+        # Final state: every distinct combo measured exactly once.
+        final_rows = list(read_rows(self.raw_path))
+        keys = [(r["tuning_key"]["page_size"],
+                 r["tunable_params"]["mnss"])
+                for r in final_rows]
+        self.assertEqual(len(keys), len(set(keys)),
+                         "duplicate combo measurement after resume")
+
     def test_resume_retries_unknown_error_combos(self):
         """If a prior row had status=UNKNOWN_ERROR, second run re-tries.
         This is the regression 35b570d7 fixed in v1 — we replicate

@@ -221,6 +221,56 @@ class TestRunServiceSweep(unittest.TestCase):
         )
         self.assertEqual(n, 0)
 
+    def test_invalid_worker_config_raises(self):
+        with self.assertRaises(ValueError):
+            run_service_sweep(
+                workload_env={},
+                workload_dir=self.workload_dir,
+                workload_name="test",
+                raw_path=self.raw_path,
+                measurement_fn=self._mock_measure,
+                service_revision="sha1-sha2",
+                worker_id=2, worker_count=2,
+            )
+
+    def test_two_workers_partition_sweep_combos(self):
+        """Symmetric to kernel-tune: N workers each measure their
+        hash-bucket of combos; combined coverage = full search
+        space, no double-measurement."""
+        # Widen the overlay so multiple combos are possible.
+        (self.workload_dir / "test.service_axes.json").write_text(
+            json.dumps({
+                "MAX_NUM_BATCHED_TOKENS": [8192, 16384],
+                "MAX_NUM_SEQS":           [128, 1000],
+            }),
+        )
+        worker_calls: dict[int, list] = {0: [], 1: []}
+        def measure_factory(wid):
+            def fn(c):
+                worker_calls[wid].append(tuple(sorted(c.items())))
+                return {"status": "SUCCESS",
+                        "metrics": {"req_per_sec": 1.0,
+                                    "ttft_mean_ms": 100.0,
+                                    "ttft_p99_ms": 200.0}}
+            return fn
+        for wid in (0, 1):
+            run_service_sweep(
+                workload_env={},
+                workload_dir=self.workload_dir,
+                workload_name="test",
+                raw_path=self.raw_path,
+                measurement_fn=measure_factory(wid),
+                service_revision="sha1-sha2",
+                worker_id=wid, worker_count=2,
+                commit_every=0,
+            )
+        w0 = set(worker_calls[0])
+        w1 = set(worker_calls[1])
+        self.assertEqual(w0 & w1, set(),
+                         f"workers double-measured: {w0 & w1}")
+        # Should be 4 combos total (2 × 2).
+        self.assertEqual(len(w0 | w1), 4)
+
     def test_resume_retries_unknown_error(self):
         def measure_err(c):
             return {"status": "UNKNOWN_ERROR"}

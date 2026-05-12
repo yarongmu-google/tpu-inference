@@ -62,7 +62,7 @@ from tools.tuning.v2.core.discriminator import (
     KNOWN_KERNEL_VARIANTS,
 )
 from tools.tuning.v2.core.git_atomic import commit_and_push
-from tools.tuning.v2.core.keyset import service_combo_key
+from tools.tuning.v2.core.keyset import service_combo_key, worker_bucket
 from tools.tuning.v2.core.raw_store import append_row, build_skip_set
 from tools.tuning.v2.service.search_space import service_search_space
 
@@ -281,6 +281,8 @@ def run_service_sweep(
     service_revision: str,
     kernel_pin_keys: dict[str, Any] | None = None,
     commit_every: int = 5,
+    worker_id: int = 0,
+    worker_count: int = 1,
     on_progress: Callable[[int], None] | None = None,
 ) -> int:
     """Run a service-sweep pass for one workload.
@@ -333,9 +335,23 @@ def run_service_sweep(
         status_filter=PERMANENT_STATUSES,
     )
 
+    if worker_count < 1 or not (0 <= worker_id < worker_count):
+        raise ValueError(
+            f"invalid worker config: worker_id={worker_id} "
+            f"worker_count={worker_count} — require 1 <= count and "
+            f"0 <= id < count.",
+        )
+
+    worker_tag = (f"w{worker_id}/{worker_count} "
+                  if worker_count > 1 else "")
     n_new = 0
     for combo in enumerate_service_combos(search_space=search_space):
-        if service_combo_key(combo) in skip_set:
+        ck = service_combo_key(combo)
+        if ck in skip_set:
+            continue
+        # Multi-worker bucket assignment (mirror of kernel/tune).
+        # `worker_count=1` (default) keeps every combo.
+        if worker_count > 1 and worker_bucket(ck, worker_count) != worker_id:
             continue
         feasible, skip_reason = _is_feasible(
             combo, workload_env, kernel_pin_keys=kernel_pin_keys,
@@ -349,7 +365,8 @@ def run_service_sweep(
             # same pattern. A bench combo can take 10+ min; without
             # this log the operator can't tell what's happening.
             logger.info(
-                "[sweep  *] MNB=%-7s MNS=%-5s → measuring...",
+                "[sweep %s *] MNB=%-7s MNS=%-5s → measuring...",
+                worker_tag,
                 combo.get("MAX_NUM_BATCHED_TOKENS"),
                 combo.get("MAX_NUM_SEQS"),
             )
@@ -410,7 +427,8 @@ def run_service_sweep(
         else:
             _summary = ""
         logger.info(
-            "[sweep %4d] MNB=%-7s MNS=%-5s → %-13s %s",
+            "[sweep %s%4d] MNB=%-7s MNS=%-5s → %-13s %s",
+            worker_tag,
             n_new,
             combo.get("MAX_NUM_BATCHED_TOKENS"),
             combo.get("MAX_NUM_SEQS"),
@@ -463,6 +481,14 @@ def main(argv: list[str] | None = None) -> int:
                    help="Commit raw store every N combos.")
     p.add_argument("--timeout", type=int, default=1800,
                    help="Per-combo bench timeout in seconds.")
+    p.add_argument(
+        "--worker-id", type=int, default=0,
+        help="This worker's bucket index in [0, --worker-count).",
+    )
+    p.add_argument(
+        "--worker-count", type=int, default=1,
+        help="Total number of workers participating. Default 1.",
+    )
     args = p.parse_args(argv)
     from tools.tuning.v2.core.logs import configure as configure_logging
     configure_logging()
@@ -505,6 +531,8 @@ def main(argv: list[str] | None = None) -> int:
         measurement_fn=measurement_fn,
         service_revision=service_revision,
         commit_every=args.commit_every,
+        worker_id=args.worker_id,
+        worker_count=args.worker_count,
     )
     logger.info("Sweep-v2: %d new rows written to %s", n_new, raw_path)
     # Machine-parseable result on stdout.

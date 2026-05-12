@@ -81,6 +81,34 @@ tools/tuning/v2/scripts/run_pipeline.sh \
 ```
 (Append to the end of any command above instead of the plain `tee tmp/foo.log`.)
 
+## Distributed tune across N TPU VMs (parallel workers)
+
+Each worker hashes its combos into N buckets and measures only its
+own. All workers append to the same `<workload>.kernel.raw/<sha>.jsonl`
+and `<workload>.service.raw/<sha>.jsonl` (POSIX `O_APPEND` is atomic).
+
+On each TPU VM, with `--worker-id` from 0 to N-1 and the same
+`--worker-count=N`:
+
+```bash
+# VM 0:
+EXTRA_TUNE_FLAGS="--iters 3 --warmup 1 --worker-id 0 --worker-count 4" \
+EXTRA_SWEEP_FLAGS="--worker-id 0 --worker-count 4" \
+KERNEL_TUNER_NO_COMMIT=1 \
+tools/tuning/v2/scripts/run_pipeline.sh \
+  tools/benchmark/cases/v7x/llama3_8b/throughput/prefill_heavy.workload \
+  2>&1 | tee tmp/throughput_w0.log
+
+# VMs 1, 2, 3: same recipe, change --worker-id.
+```
+
+To project / aggregate once all workers finish, re-run on any one
+VM with `--from project_kernel`:
+```bash
+tools/tuning/v2/scripts/run_pipeline.sh --from project_kernel \
+  tools/benchmark/cases/v7x/llama3_8b/throughput/prefill_heavy.workload
+```
+
 ## Run in background, survive SSH disconnect
 
 ```bash
@@ -272,6 +300,41 @@ python3 -m coverage run --branch --source=tools.tuning.v2 \
 ```
 
 ---
+
+## Bi-directional lookup
+
+Two directions, both implemented:
+
+**Top-down** (deploy time, `workload → service → kernel → env vars`):
+```bash
+tools/tuning/v2/scripts/lookup.sh <workload>.workload [--objective throughput_max]
+```
+Reads `<workload>.service`, picks the objective winner, follows its
+`kernel_pin_keys` into `<workload>.kernel`, emits the merged env-var
+set as `KEY=VALUE` lines.
+
+**Bottom-up** (impact analysis, `attribute → which workloads`):
+```bash
+# "I changed the kernel source. Which workloads need re-tune?"
+tools/tuning/v2/scripts/impact.sh stale-tunes <new_kernel_sha>
+
+# "Which workloads use kernel_K=256?"
+tools/tuning/v2/scripts/impact.sh by-kernel-key kernel_K 256
+
+# "Which deployments are served at MAX_NUM_BATCHED_TOKENS=131072?"
+tools/tuning/v2/scripts/impact.sh by-service-combo MAX_NUM_BATCHED_TOKENS 131072
+```
+
+---
+
+## Future work
+
+- **Smarter search** (Helion-style surrogate + 2-pass benchmarking):
+  see follow-up notes; would turn hour-long tunes into ~15 min ones
+  at comparable winner quality. Helion repo cloned for reference at
+  `../helion`.
+- **Top-N refinement** (re-measure top winners at higher iters +
+  finer-grained neighbor search): deferred.
 
 ## v1 deprecation (planned)
 

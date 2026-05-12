@@ -97,5 +97,55 @@ class TestServiceComboKey(unittest.TestCase):
         self.assertEqual(service_combo_key(a), service_combo_key(b))
 
 
+class TestWorkerBucket(unittest.TestCase):
+    """v1-parity: each worker measures only the combos whose stable
+    hash bucket matches its id. See core/keyset.worker_bucket
+    docstring for the architecture."""
+
+    def test_buckets_in_range(self):
+        from tools.tuning.v2.core.keyset import worker_bucket
+        for i in range(100):
+            b = worker_bucket({"i": i}, worker_count=8)
+            self.assertGreaterEqual(b, 0)
+            self.assertLess(b, 8)
+
+    def test_stable_across_calls(self):
+        """Reproducibility: same key + same worker_count -> same
+        bucket every invocation. SHA-256-based; not subject to
+        Python's PYTHONHASHSEED randomization."""
+        from tools.tuning.v2.core.keyset import worker_bucket
+        k = {"page_size": 128, "kernel_K": 256}
+        self.assertEqual(
+            worker_bucket(k, 4), worker_bucket(k, 4),
+        )
+
+    def test_distribution_roughly_uniform(self):
+        """Sanity: a few hundred keys should spread across all
+        buckets, not pile up. (Not a statistical guarantee — just
+        a smoke check.)"""
+        from collections import Counter
+        from tools.tuning.v2.core.keyset import worker_bucket
+        counts = Counter(
+            worker_bucket({"i": i}, 4) for i in range(400)
+        )
+        self.assertEqual(set(counts), {0, 1, 2, 3})
+        # Each bucket should get ~100 ± slack.
+        for c in counts.values():
+            self.assertGreater(c, 50)
+            self.assertLess(c, 150)
+
+    def test_single_worker_always_returns_zero(self):
+        from tools.tuning.v2.core.keyset import worker_bucket
+        self.assertEqual(worker_bucket("anything", 1), 0)
+        self.assertEqual(worker_bucket({"x": 1}, 1), 0)
+
+    def test_invalid_worker_count_raises(self):
+        from tools.tuning.v2.core.keyset import worker_bucket
+        with self.assertRaises(ValueError):
+            worker_bucket("k", 0)
+        with self.assertRaises(ValueError):
+            worker_bucket("k", -1)
+
+
 if __name__ == "__main__":
     unittest.main()

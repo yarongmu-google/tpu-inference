@@ -44,7 +44,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 
 from tools.tuning.v2.core.git_atomic import commit_and_push
-from tools.tuning.v2.core.keyset import combo_key
+from tools.tuning.v2.core.keyset import combo_key, worker_bucket
 from tools.tuning.v2.core.raw_store import append_row, build_skip_set
 from tools.tuning.v2.kernel.enumerate import enumerate_all_combos
 from tools.tuning.v2.kernel.enumerate_logical import (
@@ -102,6 +102,8 @@ def run_kernel_tune(
     kernel_variant: str = DEFAULT_KERNEL_VARIANT,
     hardware: str = DEFAULT_HARDWARE,
     commit_every: int = 25,
+    worker_id: int = 0,
+    worker_count: int = 1,
     on_progress: Callable[[int], None] | None = None,
 ) -> int:
     """Run a kernel-tune pass for one workload + one case.
@@ -191,21 +193,39 @@ def run_kernel_tune(
     # produce all four winners and for the sweep step's
     # resolve_kernel_pin_keys to find a LOGICAL or PREFILL winner.
     succeeded_cases: set[str] = set()
+    if worker_count < 1 or not (0 <= worker_id < worker_count):
+        raise ValueError(
+            f"invalid worker config: worker_id={worker_id} "
+            f"worker_count={worker_count} — require 1 <= count and "
+            f"0 <= id < count.",
+        )
     for tuning_key, tunable_params in combos:
         case = tuning_key.get("case")
         if (os.environ.get("SMOKE_TEST") == "1"
                 and case in succeeded_cases):
             continue
-        if combo_key(tuning_key, tunable_params) in skip_set:
+        ck = combo_key(tuning_key, tunable_params)
+        if ck in skip_set:
+            continue
+        # Multi-worker partitioning (arch §8): hash-based bucket
+        # assignment. Each worker measures only its own bucket;
+        # workers append to the SAME .raw file so the projection
+        # sees all results regardless of which worker produced them.
+        # `worker_count=1` (default) keeps every combo for the
+        # single-worker case.
+        if worker_count > 1 and worker_bucket(ck, worker_count) != worker_id:
             continue
 
         # Pre-measurement progress line so a hung combo is visible.
         # The post-measurement line confirms completion + status; this
         # one names the combo BEFORE we call into pallas_call, so a
         # multi-minute JIT compile doesn't look like a hang.
+        worker_tag = (f"w{worker_id}/{worker_count} "
+                      if worker_count > 1 else "")
         logger.info(
-            "[tune   *] case=%-7s page=%-3s K=%-5s mnss=%-6s "
+            "[tune %s  *] case=%-7s page=%-3s K=%-5s mnss=%-6s "
             "bq=%-5s → measuring...",
+            worker_tag,
             tuning_key.get("case"),
             tuning_key.get("page_size"),
             tuning_key.get("kernel_K"),
@@ -268,8 +288,9 @@ def run_kernel_tune(
             )
         )
         logger.info(
-            "[tune %4d] case=%-7s page=%-3s K=%-5s mnss=%-6s "
+            "[tune %s%4d] case=%-7s page=%-3s K=%-5s mnss=%-6s "
             "bq=%-5s → %-13s %s",
+            worker_tag,
             n_new,
             tuning_key.get("case"),
             tuning_key.get("page_size"),
@@ -357,6 +378,18 @@ def main(argv: list[str] | None = None) -> int:
                    help="Timed iterations per combo.")
     p.add_argument("--warmup", type=int, default=2,
                    help="Untimed warmup iterations per combo. 0 to skip.")
+    p.add_argument(
+        "--worker-id", type=int, default=0,
+        help="This worker's bucket index in [0, --worker-count). "
+             "Used for distributed tuning across multiple TPU VMs; "
+             "every worker measures only the combos whose stable "
+             "hash matches its bucket. Workers share one .raw file.",
+    )
+    p.add_argument(
+        "--worker-count", type=int, default=1,
+        help="Total number of workers participating. Default 1 "
+             "(single-worker, no partitioning).",
+    )
     args = p.parse_args(argv)
 
     from tools.tuning.v2.core.logs import configure as configure_logging
@@ -419,6 +452,8 @@ def main(argv: list[str] | None = None) -> int:
         measurement_fn=measurement_fn,
         code_revision=code_revision,
         commit_every=args.commit_every,
+        worker_id=args.worker_id,
+        worker_count=args.worker_count,
     )
     logger.info("Tune-v2: %d new rows written to %s", n_new, raw_path)
     # The path is the machine-parseable result — keep on stdout for
