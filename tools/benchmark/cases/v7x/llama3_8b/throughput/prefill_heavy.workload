@@ -39,13 +39,17 @@
 
 : "${MAX_MODEL_LEN:=8192}"
 
-# MAX_NUM_SEQS: NOT pinned here (throughput scenario). The service
-# sweep enumerates MNS candidates from DEFAULT_MAX_NUM_SEQS (or
-# the per-workload service_axes.json overlay) and the projection
-# picks the best — "how much can the TPU tolerate?" is answered
-# by sweeping, not by guessing.
-# For the latency scenario (MNS=1 always), see the sibling
-# `../latency/prefill_heavy.workload` file.
+# MAX_NUM_SEQS pinned to 128 (2026-05-12) — match the v1-era
+# production config the user has working winners for. Throughput
+# of the L kernel is studied separately in Phase 5
+# (docs/k_serving_repro.md) at MNS=1000; tuning at MNS=1000 hits
+# OOM due to large cached-inputs evicting the kernel program
+# region (openxla error_0101 — buffer arena is privileged over
+# program region; cached q/k/v at mnss=2000+ eats GB-scale
+# buffers, leaving the kernel binary unable to load). v1's
+# day-to-day used MNS=128; v2 here matches that to A/B-test
+# whether v2 OOMs at v1's known-working scale.
+: "${MAX_NUM_SEQS:=128}"
 #
 # MAX_NUM_BATCHED_TOKENS lives in the service-sweep layer
 # (architecture doc §2, category 5). Pin via
