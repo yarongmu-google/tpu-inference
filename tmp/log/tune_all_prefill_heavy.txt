@@ -465,3 +465,31 @@ Inspector commands to extract winners (run on the same TPU VM):
       --source=local --db-path=tmp/log/kernel_tuner_run/prefill_heavy_logical \
       query_min_latency \
       --case_set_id=prefill_heavy_logical_20260510_144842 --run_id=0
+===== 2026-05-12 16:48:01 Starting full kernel tune for prefill_heavy =====
+Cases: decode -> prefill -> mixed
+Branch: rpa3_3
+Git commit: eb70c502e6c4486c2ceda1fad7afe8feddcf487d
+
+
+===== 2026-05-12 16:48:01 Tuning logical (case_set_id=prefill_heavy_logical) =====
+DB path: tmp/log/kernel_tuner_run/prefill_heavy_logical
+WARNING:absl:Tensorflow library not found, tensorflow.io.gfile operations will use native shim calls. GCS paths (i.e. 'gs://...') cannot be accessed.
+INFO:numexpr.utils:Note: detected 224 virtual cores but NumExpr set to maximum of 64, check "NUMEXPR_MAX_THREADS" environment variable.
+INFO:numexpr.utils:Note: NumExpr detected 224 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+INFO:numexpr.utils:NumExpr defaulting to 16 threads.
+INFO 05-12 16:48:07 [__init__.py:59] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+I0512 16:48:07.666032 138329683584960 kernel_tuner_runner.py:115] Using case_set_id: prefill_heavy_logical, run_id: 0, case_set_desc: prefill_heavy logical kernel tune for this tuning run.
+I0512 16:48:07.666136 138329683584960 local_db_manager.py:53] Database initialized at tmp/log/kernel_tuner_run/prefill_heavy_logical
+I0512 16:48:07.671070 138329683584960 rpa_v3_kernel_tuner.py:405] SMOKE_TEST=1 detected: Truncating tuner search space to minimum.
+I0512 16:48:07.671178 138329683584960 kernel_tuner_runner.py:148] Running in locally mode. Skipping Buildkite pipeline generation and running tuning jobs directly.
+I0512 16:48:07.671301 138329683584960 kernel_tuner_base.py:257] CaseSetId prefill_heavy_logical already exists with the same description. Proceeding with the existing case set.
+I0512 16:48:07.671362 138329683584960 kernel_tuner_base.py:479] Worker [unknown] Claimed CaseSetId: prefill_heavy_logical, RunId: 0, Bucket 0 (0-6) for processing.
+I0512 16:48:07.671633 138329683584960 local_db_manager.py:236] Marked bucket as in progress: cs_id=prefill_heavy_logical, r_id=0, b_id=0, worker=None
+I0512 16:48:07.672274 138329683584960 local_db_manager.py:252] Marked bucket as completed: cs_id=prefill_heavy_logical, r_id=0, b_id=0, tt_us=2
+I0512 16:48:07.672325 138329683584960 kernel_tuner_base.py:591] Worker [unknown] Completed Bucket 0 (0-6) for CaseSetId: prefill_heavy_logical, RunId: 0. Total time: 0.00s.
+I0512 16:48:07.672355 138329683584960 local_db_manager.py:313] Database at tmp/log/kernel_tuner_run/prefill_heavy_logical finalized with 0 cases, 0 invalid cases.
+I0512 16:48:07.672408 138329683584960 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical/CaseSet.json
+I0512 16:48:07.672434 138329683584960 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical/KernelTuningCases.json
+I0512 16:48:07.672456 138329683584960 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical/WorkBuckets.json
+I0512 16:48:07.672476 138329683584960 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical/CaseResults.json
+===== 2026-05-12 16:48:08 logical done in 7s =====
