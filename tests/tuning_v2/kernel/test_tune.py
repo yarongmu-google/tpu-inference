@@ -30,12 +30,25 @@ from unittest import mock
 
 from tools.tuning.v2.core.git_atomic import NO_PUSH_ENV
 from tools.tuning.v2.core.raw_store import read_rows
+from tools.tuning.v2.kernel.enumerate_logical import (
+    enumerate_logical_combos,
+)
 from tools.tuning.v2.kernel.tune import (
     PERMANENT_STATUSES,
     main as tune_main,
     model_shape_from_workload,
-    run_kernel_tune,
 )
+from tools.tuning.v2.kernel.tune import run_kernel_tune as _run_kernel_tune
+
+
+def run_kernel_tune(*args, **kwargs):
+    """Test wrapper: defaults `enumerator` to the LOGICAL-only
+    iterator. These existing tests pre-date the four-case
+    `enumerate_all_combos` default in `kernel/tune.py` and assume
+    a single-case enumeration. Tests that exercise multi-case
+    behavior pass `enumerator=` explicitly."""
+    kwargs.setdefault("enumerator", enumerate_logical_combos)
+    return _run_kernel_tune(*args, **kwargs)
 
 
 def _init_git_repo(d: Path) -> None:
@@ -614,7 +627,9 @@ class TestCliMain(unittest.TestCase):
         cases = repo / "cases" / "v7x" / "llama3_8b"
         cases.mkdir(parents=True)
         _init_git_repo(repo)
-        # Narrow overlay so the cartesian product is 1 combo.
+        # Narrow overlay so each of the four cases (D/M/P/L)
+        # produces exactly one combo. DECODE pins bq_sz=bq_csz=1
+        # internally so it ignores the overlay's bq_sz / bq_csz.
         (cases / "x.kernel_axes.json").write_text(json.dumps({
             "page_size": [128], "kernel_K": [256], "mnss": [4224],
             "bq_sz": [256], "bkv_sz": [2048],
@@ -651,7 +666,13 @@ class TestCliMain(unittest.TestCase):
             else:
                 os.environ[NO_PUSH_ENV] = saved_no_push
         self.assertEqual(rc, 0)
-        self.assertEqual(len(measure_calls), 1)
+        # Default CLI enumerator is enumerate_all_combos → one
+        # combo per case (D/M/P/L) under this narrow overlay.
+        self.assertEqual(len(measure_calls), 4)
+        cases_seen = sorted(tk["case"] for tk, _ in measure_calls)
+        self.assertEqual(
+            cases_seen, ["decode", "logical", "mixed", "prefill"],
+        )
         # Workload env was pushed into os.environ before the
         # adapter built (v1 tuner reads them at construction).
         self.assertEqual(os.environ.get("MAX_NUM_SEQS"), "128")

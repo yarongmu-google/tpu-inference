@@ -1,50 +1,20 @@
-# Tune-v2 — copy-paste command recipes
+# Tune-v2 — `if X, run Y`
 
-All commands assume `cwd = repo root`. Pull first if anything looks stale:
-
-```bash
-git pull
-```
+All commands assume `cwd = repo root`. The Python `logging` library
+prints `HH:MM:SS LEVEL tools.tuning.v2.<module>: <msg>` on stderr.
 
 ---
 
-## Smoke tests (no commits, no real bench, single combo)
-
-Both scenarios share the same prelude. `KERNEL_TUNER_NO_COMMIT=1` keeps the
-working tree clean; `MOCK_BENCH=1` short-circuits the sweep step to synthetic
-metrics so no vLLM server is needed; `SMOKE_TEST=1` makes the runner stop at
-the first SUCCESS row (the search space is unchanged — earlier "truncate to
-one combo" picked infeasible configs and dead-ended the pipeline);
-`EXTRA_TUNE_FLAGS="--iters 1 --warmup 0"` makes each TPU measurement fast.
-
-Under SMOKE_TEST, the kernel-tune may write a handful of SKIPPED rows
-before landing a SUCCESS — that's the SMEM/VMEM estimator correctly
-rejecting some combos. The first SUCCESS is what the rest of the pipeline
-consumes.
-
-### Local (off-TPU) end-to-end — `MOCK_TPU=1`
-
-Same recipe with `MOCK_TPU=1` added. The kernel measurement is short-
-circuited to synthetic latency (no JAX / Pallas / TPU touched); the bench
-side already short-circuits via `MOCK_BENCH=1`. The whole pipeline runs on
-a Mac in under a second, useful for verifying progress lines, file layout,
-or testing pipeline changes without a TPU VM.
+## Smoke (all four cases D/M/P/L, off-TPU, no commits, no real bench)
 
 ```bash
-SMOKE_TEST=1 KERNEL_TUNER_NO_COMMIT=1 \
-MOCK_TPU=1 MOCK_BENCH=1 \
+SMOKE_TEST=1 KERNEL_TUNER_NO_COMMIT=1 MOCK_TPU=1 MOCK_BENCH=1 \
 EXTRA_TUNE_FLAGS="--iters 1 --warmup 0" \
 tools/tuning/v2/scripts/run_pipeline.sh \
   tools/benchmark/cases/v7x/llama3_8b/throughput/prefill_heavy.workload
 ```
 
-Rows produced under `MOCK_TPU=1` carry `mock: true` on the .kernel.raw side
-(same shape as `MOCK_BENCH=1` does on the .service.raw side); per-combo
-progress lines tag the row with `(MOCK)` so they don't blend with real
-measurements. Don't mix MOCK rows into a real workload partition — the
-projection has no auto-filter.
-
-### Throughput (MNS swept at service level)
+## Smoke on TPU (real kernel, mock bench)
 
 ```bash
 SMOKE_TEST=1 KERNEL_TUNER_NO_COMMIT=1 MOCK_BENCH=1 \
@@ -53,7 +23,7 @@ tools/tuning/v2/scripts/run_pipeline.sh \
   tools/benchmark/cases/v7x/llama3_8b/throughput/prefill_heavy.workload
 ```
 
-### Latency (MNS=1 pinned)
+## Smoke for latency scenario
 
 ```bash
 SMOKE_TEST=1 KERNEL_TUNER_NO_COMMIT=1 MOCK_BENCH=1 \
@@ -62,75 +32,158 @@ tools/tuning/v2/scripts/run_pipeline.sh \
   tools/benchmark/cases/v7x/llama3_8b/latency/prefill_heavy.workload
 ```
 
-Expected output per scenario: six step banners ending in
-`=== Tune-v2 pipeline complete ===`. Files produced (relative to the
-workload's parent dir):
+---
 
-- `prefill_heavy.kernel.raw/<sha>.jsonl` — one row, real TPU latency.
-- `prefill_heavy.kernel` — one winner (`case: logical`).
-- `prefill_heavy.service.raw/<sha>.jsonl` — one row, `mock: true`.
-- `prefill_heavy.service` — three objective winners (throughput_max,
-  ttft_min, p99_min) all pointing at the synthetic combo.
-- `production.kernel` + `production.service` — aggregated envelope.
+## Real throughput tune — v1-cadence (fastest, noisier)
+
+```bash
+EXTRA_TUNE_FLAGS="--iters 1 --warmup 0" \
+KERNEL_TUNER_NO_COMMIT=1 \
+tools/tuning/v2/scripts/run_pipeline.sh \
+  tools/benchmark/cases/v7x/llama3_8b/throughput/prefill_heavy.workload \
+  2>&1 | tee tmp/throughput_run.log
+```
+
+## Real throughput tune — clean steady-state (recommended)
+
+```bash
+EXTRA_TUNE_FLAGS="--iters 3 --warmup 1" \
+KERNEL_TUNER_NO_COMMIT=1 \
+tools/tuning/v2/scripts/run_pipeline.sh \
+  tools/benchmark/cases/v7x/llama3_8b/throughput/prefill_heavy.workload \
+  2>&1 | tee tmp/throughput_run.log
+```
+
+## Real latency tune
+
+```bash
+EXTRA_TUNE_FLAGS="--iters 3 --warmup 1" \
+KERNEL_TUNER_NO_COMMIT=1 \
+tools/tuning/v2/scripts/run_pipeline.sh \
+  tools/benchmark/cases/v7x/llama3_8b/latency/prefill_heavy.workload \
+  2>&1 | tee tmp/latency_run.log
+```
 
 ---
 
-## Individual steps (advance one stage at a time)
+## Save the log to a timestamped file
 
 ```bash
-# Step 1: validate the workload schema.
+2>&1 | tee "tmp/run_$(date +%Y%m%d_%H%M%S).log"
+```
+(Append to the end of any command above instead of the plain `tee tmp/foo.log`.)
+
+## Run in background, survive SSH disconnect
+
+```bash
+nohup bash -c '
+  KERNEL_TUNER_NO_COMMIT=1 \
+  tools/tuning/v2/scripts/run_pipeline.sh \
+    tools/benchmark/cases/v7x/llama3_8b/throughput/prefill_heavy.workload \
+    > tmp/throughput_run.log 2>&1
+' &
+echo "PID: $!"
+
+# From any shell, watch progress:
+tail -f tmp/throughput_run.log
+```
+
+## Push the log so I can read it
+
+```bash
+git add tmp/*.log && git commit -m "tune log" && git push
+```
+
+---
+
+## Resume after Ctrl-C or crash
+
+Re-run the same command. The skip-set picks up where it left off
+(combos with `SUCCESS` / `FAILED_OOM` / `SKIPPED` status are
+skipped; `UNKNOWN_ERROR` retried).
+
+## Force a fully fresh tune (discard partial results)
+
+```bash
+rm tools/benchmark/cases/v7x/llama3_8b/throughput/prefill_heavy.kernel.raw/*.jsonl
+```
+Then re-run.
+
+## Skip past steps that already succeeded
+
+```bash
+# Already tuned the kernel? Pick up at projection:
+KERNEL_TUNER_NO_COMMIT=1 \
+tools/tuning/v2/scripts/run_pipeline.sh \
+  --from project_kernel \
+  tools/benchmark/cases/v7x/llama3_8b/throughput/prefill_heavy.workload
+
+# Already swept? Pick up at projection:
+KERNEL_TUNER_NO_COMMIT=1 \
+tools/tuning/v2/scripts/run_pipeline.sh \
+  --from project_service \
+  tools/benchmark/cases/v7x/llama3_8b/throughput/prefill_heavy.workload
+```
+
+Valid `--from` values: `validate`, `tune_kernel`, `project_kernel`,
+`sweep_service`, `project_service`, `aggregate`.
+
+---
+
+## Land the results (commit + push)
+
+Drop `KERNEL_TUNER_NO_COMMIT=1`. To commit but not push, use
+`KERNEL_TUNER_NO_PUSH=1` instead.
+
+```bash
+EXTRA_TUNE_FLAGS="--iters 3 --warmup 1" \
+tools/tuning/v2/scripts/run_pipeline.sh \
+  tools/benchmark/cases/v7x/llama3_8b/throughput/prefill_heavy.workload \
+  2>&1 | tee tmp/throughput_run.log
+```
+
+---
+
+## Individual steps
+
+```bash
+# Validate one workload schema.
 tools/tuning/v2/scripts/validate.sh \
   tools/benchmark/cases/v7x/llama3_8b/throughput/prefill_heavy.workload
 
-# Step 2: kernel tune (real TPU). Add SMOKE_TEST=1 for one combo.
-SMOKE_TEST=1 KERNEL_TUNER_NO_COMMIT=1 \
+# Kernel tune only (real TPU).
+EXTRA_TUNE_FLAGS="--iters 3 --warmup 1" \
+KERNEL_TUNER_NO_COMMIT=1 \
 tools/tuning/v2/scripts/tune_kernel.sh \
   tools/benchmark/cases/v7x/llama3_8b/throughput/prefill_heavy.workload \
-  --iters 1 --warmup 0
+  --iters 3 --warmup 1
 
-# Step 3: project kernel raw → .kernel.
+# Project kernel raw → .kernel.
 KERNEL_TUNER_NO_COMMIT=1 \
 tools/tuning/v2/scripts/project_kernel.sh \
   tools/benchmark/cases/v7x/llama3_8b/throughput/prefill_heavy.workload
 
-# Step 4: service sweep (real vLLM bench). Add MOCK_BENCH=1 for synthetic.
-SMOKE_TEST=1 KERNEL_TUNER_NO_COMMIT=1 MOCK_BENCH=1 \
+# Service sweep only.
+KERNEL_TUNER_NO_COMMIT=1 \
 tools/tuning/v2/scripts/sweep_service.sh \
   tools/benchmark/cases/v7x/llama3_8b/throughput/prefill_heavy.workload
 
-# Step 5: project service raw → .service.
+# Project service raw → .service.
 KERNEL_TUNER_NO_COMMIT=1 \
 tools/tuning/v2/scripts/project_service.sh \
   tools/benchmark/cases/v7x/llama3_8b/throughput/prefill_heavy.workload
 
-# Step 6: aggregate per-workload winners into production.{kernel,service}.
+# Aggregate per-workload winners → production.{kernel,service}.
 KERNEL_TUNER_NO_COMMIT=1 \
 tools/tuning/v2/scripts/aggregate.sh \
   tools/benchmark/cases/v7x/llama3_8b/throughput
 ```
 
-### Resume from a specific step
-
-`run_pipeline.sh` accepts `--from <step>` (skips earlier steps that already
-succeeded). Valid step names: `validate`, `tune_kernel`, `project_kernel`,
-`sweep_service`, `project_service`, `aggregate`.
-
-```bash
-# Re-do everything from project_kernel onward (kernel tune already finished).
-KERNEL_TUNER_NO_COMMIT=1 MOCK_BENCH=1 \
-tools/tuning/v2/scripts/run_pipeline.sh --from project_kernel \
-  tools/benchmark/cases/v7x/llama3_8b/throughput/prefill_heavy.workload
-```
-
 ---
 
-## Single-combo TPU smoke (kernel only, no pipeline)
-
-Useful for "is the TPU env alive" sanity-check without setting up
-workload+overlay files.
+## Single-combo TPU sanity test
 
 ```bash
-# Write a combo JSON, then run measurement_tpu.main directly.
 cat > /tmp/combo.json <<'EOF'
 {
   "tuning_key": {
@@ -164,47 +217,58 @@ python3 -m tools.tuning.v2.kernel.measurement_tpu /tmp/combo.json \
   --iters 1 --warmup 0
 ```
 
-Expected: a JSON dict on stdout with `"status": "SUCCESS"` and a
-`"latency_us"` field. Exit 0.
-
 ---
 
-## Impact-analysis queries (read-only, no TPU)
+## Impact analysis (read-only)
 
 ```bash
-# "Which workloads use kernel_K=256?"
+# Which workloads use kernel_K=256?
 tools/tuning/v2/scripts/impact.sh by-kernel-key kernel_K 256
 
-# "Which deployments are served by MAX_NUM_BATCHED_TOKENS=131072?"
+# Which deployments use MAX_NUM_BATCHED_TOKENS=131072?
 tools/tuning/v2/scripts/impact.sh by-service-combo \
   MAX_NUM_BATCHED_TOKENS 131072
 
-# "I changed the kernel source. Which workloads have stale tunes?"
-tools/tuning/v2/scripts/impact.sh stale-tunes <new_kernel_sha>
+# Which workloads have stale tunes?
+tools/tuning/v2/scripts/impact.sh stale-tunes <current_kernel_sha>
 ```
 
 ---
 
-## Production retune (full sweep, real bench, commits + pushes enabled)
-
-⚠️ Drops the `NO_COMMIT` and `MOCK_BENCH` flags. Real bench server stands up
-per combo; full default search spaces enumerate; raw stores commit + push
-periodically.
+## Verbose / debug logs
 
 ```bash
+LOG_LEVEL=DEBUG \
 tools/tuning/v2/scripts/run_pipeline.sh \
   tools/benchmark/cases/v7x/llama3_8b/throughput/prefill_heavy.workload
 ```
 
-To skip the push but keep local commits, set `KERNEL_TUNER_NO_PUSH=1`.
+## Quiet logs (warnings + errors only)
+
+```bash
+LOG_LEVEL=WARNING \
+tools/tuning/v2/scripts/run_pipeline.sh \
+  tools/benchmark/cases/v7x/llama3_8b/throughput/prefill_heavy.workload
+```
 
 ---
 
-## Tests + coverage (laptop, no TPU)
+## Tests + coverage
 
 ```bash
-python3 -m unittest discover tests.tuning_v2 -v
+python3 -m unittest discover tests.tuning_v2
+
 python3 -m coverage run --branch --source=tools.tuning.v2 \
   -m unittest discover tests.tuning_v2 && \
   python3 -m coverage report --skip-empty
 ```
+
+---
+
+## v1 deprecation (planned)
+
+v1 tuner (`tools/kernel/tuner/v1/`) produces results in a format
+incompatible with v2's `.kernel` schema. v1 results are NOT
+auto-migrated. Re-tune everything in v2; once v2 winners are
+validated against v1's recorded production tunes (sanity check —
+results should agree on shared combos), v1 retires.

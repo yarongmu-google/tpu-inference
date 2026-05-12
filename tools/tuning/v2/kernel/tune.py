@@ -46,6 +46,7 @@ from typing import Any, Callable, Iterator
 from tools.tuning.v2.core.git_atomic import commit_and_push
 from tools.tuning.v2.core.keyset import combo_key
 from tools.tuning.v2.core.raw_store import append_row, build_skip_set
+from tools.tuning.v2.kernel.enumerate import enumerate_all_combos
 from tools.tuning.v2.kernel.enumerate_logical import (
     DEFAULT_HARDWARE,
     DEFAULT_KERNEL_VARIANT,
@@ -97,7 +98,7 @@ def run_kernel_tune(
                              dict[str, Any]],
     code_revision: str,
     enumerator: Callable[..., Iterator[tuple[dict, dict]]]
-        = enumerate_logical_combos,
+        = enumerate_all_combos,
     kernel_variant: str = DEFAULT_KERNEL_VARIANT,
     hardware: str = DEFAULT_HARDWARE,
     commit_every: int = 25,
@@ -183,7 +184,18 @@ def run_kernel_tune(
     )
 
     n_new = 0
+    # SMOKE_TEST tracking: once a case has its first SUCCESS row,
+    # subsequent combos for that case are skipped. With the
+    # all-cases default enumerator (D / M / P / L), smoke ends up
+    # with one SUCCESS per case — enough for the projection to
+    # produce all four winners and for the sweep step's
+    # resolve_kernel_pin_keys to find a LOGICAL or PREFILL winner.
+    succeeded_cases: set[str] = set()
     for tuning_key, tunable_params in combos:
+        case = tuning_key.get("case")
+        if (os.environ.get("SMOKE_TEST") == "1"
+                and case in succeeded_cases):
+            continue
         if combo_key(tuning_key, tunable_params) in skip_set:
             continue
 
@@ -276,17 +288,14 @@ def run_kernel_tune(
                 f"[Tune-v2] progress: {n_new} cases ({workload_name})",
             )
 
-        # SMOKE_TEST=1 (arch doc + v1 parity): stop at the first
-        # SUCCESS row. The original "truncate axes to one combo"
-        # strategy could pick an infeasible config (SMEM/VMEM
-        # estimator above limit) and dead-end the pipeline at the
-        # service step with zero winners. Enumerating until one
-        # combo succeeds achieves the smoke intent (one
-        # measurement, fast wiring check) and is robust against
-        # whichever first-axis values happen to be unfortunate.
+        # SMOKE_TEST=1: register this case as succeeded so the
+        # pre-loop skip drops the rest of this case's combos. The
+        # next NEW case proceeds normally. With the all-cases
+        # default enumerator, smoke produces one SUCCESS row per
+        # case (D / M / P / L) — enough for full pipeline flow.
         if (os.environ.get("SMOKE_TEST") == "1"
                 and result.get("status") == "SUCCESS"):
-            break
+            succeeded_cases.add(case)
 
     # Final commit fires only if the last batch of rows wasn't already
     # picked up by a periodic commit. When n_new is an exact multiple
