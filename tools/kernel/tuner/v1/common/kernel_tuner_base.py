@@ -115,6 +115,72 @@ class KernelTunerBase(ABC):
         # the JSONL never does. Source of truth for resume.
         self.raw_jsonl_path = None
 
+    # Statuses where re-running the combo is wasted time — SUCCESS
+    # already has its measurement, FAILED_OOM / SKIPPED reproduce
+    # identically. UNKNOWN_ERROR is intentionally OUT so post-bugfix
+    # re-runs retry transient failures.
+    _PERMANENT_STATUSES = frozenset({"SUCCESS", "FAILED_OOM", "SKIPPED"})
+
+    @staticmethod
+    def _combo_skip_key(tuning_key, tunable_params) -> str:
+        """Stable hashable identifier for a (tuning_key, tunable_params)
+        combo. JSON dumps with sort_keys gives the same string regardless
+        of dict iteration order, so the resume comparison stays valid
+        across Python versions. default=str copes with TuningKey's JAX
+        dtype fields (jnp.bfloat16 etc.) the same way the JSONL writer
+        does — keeping the writer and reader symmetric is the whole
+        point of routing both through the same helper convention.
+        """
+        return json.dumps(
+            [asdict(tuning_key), asdict(tunable_params)],
+            sort_keys=True, default=str,
+        )
+
+    def _load_raw_jsonl_skip_set(self) -> set:
+        """Read every prior row from `self.raw_jsonl_path` and return
+        the set of combo keys whose status is permanent. No-op (empty
+        set) when raw_jsonl_path is None or the file doesn't exist.
+
+        Tolerates a truncated trailing line — if a Ctrl-C interrupted
+        a partial write, the last line may be incomplete; we json-decode
+        per-line and silently skip any line that fails to parse. The
+        earlier complete lines still count.
+        """
+        if self.raw_jsonl_path is None:
+            return set()
+        from pathlib import Path
+        path = Path(self.raw_jsonl_path)
+        if not path.exists():
+            return set()
+        skip: set = set()
+        n_rows = n_permanent = n_malformed = 0
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                n_rows += 1
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    n_malformed += 1
+                    continue
+                if row.get("status") in self._PERMANENT_STATUSES:
+                    key = json.dumps(
+                        [row.get("tuning_key", {}),
+                         row.get("tunable_params", {})],
+                        sort_keys=True, default=str,
+                    )
+                    skip.add(key)
+                    n_permanent += 1
+        logger.info(
+            "Resume from %s: %d rows (%d permanent → skip, %d retry, "
+            "%d malformed)",
+            path, n_rows, n_permanent,
+            n_rows - n_permanent - n_malformed, n_malformed,
+        )
+        return skip
+
     def _append_raw_jsonl(
         self,
         *,
@@ -421,6 +487,15 @@ class KernelTunerBase(ABC):
         all_configs = self.storage_manager.get_bucket_configs(
             caseset_id, begin_case_id, end_case_id)
 
+        # Combo-keyed skip-set loaded from the durable JSONL log.
+        # This is additive to `processed_ids` (case-id-positional, from
+        # the SQLite DB). The JSONL-driven skip survives a wider search
+        # space across runs: a new tune attempt that adds combos to
+        # the grid keeps the (tuning_key, tunable_params)-level skip
+        # for the OLD combos — the SQLite case_ids would shift, the
+        # JSONL keys do not.
+        jsonl_skip = self._load_raw_jsonl_skip_set()
+
         bucket_start_perf = time.perf_counter()
         results_buffer = []
         for cid in range(begin_case_id, end_case_id):
@@ -433,6 +508,14 @@ class KernelTunerBase(ABC):
             tuning_key, tunable_params = TuningCase.from_string(
                 case_key_value, self.tuning_key_class,
                 self.tunable_params_class)
+            # Combo-level resume: if the JSONL already records a
+            # permanent result for this (tuning_key, tunable_params),
+            # skip without measuring. Works after a Ctrl-C / kill or
+            # across an interpreter restart.
+            if (jsonl_skip and
+                    self._combo_skip_key(tuning_key, tunable_params)
+                    in jsonl_skip):
+                continue
 
             begin_case_id_time = time.perf_counter_ns()
             # status can be SUCCESS, FAILED_OOM, UNKNOWN_ERROR.
