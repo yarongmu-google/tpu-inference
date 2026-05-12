@@ -1,0 +1,1 @@
+{"combo":{"MAX_NUM_BATCHED_TOKENS":8192,"MAX_NUM_SEQS":128},"kernel_pin_keys":{"case":"logical","page_size":64,"kernel_K":128,"code_revision":"c650e2c1","mnss":256,"kernel_variant":"rpa_v3","hardware":"tpu_v7x"},"service_revision":"78f28aca-c51df430","status":"SUCCESS","metrics":{"req_per_sec":1.0,"ttft_mean_ms":100.0,"ttft_p99_ms":200.0},"mock":true}
