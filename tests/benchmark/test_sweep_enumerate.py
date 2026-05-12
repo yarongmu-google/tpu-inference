@@ -348,6 +348,83 @@ class TestEnumerateCombos(unittest.TestCase):
         self.assertEqual(combos[0]["X"], "3.14")
         self.assertEqual(combos[0]["B"], "True")
 
+    def test_lptt_must_be_multiple_of_kernel_k(self):
+        """sched_K (LPTT) must be a multiple of kernel_K. Combos where
+        LPTT % RPA_KERNEL_K != 0 are filtered at enumerate time."""
+        spec = {
+            "case_file": "c", "sweep_name": "s",
+            "sweep_axes": {
+                # Cartesian: 3 LPTTs × 1 K → 3 combos. K=256.
+                # LPTT=512 valid (512%256==0), 600 invalid, 1024 valid.
+                "LONG_PREFILL_TOKEN_THRESHOLD": [512, 600, 1024],
+            },
+            "fixed": {"RPA_KERNEL_K": 256},
+        }
+        combos = sweep.enumerate_combos(spec)
+        lptts = sorted(int(c["LONG_PREFILL_TOKEN_THRESHOLD"]) for c in combos)
+        self.assertEqual(lptts, [512, 1024])
+        # Each remaining combo really does divide evenly.
+        for c in combos:
+            lptt = int(c["LONG_PREFILL_TOKEN_THRESHOLD"])
+            k = int(c["RPA_KERNEL_K"])
+            self.assertEqual(lptt % k, 0, c)
+
+    def test_lptt_filter_noop_when_one_is_zero(self):
+        """When LPTT=0 (no L kernel) OR RPA_KERNEL_K=0 (no kernel-K
+        pin) the modulus check is skipped — combos pass through."""
+        spec = {
+            "case_file": "c", "sweep_name": "s",
+            "sweep_axes": {
+                "LONG_PREFILL_TOKEN_THRESHOLD": [0, 600, 1024],
+            },
+            "fixed": {"RPA_KERNEL_K": 0},
+        }
+        # K=0 → filter no-op → all 3 combos pass.
+        self.assertEqual(len(sweep.enumerate_combos(spec)), 3)
+
+    def test_lptt_filter_with_auto_derived_lptt_is_noop(self):
+        """When LPTT is auto-derived from a kernel registry's mnss ×
+        kernel_K, it's a multiple of kernel_K by construction. The
+        filter is a no-op for this legacy path."""
+        registry = {
+            "results": {
+                "decode": [{
+                    "tuning_key": {"page_size": 128, "chunk_prefill_size": 0},
+                    "tunable_params": {
+                        "bq_sz": 1, "bkv_sz": 512, "bq_csz": 1, "bkv_csz": 256,
+                    },
+                }],
+                "mixed": [{
+                    "tuning_key": {"page_size": 128, "chunk_prefill_size": 0},
+                    "tunable_params": {
+                        "bq_sz": 32, "bkv_sz": 1024, "bq_csz": 32, "bkv_csz": 256,
+                    },
+                }],
+                "logical": [{
+                    "tuning_key": {"page_size": 128, "chunk_prefill_size": 256},
+                    "tunable_params": {
+                        "bq_sz": 256, "bkv_sz": 2048,
+                        "bq_csz": 64, "bkv_csz": 512,
+                        "max_num_subseqs": 4224,
+                    },
+                }],
+            },
+        }
+        spec = {
+            "case_file": "c", "sweep_name": "s",
+            "sweep_axes": {"MAX_NUM_BATCHED_TOKENS": [8192]},
+            "fixed": {"BLOCK_SIZE": 128, "RPA_KERNEL_K": 256},
+            "_loaded_kernel_registry": registry,
+        }
+        combos = sweep.enumerate_combos(spec)
+        self.assertEqual(len(combos), 1)
+        # mnss=4224 × kernel_K=256 = 1,081,344 — auto-derived value
+        # must be a multiple of kernel_K (it is by construction).
+        self.assertEqual(combos[0]["LONG_PREFILL_TOKEN_THRESHOLD"], "1081344")
+        self.assertEqual(
+            int(combos[0]["LONG_PREFILL_TOKEN_THRESHOLD"]) % 256, 0,
+        )
+
 
 class TestComboId(unittest.TestCase):
 

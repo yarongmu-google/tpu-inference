@@ -382,6 +382,7 @@ def enumerate_combos(spec: dict[str, Any]) -> list[dict[str, str]]:
     coupled: list[dict] = list(coupled_axes) if coupled_axes else [{}]
 
     combos: list[dict[str, str]] = []
+    n_filtered_lptt = 0
     for cart_tuple in cartesian:
         cart_dict = dict(zip(sweep_keys, cart_tuple))
         for cpl in coupled:
@@ -394,7 +395,34 @@ def enumerate_combos(spec: dict[str, Any]) -> list[dict[str, str]]:
             if "_loaded_kernel_registry" in spec:
                 _apply_auto_link(combo, spec["_loaded_kernel_registry"])
 
+            # sched_K (LONG_PREFILL_TOKEN_THRESHOLD) must be a multiple
+            # of kernel_K. The L kernel processes LPTT/kernel_K iters
+            # per pallas_call; a non-integer ratio leaves a partial
+            # trailing iter that the per-iter Q/K/V/O bookkeeping
+            # doesn't support. Filtering here is cheaper than letting
+            # the bench fail at runtime with a confusing dimension-
+            # mismatch error.
+            #
+            # When sched_K is in sweep_axes (operator opted in to
+            # independent service-layer LPTT tuning), this prune
+            # drops invalid pairs at enumerate time. When LPTT is
+            # auto-derived from the kernel winner's mnss × kernel_K
+            # (the legacy path), the modulus is satisfied by
+            # construction and this filter is a no-op.
+            lptt = int(combo.get("LONG_PREFILL_TOKEN_THRESHOLD", "0"))
+            kernel_k = int(combo.get("RPA_KERNEL_K", "0"))
+            if lptt > 0 and kernel_k > 0 and lptt % kernel_k != 0:
+                n_filtered_lptt += 1
+                continue
+
             combos.append(combo)
+    if n_filtered_lptt > 0:
+        print(
+            f"[Sweep] enumerate_combos: filtered {n_filtered_lptt} "
+            f"combo(s) where LPTT % RPA_KERNEL_K != 0 "
+            f"(sched_K must be an integer multiple of kernel_K).",
+            file=sys.stderr, flush=True,
+        )
     return combos
 
 
