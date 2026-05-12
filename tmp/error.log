@@ -14,19 +14,8 @@ python3 -m unittest: error: --no-push requires --auto-commit-every > 0
                            [--runlog RUNLOG]
                            spec
 python3 -m unittest: error: --runlog requires --auto-commit-every > 0
-......................................E
-======================================================================
-ERROR: test_tuner_workload_sizing (unittest.loader._FailedTest.test_tuner_workload_sizing)
+.............................................
 ----------------------------------------------------------------------
-ImportError: Failed to import test module: test_tuner_workload_sizing
-Traceback (most recent call last):
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/unittest/loader.py", line 137, in loadTestsFromName
-    module = __import__(module_name)
-             ^^^^^^^^^^^^^^^^^^^^^^^
-ModuleNotFoundError: No module named 'tests.benchmark.test_tuner_workload_sizing'
+Ran 125 tests in 0.039s
 
-
-----------------------------------------------------------------------
-Ran 119 tests in 0.037s
-
-FAILED (errors=1)
+OK
