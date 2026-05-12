@@ -3,6 +3,14 @@
 All commands assume `cwd = repo root`. The Python `logging` library
 prints `HH:MM:SS LEVEL tools.tuning.v2.<module>: <msg>` on stderr.
 
+> ⚠️ **Never run smoke recipes against production workload dirs**
+> (`cases/v7x/...`). `MOCK_TPU=1` / `MOCK_BENCH=1` stamp `mock: true`
+> on raw rows BUT the projection layer doesn't filter them out
+> today — a mock row in a production `.kernel.raw` / `.service.raw`
+> partition will project as a winner and poison `lookup_env`.
+> Smoke recipes below use the throwaway `cases/smoke/` subtree to
+> stay isolated.
+
 ---
 
 ## Smoke (all four cases D/M/P/L, off-TPU, no commits, no real bench)
@@ -11,7 +19,7 @@ prints `HH:MM:SS LEVEL tools.tuning.v2.<module>: <msg>` on stderr.
 SMOKE_TEST=1 KERNEL_TUNER_NO_COMMIT=1 MOCK_TPU=1 MOCK_BENCH=1 \
 EXTRA_TUNE_FLAGS="--iters 1 --warmup 0" \
 tools/tuning/v2/scripts/run_pipeline.sh \
-  tools/benchmark/cases/v7x/llama3_8b/throughput/prefill_heavy.workload
+  tools/benchmark/cases/smoke/llama3_8b/throughput/prefill_heavy.workload
 ```
 
 ## Smoke on TPU (real kernel, mock bench)
@@ -20,7 +28,7 @@ tools/tuning/v2/scripts/run_pipeline.sh \
 SMOKE_TEST=1 KERNEL_TUNER_NO_COMMIT=1 MOCK_BENCH=1 \
 EXTRA_TUNE_FLAGS="--iters 1 --warmup 0" \
 tools/tuning/v2/scripts/run_pipeline.sh \
-  tools/benchmark/cases/v7x/llama3_8b/throughput/prefill_heavy.workload
+  tools/benchmark/cases/smoke/llama3_8b/throughput/prefill_heavy.workload
 ```
 
 ## Smoke for latency scenario
@@ -29,7 +37,7 @@ tools/tuning/v2/scripts/run_pipeline.sh \
 SMOKE_TEST=1 KERNEL_TUNER_NO_COMMIT=1 MOCK_BENCH=1 \
 EXTRA_TUNE_FLAGS="--iters 1 --warmup 0" \
 tools/tuning/v2/scripts/run_pipeline.sh \
-  tools/benchmark/cases/v7x/llama3_8b/latency/prefill_heavy.workload
+  tools/benchmark/cases/smoke/llama3_8b/latency/prefill_heavy.workload
 ```
 
 ---
