@@ -131,6 +131,19 @@ def main(argv):
 
     kernel_tuner = kernel_tuner_cls(storage_manager)
 
+    # Durable per-row JSONL log. Lives next to the SQLite DB so an
+    # operator with `--db_path tmp/log/kernel_tuner_run/<case_set_id>`
+    # finds `kernel.raw.jsonl` in the same directory. measure_latency
+    # appends + fsyncs one row per measurement — survives Ctrl-C
+    # whereas the SQLite results_buffer can lose up to 9 in-flight
+    # rows on signal. Cloud (Spanner) runs leave it off; the cloud
+    # path has its own durability.
+    if _RUN_LOCALLY.value and _DB_PATH.value:
+        from pathlib import Path
+        kernel_tuner.raw_jsonl_path = (
+            Path(_DB_PATH.value) / "kernel.raw.jsonl"
+        )
+
     if _RUN_LOCALLY.value:
         logger.info(
             'Running in locally mode. Skipping Buildkite pipeline generation and running tuning jobs directly.'

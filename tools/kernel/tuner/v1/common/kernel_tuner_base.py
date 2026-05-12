@@ -107,6 +107,63 @@ class KernelTunerBase(ABC):
         self._TUNING_KEY = None
         self.job_bucket_size = job_bucket_size
         self.kernel_tuner_name = kernel_tuner_name
+        # Per-row durable JSONL log. Optional — None disables. When set
+        # (typically by `kernel_tuner_runner.py` to
+        # `<db_path>/kernel.raw.jsonl`), `measure_latency` appends one
+        # JSON row + fsync after every measurement. Survives Ctrl-C;
+        # the SQLite results_buffer can lose up to 9 rows on signal,
+        # the JSONL never does. Source of truth for resume.
+        self.raw_jsonl_path = None
+
+    def _append_raw_jsonl(
+        self,
+        *,
+        tuning_key,
+        tunable_params,
+        status,
+        case_id: int,
+        latency_us: int = 0,
+        warmup_us: int = 0,
+        total_us: int = 0,
+        case_set_id: str = "",
+        run_id: str = "",
+    ) -> None:
+        """Append a per-combo result row to `self.raw_jsonl_path` with
+        immediate flush + fsync. No-op when raw_jsonl_path is None.
+
+        This is the durable resume source. The SQLite results_buffer in
+        `measure_latency` batches up to 10 rows before persisting, so a
+        Ctrl-C / OOM-kill loses any in-flight rows. The JSONL gets each
+        row to disk synchronously — Ctrl-C is safe.
+
+        Row schema is intentionally flat / dict-of-primitives so a
+        future `grep` or `python -c 'json.loads(...)'`-driven resume
+        doesn't need any helper code. asdict() on the dataclasses
+        materializes them as nested dicts; default=str copes with the
+        `q_dtype` / `kv_dtype` JAX dtype objects in TuningKey.
+        """
+        if self.raw_jsonl_path is None:
+            return
+        from pathlib import Path
+        path = Path(self.raw_jsonl_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        row = {
+            "tuning_key": asdict(tuning_key),
+            "tunable_params": asdict(tunable_params),
+            "status": status.value if hasattr(status, "value") else str(status),
+            "latency_us": int(latency_us),
+            "warmup_us": int(warmup_us),
+            "total_us": int(total_us),
+            "case_id": int(case_id),
+            "case_set_id": case_set_id,
+            "run_id": run_id,
+            "worker_id": int(FLAGS.worker_id),
+            "timestamp_sec": int(self.storage_manager.get_timestamp_sec()),
+        }
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(row, default=str) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
 
     def _init_case_set(self, case_set_id: str, desc: str) -> bool:
         """Initialize the case set with the given case_set_id and description. This will be called when the caseset_id is new or the caseset_id is not specified.
@@ -386,6 +443,11 @@ class KernelTunerBase(ABC):
                 results_buffer.append(
                     (caseset_id, run_id, cid, status.value, FLAGS.worker_id, 0,
                      0, 0, self.storage_manager.get_timestamp_sec()))
+                self._append_raw_jsonl(
+                    tuning_key=tuning_key, tunable_params=tunable_params,
+                    status=status, case_id=cid,
+                    case_set_id=caseset_id, run_id=run_id,
+                )
                 logger.warning(
                     f"Case {cid} failed during warmup with status: {status}. Skipping to next case."
                 )
@@ -402,6 +464,12 @@ class KernelTunerBase(ABC):
                     (caseset_id, run_id, cid, status.value,
                      FLAGS.worker_id, warmup_us, 0, 0,
                      self.storage_manager.get_timestamp_sec()))
+                self._append_raw_jsonl(
+                    tuning_key=tuning_key, tunable_params=tunable_params,
+                    status=status, case_id=cid,
+                    warmup_us=warmup_us,
+                    case_set_id=caseset_id, run_id=run_id,
+                )
                 logger.warning(
                     f"Case {cid} failed during main run with status: {status}. Total time spent: {total_time/1e9:.2f}s."
                 )
@@ -413,6 +481,13 @@ class KernelTunerBase(ABC):
                 (caseset_id, run_id, cid, status.value, FLAGS.worker_id,
                  average_latency_us, warmup_us, total_time_us,
                  self.storage_manager.get_timestamp_sec()))
+            self._append_raw_jsonl(
+                tuning_key=tuning_key, tunable_params=tunable_params,
+                status=status, case_id=cid,
+                latency_us=average_latency_us,
+                warmup_us=warmup_us, total_us=total_time_us,
+                case_set_id=caseset_id, run_id=run_id,
+            )
 
             if FLAGS.debug:
                 logger.info(
