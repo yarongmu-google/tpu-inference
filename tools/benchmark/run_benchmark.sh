@@ -340,6 +340,15 @@ BM_ARGS=(
     --num-prompts "$NUM_PROMPTS"
     --percentile-metrics ttft,tpot,itl,e2el
     --ignore-eos
+    # Per-request data dump: detailed.json carries `ttfts: list[float]`
+    # and friends. Needed for customer-perspective TTFT CDF plots via
+    # tools/benchmark/plot_ttft_cdf.py. Without --save-detailed, only
+    # summary aggregates survive in metrics.txt and the per-request
+    # distribution is gone after the bench process exits.
+    --save-result
+    --save-detailed
+    --result-dir "$RESULT_DIR"
+    --result-filename detailed.json
 )
 case "$DATASET" in
     sonnet)
