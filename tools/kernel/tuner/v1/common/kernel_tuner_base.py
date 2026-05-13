@@ -223,7 +223,11 @@ class KernelTunerBase(ABC):
             "case_id": int(case_id),
             "case_set_id": case_set_id,
             "run_id": run_id,
-            "worker_id": int(FLAGS.worker_id),
+            # FLAGS.worker_id is a string — defaults to "unknown" outside
+            # Buildkite. Store as-is. The previous `int()` cast crashed
+            # `ValueError: invalid literal for int() with base 10:
+            # 'unknown'` on every local run (the 17:02 smoke trace).
+            "worker_id": str(FLAGS.worker_id),
             "timestamp_sec": int(self.storage_manager.get_timestamp_sec()),
         }
         with open(path, "a", encoding="utf-8") as f:
