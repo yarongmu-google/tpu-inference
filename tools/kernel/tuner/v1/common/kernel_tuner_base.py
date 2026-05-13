@@ -223,11 +223,17 @@ class KernelTunerBase(ABC):
             "case_id": int(case_id),
             "case_set_id": case_set_id,
             "run_id": run_id,
-            # FLAGS.worker_id is a string — defaults to "unknown" outside
-            # Buildkite. Store as-is. The previous `int()` cast crashed
-            # `ValueError: invalid literal for int() with base 10:
-            # 'unknown'` on every local run (the 17:02 smoke trace).
-            "worker_id": str(FLAGS.worker_id),
+            # FLAGS.worker_id is a string — defaults to "unknown"
+            # outside Buildkite. Two robustness layers vs the original
+            # `int(FLAGS.worker_id)` that crashed on 2026-05-12:
+            #   1. `getattr(... "unknown")` — handles a caller that
+            #      hasn't imported `kernel_tuner_runner` (so the flag
+            #      isn't registered yet). Tests run this path.
+            #   2. `str(...)` — handles the case where Buildkite sets
+            #      it to a numeric value; we always serialize as
+            #      string so downstream JSONL readers don't have to
+            #      handle both an int and a string.
+            "worker_id": str(getattr(FLAGS, "worker_id", "unknown")),
             "timestamp_sec": int(self.storage_manager.get_timestamp_sec()),
         }
         with open(path, "a", encoding="utf-8") as f:
