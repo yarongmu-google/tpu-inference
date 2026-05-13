@@ -1,21 +1,29 @@
-WARNING:absl:Tensorflow library not found, tensorflow.io.gfile operations will use native shim calls. GCS paths (i.e. 'gs://...') cannot be accessed.
-INFO:numexpr.utils:Note: detected 224 virtual cores but NumExpr set to maximum of 64, check "NUMEXPR_MAX_THREADS" environment variable.
-INFO:numexpr.utils:Note: NumExpr detected 224 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
-INFO:numexpr.utils:NumExpr defaulting to 16 threads.
-INFO 05-12 17:25:12 [__init__.py:59] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
-I0512 17:25:12.783489 128431989852096 kernel_tuner_runner.py:115] Using case_set_id: prefill_heavy_logical_20260512_170515, run_id: 0, case_set_desc: prefill_heavy logical kernel tune for this tuning run.
-I0512 17:25:12.783578 128431989852096 local_db_manager.py:53] Database initialized at tmp/log/kernel_tuner_run/prefill_heavy_logical_20260512_170515
-I0512 17:25:12.787846 128431989852096 rpa_v3_kernel_tuner.py:405] SMOKE_TEST=1 detected: Truncating tuner search space to minimum.
-I0512 17:25:12.787913 128431989852096 kernel_tuner_runner.py:148] Running in locally mode. Skipping Buildkite pipeline generation and running tuning jobs directly.
-I0512 17:25:12.788012 128431989852096 kernel_tuner_base.py:267] CaseSetId prefill_heavy_logical_20260512_170515 already exists with the same description. Proceeding with the existing case set.
-I0512 17:25:12.788061 128431989852096 kernel_tuner_base.py:489] Worker [unknown] Claimed CaseSetId: prefill_heavy_logical_20260512_170515, RunId: 0, Bucket 0 (0-1) for processing.
-I0512 17:25:12.788364 128431989852096 local_db_manager.py:236] Marked bucket as in progress: cs_id=prefill_heavy_logical_20260512_170515, r_id=0, b_id=0, worker=None
-I0512 17:25:12.788510 128431989852096 kernel_tuner_base.py:176] Resume from tmp/log/kernel_tuner_run/prefill_heavy_logical_20260512_170515/kernel.raw.jsonl: 1 rows (1 permanent → skip, 0 retry, 0 malformed)
-I0512 17:25:12.789288 128431989852096 local_db_manager.py:252] Marked bucket as completed: cs_id=prefill_heavy_logical_20260512_170515, r_id=0, b_id=0, tt_us=1
-I0512 17:25:12.789332 128431989852096 kernel_tuner_base.py:601] Worker [unknown] Completed Bucket 0 (0-1) for CaseSetId: prefill_heavy_logical_20260512_170515, RunId: 0. Total time: 0.00s.
-I0512 17:25:12.789355 128431989852096 local_db_manager.py:313] Database at tmp/log/kernel_tuner_run/prefill_heavy_logical_20260512_170515 finalized with 0 cases, 0 invalid cases.
-I0512 17:25:12.789401 128431989852096 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical_20260512_170515/CaseSet.json
-I0512 17:25:12.789422 128431989852096 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical_20260512_170515/KernelTuningCases.json
-I0512 17:25:12.789435 128431989852096 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical_20260512_170515/kernel.raw.jsonl
-I0512 17:25:12.789448 128431989852096 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical_20260512_170515/WorkBuckets.json
-I0512 17:25:12.789462 128431989852096 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical_20260512_170515/CaseResults.json
+# Phase 4 — sweep smoke + resume. Copy & paste:
+
+# (1) Synthesize the .service spec from the workload + recipe.
+python3 -m tools.benchmark.sweep_recipes \
+  --workload tools/benchmark/cases/v7x/llama3_8b/prefill_heavy.workload \
+  --kernel rpa_v3 \
+  --service vllm \
+  --out tmp/log/synthesized_prefill_heavy.service
+
+# (2) Sweep smoke (1 combo, ~5-10 min — actual bench runs).
+SMOKE_TEST=1 tools/benchmark/sweep.sh \
+  tmp/log/synthesized_prefill_heavy.service
+
+# Verify the JSONL landed:
+ls -lh tmp/bench_prefill_heavy_*/service.raw.jsonl
+wc -l  tmp/bench_prefill_heavy_*/service.raw.jsonl
+head -1 tmp/bench_prefill_heavy_*/service.raw.jsonl | python3 -m json.tool
+
+# (3) Re-run the SAME smoke command to test resume.
+#     Should print: "[Sweep] Resume from .../service.raw.jsonl: 1 rows (1 skip, 0 retry, 0 malformed)"
+#     and finish in seconds (no bench invocation).
+SMOKE_TEST=1 tools/benchmark/sweep.sh \
+  tmp/log/synthesized_prefill_heavy.service \
+  2>&1 | tee tmp/log/sweep_resume_test.log
+
+# (4) Push results so I can verify:
+git add tmp/log/synthesized_prefill_heavy.service tmp/log/sweep_resume_test.log
+git commit -m "Sweep smoke + resume test"
+git push
