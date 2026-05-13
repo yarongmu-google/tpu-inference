@@ -591,3 +591,11 @@ I0512 17:05:51.373251 136591545919424 local_db_manager.py:319] Final DB file: tm
 I0512 17:05:51.373270 136591545919424 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical_20260512_170515/WorkBuckets.json
 I0512 17:05:51.373288 136591545919424 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_logical_20260512_170515/CaseResults.json
 ===== 2026-05-12 17:05:55 logical done in 40s =====
+
+===== 2026-05-12 17:05:57 ALL CASES DONE =====
+
+Inspector commands to extract winners (run on the same TPU VM):
+  python3 -m tools.kernel.tuner.v1.inspect_result_cli \
+      --source=local --db-path=tmp/log/kernel_tuner_run/prefill_heavy_logical_20260512_170515 \
+      query_min_latency \
+      --case_set_id=prefill_heavy_logical_20260512_170515 --run_id=0
