@@ -226,7 +226,17 @@ def get_mixed_example(actual_num_seqs, max_num_tokens, max_model_len):
     kv_lens = []
     for i in range(actual_num_seqs):
         q_len = cu_q_lens[i + 1] - cu_q_lens[i]
-        kv_lens.append(max_model_len if q_len == 1 else q_len)
+        # A sequence's kv_len cannot exceed max_model_len by definition
+        # (the model's context cap). The bare `q_len` form crashed
+        # dynamic_validate_inputs on 2026-05-12 with kv_len=154,478 vs
+        # MML=8192 — happened when the caller passed max_num_tokens ≫
+        # max_model_len (legacy v2 cross-layer leak: kernel-tune
+        # sourcing MNB from `max(service_sweep.MNB)`). The leak is
+        # fixed elsewhere, but capping here makes get_mixed_example
+        # robust to any (max_num_tokens, max_model_len) caller passes.
+        kv_lens.append(
+            max_model_len if q_len == 1 else min(q_len, max_model_len)
+        )
     return cu_q_lens, kv_lens, decode_end, decode_end
 
 
@@ -912,8 +922,16 @@ class RpaV3KernelTuner(KernelTunerBase):
             if _looks_like_oom(err):
                 logger.info(f"[Debug] Validate OOM: {err=}")
                 return TuningStatus.FAILED_OOM, float("inf"), float("inf")
-            logger.info(f"[Debug] Validate failed: {err=}")
-            return TuningStatus.UNKNOWN_ERROR, float("inf"), float("inf")
+            # Non-OOM validate failures are deterministic given the
+            # combo's (tuning_key, tunable_params): the synthetic
+            # inputs the tuner generates either pass the kernel's
+            # shape/bounds checks or they don't, and rerunning won't
+            # change that. Classify as SKIPPED (permanent) so resume
+            # doesn't retry the same combo. Previous UNKNOWN_ERROR
+            # classification meant a Ctrl-C / restart would re-attempt
+            # every malformed combo from scratch.
+            logger.info(f"[Debug] Validate failed (input shape — skipped): {err=}")
+            return TuningStatus.SKIPPED, float("inf"), float("inf")
 
         vmem_estimate = estimate_vmem_for_combo(
             num_kv_heads=tuning_key.num_kv_heads,
