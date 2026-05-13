@@ -438,17 +438,19 @@ class TestRunKernelTune(unittest.TestCase):
         self.assertIn("non-dict", rows[0]["error"])
         self.assertIn("NoneType", rows[0]["error"])
 
-    def test_throughput_workload_resolves_mns_from_service_axes(self):
-        """Per arch-doc §2 line 73: when MAX_NUM_SEQS is absent from
-        .workload (throughput scenario), the kernel-tune sources it
-        from max(service_axes.MAX_NUM_SEQS) so the kernel is tuned
-        for the worst-case concurrency the service-sweep may pick."""
-        # Workload env without MNS.
+    def test_workload_without_mns_falls_back_to_default_128(self):
+        """Per doc §2 row 5: MAX_NUM_SEQS is category-5 service-tuned,
+        and the registry is keyed on (workload, mns) — meaning the
+        kernel-tune runs ONCE per MNS value, not parameterized by
+        max(sweep.MNS). A previous version derived MNS from
+        max(service_axes.MAX_NUM_SEQS) here, conflating sweep-time
+        and tune-time MNS. That produced the May-12 mnss=2000 OOM
+        cascade. After the fix: if MAX_NUM_SEQS isn't in workload_env,
+        kernel-tune defaults to 128 (v1's day-to-day baseline) and
+        logs a warning; the operator pins MNS via .workload or
+        .kernel_axes.json overlay for non-default MNS values."""
         env_no_mns = dict(self.WORKLOAD_ENV_BASE)
         del env_no_mns["MAX_NUM_SEQS"]
-        # Remove the existing kernel_axes overlay so the default
-        # mnss derivation fires; pin only page_size/kernel_K to keep
-        # the cartesian product small.
         (self.workload_dir / "test.kernel_axes.json").write_text(
             json.dumps({
                 "page_size": [128], "kernel_K": [256],
@@ -456,8 +458,9 @@ class TestRunKernelTune(unittest.TestCase):
                 "bq_csz": [256], "bkv_csz": [512],
             }),
         )
-        # Service axes pinned high so the kernel-tune ceiling is
-        # max(service.MAX_NUM_SEQS).
+        # service_axes deliberately contains MNS=1000 to make sure
+        # this DOESN'T leak into kernel-tune. Per the fix, the
+        # service axes are NOT read by run_kernel_tune.
         (self.workload_dir / "test.service_axes.json").write_text(
             json.dumps({
                 "MAX_NUM_BATCHED_TOKENS": [8192],
@@ -476,10 +479,36 @@ class TestRunKernelTune(unittest.TestCase):
             measurement_fn=measure,
             code_revision="abc12345",
         )
-        # The kernel-tune ran SOME combos; each tuning_key stamps
-        # max_num_seqs = max(service axes) = 1000.
         self.assertGreater(n, 0)
-        self.assertEqual(calls[0][0]["max_num_seqs"], 1000)
+        # MNS=128 (the v1-default fallback), NOT 1000 (max of service
+        # sweep) — confirms the cross-layer leak is closed.
+        self.assertEqual(calls[0][0]["max_num_seqs"], 128)
+
+    def test_workload_with_mns_pinned_uses_that_value(self):
+        """Latency / explicit-pin path: when MAX_NUM_SEQS IS in
+        workload_env, that value (not the 128 default) is used."""
+        env_with_mns = dict(self.WORKLOAD_ENV_BASE)
+        env_with_mns["MAX_NUM_SEQS"] = "256"
+        (self.workload_dir / "test.kernel_axes.json").write_text(
+            json.dumps({
+                "page_size": [128], "kernel_K": [256],
+                "bq_sz": [256], "bkv_sz": [2048],
+                "bq_csz": [256], "bkv_csz": [512],
+            }),
+        )
+        calls = []
+        def measure(tk, tp):
+            calls.append((tk, tp))
+            return {"status": "SUCCESS", "latency_us": 100.0}
+        run_kernel_tune(
+            workload_env=env_with_mns,
+            workload_dir=self.workload_dir,
+            workload_name="test",
+            raw_path=self.raw_path,
+            measurement_fn=measure,
+            code_revision="abc12345",
+        )
+        self.assertEqual(calls[0][0]["max_num_seqs"], 256)
 
     def test_smoke_test_env_stops_at_first_success(self):
         """SMOKE_TEST=1: enumerate the full space, run combos until
@@ -970,11 +999,15 @@ class TestCliMain(unittest.TestCase):
         # adapter built (v1 tuner reads them at construction).
         self.assertEqual(os.environ.get("MAX_NUM_SEQS"), "128")
 
-    def test_cli_throughput_workload_pushes_max_mns_to_environ(self):
-        """When .workload omits MAX_NUM_SEQS (throughput scenario),
-        the CLI pushes max(service_axes.MAX_NUM_SEQS) into os.environ
-        so the v1 RpaV3KernelTuner reads the right ceiling at
-        construction time."""
+    def test_cli_throughput_workload_does_not_inherit_service_mns(self):
+        """REGRESSION: a prior version of this CLI pushed
+        `max(service_axes.MAX_NUM_SEQS)` into os.environ, leaking the
+        service-sweep range into the kernel-tune layer (May-12
+        cascade). Per doc §2 row 5: MNS is service-tuned; kernel-tune
+        is keyed on (workload, mns) and runs ONCE per pinned MNS.
+        After the fix: if neither workload_env nor pre-existing
+        os.environ provides MAX_NUM_SEQS, the CLI falls back to 128 —
+        regardless of what the service_axes file says."""
         from tools.tuning.v2.core.git_atomic import NO_PUSH_ENV
         repo = self.dir / "repo"
         cases = repo / "cases" / "v7x" / "llama3_8b" / "throughput"
@@ -985,13 +1018,15 @@ class TestCliMain(unittest.TestCase):
             "bq_sz": [256], "bkv_sz": [2048],
             "bq_csz": [256], "bkv_csz": [512],
         }))
-        # Pin service MNS axis so we know what the CLI should pick.
+        # Service-axes file deliberately contains MNS=1000 — to make
+        # sure the CLI does NOT inherit it (the bug we're guarding
+        # against).
         (cases / "x.service_axes.json").write_text(json.dumps({
             "MAX_NUM_BATCHED_TOKENS": [8192],
             "MAX_NUM_SEQS":           [128, 1000],
         }))
         w = cases / "x.workload"
-        # Throughput scenario: NO MAX_NUM_SEQS pin.
+        # Throughput scenario: NO MAX_NUM_SEQS pin. Bare-minimum vars.
         w.write_text(
             'NUM_Q_HEADS=32\nNUM_KV_HEADS=8\nHEAD_DIM=128\n'
             'MAX_MODEL_LEN=8192\n'
@@ -1013,8 +1048,8 @@ class TestCliMain(unittest.TestCase):
                         sys, "stdout", new=open(os.devnull, "w"),
                     ):
                         tune_main([str(w)])
-            # CLI pushed the resolved MNS ceiling into env.
-            self.assertEqual(os.environ.get("MAX_NUM_SEQS"), "1000")
+            # The fallback default — NOT the 1000 from service_axes.
+            self.assertEqual(os.environ.get("MAX_NUM_SEQS"), "128")
         finally:
             if saved_no_push is None:
                 os.environ.pop(NO_PUSH_ENV, None)
