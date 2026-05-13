@@ -67,20 +67,31 @@ RECIPES: dict[tuple[str, str], dict[str, Any]] = {
         "sweep_axes": {
             "MAX_NUM_BATCHED_TOKENS":       [8192, 16384, 32768, 65536, 131072, 262144, 524288, 1081344],
             "MAX_NUM_SEQS":                 [128, 256, 1000],
+            # LONG_PREFILL_TOKEN_THRESHOLD is category-5 service-tuned
+            # per docs/tuning_architecture.md §2: independent of the
+            # kernel's mnss × kernel_K (kernel handles LPTT / kernel_K
+            # iters per pallas_call). Candidates are multiples of the
+            # pinned kernel_K=256; sweep.enumerate_combos enforces the
+            # `LPTT % RPA_KERNEL_K == 0` filter so non-multiples are
+            # dropped at enumerate time. The 256-and-up range covers
+            # latency-style single-chunk prefills through Phase 5's
+            # 1,081,344 mega-chunk regime.
+            "LONG_PREFILL_TOKEN_THRESHOLD": [
+                256, 1024, 4096, 8192, 16384, 32768, 65536,
+                131072, 262144, 524288, 1081344,
+            ],
         },
         "fixed": {
             # page_size winner from the all-three-flavors tune.
             "BLOCK_SIZE": 128,
             # Decoupled-K is the kernel default for this recipe: the L
-            # kernel processes chunked prefills, kernel_K is pinned by
-            # the kernel-tune winner, and LONG_PREFILL_TOKEN_THRESHOLD
-            # is derived (= mnss * RPA_KERNEL_K) by
-            # sweep.py:_apply_auto_link and validated by the server at
-            # runner init. Both LPTT and RPA_KERNEL_K therefore leave
-            # sweep_axes — the kernel registry is the source of truth.
-            # Today there is one L winner at K=256 for this workload;
-            # widen this pin to a sweep axis once the tuner produces
-            # winners at other K values.
+            # kernel processes chunked prefills. RPA_KERNEL_K is pinned
+            # from the kernel-tune winner (one L winner at K=256 today
+            # for this workload — widen to a sweep axis once the tuner
+            # produces winners at other K values). The auto-derive
+            # fallback at sweep.py:_apply_auto_link (LPTT = mnss ×
+            # RPA_KERNEL_K) now only fires when LPTT is NOT in
+            # sweep_axes.
             "RPA_KERNEL_K": 256,
         },
         "timeout_seconds": 1800,

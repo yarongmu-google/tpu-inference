@@ -62,7 +62,6 @@ Kernel-tune owns these because (a) they require a measurement loop against synth
 - `BLOCK_SIZE = page_size` (vLLM CacheConfig).
 - `RPA_KERNEL_K = kernel_K`.
 - `RPA_MAX_NUM_SUBSEQS = mnss`.
-- `LONG_PREFILL_TOKEN_THRESHOLD = mnss × kernel_K` (the per-call q-token ceiling vLLM may schedule).
 - `RPA_*_BLOCK_SIZES = per-case block sizes`.
 
 Separate from category (3) because they cross a boundary (the kernel-tune's `tunable_params` representation vs the runtime env-var contract). Same `.kernel` row, two facets.
@@ -71,10 +70,11 @@ Separate from category (3) because they cross a boundary (the kernel-tune's `tun
 
 - `MAX_NUM_BATCHED_TOKENS`: per-step q-token budget. **Interacts** with kernel-tuned `mnss` (per-call iter utilization = packed_prefills × ceil(prompt/K), bounded by both MNS and mnss).
 - `MAX_NUM_SEQS`: in-flight request capacity. Different `mns` may require different kernel-tunes; the registry is keyed on `(workload, mns)`.
+- `LONG_PREFILL_TOKEN_THRESHOLD`: per-call q-token chunking ceiling that vLLM schedules. Independent of kernel `mnss × kernel_K` (kernel handles `LPTT / kernel_K` iters per pallas_call). **Constraint:** `LPTT % kernel_K == 0` — enforced as a sweep-enumerate-time filter. Auto-derive fallback (`LPTT = mnss × kernel_K`) applies only when LPTT is NOT in `sweep_axes`.
 
 Service-tune owns these because re-sweep is cheap relative to re-JIT.
 
-**(6) Service-derived (env-var aliases)** — CLI flags / env vars from service-tuned vars; runtime passes through. Today largely identity (`MAX_NUM_BATCHED_TOKENS` → `--max-num-batched-tokens`).
+**(6) Service-derived (env-var aliases)** — CLI flags / env vars from service-tuned vars; runtime passes through. Identity (`MAX_NUM_BATCHED_TOKENS` → `--max-num-batched-tokens`, `MAX_NUM_SEQS` → `--max-num-seqs`, `LONG_PREFILL_TOKEN_THRESHOLD` → `--long-prefill-token-threshold`).
 
 ### Today vs proposed end-state
 
