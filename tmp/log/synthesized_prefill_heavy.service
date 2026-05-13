@@ -11,26 +11,26 @@
   "timeout_seconds": 1800,
   "sweep_axes": {
     "MAX_NUM_BATCHED_TOKENS": [
-      2048,
-      4096,
       8192,
-      10275
+      16384,
+      32768,
+      65536,
+      131072,
+      262144,
+      524288,
+      1081344
     ],
     "MAX_NUM_SEQS": [
       128,
-      1000
-    ],
-    "LONG_PREFILL_TOKEN_THRESHOLD": [
-      0,
-      128,
       256,
-      512,
-      1024,
-      2048
+      1000
     ]
   },
   "coupled_axes": [],
   "fixed": {
-    "BLOCK_SIZE": 128
-  }
+    "BLOCK_SIZE": 128,
+    "RPA_KERNEL_K": 256
+  },
+  "rank_metric": "metrics.RequestThroughput",
+  "rank_descending": true
 }
