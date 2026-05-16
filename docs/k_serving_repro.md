@@ -876,6 +876,64 @@ wider operating regime — bigger batches, longer effective context,
 higher throughput per chip — *without any kernel work*. The
 kernel is already there.
 
+### Quantified: ~8× headroom unlock waiting on the vLLM side
+
+The kernel's tuned capacity per pallas_call:
+
+```
+max_num_subseqs / (max_model_len / K_kernel)
+       4224     /       (8192    /    256)     = 132 fully-prefilled phys per call
+```
+
+i.e. **the kernel is sized to process 132 concurrent 8191-token
+prefills per pallas_call**.
+
+What the workload actually feeds it (current winning config,
+MNB=131,072):
+
+```
+MAX_NUM_BATCHED_TOKENS / input_len = phys per step
+       131,072         /   8191    ≈ 16 phys per step
+```
+
+i.e. **the service layer only delivers ~16 phys per pallas_call**.
+The other ~116 slots in the kernel are padded with zeros and the
+MXU fires through them anyway — wasted cycles.
+
+**Utilization ratio: 16 / 132 ≈ 12%** of the kernel's tuned
+capacity.
+
+To actually fill the kernel, MNB would need to be:
+
+```
+MNB_to_saturate = max_num_subseqs × K_kernel
+                =       4224       ×   256       = 1,081,344
+```
+
+— which is **exactly the upper sweep value vLLM refuses to init
+at**. Aligning service-side MNB with kernel-side mnss × K_kernel
+is what would saturate. The sweep_recipes.py range already
+includes 1,081,344 for this reason; vLLM is the only thing
+blocking it.
+
+**Throughput ceiling estimate (rough):**
+
+|  | MNB | phys/call | Throughput | Kernel utilization |
+|---|---|---|---|---|
+| Today (vLLM-blocked) | 131,072 | 16 | 4.90 req/s | 12% |
+| If vLLM accepted MNB=262,144 | 262,144 | 32 | ~8 req/s | 24% |
+| If vLLM accepted MNB=524,288 | 524,288 | 64 | ~16 req/s | 48% |
+| **If vLLM accepted MNB=1,081,344** | **1,081,344** | **132** | **~30-40 req/s** | **100%** |
+
+(Scaling is approximate; real throughput hits secondary bottlenecks
+above some chip-utilization point — HBM bandwidth, DMA, scheduler
+overhead. But the ~8× headroom between "today's ceiling" and
+"kernel-saturated" is concrete and large.)
+
+The current 4.90 req/s isn't the hardware's peak — it's vLLM's
+peak. **If vLLM's init constraint resolves, we get most of that
+8× without touching the kernel.**
+
 This is asymmetric leverage: a small vLLM-side fix could deliver
 disproportionate perf gains, because the kernel-side capacity
 exists but is unreachable through the current service layer.
