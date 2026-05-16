@@ -33,7 +33,8 @@
 # locally (no push) — that way the failure mode of each bisection point
 # is preserved in git history for offline review.
 #   tmp/debug_vllm_engine_init/mnb_<MNB>_<stamp>/vllm.log     — full vllm stdout+stderr
-#   tmp/debug_vllm_engine_init/mnb_<MNB>_<stamp>/failure.txt  — extracted Traceback
+#                                                              (read this directly to find
+#                                                              the upstream JAX/XLA error)
 #   tmp/debug_vllm_engine_init/mnb_<MNB>_<stamp>/meta.txt     — params + outcome + git/vllm SHAs
 #   tmp/debug_vllm_engine_init/mnb_<MNB>_<stamp>/script.log   — this script's own
 #                                                               stdout+stderr (every echo,
@@ -59,7 +60,6 @@ STAMP="$(date +%Y%m%d_%H%M%S)"
 OUT_DIR="tmp/debug_vllm_engine_init/mnb_${MNB}_${STAMP}"
 mkdir -p "$OUT_DIR"
 LOG="$OUT_DIR/vllm.log"
-FAIL="$OUT_DIR/failure.txt"
 META="$OUT_DIR/meta.txt"
 SCRIPT_LOG="$OUT_DIR/script.log"
 
@@ -143,26 +143,11 @@ sleep 2
 pkill -9 -P "$VLLM_PID" 2>/dev/null || true
 kill -9 "$VLLM_PID" 2>/dev/null || true
 
-# Extract the failure block. The Traceback in the log BEFORE
-# the wrapper line is the upstream exception we actually want.
-echo "=== Extracting failure -> $FAIL ==="
-{
-    echo "# === Lines around first Traceback ==="
-    grep -n -B 2 -A 80 "^Traceback\|: Traceback" "$LOG" | head -200 || true
-    echo
-    echo "# === Lines around the engine-init wrapper ==="
-    grep -n -B 50 -A 5 "Engine core initialization failed" "$LOG" \
-        | head -200 || true
-    echo
-    echo "# === Last 50 lines of vllm.log ==="
-    tail -50 "$LOG"
-} > "$FAIL"
-
-echo
-echo "=========================================="
-cat "$FAIL"
-echo "=========================================="
-echo
+# NOTE: we used to extract a failure.txt here via grep. Removed —
+# vllm.log is committed locally and we read it directly (the grep
+# regex was fragile because vllm prefixes every child-process line
+# with "(EngineCore pid=...) ERROR ..." and the extraction missed
+# the real upstream exception more often than it helped).
 
 # Write meta.txt: same shape as the sweep's per-combo meta.txt so any
 # future tooling that walks tmp/bench_*/**/meta.txt can also walk
@@ -209,14 +194,14 @@ echo "=== Local commit (no push) ==="
 if git rev-parse --git-dir >/dev/null 2>&1; then
     # NOTE: -f is REQUIRED. The repo's top-level .gitignore has a
     # global '*.log' rule, so without -f, `git add` silently skips
-    # vllm.log + script.log and the commit lands with only meta.txt
-    # + failure.txt. -f is safe here because the path list is
-    # narrow and explicit — no risk of sweeping in unrelated
-    # ignored files. The path-restricted `git commit -- <paths>`
-    # below provides the same guarantee at commit time.
-    git add -f "$FAIL" "$META" "$LOG" "$SCRIPT_LOG" 2>/dev/null || true
+    # vllm.log + script.log and only meta.txt makes it into the
+    # commit. -f is safe here because the path list is narrow and
+    # explicit — no risk of sweeping in unrelated ignored files.
+    # The path-restricted `git commit -- <paths>` below provides
+    # the same guarantee at commit time.
+    git add -f "$META" "$LOG" "$SCRIPT_LOG" 2>/dev/null || true
     git commit -m "[Debug] vllm engine init: MNB=$MNB outcome=$OUTCOME stamp=$STAMP" \
-        -- "$FAIL" "$META" "$LOG" "$SCRIPT_LOG" 2>/dev/null \
+        -- "$META" "$LOG" "$SCRIPT_LOG" 2>/dev/null \
         && echo "Committed locally as $(git rev-parse --short HEAD)" \
         || echo "(commit skipped — nothing new to commit, or git refused)"
 else
@@ -225,7 +210,6 @@ fi
 
 echo
 echo "Full log:  $LOG"
-echo "Failure:   $FAIL"
 echo "Meta:      $META"
 echo "Script:    $SCRIPT_LOG"
 echo "Outcome:   $OUTCOME"
