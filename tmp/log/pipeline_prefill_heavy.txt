@@ -1,0 +1,290 @@
+=== Layer 1: Hardware Tuning ===
+Runlog: tmp/log/tune_all_prefill_heavy.txt
+===== 2026-05-16 10:45:44 Starting full kernel tune for prefill_heavy =====
+Cases: decode -> prefill -> mixed
+Branch: sll
+Git commit: db78344d2815ba83893b288c08246fe40ca1ec97
+
+
+===== 2026-05-16 10:45:44 Tuning decode (case_set_id=prefill_heavy_decode) =====
+DB path: tmp/log/kernel_tuner_run/prefill_heavy_decode
+WARNING:absl:Tensorflow library not found, tensorflow.io.gfile operations will use native shim calls. GCS paths (i.e. 'gs://...') cannot be accessed.
+INFO:numexpr.utils:Note: detected 224 virtual cores but NumExpr set to maximum of 64, check "NUMEXPR_MAX_THREADS" environment variable.
+INFO:numexpr.utils:Note: NumExpr detected 224 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+INFO:numexpr.utils:NumExpr defaulting to 16 threads.
+INFO 05-16 10:45:49 [__init__.py:59] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+I0516 10:45:49.888682 133172030965696 kernel_tuner_runner.py:115] Using case_set_id: prefill_heavy_decode, run_id: 0, case_set_desc: prefill_heavy decode kernel tune for this tuning run.
+I0516 10:45:49.888845 133172030965696 local_db_manager.py:53] Database initialized at tmp/log/kernel_tuner_run/prefill_heavy_decode
+I0516 10:45:49.894196 133172030965696 rpa_v3_kernel_tuner.py:331] Loaded 34 completed TuningKeys from tools/benchmark/cases/v7x/llama3_8b/production.kernel
+I0516 10:45:49.894272 133172030965696 rpa_v3_kernel_tuner.py:405] SMOKE_TEST=1 detected: Truncating tuner search space to minimum.
+I0516 10:45:49.894334 133172030965696 kernel_tuner_runner.py:148] Running in locally mode. Skipping Buildkite pipeline generation and running tuning jobs directly.
+I0516 10:45:49.894477 133172030965696 local_db_manager.py:102] Initialized case set: {'ID': 'prefill_heavy_decode', 'Description': 'prefill_heavy decode kernel tune', 'Status': 'CREATING', 'ScanSpace': 0}
+I0516 10:45:49.894508 133172030965696 kernel_tuner_base.py:274] Initialized new CaseSet with ID: prefill_heavy_decode and description: prefill_heavy decode kernel tune
+I0516 10:45:49.894630 133172030965696 rpa_v3_kernel_tuner.py:607] [Debug] Generated 1 cases
+I0516 10:45:49.894745 133172030965696 local_db_manager.py:164] Flushed: wrote 1 cases to KernelTuningCases
+I0516 10:45:49.894937 133172030965696 local_db_manager.py:136] Finished case set: ID=prefill_heavy_decode, valid=1, invalid=0, duration=0.0s
+I0516 10:45:49.894965 133172030965696 kernel_tuner_base.py:329] 
+Complete Generate Tuning Cases for prefill_heavy_decode, Valid Cases: 1 | Duration: 0s
+I0516 10:45:49.894991 133172030965696 kernel_tuner_base.py:489] Worker [unknown] Claimed CaseSetId: prefill_heavy_decode, RunId: 0, Bucket 0 (0-1) for processing.
+I0516 10:45:49.895087 133172030965696 local_db_manager.py:236] Marked bucket as in progress: cs_id=prefill_heavy_decode, r_id=0, b_id=0, worker=None
+I0516 10:45:49.895219 133172030965696 rpa_v3_kernel_tuner.py:860] Running rpa_v3 case=decode K=0 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='decode', chunk_prefill_size=0, code_revision='db78344d2815') params=TunableParams(bq_sz=1, bkv_sz=512, bq_csz=1, bkv_csz=256, max_num_subseqs=None) iters=1
+I0516 10:46:13.549177 133172030965696 rpa_v3_kernel_tuner.py:769] [Debug] case=decode K=0 actual_num_seqs=32 distribution=Array([32, 32, 32], dtype=int32)
+I0516 10:46:17.039444 133172030965696 rpa_v3_kernel_tuner.py:860] Running rpa_v3 case=decode K=0 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='decode', chunk_prefill_size=0, code_revision='db78344d2815') params=TunableParams(bq_sz=1, bkv_sz=512, bq_csz=1, bkv_csz=256, max_num_subseqs=None) iters=10
+I0516 10:46:18.478384 133172030965696 local_db_manager.py:300] Saved 1 results to CaseResults
+I0516 10:46:18.478610 133172030965696 local_db_manager.py:252] Marked bucket as completed: cs_id=prefill_heavy_decode, r_id=0, b_id=0, tt_us=28583257
+I0516 10:46:18.478649 133172030965696 kernel_tuner_base.py:601] Worker [unknown] Completed Bucket 0 (0-1) for CaseSetId: prefill_heavy_decode, RunId: 0. Total time: 28.58s.
+I0516 10:46:18.478678 133172030965696 local_db_manager.py:313] Database at tmp/log/kernel_tuner_run/prefill_heavy_decode finalized with 1 cases, 0 invalid cases.
+I0516 10:46:18.478728 133172030965696 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_decode/CaseSet.json
+I0516 10:46:18.478749 133172030965696 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_decode/KernelTuningCases.json
+I0516 10:46:18.478766 133172030965696 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_decode/kernel.raw.jsonl
+I0516 10:46:18.478782 133172030965696 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_decode/WorkBuckets.json
+I0516 10:46:18.478797 133172030965696 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_decode/CaseResults.json
+===== 2026-05-16 10:46:22 decode done in 38s =====
+[sll ddf905487f] [Kernel-Tune] progress: decode done (prefill_heavy 20260516_104544)
+ 1 file changed, 40 insertions(+)
+To https://github.com/yarongmu-google/tpu-inference.git
+   db78344d28..ddf905487f  sll -> sll
+
+===== 2026-05-16 10:46:25 Tuning prefill (case_set_id=prefill_heavy_prefill) =====
+DB path: tmp/log/kernel_tuner_run/prefill_heavy_prefill
+WARNING:absl:Tensorflow library not found, tensorflow.io.gfile operations will use native shim calls. GCS paths (i.e. 'gs://...') cannot be accessed.
+INFO:numexpr.utils:Note: detected 224 virtual cores but NumExpr set to maximum of 64, check "NUMEXPR_MAX_THREADS" environment variable.
+INFO:numexpr.utils:Note: NumExpr detected 224 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+INFO:numexpr.utils:NumExpr defaulting to 16 threads.
+INFO 05-16 10:46:31 [__init__.py:59] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+I0516 10:46:31.648096 138604402468800 kernel_tuner_runner.py:115] Using case_set_id: prefill_heavy_prefill, run_id: 0, case_set_desc: prefill_heavy prefill kernel tune for this tuning run.
+I0516 10:46:31.648262 138604402468800 local_db_manager.py:53] Database initialized at tmp/log/kernel_tuner_run/prefill_heavy_prefill
+I0516 10:46:31.653105 138604402468800 rpa_v3_kernel_tuner.py:331] Loaded 34 completed TuningKeys from tools/benchmark/cases/v7x/llama3_8b/production.kernel
+I0516 10:46:31.653198 138604402468800 rpa_v3_kernel_tuner.py:405] SMOKE_TEST=1 detected: Truncating tuner search space to minimum.
+I0516 10:46:31.653254 138604402468800 kernel_tuner_runner.py:148] Running in locally mode. Skipping Buildkite pipeline generation and running tuning jobs directly.
+I0516 10:46:31.653406 138604402468800 local_db_manager.py:102] Initialized case set: {'ID': 'prefill_heavy_prefill', 'Description': 'prefill_heavy prefill kernel tune', 'Status': 'CREATING', 'ScanSpace': 0}
+I0516 10:46:31.653437 138604402468800 kernel_tuner_base.py:274] Initialized new CaseSet with ID: prefill_heavy_prefill and description: prefill_heavy prefill kernel tune
+I0516 10:46:31.653550 138604402468800 rpa_v3_kernel_tuner.py:607] [Debug] Generated 1 cases
+I0516 10:46:31.653673 138604402468800 local_db_manager.py:164] Flushed: wrote 1 cases to KernelTuningCases
+I0516 10:46:31.653893 138604402468800 local_db_manager.py:136] Finished case set: ID=prefill_heavy_prefill, valid=1, invalid=0, duration=0.0s
+I0516 10:46:31.653920 138604402468800 kernel_tuner_base.py:329] 
+Complete Generate Tuning Cases for prefill_heavy_prefill, Valid Cases: 1 | Duration: 0s
+I0516 10:46:31.653946 138604402468800 kernel_tuner_base.py:489] Worker [unknown] Claimed CaseSetId: prefill_heavy_prefill, RunId: 0, Bucket 0 (0-1) for processing.
+I0516 10:46:31.654032 138604402468800 local_db_manager.py:236] Marked bucket as in progress: cs_id=prefill_heavy_prefill, r_id=0, b_id=0, worker=None
+I0516 10:46:31.654162 138604402468800 rpa_v3_kernel_tuner.py:860] Running rpa_v3 case=prefill K=128 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='prefill', chunk_prefill_size=128, code_revision='ddf905487f4b') params=TunableParams(bq_sz=128, bkv_sz=512, bq_csz=128, bkv_csz=256, max_num_subseqs=None) iters=1
+I0516 10:46:55.283277 138604402468800 rpa_v3_kernel_tuner.py:769] [Debug] case=prefill K=128 actual_num_seqs=64 distribution=Array([ 0, 64, 64], dtype=int32)
+I0516 10:47:01.030207 138604402468800 rpa_v3_kernel_tuner.py:860] Running rpa_v3 case=prefill K=128 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='prefill', chunk_prefill_size=128, code_revision='ddf905487f4b') params=TunableParams(bq_sz=128, bkv_sz=512, bq_csz=128, bkv_csz=256, max_num_subseqs=None) iters=10
+I0516 10:47:04.020066 138604402468800 local_db_manager.py:300] Saved 1 results to CaseResults
+I0516 10:47:04.020325 138604402468800 local_db_manager.py:252] Marked bucket as completed: cs_id=prefill_heavy_prefill, r_id=0, b_id=0, tt_us=32366020
+I0516 10:47:04.020370 138604402468800 kernel_tuner_base.py:601] Worker [unknown] Completed Bucket 0 (0-1) for CaseSetId: prefill_heavy_prefill, RunId: 0. Total time: 32.37s.
+I0516 10:47:04.020399 138604402468800 local_db_manager.py:313] Database at tmp/log/kernel_tuner_run/prefill_heavy_prefill finalized with 1 cases, 0 invalid cases.
+I0516 10:47:04.020452 138604402468800 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_prefill/CaseSet.json
+I0516 10:47:04.020475 138604402468800 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_prefill/KernelTuningCases.json
+I0516 10:47:04.020492 138604402468800 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_prefill/kernel.raw.jsonl
+I0516 10:47:04.020508 138604402468800 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_prefill/WorkBuckets.json
+I0516 10:47:04.020524 138604402468800 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_prefill/CaseResults.json
+===== 2026-05-16 10:47:09 prefill done in 44s =====
+[sll bd7b3ab262] [Kernel-Tune] progress: prefill done (prefill_heavy 20260516_104544)
+ 1 file changed, 35 insertions(+)
+To https://github.com/yarongmu-google/tpu-inference.git
+   ddf905487f..bd7b3ab262  sll -> sll
+
+===== 2026-05-16 10:47:12 Tuning mixed (case_set_id=prefill_heavy_mixed) =====
+DB path: tmp/log/kernel_tuner_run/prefill_heavy_mixed
+WARNING:absl:Tensorflow library not found, tensorflow.io.gfile operations will use native shim calls. GCS paths (i.e. 'gs://...') cannot be accessed.
+INFO:numexpr.utils:Note: detected 224 virtual cores but NumExpr set to maximum of 64, check "NUMEXPR_MAX_THREADS" environment variable.
+INFO:numexpr.utils:Note: NumExpr detected 224 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+INFO:numexpr.utils:NumExpr defaulting to 16 threads.
+INFO 05-16 10:47:17 [__init__.py:59] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+I0516 10:47:18.070378 134082010904512 kernel_tuner_runner.py:115] Using case_set_id: prefill_heavy_mixed, run_id: 0, case_set_desc: prefill_heavy mixed kernel tune for this tuning run.
+I0516 10:47:18.070532 134082010904512 local_db_manager.py:53] Database initialized at tmp/log/kernel_tuner_run/prefill_heavy_mixed
+I0516 10:47:18.076007 134082010904512 rpa_v3_kernel_tuner.py:331] Loaded 34 completed TuningKeys from tools/benchmark/cases/v7x/llama3_8b/production.kernel
+I0516 10:47:18.076081 134082010904512 rpa_v3_kernel_tuner.py:405] SMOKE_TEST=1 detected: Truncating tuner search space to minimum.
+I0516 10:47:18.076150 134082010904512 kernel_tuner_runner.py:148] Running in locally mode. Skipping Buildkite pipeline generation and running tuning jobs directly.
+I0516 10:47:18.076291 134082010904512 local_db_manager.py:102] Initialized case set: {'ID': 'prefill_heavy_mixed', 'Description': 'prefill_heavy mixed kernel tune', 'Status': 'CREATING', 'ScanSpace': 0}
+I0516 10:47:18.076323 134082010904512 kernel_tuner_base.py:274] Initialized new CaseSet with ID: prefill_heavy_mixed and description: prefill_heavy mixed kernel tune
+I0516 10:47:18.076436 134082010904512 rpa_v3_kernel_tuner.py:607] [Debug] Generated 1 cases
+I0516 10:47:18.076551 134082010904512 local_db_manager.py:164] Flushed: wrote 1 cases to KernelTuningCases
+I0516 10:47:18.076762 134082010904512 local_db_manager.py:136] Finished case set: ID=prefill_heavy_mixed, valid=1, invalid=0, duration=0.0s
+I0516 10:47:18.076790 134082010904512 kernel_tuner_base.py:329] 
+Complete Generate Tuning Cases for prefill_heavy_mixed, Valid Cases: 1 | Duration: 0s
+I0516 10:47:18.076815 134082010904512 kernel_tuner_base.py:489] Worker [unknown] Claimed CaseSetId: prefill_heavy_mixed, RunId: 0, Bucket 0 (0-1) for processing.
+I0516 10:47:18.076909 134082010904512 local_db_manager.py:236] Marked bucket as in progress: cs_id=prefill_heavy_mixed, r_id=0, b_id=0, worker=None
+I0516 10:47:18.077021 134082010904512 rpa_v3_kernel_tuner.py:860] Running rpa_v3 case=mixed K=0 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='mixed', chunk_prefill_size=0, code_revision='bd7b3ab262d7') params=TunableParams(bq_sz=128, bkv_sz=512, bq_csz=128, bkv_csz=256, max_num_subseqs=None) iters=1
+I0516 10:47:41.678014 134082010904512 rpa_v3_kernel_tuner.py:769] [Debug] case=mixed K=0 actual_num_seqs=8 distribution=Array([1, 1, 8], dtype=int32)
+I0516 10:47:44.377457 134082010904512 rpa_v3_kernel_tuner.py:860] Running rpa_v3 case=mixed K=0 key=TuningKey(page_size=128, q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='mixed', chunk_prefill_size=0, code_revision='bd7b3ab262d7') params=TunableParams(bq_sz=128, bkv_sz=512, bq_csz=128, bkv_csz=256, max_num_subseqs=None) iters=10
+I0516 10:47:44.503971 134082010904512 local_db_manager.py:300] Saved 1 results to CaseResults
+I0516 10:47:44.504261 134082010904512 local_db_manager.py:252] Marked bucket as completed: cs_id=prefill_heavy_mixed, r_id=0, b_id=0, tt_us=26427045
+I0516 10:47:44.504317 134082010904512 kernel_tuner_base.py:601] Worker [unknown] Completed Bucket 0 (0-1) for CaseSetId: prefill_heavy_mixed, RunId: 0. Total time: 26.43s.
+I0516 10:47:44.504353 134082010904512 local_db_manager.py:313] Database at tmp/log/kernel_tuner_run/prefill_heavy_mixed finalized with 1 cases, 0 invalid cases.
+I0516 10:47:44.504420 134082010904512 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_mixed/CaseSet.json
+I0516 10:47:44.504449 134082010904512 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_mixed/KernelTuningCases.json
+I0516 10:47:44.504476 134082010904512 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_mixed/kernel.raw.jsonl
+I0516 10:47:44.504498 134082010904512 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_mixed/WorkBuckets.json
+I0516 10:47:44.504515 134082010904512 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_mixed/CaseResults.json
+===== 2026-05-16 10:47:48 mixed done in 36s =====
+[sll 360b7a0606] [Kernel-Tune] progress: mixed done (prefill_heavy 20260516_104544)
+ 1 file changed, 35 insertions(+)
+To https://github.com/yarongmu-google/tpu-inference.git
+   bd7b3ab262..360b7a0606  sll -> sll
+
+===== 2026-05-16 10:47:52 ALL CASES DONE =====
+
+Inspector commands to extract winners (run on the same TPU VM):
+  python3 -m tools.kernel.tuner.v1.inspect_result_cli \
+      --source=local --db-path=tmp/log/kernel_tuner_run/prefill_heavy_decode \
+      query_min_latency \
+      --case_set_id=prefill_heavy_decode_20260516_104544 --run_id=0
+  python3 -m tools.kernel.tuner.v1.inspect_result_cli \
+      --source=local --db-path=tmp/log/kernel_tuner_run/prefill_heavy_prefill \
+      query_min_latency \
+      --case_set_id=prefill_heavy_prefill_20260516_104544 --run_id=0
+  python3 -m tools.kernel.tuner.v1.inspect_result_cli \
+      --source=local --db-path=tmp/log/kernel_tuner_run/prefill_heavy_mixed \
+      query_min_latency \
+      --case_set_id=prefill_heavy_mixed_20260516_104544 --run_id=0
+[sll 1c6c11b153] [Kernel-Tune] progress: all done (prefill_heavy 20260516_104544)
+ 1 file changed, 16 insertions(+)
+To https://github.com/yarongmu-google/tpu-inference.git
+   360b7a0606..1c6c11b153  sll -> sll
+
+=== Layer 1: Building Kernel Registry ===
+Reading manifest: tmp/log/tune_all_prefill_heavy.manifest.jsonl
+Extracting decode from tmp/log/kernel_tuner_run/prefill_heavy_decode
+Extracting prefill from tmp/log/kernel_tuner_run/prefill_heavy_prefill
+Extracting mixed from tmp/log/kernel_tuner_run/prefill_heavy_mixed
+
+Wrote (Accumulated): tools/benchmark/cases/v7x/llama3_8b/production.kernel
+tools/benchmark/cases/v7x/llama3_8b/production.kernel
+[sll 273ffbb2a4] [Kernel-Tune] Update production.kernel from tune_all_prefill_heavy
+ 1 file changed, 77 insertions(+), 2 deletions(-)
+To https://github.com/yarongmu-google/tpu-inference.git
+   1c6c11b153..273ffbb2a4  sll -> sll
+Kernel Registry updated at tools/benchmark/cases/v7x/llama3_8b/production.kernel.
+
+=== Layer 2: Service Sweeping ===
+Runlog: tmp/log/sweep_synthesized_prefill_heavy.txt
+SMOKE_TEST=1 detected: truncating service sweep space to 1 combo.
+[Sweep] Resume from tmp/bench_prefill_heavy_rpa_v3_vllm/service.raw.jsonl: 2 rows (2 skip, 0 retry, 0 malformed)
+[1/1] 86e64299b855 skipped_resumed (—)  tmp/bench_prefill_heavy_rpa_v3_vllm/86e64299b855
+The following paths are ignored by one of your .gitignore files:
+tmp/log/sweep_synthesized_prefill_heavy.txt
+hint: Use -f if you really want to add them.
+hint: Turn this message off by running
+hint: "git config advice.addIgnoredFile false"
+git_commit_paths: subprocess failed: Command '['git', 'add', '--', 'tmp/bench_prefill_heavy_rpa_v3_vllm/099b260077d3/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/0b6ab50d2d3d/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/0c6603e8d0db/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/0d52bbe9561d/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/160751aa86d9/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/1711a334bd66/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/1745c02ec3ca/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/1a114ce287e6/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/1e96e6a4ea5a/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/1eff8365f827/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/259118d2ba8b/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/2a9273a1e724/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/2ffc51fb621b/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/3b114feecd15/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/47f3d2301bd9/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/4b9d79d47084/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/4f773da3397a/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/5223313968b6/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/53a6035d09cc/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/54ccc1eb587a/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/5c2c90bccf05/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/5d4f94b23ae6/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/6058c1699a1b/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/6554263769c1/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/66f5ba2eb41a/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/69071a4dd804/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/6c43df8800c5/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/6dc80b2a3b37/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/6f5c6661f0cc/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/74af77fcad4f/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/79f4eebdaaa0/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/86e64299b855/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/8975b2f8d005/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/8a85eb55d1ed/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/8d4a0ac0a879/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/8d9037f1b0cc/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/906f8b277739/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/95daf7983c7b/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/a091482370e8/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/a21f39fed029/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/a6dd270d0802/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/af7eecdad69c/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/bb378b13a10e/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/d082d85d1f83/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/d1006181d490/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/d1b185a2614b/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/d583ef2e63c5/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/d5e267b42694/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/dac00b05e6bf/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/df6000c654ef/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/e14dceeb06f0/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/e3a019bd5f9e/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/e538a6ff7be4/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/e82afef02bee/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/e9fa71508e7f/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/edbd6ab58871/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/f1becb7a1cc2/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/f64ce590a23a/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/f6d4d08d53b7/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/fc241f5c2d6e/metrics.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/099b260077d3/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/0b6ab50d2d3d/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/0c6603e8d0db/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/0d52bbe9561d/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/160751aa86d9/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/1711a334bd66/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/1745c02ec3ca/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/1a114ce287e6/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/1e96e6a4ea5a/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/1eff8365f827/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/259118d2ba8b/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/2a9273a1e724/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/2ffc51fb621b/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/3b114feecd15/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/47f3d2301bd9/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/4b9d79d47084/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/4f773da3397a/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/5223313968b6/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/53a6035d09cc/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/54ccc1eb587a/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/5c2c90bccf05/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/5d4f94b23ae6/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/6058c1699a1b/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/6554263769c1/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/66f5ba2eb41a/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/69071a4dd804/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/6c43df8800c5/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/6dc80b2a3b37/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/6f5c6661f0cc/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/74af77fcad4f/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/79f4eebdaaa0/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/86e64299b855/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/8975b2f8d005/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/8a85eb55d1ed/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/8d4a0ac0a879/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/8d9037f1b0cc/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/906f8b277739/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/95daf7983c7b/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/a091482370e8/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/a21f39fed029/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/a6dd270d0802/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/af7eecdad69c/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/bb378b13a10e/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/d082d85d1f83/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/d1006181d490/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/d1b185a2614b/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/d583ef2e63c5/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/d5e267b42694/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/dac00b05e6bf/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/df6000c654ef/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/e14dceeb06f0/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/e3a019bd5f9e/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/e538a6ff7be4/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/e82afef02bee/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/e9fa71508e7f/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/edbd6ab58871/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/f1becb7a1cc2/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/f64ce590a23a/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/f6d4d08d53b7/meta.txt', 'tmp/bench_prefill_heavy_rpa_v3_vllm/fc241f5c2d6e/meta.txt', 'tmp/log/sweep_synthesized_prefill_heavy.txt']' returned non-zero exit status 1.
+WARN: auto-commit/push failed at 1/1
+
+=== Layer 3: Building Production Configuration ===
+| case          | MNB   | MNS  | MML  | page | K       | p_blk             | rate | req/s | out_tok/s | ttft_mean | ttft_p99  | itl_mean | itl_p99 | dur_s | id           |
+|:--------------|:------|:-----|:-----|:-----|:--------|:------------------|:-----|:------|:----------|:----------|:----------|:---------|:--------|:------|:-------------|
+| prefill_heavy | 8192  | 128  | 8192 | 128  | 256     | 256,2048,256,512  | inf  | 4.79  | 4.79      | 107809.92 | 207239.92 | 0.00     | 0.00    | 224   | 4f773da3397a |
+| prefill_heavy | 8192  | 1000 | 8192 | 128  | 256     | 256,2048,256,512  | inf  | 4.78  | 4.78      | 108001.72 | 207610.39 | 0.00     | 0.00    | 224   | 79f4eebdaaa0 |
+| prefill_heavy | 8192  | 128  | 8192 | 128  | 1024    | 256,1024,256,512  | inf  | 4.78  | 4.78      | 105711.68 | 207738.85 | 0.00     | 0.00    | 224   | 95daf7983c7b |
+| prefill_heavy | 8192  | 1000 | 8192 | 128  | 1024    | 256,1024,256,512  | inf  | 4.77  | 4.77      | 105937.12 | 208125.94 | 0.00     | 0.00    | 225   | 0c6603e8d0db |
+| prefill_heavy | 2048  | 128  | 8192 | 128  | 256     | 256,2048,256,512  | inf  | 4.75  | 4.75      | 106259.65 | 208639.28 | 0.00     | 0.00    | 225   | f64ce590a23a |
+| prefill_heavy | 8192  | 128  | 8192 | 128  | 2048    | 256,2048,256,512  | inf  | 4.74  | 4.74      | 106244.96 | 209153.95 | 0.00     | 0.00    | 226   | f6d4d08d53b7 |
+| prefill_heavy | 8192  | 1000 | 8192 | 128  | 2048    | 256,2048,256,512  | inf  | 4.73  | 4.73      | 106464.72 | 209442.38 | 0.00     | 0.00    | 227   | 160751aa86d9 |
+| prefill_heavy | 2048  | 128  | 8192 | 128  | 1024    | 256,1024,256,512  | inf  | 4.73  | 4.73      | 106295.45 | 209433.42 | 0.00     | 0.00    | 226   | 906f8b277739 |
+| prefill_heavy | 8192  | 1000 | 8192 | 128  | 512     | 256,1024,256,1024 | inf  | 4.72  | 4.72      | 107727.80 | 210453.64 | 0.00     | 0.00    | 227   | 1711a334bd66 |
+| prefill_heavy | 8192  | 128  | 8192 | 128  | 512     | 256,1024,256,1024 | inf  | 4.72  | 4.72      | 107588.52 | 210474.03 | 0.00     | 0.00    | 227   | 66f5ba2eb41a |
+| prefill_heavy | 2048  | 1000 | 8192 | 128  | 256     | 256,2048,256,512  | inf  | 4.72  | 4.72      | 107086.87 | 210182.54 | 0.00     | 0.00    | 227   | 8975b2f8d005 |
+| prefill_heavy | 4096  | 128  | 8192 | 128  | 256     | 256,2048,256,512  | inf  | 4.71  | 4.71      | 108020.85 | 210869.52 | 0.00     | 0.00    | 227   | 6f5c6661f0cc |
+| prefill_heavy | 2048  | 1000 | 8192 | 128  | 1024    | 256,1024,256,512  | inf  | 4.70  | 4.70      | 106857.02 | 210719.80 | 0.00     | 0.00    | 228   | 47f3d2301bd9 |
+| prefill_heavy | 4096  | 1000 | 8192 | 128  | 256     | 256,2048,256,512  | inf  | 4.70  | 4.70      | 108218.65 | 211223.87 | 0.00     | 0.00    | 228   | 5223313968b6 |
+| prefill_heavy | 2048  | 128  | 8192 | 128  | 2048    | 256,2048,256,512  | inf  | 4.69  | 4.69      | 106834.33 | 210751.73 | 0.00     | 0.00    | 228   | 54ccc1eb587a |
+| prefill_heavy | 4096  | 128  | 8192 | 128  | 1024    | 256,1024,256,512  | inf  | 4.69  | 4.69      | 107280.52 | 211258.91 | 0.00     | 0.00    | 228   | 6c43df8800c5 |
+| prefill_heavy | 4096  | 1000 | 8192 | 128  | 1024    | 256,1024,256,512  | inf  | 4.68  | 4.68      | 107517.91 | 211734.73 | 0.00     | 0.00    | 229   | 6058c1699a1b |
+| prefill_heavy | 2048  | 1000 | 8192 | 128  | 2048    | 256,2048,256,512  | inf  | 4.67  | 4.67      | 107530.36 | 212056.51 | 0.00     | 0.00    | 229   | 1eff8365f827 |
+| prefill_heavy | 65536 | 256  | 8192 | 128  | 1081344 | 256,2048,256,512  | inf  | 4.66  | 4.66      | 108444.90 | 212122.63 | 0.00     | 0.00    | 230   | 1745c02ec3ca |
+| prefill_heavy | 65536 | 128  | 8192 | 128  | 1081344 | 256,2048,256,512  | inf  | 4.66  | 4.66      | 108369.64 | 212061.15 | 0.00     | 0.00    | 229   | 3b114feecd15 |
+| prefill_heavy | 2048  | 128  | 8192 | 128  | 512     | 256,1024,256,1024 | inf  | 4.66  | 4.66      | 108018.40 | 212778.62 | 0.00     | 0.00    | 230   | a091482370e8 |
+| prefill_heavy | 4096  | 128  | 8192 | 128  | 2048    | 256,2048,256,512  | inf  | 4.66  | 4.66      | 107804.85 | 212454.86 | 0.00     | 0.00    | 230   | af7eecdad69c |
+| prefill_heavy | 4096  | 128  | 8192 | 128  | 512     | 256,1024,256,1024 | inf  | 4.65  | 4.65      | 108535.73 | 213273.03 | 0.00     | 0.00    | 230   | 5d4f94b23ae6 |
+| prefill_heavy | 4096  | 1000 | 8192 | 128  | 2048    | 256,2048,256,512  | inf  | 4.65  | 4.65      | 108114.06 | 213015.98 | 0.00     | 0.00    | 231   | bb378b13a10e |
+| prefill_heavy | 65536 | 1000 | 8192 | 128  | 1081344 | 256,2048,256,512  | inf  | 4.65  | 4.65      | 108661.68 | 213009.62 | 0.00     | 0.00    | 230   | d1b185a2614b |
+| prefill_heavy | 4096  | 1000 | 8192 | 128  | 512     | 256,1024,256,1024 | inf  | 4.64  | 4.64      | 108859.60 | 213828.26 | 0.00     | 0.00    | 230   | 74af77fcad4f |
+| prefill_heavy | 2048  | 1000 | 8192 | 128  | 512     | 256,1024,256,1024 | inf  | 4.63  | 4.63      | 108730.74 | 213977.58 | 0.00     | 0.00    | 231   | 8a85eb55d1ed |
+| prefill_heavy | 8192  | 128  | 8192 | 128  | 0       | default           | inf  | 4.57  | 4.57      | 110002.11 | 216745.98 | 0.00     | 0.00    | 235   | edbd6ab58871 |
+| prefill_heavy | 8192  | 1000 | 8192 | 128  | 0       | default           | inf  | 4.56  | 4.56      | 109932.26 | 216766.87 | 0.00     | 0.00    | 234   | e538a6ff7be4 |
+| prefill_heavy | 2048  | 128  | 8192 | 128  | 0       | default           | inf  | 4.53  | 4.53      | 110751.96 | 218522.98 | 0.00     | 0.00    | 236   | dac00b05e6bf |
+| prefill_heavy | 8192  | 128  | 8192 | 128  | 1081344 | 256,2048,256,512  | inf  | 4.52  | 4.52      | 111313.79 | 219149.69 | 0.00     | 0.00    | 237   | 86e64299b855 |
+| prefill_heavy | 8192  | 256  | 8192 | 128  | 1081344 | 256,2048,256,512  | inf  | 4.52  | 4.52      | 111209.75 | 219004.65 | 0.00     | 0.00    | 236   | d1006181d490 |
+| prefill_heavy | 2048  | 1000 | 8192 | 128  | 0       | default           | inf  | 4.51  | 4.51      | 111308.40 | 219524.09 | 0.00     | 0.00    | 237   | 4b9d79d47084 |
+| prefill_heavy | 8192  | 1000 | 8192 | 128  | 1081344 | 256,2048,256,512  | inf  | 4.51  | 4.51      | 111266.75 | 219283.44 | 0.00     | 0.00    | 237   | d082d85d1f83 |
+| prefill_heavy | 4096  | 128  | 8192 | 128  | 0       | default           | inf  | 4.50  | 4.50      | 111641.03 | 220096.00 | 0.00     | 0.00    | 237   | 1e96e6a4ea5a |
+| prefill_heavy | 4096  | 1000 | 8192 | 128  | 0       | default           | inf  | 4.49  | 4.49      | 111879.55 | 220589.95 | 0.00     | 0.00    | 238   | 259118d2ba8b |
+| prefill_heavy | 2048  | 128  | 8192 | 128  | 128     | 128,512,128,256   | inf  | 4.49  | 4.49      | 113412.70 | 221041.43 | 0.00     | 0.00    | 238   | df6000c654ef |
+| prefill_heavy | 8192  | 128  | 8192 | 128  | 128     | 128,512,128,256   | inf  | 4.47  | 4.47      | 117521.79 | 223595.66 | 0.00     | 0.00    | 239   | 53a6035d09cc |
+| prefill_heavy | 8192  | 1000 | 8192 | 128  | 128     | 128,512,128,256   | inf  | 4.46  | 4.46      | 117802.46 | 223938.97 | 0.00     | 0.00    | 239   | 099b260077d3 |
+| prefill_heavy | 2048  | 1000 | 8192 | 128  | 128     | 128,512,128,256   | inf  | 4.46  | 4.46      | 113976.32 | 222151.77 | 0.00     | 0.00    | 239   | 0b6ab50d2d3d |
+| prefill_heavy | 4096  | 128  | 8192 | 128  | 128     | 128,512,128,256   | inf  | 4.44  | 4.44      | 116196.51 | 223389.86 | 0.00     | 0.00    | 240   | 8d4a0ac0a879 |
+| prefill_heavy | 4096  | 1000 | 8192 | 128  | 128     | 128,512,128,256   | inf  | 4.43  | 4.43      | 116587.05 | 224047.25 | 0.00     | 0.00    | 241   | 69071a4dd804 |
+| prefill_heavy | 32768 | 128  | 8192 | 128  | 1081344 | 256,2048,256,512  | inf  | 4.39  | 4.39      | 114850.78 | 225627.86 | 0.00     | 0.00    | 243   | 2a9273a1e724 |
+| prefill_heavy | 32768 | 1000 | 8192 | 128  | 1081344 | 256,2048,256,512  | inf  | 4.39  | 4.39      | 114781.85 | 225665.33 | 0.00     | 0.00    | 242   | a6dd270d0802 |
+| prefill_heavy | 32768 | 256  | 8192 | 128  | 1081344 | 256,2048,256,512  | inf  | 4.39  | 4.39      | 114678.70 | 225385.39 | 0.00     | 0.00    | 243   | fc241f5c2d6e |
+| prefill_heavy | 16384 | 128  | 8192 | 128  | 1081344 | 256,2048,256,512  | inf  | 4.07  | 4.07      | 123453.48 | 243203.18 | 0.00     | 0.00    | 261   | e14dceeb06f0 |
+| prefill_heavy | 16384 | 256  | 8192 | 128  | 1081344 | 256,2048,256,512  | inf  | 4.06  | 4.06      | 123542.66 | 243384.40 | 0.00     | 0.00    | 261   | 2ffc51fb621b |
+| prefill_heavy | 16384 | 1000 | 8192 | 128  | 1081344 | 256,2048,256,512  | inf  | 4.06  | 4.06      | 123560.79 | 243434.19 | 0.00     | 0.00    | 262   | e3a019bd5f9e |
+| prefill_heavy | 10275 | 128  | 8192 | 128  | 1024    | 256,1024,256,512  | inf  | 3.39  | 3.39      | 149191.85 | 293169.91 | 0.00     | 0.00    | 310   | 5c2c90bccf05 |
+| prefill_heavy | 10275 | 128  | 8192 | 128  | 256     | 256,2048,256,512  | inf  | 3.39  | 3.39      | 153438.14 | 294727.06 | 0.00     | 0.00    | 310   | a21f39fed029 |
+| prefill_heavy | 10275 | 1000 | 8192 | 128  | 256     | 256,2048,256,512  | inf  | 3.39  | 3.39      | 153505.75 | 294816.46 | 0.00     | 0.00    | 310   | e9fa71508e7f |
+| prefill_heavy | 10275 | 1000 | 8192 | 128  | 1024    | 256,1024,256,512  | inf  | 3.39  | 3.39      | 149405.90 | 293531.73 | 0.00     | 0.00    | 310   | f1becb7a1cc2 |
+| prefill_heavy | 10275 | 1000 | 8192 | 128  | 2048    | 256,2048,256,512  | inf  | 3.37  | 3.37      | 149477.64 | 294362.35 | 0.00     | 0.00    | 312   | 0d52bbe9561d |
+| prefill_heavy | 10275 | 128  | 8192 | 128  | 2048    | 256,2048,256,512  | inf  | 3.37  | 3.37      | 149455.43 | 294465.03 | 0.00     | 0.00    | 312   | 8d9037f1b0cc |
+| prefill_heavy | 10275 | 128  | 8192 | 128  | 512     | 256,1024,256,1024 | inf  | 3.36  | 3.36      | 152011.97 | 296600.30 | 0.00     | 0.00    | 312   | 1a114ce287e6 |
+| prefill_heavy | 10275 | 1000 | 8192 | 128  | 512     | 256,1024,256,1024 | inf  | 3.36  | 3.36      | 152136.20 | 296843.06 | 0.00     | 0.00    | 313   | e82afef02bee |
+| prefill_heavy | 10275 | 128  | 8192 | 128  | 0       | default           | inf  | 3.28  | 3.28      | 152790.94 | 301530.82 | 0.00     | 0.00    | 319   | 6dc80b2a3b37 |
+| prefill_heavy | 10275 | 1000 | 8192 | 128  | 0       | default           | inf  | 3.28  | 3.28      | 152837.12 | 301655.23 | 0.00     | 0.00    | 320   | d583ef2e63c5 |
+| prefill_heavy | 10275 | 128  | 8192 | 128  | 128     | 128,512,128,256   | inf  | 3.26  | 3.26      | 165506.69 | 306722.94 | 0.00     | 0.00    | 322   | 6554263769c1 |
+| prefill_heavy | 10275 | 1000 | 8192 | 128  | 128     | 128,512,128,256   | inf  | 3.25  | 3.25      | 165791.55 | 307259.28 | 0.00     | 0.00    | 322   | d5e267b42694 |
+
+Exported absolute best configuration to: tools/benchmark/cases/v7x/llama3_8b/production.service
+
+=== Layer 4: Production Validation Bench ===
+Validation bench: workload_key=rpa_v3__vllm__meta-llama/Meta-Llama-3-8B-Instruct__tp1__8191_in_1_out
+case_file=/home/ymu_google_com/tpu-inference/tools/benchmark/cases/v7x/llama3_8b/prefill_heavy.workload
+case_name=prefill_heavy
+model=meta-llama/Meta-Llama-3-8B-Instruct
+max_num_seqs=1000
+max_num_batched_tokens=131072
+tensor_parallel_size=1
+max_model_len=8192
+dataset=sonnet
+input_len=8191
+output_len=1
+num_prompts=1000
+request_rate=inf
+block_size=128
+long_prefill_token_threshold=1081344
+rpa_d_block_sizes=1,512,1,256
+rpa_p_block_sizes=256,2048,256,512
+rpa_m_block_sizes=128,512,128,256
+git_commit=273ffbb2a4adcf801389bcbab46270e58ff03910
+git_branch=sll
+vllm_commit=c51df43005726a09c6eb7348e8c1b00501c70a8e
+timestamp=20260516_104756
+----
+Results: /home/ymu_google_com/tpu-inference/tmp/bench_prefill_heavy_production
+Starting vllm server (log: /home/ymu_google_com/tpu-inference/tmp/bench_prefill_heavy_production/vllm.log) ...
+Waiting up to 1200s for server startup ...
+  ready after 230s
+Running benchmark (stdout: /home/ymu_google_com/tpu-inference/tmp/bench_prefill_heavy_production/bench.log, stderr: /home/ymu_google_com/tpu-inference/tmp/bench_prefill_heavy_production/bench.log.stderr) ...
+==== Summary ====
+Request throughput (req/s):              4.67      
+Output token throughput (tok/s):         4.67      
+Mean TTFT (ms):                          109210.56 
+Median TTFT (ms):                        109828.09 
+P99 TTFT (ms):                           213990.33 
+Mean TPOT (ms):                          0.00      
+Median TPOT (ms):                        0.00      
+P99 TPOT (ms):                           0.00      
+Mean ITL (ms):                           0.00      
+Median ITL (ms):                         0.00      
+P99 ITL (ms):                            0.00      
+Mean E2EL (ms):                          109210.56 
+Median E2EL (ms):                        109828.09 
+P99 E2EL (ms):                           213990.33 
+====
+Saved metrics to /home/ymu_google_com/tpu-inference/tmp/bench_prefill_heavy_production/metrics.txt
+
+==========================================================
+ Pipeline Complete.
+ Production service config:   tools/benchmark/cases/v7x/llama3_8b/production.service
+ Validation bench (Layer 4):  tmp/bench_prefill_heavy_production/metrics.txt
+==========================================================
