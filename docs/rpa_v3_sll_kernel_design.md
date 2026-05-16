@@ -38,26 +38,47 @@ zeroed by the causal/kv-bounds mask before softmax
 `v` is zeroed at `kernel.py:809`. The MXU still runs full
 systolic cycles for those wasted positions.
 
-**The nested loop structure** (`kernel.py:1296-1433`, simplified):
+**The nested loop structure** (`kernel.py:1296-1433`, simplified —
+five nested loops, four step-sizes):
 
 ```python
-@pl.loop(0, num_bq)                                    # outer Q-tile
+@pl.loop(0, num_bq)                                          # L0: Q-tile,     step = bq_sz
 def compute_with_bq(bq_idx):
-    @pl.loop(start_bkv_idx, end_bkv_idx)               # KV-tile
+    @pl.loop(start_bkv_idx, end_bkv_idx)                     # L1: KV-tile,    step = bkv_sz
     def compute_with_bkv(bkv_idx):
-        @pl.loop(0, num_loops)                         # KV sub-tile (csz stride)
+        num_loops = cdiv(effective_bkv_sz, bkv_csz)          #     (# of bkv_csz chunks in this bkv_sz fetch)
+        @pl.loop(0, num_loops)                               # L2: KV sub-tile, step = bkv_csz (within bkv_sz)
         def attention_loop(idx):
-            for bq_start in range(0, actual_bq_sz, actual_bq_csz):  # Q sub-tile
-                for kv_head_idx in range(actual_num_kv_heads):       # KV head
+            bkv_start = idx * bkv_csz                        #     current bkv_csz chunk's offset
+            for bq_start in range(                           # L3: Q sub-tile, step = bq_csz (within bq_sz)
+                    0, actual_bq_sz, actual_bq_csz):
+                for kv_head_idx in range(                    # L4: KV head fan-out (serial, innermost)
+                        actual_num_kv_heads):
                     cur_p, cur_v, cur_exp_m_diff = \
-                        flash_attention_step1_qk_softmax(...)        # MXU₀ (Q @ K^T)
+                        flash_attention_step1_qk_softmax(...)   # MXU₀ (Q @ K^T)
                     if prev_lm_slice is not None:
-                        flash_attention_step2_pv(...)                # MXU₁ (P @ V)
-                                                                     # (prev kv head,
-                                                                     #  pipelined with
-                                                                     #  current MXU₀)
-            flash_attention_step2_pv(...)              # final MXU₁ outside kv-head loop
+                        flash_attention_step2_pv(...)           # MXU₁ (P @ V) for previous kv head
+                                                                # (pipelined with current MXU₀)
+            flash_attention_step2_pv(...)                    # final MXU₁ outside kv-head loop
 ```
+
+**Step-size summary** (the four "block sizes" the tuner sweeps):
+
+| Loop | Step | What it tiles |
+|---|---|---|
+| L0 outer Q  | `bq_sz`  | Q tokens DMA'd into VMEM per Q-pass through one iter |
+| L1 outer KV | `bkv_sz` | KV tokens DMA'd into VMEM per KV-pass through one Q-tile |
+| L2 inner KV | `bkv_csz` (≤ bkv_sz) | KV tokens processed per MXU compute call |
+| L3 inner Q  | `bq_csz` (≤ bq_sz)  | Q tokens processed per MXU compute call |
+
+`*_sz` are the VMEM tile sizes (fetch into VMEM); `*_csz` are the
+compute sub-tile sizes (processed per matmul call). Per VMEM tile,
+the kernel does `sz / csz` compute sub-iterations — that's how
+DMA gets pipelined behind compute (while one sub-tile computes,
+the next is being prefetched). Inside L3 × L4, two matmuls fire
+per (bq_start, kv_head_idx): MXU₀ (Q @ K^T inside
+`flash_attention_step1_qk_softmax`) and MXU₁ (P @ V inside
+`flash_attention_step2_pv`).
 
 `flash_attention_step1_qk_softmax` and `flash_attention_step2_pv`
 are pipelined: the second matmul for the *previous* kv head runs
