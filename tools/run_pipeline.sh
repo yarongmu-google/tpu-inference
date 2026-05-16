@@ -93,6 +93,12 @@ WORKLOAD_BASENAME=$(basename "$WORKLOAD" .workload)
 MODEL_DIR=$(dirname "$WORKLOAD")
 PROD_KERNEL="${MODEL_DIR}/production.kernel"
 PROD_SERVICE="${MODEL_DIR}/production.service"
+# Layer 4 validation bench writes here. Stable tag (no timestamp) so
+# subsequent pipeline runs overwrite the prior validation, giving a
+# single canonical "production bench" output per workload that the
+# commit_logs trap can find.
+PROD_BENCH_TAG="production"
+PROD_BENCH_DIR="tmp/bench_${WORKLOAD_BASENAME}_${PROD_BENCH_TAG}"
 
 mkdir -p tmp/log
 
@@ -160,6 +166,14 @@ commit_logs() {
         "[Logs] Update build_service_registry script log for $SWEEP_NAME"
     _commit_path_only "$PROD_SERVICE" \
         "[Pipeline] Update production.service for $WORKLOAD_BASENAME"
+    # Layer 4 validation bench: commit metrics + meta from the
+    # canonical production-bench dir. The dir may not exist if Layer 4
+    # didn't run (e.g., earlier-layer crash) — _commit_path_only
+    # handles missing files gracefully (returns 0).
+    _commit_path_only "$PROD_BENCH_DIR/metrics.txt" \
+        "[Pipeline] Layer 4 validation bench metrics for $WORKLOAD_BASENAME"
+    _commit_path_only "$PROD_BENCH_DIR/meta.txt" \
+        "[Pipeline] Layer 4 validation bench meta for $WORKLOAD_BASENAME"
     _commit_path_only "$PIPELINE_LOG" \
         "[Pipeline] Update master orchestrator runlog for $WORKLOAD_BASENAME"
     if _should_autopush; then
@@ -242,9 +256,69 @@ echo ""
     } 2>&1 | tee "$SERVICE_LOG"
 
     echo ""
+    echo "=== Layer 4: Production Validation Bench ==="
+    # Re-bench the workload using JUST the winning config from Layer 3's
+    # production.service, so we have a clean reproducible perf number
+    # for the production config (not just one combo's number buried in
+    # the sweep grid). Same kernel, same service, same env vars as the
+    # winner — but a fresh invocation into a stable result dir
+    # ($PROD_BENCH_DIR) the commit_logs trap knows how to pick up.
+    #
+    # Subshell so workload env vars don't leak into the parent script
+    # after Layer 4 completes (they're sourced via `set -a` to derive
+    # the workload key).
+    (
+        set -a
+        source "$WORKLOAD"
+        set +a
+
+        # Workload key format matches build_service_registry's
+        # _make_workload_key (see tools/benchmark/build_service_registry.py).
+        # If that schema changes, this lookup must move in lockstep.
+        WORKLOAD_KEY="${KERNEL_ID}__${SERVICE_ID}__${MODEL}__tp${TENSOR_PARALLEL_SIZE}__${INPUT_LEN}_in_${OUTPUT_LEN}_out"
+        echo "Validation bench: workload_key=$WORKLOAD_KEY"
+
+        # Extract the winning config from production.service and emit
+        # it as exportable bash. Fail loudly if the entry is missing —
+        # Layer 3 should have just written it; missing => Layer 3 bug
+        # or stale spec, NOT a silent fall-back to defaults (which
+        # would invalidate the validation).
+        PROD_ENV_FILE="tmp/log/prod_env_${WORKLOAD_BASENAME}.sh"
+        python3 - "$PROD_SERVICE" "$WORKLOAD_KEY" "$PROD_ENV_FILE" <<'PYEOF'
+import json, sys
+prod_service_path, workload_key, out_path = sys.argv[1:4]
+with open(prod_service_path) as f:
+    data = json.load(f)
+cfg = data.get("best_configs_by_workload", {}).get(workload_key)
+if cfg is None:
+    known = list(data.get("best_configs_by_workload", {}).keys())
+    print(f"ERROR: no production config for workload_key={workload_key}",
+          file=sys.stderr)
+    print(f"Known keys: {known}", file=sys.stderr)
+    sys.exit(1)
+# Skip metadata + identity fields; export everything else.
+SKIP = {"metrics", "kernel_id", "service_id", "model",
+        "tensor_parallel_size"}
+with open(out_path, "w") as f:
+    for k, v in cfg.items():
+        if k in SKIP:
+            continue
+        # json.dumps quotes strings safely for shell `export`.
+        f.write(f"export {k}={json.dumps(v)}\n")
+PYEOF
+        # shellcheck source=/dev/null
+        source "$PROD_ENV_FILE"
+
+        # RESULT_DIR is derived as tmp/bench_${CASE_NAME}_${TAG} in
+        # run_benchmark.sh; CASE_NAME=basename(workload,.workload)
+        # matches WORKLOAD_BASENAME, so PROD_BENCH_DIR matches.
+        tools/benchmark/run_benchmark.sh "$WORKLOAD" --result-tag "$PROD_BENCH_TAG"
+    )
+
+    echo ""
     echo "=========================================================="
     echo " Pipeline Complete."
-    echo " Final production configuration saved to:"
-    echo " $PROD_SERVICE"
+    echo " Production service config:   $PROD_SERVICE"
+    echo " Validation bench (Layer 4):  $PROD_BENCH_DIR/metrics.txt"
     echo "=========================================================="
 } 2>&1 | tee "$PIPELINE_LOG"
