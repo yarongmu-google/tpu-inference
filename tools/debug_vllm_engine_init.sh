@@ -52,6 +52,14 @@ MAX_NUM_SEQS="${MAX_NUM_SEQS:-1000}"
 MODEL="${MODEL:-meta-llama/Meta-Llama-3-8B-Instruct}"
 TIMEOUT_S="${TIMEOUT_S:-240}"
 PROD_ENV="${PROD_ENV:-tmp/log/prod_env_prefill_heavy.sh}"
+# gpu_memory_utilization is the fraction of HBM vllm reserves for
+# weights+KV cache. The remaining (1-util) is headroom for XLA compile
+# scratch and other runtime allocations. vllm's TPU default is ~0.92
+# (94.75 GiB total -> 87.17 GiB cap), leaving 7.58 GiB headroom — not
+# enough for the q_len=262144 bucket's 9.02 GiB HLO temp. 0.9 leaves
+# ~9.5 GiB headroom (just fits 9.02 with ~0.5 GiB margin); lower if
+# probing even larger MNB. Override:  GPU_MEM_UTIL=0.85 tools/...
+GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.9}"
 
 STAMP="$(date +%Y%m%d_%H%M%S)"
 # In-repo path so the final auto-commit step can stage it. The repo's
@@ -76,6 +84,7 @@ echo "MNB:             $MNB"
 echo "MAX_MODEL_LEN:   $MAX_MODEL_LEN"
 echo "MAX_NUM_SEQS:    $MAX_NUM_SEQS"
 echo "MODEL:           $MODEL"
+echo "GPU_MEM_UTIL:    $GPU_MEM_UTIL"
 echo "TIMEOUT_S:       $TIMEOUT_S"
 echo "OUT_DIR:         $OUT_DIR"
 echo
@@ -104,6 +113,7 @@ vllm serve "$MODEL" \
     --max-num-batched-tokens "$MNB" \
     --max-model-len "$MAX_MODEL_LEN" \
     --tensor-parallel-size 1 \
+    --gpu-memory-utilization "$GPU_MEM_UTIL" \
     > "$LOG" 2>&1 &
 VLLM_PID=$!
 echo "vllm PID: $VLLM_PID"
@@ -165,6 +175,7 @@ VLLM_COMMIT=$(python3 -c "import vllm, os; print(open(os.path.join(os.path.dirna
     echo "max_model_len=$MAX_MODEL_LEN"
     echo "max_num_seqs=$MAX_NUM_SEQS"
     echo "model=$MODEL"
+    echo "gpu_memory_utilization=$GPU_MEM_UTIL"
     echo "timeout_s=$TIMEOUT_S"
     echo "prod_env=$PROD_ENV"
     echo "outcome=$OUTCOME"
@@ -181,7 +192,10 @@ VLLM_COMMIT=$(python3 -c "import vllm, os; print(open(os.path.join(os.path.dirna
              RPA_D_BLOCK_SIZES RPA_M_BLOCK_SIZES RPA_KERNEL_K; do
         # Indirect expansion: "${!v}" → the value of the var named in v.
         eval "val=\${$v:-}"
-        [ -n "$val" ] && echo "${v,,}=$val"
+        # Lowercase via `tr` rather than `${v,,}` (bash 4+); the TPU
+        # VM has bash 5 but local dry-run on macOS uses bash 3.2 and
+        # would silently fail this line, hiding bugs in the dry-run.
+        [ -n "$val" ] && echo "$(echo "$v" | tr 'A-Z' 'a-z')=$val"
     done
 } > "$META"
 
