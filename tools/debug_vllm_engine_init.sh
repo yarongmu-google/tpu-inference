@@ -60,6 +60,18 @@ PROD_ENV="${PROD_ENV:-tmp/log/prod_env_prefill_heavy.sh}"
 # ~9.5 GiB headroom (just fits 9.02 with ~0.5 GiB margin); lower if
 # probing even larger MNB. Override:  GPU_MEM_UTIL=0.85 tools/...
 GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.9}"
+# When SKIP_BUCKET_AUTOGEN=1, tpu_inference's runner skips its default
+# bucket auto-generation (16, 32, 64, ..., MNB) and uses ONLY the
+# buckets passed via vllm's --additional-config compilation_sizes.
+# Useful for fixed-shape benchmarks where the auto-buckets are pure
+# waste (compile time + persistent compiled-program HBM).
+# Implemented in tpu_inference/runner/tpu_runner.py + tpu_inference/envs.py.
+SKIP_BUCKET_AUTOGEN="${SKIP_BUCKET_AUTOGEN:-0}"
+# COMPILATION_SIZES: comma-separated bucket sizes vllm pre-compiles
+# when SKIP_BUCKET_AUTOGEN=1. Defaults to just MNB (the workload's
+# only shape). Override for multi-bucket testing, e.g.
+# COMPILATION_SIZES=131072,262144 to compile both sides of a transition.
+COMPILATION_SIZES="${COMPILATION_SIZES:-$MNB}"
 
 STAMP="$(date +%Y%m%d_%H%M%S)"
 # In-repo path so the final auto-commit step can stage it. The repo's
@@ -80,13 +92,17 @@ SCRIPT_LOG="$OUT_DIR/script.log"
 exec > >(tee -a "$SCRIPT_LOG") 2>&1
 
 echo "=== vllm engine init debug ==="
-echo "MNB:             $MNB"
-echo "MAX_MODEL_LEN:   $MAX_MODEL_LEN"
-echo "MAX_NUM_SEQS:    $MAX_NUM_SEQS"
-echo "MODEL:           $MODEL"
-echo "GPU_MEM_UTIL:    $GPU_MEM_UTIL"
-echo "TIMEOUT_S:       $TIMEOUT_S"
-echo "OUT_DIR:         $OUT_DIR"
+echo "MNB:                  $MNB"
+echo "MAX_MODEL_LEN:        $MAX_MODEL_LEN"
+echo "MAX_NUM_SEQS:         $MAX_NUM_SEQS"
+echo "MODEL:                $MODEL"
+echo "GPU_MEM_UTIL:         $GPU_MEM_UTIL"
+echo "SKIP_BUCKET_AUTOGEN:  $SKIP_BUCKET_AUTOGEN"
+if [ "$SKIP_BUCKET_AUTOGEN" = "1" ]; then
+    echo "COMPILATION_SIZES:    $COMPILATION_SIZES"
+fi
+echo "TIMEOUT_S:            $TIMEOUT_S"
+echo "OUT_DIR:              $OUT_DIR"
 echo
 
 # Source the prod env first (sets kernel block sizes etc.), THEN
@@ -106,6 +122,19 @@ export MAX_NUM_BATCHED_TOKENS="$MNB"
 # we want to isolate the MNB cap, not stack two unknowns.
 export LONG_PREFILL_TOKEN_THRESHOLD="$MNB"
 
+# Wire the fixed-workload bucket-skip if requested.
+# - Export SKIP_BUCKET_AUTOGEN so the vllm child + the EngineCore
+#   grandchild inherit it (tpu_inference.envs reads os.environ).
+# - Build the --additional-config JSON only when we actually want to
+#   pin compilation_sizes; otherwise vllm uses its defaults and the
+#   tpu_inference auto-bucket path runs as before.
+EXTRA_VLLM_ARGS=()
+export SKIP_BUCKET_AUTOGEN
+if [ "$SKIP_BUCKET_AUTOGEN" = "1" ]; then
+    EXTRA_VLLM_ARGS+=(--additional-config \
+        "{\"compilation_sizes\":[$COMPILATION_SIZES]}")
+fi
+
 echo "=== Launching vllm serve ==="
 echo "(full stdout+stderr -> $LOG)"
 vllm serve "$MODEL" \
@@ -114,6 +143,7 @@ vllm serve "$MODEL" \
     --max-model-len "$MAX_MODEL_LEN" \
     --tensor-parallel-size 1 \
     --gpu-memory-utilization "$GPU_MEM_UTIL" \
+    "${EXTRA_VLLM_ARGS[@]+"${EXTRA_VLLM_ARGS[@]}"}" \
     > "$LOG" 2>&1 &
 VLLM_PID=$!
 echo "vllm PID: $VLLM_PID"
@@ -176,6 +206,10 @@ VLLM_COMMIT=$(python3 -c "import vllm, os; print(open(os.path.join(os.path.dirna
     echo "max_num_seqs=$MAX_NUM_SEQS"
     echo "model=$MODEL"
     echo "gpu_memory_utilization=$GPU_MEM_UTIL"
+    echo "skip_bucket_autogen=$SKIP_BUCKET_AUTOGEN"
+    if [ "$SKIP_BUCKET_AUTOGEN" = "1" ]; then
+        echo "compilation_sizes=$COMPILATION_SIZES"
+    fi
     echo "timeout_s=$TIMEOUT_S"
     echo "prod_env=$PROD_ENV"
     echo "outcome=$OUTCOME"
