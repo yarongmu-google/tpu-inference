@@ -393,17 +393,44 @@ VMEM-tile tunables that the tuner sweeps.
        in Q were mathematically valid, it wouldn't reduce MXU
        work. Closing this question so we don't relitigate.
 
-  - **TODO (v2): per-segment K-tile matmul splits.** SL's MXU
-    efficiency at q_len=16 is ~4.17% (§1.1) — far below ideal.
-    The waste comes from cross-segment Q×K MACs that compute
-    cells the block-diagonal mask zeros. *Idea*: split the
-    `(bq_csz × GQA, bkv_csz)` matmul into N per-segment matmuls,
-    each `(seg_q × GQA, seg_kv)`. Fire only the diagonal block
-    launches; skip cross-segment tiles entirely. Trade-off: more
-    MXU launches per iter (cost: per-launch overhead), but each
-    launch carries higher useful-work density. Crossover depends
-    on segment-count and average seg size. Defer to v2 once v1
-    perf data is in.
+  - **(Closed) Per-segment K-tile matmul splits do not help.**
+    Investigated 2026-05-16 as a follow-on to the §1.1 ~4% MXU
+    efficiency finding. *Idea was*: replace the single
+    `(bq_csz × GQA, bkv_csz)` bundled matmul with N per-segment
+    matmuls of shape `(seg_q × GQA, seg_kv)` each — fire only the
+    diagonal block launches, "skip" the cross-segment waste.
+    Three failure modes:
+    1. **MXU fires full 256×256×K cycles per launch regardless
+       of tile size.** Issuing a smaller matmul doesn't issue a
+       smaller MXU launch — it issues a launch where most of the
+       systolic array's output cells are unused. For a segment of
+       16 tokens with GQA=4: per-segment matmul rows = 64; MXU
+       fires 256 rows worth of cycles, of which only 60 are real.
+       Per-launch useful-work density = 60/256 ≈ 23%, vs the
+       bundled case's ~6.25%. But:
+    2. **N small launches replace 4 big launches.** For 16 segments
+       packed into a 256-token bundle, the bundled case fires
+       4 MXU launches (bq_csz=256 → ceil(1024/256) = 4). The
+       per-segment alternative fires 16 launches (one per segment).
+       Net: same useful MAC count, more MXU launches with smaller
+       per-launch density. **Strictly worse** by a factor of N/4.
+    3. **LLO / Mosaic already handle the right abstraction at the
+       SA level** — `bq_csz` and `bkv_csz` ARE the lowering
+       interface to the systolic array; the compiler tiles them
+       across the available MXUs and pipelines K-depth. Reaching
+       below this level from the kernel author's side is
+       counter-productive because the SA-level decisions LLO
+       makes are already optimal for the (bq_csz, bkv_csz) shape
+       we give it. Issuing smaller matmuls is *under-using* the
+       LLO/SA contract, not bypassing it.
+
+    **Conclusion**: bundled-matmul + post-softmax-mask is the
+    right shape at the kernel-author level. The block-diagonal
+    waste (~96% of MXU cells at 16-token segments) is a property
+    of the masking pattern, not a kernel-implementation choice.
+    Reducing it would require **hardware sparsity support**, which
+    TPU MXU doesn't have. Closing this question so we don't
+    relitigate.
 
   - **(Carried forward)** Code-research items for L-base
     implementation (iter→segment mapping shape, mask term under
