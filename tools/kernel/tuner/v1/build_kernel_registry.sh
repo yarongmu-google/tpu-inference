@@ -72,5 +72,13 @@ RUNLOG_BASENAME="$(basename "$RUNLOG" .txt)"
 git add -f -- "$OUT" 2>/dev/null || true
 if ! git diff --cached --quiet -- "$OUT"; then
     git commit -m "[Kernel-Tune] Update $(basename "$OUT") from $RUNLOG_BASENAME" -- "$OUT" || true
-    git push origin "$BRANCH" || echo "WARN: push failed for $OUT" >&2
+    # Pull --rebase first to avoid race with concurrent pushes (design
+    # docs, sweep auto-commits, etc.). On conflict/network failure,
+    # abandon push but keep local commit; human syncs later.
+    if ! git pull --rebase origin "$BRANCH" >/dev/null 2>&1; then
+        git rebase --abort 2>/dev/null || true
+        echo "WARN: pull --rebase failed for $OUT; push abandoned, local commit kept. Sync manually later." >&2
+    elif ! git push origin "$BRANCH"; then
+        echo "WARN: push failed for $OUT despite successful pull; local commit kept. Sync manually later." >&2
+    fi
 fi

@@ -132,7 +132,17 @@ commit_progress() {
         return 0
     fi
     git commit -m "[Kernel-Tune] progress: $note"
-    git push origin "$BRANCH" || echo "WARN: push failed for $note" >&2
+    # Pull --rebase first so concurrent commits (sweep/bench/design-doc)
+    # on the same branch don't reject our push. Race is real: pipeline +
+    # human design-doc edits target the same branch. If rebase fails
+    # (conflict / network), abandon push; tune keeps running and
+    # accumulates local commits. Human syncs later when they next check.
+    if ! git pull --rebase origin "$BRANCH" >/dev/null 2>&1; then
+        git rebase --abort 2>/dev/null || true
+        echo "WARN: pull --rebase failed for $note; push abandoned, local commit kept. Sync manually later." >&2
+    elif ! git push origin "$BRANCH"; then
+        echo "WARN: push failed for $note despite successful pull; local commit kept. Sync manually later." >&2
+    fi
 }
 
 # Disable Python output buffering so the runlog updates in near-real-time.

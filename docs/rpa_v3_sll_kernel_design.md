@@ -100,9 +100,7 @@ cycles deep, regardless of the matmul's actual K. So:
 
 **Ratio**: MXU₁ fires `ceil(bkv_csz / 256)` × the MACs per (M, N)
 tile as MXU₀. At `bkv_csz = 256` → 1× (equal). At `bkv_csz = 512`
-→ 2×. At `bkv_csz = 2048` → 8×. *The earlier framing
-`bkv_csz / head_dim` was wrong — the MXU systolic K-depth is 256,
-not head_dim.*
+→ 2×. At `bkv_csz = 2048` → 8×.
 
 ---
 

@@ -945,8 +945,30 @@ def git_commit_paths(
                     return False
             else:
                 target_branch = branch
-            run_subprocess(["git", "push", remote, target_branch],
-                           check=True)
+            # Pull --rebase first to avoid race with concurrent pushes
+            # (other sweep auto-commits, tuner progress, design-doc
+            # edits). Race is real because the pipeline + human edits
+            # target the same branch. If rebase fails (conflict or
+            # network), abandon push gracefully: caller's commit stays
+            # local, sweep keeps running, human syncs later.
+            pull = run_subprocess(
+                ["git", "pull", "--rebase", remote, target_branch],
+                check=False)
+            if pull.returncode != 0:
+                # Rebase may have left repo mid-rebase; always try abort
+                # (no-op if not in rebase state).
+                run_subprocess(["git", "rebase", "--abort"], check=False)
+                print(f"git_commit_paths: pull --rebase failed; push "
+                      f"abandoned. Local commit kept. Sync manually later.",
+                      flush=True)
+                return False
+            push_proc = run_subprocess(
+                ["git", "push", remote, target_branch], check=False)
+            if push_proc.returncode != 0:
+                print(f"git_commit_paths: push failed after successful "
+                      f"pull. Local commit kept. Sync manually later.",
+                      flush=True)
+                return False
         return True
     except subprocess.CalledProcessError as e:
         print(f"git_commit_paths: subprocess failed: {e}", flush=True)

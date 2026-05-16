@@ -177,8 +177,18 @@ commit_logs() {
     _commit_path_only "$PIPELINE_LOG" \
         "[Pipeline] Update master orchestrator runlog for $WORKLOAD_BASENAME"
     if _should_autopush; then
-        git push origin "$(git rev-parse --abbrev-ref HEAD)" || \
-            echo "WARN: PIPELINE_AUTOPUSH=1 but push failed" >&2
+        local branch
+        branch="$(git rev-parse --abbrev-ref HEAD)"
+        # Pull --rebase first to avoid race with concurrent pushes
+        # (design-doc edits, sweep auto-commits, tune progress). On
+        # conflict / network failure, abandon push but keep local
+        # commits; human syncs later. The pipeline keeps running.
+        if ! git pull --rebase origin "$branch" >/dev/null 2>&1; then
+            git rebase --abort 2>/dev/null || true
+            echo "WARN: PIPELINE_AUTOPUSH=1 but pull --rebase failed; push abandoned, local commits kept. Sync manually later." >&2
+        elif ! git push origin "$branch"; then
+            echo "WARN: PIPELINE_AUTOPUSH=1; pull OK but push failed. Local commits kept. Sync manually later." >&2
+        fi
     fi
 }
 trap commit_logs EXIT
@@ -317,8 +327,65 @@ PYEOF
 
     echo ""
     echo "=========================================================="
-    echo " Pipeline Complete."
-    echo " Production service config:   $PROD_SERVICE"
-    echo " Validation bench (Layer 4):  $PROD_BENCH_DIR/metrics.txt"
+    echo " Pipeline Complete — Summary"
+    echo "=========================================================="
+
+    # Automated verification block. The pipeline log captures every
+    # output line, so this summary lands in tmp/log/pipeline_*.txt
+    # for after-the-fact review without needing the user to run any
+    # ls / cat / grep commands manually.
+
+    echo ""
+    echo "[Layer 1.5] production.kernel:"
+    if [ -f "$PROD_KERNEL" ]; then
+        ls -la "$PROD_KERNEL"
+        python3 -c "
+import json
+with open('$PROD_KERNEL') as f:
+    d = json.load(f)
+print('  last_updated_at:', d.get('metadata', {}).get('last_updated_at', '?'))
+results = d.get('results', {})
+for case, entries in results.items():
+    print(f'  {case}: {len(entries)} tuned entries')
+" 2>/dev/null || echo "  (failed to parse)"
+    else
+        echo "  MISSING: $PROD_KERNEL — Layer 1.5 did not complete"
+    fi
+
+    echo ""
+    echo "[Layer 3] production.service:"
+    if [ -f "$PROD_SERVICE" ]; then
+        ls -la "$PROD_SERVICE"
+        python3 -c "
+import json
+with open('$PROD_SERVICE') as f:
+    d = json.load(f)
+for k in d.get('best_configs_by_workload', {}):
+    print('  workload_key:', k)
+" 2>/dev/null || echo "  (failed to parse)"
+    else
+        echo "  MISSING: $PROD_SERVICE — Layer 3 did not complete"
+    fi
+
+    echo ""
+    echo "[Layer 4] validation bench at $PROD_BENCH_DIR:"
+    if [ -f "$PROD_BENCH_DIR/metrics.txt" ]; then
+        ls -la "$PROD_BENCH_DIR/metrics.txt" "$PROD_BENCH_DIR/meta.txt" 2>/dev/null
+        echo "  --- metrics.txt ---"
+        sed 's/^/    /' "$PROD_BENCH_DIR/metrics.txt"
+    else
+        echo "  MISSING: $PROD_BENCH_DIR/metrics.txt — Layer 4 did not complete"
+    fi
+
+    echo ""
+    echo "[Git] Recent commits on $(git rev-parse --abbrev-ref HEAD):"
+    git log --oneline -10
+    echo ""
+    echo "[Git] Local vs origin status:"
+    git status --short --branch | head -5
+
+    echo ""
+    echo "=========================================================="
+    echo " End of summary. Production service: $PROD_SERVICE"
     echo "=========================================================="
 } 2>&1 | tee "$PIPELINE_LOG"
