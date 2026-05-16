@@ -918,8 +918,30 @@ def git_commit_paths(
         print("git_commit_paths: no paths to commit", flush=True)
         return False
     try:
-        run_subprocess(["git", "add", "--", *(str(p) for p in paths)],
-                       check=True)
+        # Filter out gitignored paths before `git add`. Without this,
+        # passing a gitignored path (e.g. the sweep runlog
+        # `tmp/log/sweep_*.txt`) causes `git add` to refuse with
+        # non-zero exit, killing the whole auto-commit run and
+        # spamming WARNs every per-combo fire. `git check-ignore`
+        # exits 0 when ALL listed paths are ignored, 1 when none, and
+        # otherwise mixes — we always want to keep the non-ignored
+        # ones either way.
+        check = run_subprocess(
+            ["git", "check-ignore", "--", *(str(p) for p in paths)],
+            check=False, capture_output=True, text=True)
+        ignored = set()
+        if check.stdout:
+            ignored = set(check.stdout.strip().splitlines())
+        kept = [str(p) for p in paths if str(p) not in ignored]
+        if ignored:
+            print(f"git_commit_paths: skipping {len(ignored)} "
+                  f"gitignored path(s): {sorted(ignored)[:3]}"
+                  f"{'...' if len(ignored) > 3 else ''}", flush=True)
+        if not kept:
+            print("git_commit_paths: all paths were gitignored; "
+                  "nothing to commit", flush=True)
+            return False
+        run_subprocess(["git", "add", "--", *kept], check=True)
         # `--quiet` returns 1 when there ARE staged changes (i.e., something
         # to commit), 0 when there are NONE. So returncode==0 means nothing
         # staged: nothing to commit -> non-fatal no-op.
@@ -1104,8 +1126,22 @@ def main(argv: list[str] | None = None) -> int:
 
     results = run_sweep(args.spec, base_dir=args.base_dir,
                         script_path=args.script, on_result=on_result)
-    n_fail = sum(1 for r in results if r.status is RunStatus.FAILED)
-    return 1 if n_fail else 0
+    n_success = sum(1 for r in results if r.status is RunStatus.SUCCESS)
+    n_fail = len(results) - n_success
+    if n_fail:
+        print(
+            f"WARN: sweep finished with {n_fail}/{len(results)} combos "
+            f"failed, {n_success} succeeded.",
+            file=sys.stderr,
+        )
+    # Exit 0 if at least one combo succeeded so downstream pipeline
+    # stages (Layer 3 build_service_registry, Layer 4 validation
+    # bench) can still run with the surviving results. Only exit 1
+    # if the entire sweep produced nothing usable. Previous behavior
+    # (exit 1 on ANY failure) caused `set -e` in run_pipeline.sh to
+    # kill the whole pipeline whenever one combo crashed, even if
+    # 95% of combos succeeded — defeating the layered design.
+    return 0 if n_success > 0 else 1
 
 
 if __name__ == "__main__":
