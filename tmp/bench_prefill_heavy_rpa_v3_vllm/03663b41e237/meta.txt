@@ -1,8 +1,8 @@
 case_file=/home/ymu_google_com/tpu-inference/tools/benchmark/cases/v7x/llama3_8b/prefill_heavy.workload
 case_name=prefill_heavy
 model=meta-llama/Meta-Llama-3-8B-Instruct
-max_num_seqs=256
-max_num_batched_tokens=32768
+max_num_seqs=1000
+max_num_batched_tokens=1081344
 tensor_parallel_size=1
 max_model_len=8192
 dataset=sonnet
@@ -18,4 +18,4 @@ rpa_m_block_sizes=128,512,128,256
 git_commit=8a1ff2715f775dd67b65dd8c486d6090db0e90d9
 git_branch=sll
 vllm_commit=c51df43005726a09c6eb7348e8c1b00501c70a8e
-timestamp=20260516_112355
+timestamp=20260516_112638

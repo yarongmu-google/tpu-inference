@@ -20,3 +20,4 @@ git_branch=rpa3_2
 vllm_commit=c51df43005726a09c6eb7348e8c1b00501c70a8e
 timestamp=20260510_152818
 bench_duration_seconds=236
+bench_duration_seconds=237
