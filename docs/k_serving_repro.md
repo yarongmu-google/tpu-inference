@@ -824,3 +824,103 @@ not needed for the first-pass throughput-hypothesis check.
 - **Multi-stream / overlapped HBM transfer**: we already get this for
   free from XLA scheduling and the kernel's internal pipelining; not
   a real lever.
+
+## TODO — vLLM engine ceiling vs TPU/kernel ceiling
+
+**Headline observation (2026-05-16, sll branch pipeline run)**: the
+TPU kernel layer successfully *tunes* configurations that the vLLM
+engine layer *refuses to initialize*. This may be a meaningful perf
+ceiling worth lifting.
+
+### What we observed
+
+Full pipeline sweep of `prefill_heavy.workload` (Llama 8B v7x-1)
+with `MAX_NUM_BATCHED_TOKENS ∈ [8192, 16384, 32768, 65536, 131072,
+262144, 524288, 1081344]` and `MAX_NUM_SEQS ∈ [128, 256, 1000]` —
+24 combos total.
+
+- **Layer 1 (kernel tune)**: *successfully tuned for the full range*,
+  including the largest combos. Produced valid kernel-level configs
+  for every `(MAX_NUM_BATCHED_TOKENS, MAX_NUM_SEQS)` point. The
+  kernel-side has no objection to MNB=1,081,344 with MNS=1000.
+- **Layer 2 (vLLM sweep)**: **8/24 combos succeeded; 16/24 failed**
+  with `RuntimeError: Engine core initialization failed` deep in
+  `vllm/v1/engine/utils.py:1178`. All failures clustered at the
+  larger `MAX_NUM_BATCHED_TOKENS` end of the range. The smaller
+  configs all benched cleanly.
+
+Failure log tail
+(`tmp/bench_prefill_heavy_rpa_v3_vllm/03663b41e237/vllm.log`):
+
+```
+RuntimeError: Engine core initialization failed.
+See root cause above. Failed core proc(s): {}
+```
+
+The actual root cause is upstream in vLLM's engine-launch code
+path — not surfaced to the bench layer as a clean exception, just
+"core init failed".
+
+### Why this might be a major perf win
+
+**The TPU/kernel layer is the underlying physical capability** — if
+the tuner can find a viable kernel config at MNB=1,081,344, that's
+the hardware saying it can support that workload size. **vLLM is
+the artificial ceiling**: its engine-init code path is refusing
+configurations that the hardware itself can handle.
+
+If vLLM's init constraint is something fixable (a hardcoded limit,
+an over-conservative memory allocator, an off-by-one in
+KV-cache-size validation, etc.), lifting it could unlock a much
+wider operating regime — bigger batches, longer effective context,
+higher throughput per chip — *without any kernel work*. The
+kernel is already there.
+
+This is asymmetric leverage: a small vLLM-side fix could deliver
+disproportionate perf gains, because the kernel-side capacity
+exists but is unreachable through the current service layer.
+
+### What to investigate
+
+1. **Reproduce minimally on the TPU VM.** Take the smallest failing
+   config (likely the first MNB step that fails) and start vLLM with
+   exactly those env vars, no sweep, no bench. Capture the full vLLM
+   stderr — the bench wrapper only shows the tail.
+
+2. **Find the actual error.** "Engine core initialization failed"
+   is the outer wrapper. The real failure is one of:
+   - KV-cache size validation (vLLM computes `num_blocks` from MNB
+     × num_layers × heads × head_dim × dtype and refuses if it
+     exceeds some budget)
+   - Activation budget (vLLM has its own pre-flight calc for
+     scratch tensors)
+   - Some hardcoded sanity check (e.g., `assert
+     max_num_batched_tokens <= some_cap`)
+   - TPU/XLA compilation failure (less likely — would surface
+     differently)
+
+3. **Compare what the kernel tuner found feasible vs what vLLM
+   rejects.** If the kernel tuner's `_feasibility_issues` /
+   VMEM/SMEM estimators say "this config fits the hardware" but
+   vLLM init says "no", the two are using different models of the
+   constraint. Reconcile them.
+
+4. **If it's a vLLM-side guard**: file an upstream issue / patch.
+   We've been tracking vLLM's LKG version; this might already be
+   fixed in a newer release.
+
+### Why this is in the perf doc rather than the SL design doc
+
+The vLLM ceiling affects ALL kernels (M, L, SL when built),
+not just SL. It's a service-layer issue surfaced during SL design
+work but applicable to the whole stack. K-serving's existing 4.90
+req/s peak on this workload is already capped by what vLLM lets
+us push through — lifting that cap is independent of any kernel
+direction we pick.
+
+### Provenance
+
+Surfaced during the SL design + retune pipeline on sll branch,
+2026-05-16. Full failure log:
+`tmp/log/pipeline_full_*.out` on the TPU VM (committed as
+"Error log." commits ae56568d + 59c55f0f on origin/sll).
