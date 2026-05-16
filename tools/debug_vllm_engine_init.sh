@@ -35,6 +35,11 @@
 #   tmp/debug_vllm_engine_init/mnb_<MNB>_<stamp>/vllm.log     — full vllm stdout+stderr
 #   tmp/debug_vllm_engine_init/mnb_<MNB>_<stamp>/failure.txt  — extracted Traceback
 #   tmp/debug_vllm_engine_init/mnb_<MNB>_<stamp>/meta.txt     — params + outcome + git/vllm SHAs
+#   tmp/debug_vllm_engine_init/mnb_<MNB>_<stamp>/script.log   — this script's own
+#                                                               stdout+stderr (every echo,
+#                                                               source error, missing-cmd
+#                                                               crash); always present even
+#                                                               when vllm.log is missing
 
 # NOT `set -e`: we EXPECT vllm to fail; -e would abort right after
 # the failure instead of letting us extract it.
@@ -56,6 +61,15 @@ mkdir -p "$OUT_DIR"
 LOG="$OUT_DIR/vllm.log"
 FAIL="$OUT_DIR/failure.txt"
 META="$OUT_DIR/meta.txt"
+SCRIPT_LOG="$OUT_DIR/script.log"
+
+# Redirect this script's own stdout+stderr through tee so script.log
+# captures every echo, source-time failure, missing-cmd error, etc.
+# If vllm itself never gets launched (e.g., `source $PROD_ENV` crashes
+# under `set -u`), vllm.log will be missing — but script.log will still
+# have the actual cause. The user also sees output live in the terminal
+# because of `tee`, not a bare `>`.
+exec > >(tee -a "$SCRIPT_LOG") 2>&1
 
 echo "=== vllm engine init debug ==="
 echo "MNB:             $MNB"
@@ -193,9 +207,11 @@ VLLM_COMMIT=$(python3 -c "import vllm, os; print(open(os.path.join(os.path.dirna
 # reason (e.g., not in a repo, no .git dir, hooks failing).
 echo "=== Local commit (no push) ==="
 if git rev-parse --git-dir >/dev/null 2>&1; then
-    git add "$FAIL" "$META" "$LOG" 2>/dev/null || true
+    # Include script.log so we always have the script's own diagnostic
+    # trail in the commit — even on runs where vllm.log didn't generate.
+    git add "$FAIL" "$META" "$LOG" "$SCRIPT_LOG" 2>/dev/null || true
     git commit -m "[Debug] vllm engine init: MNB=$MNB outcome=$OUTCOME stamp=$STAMP" \
-        -- "$FAIL" "$META" "$LOG" 2>/dev/null \
+        -- "$FAIL" "$META" "$LOG" "$SCRIPT_LOG" 2>/dev/null \
         && echo "Committed locally as $(git rev-parse --short HEAD)" \
         || echo "(commit skipped — nothing new to commit, or git refused)"
 else
@@ -206,4 +222,5 @@ echo
 echo "Full log:  $LOG"
 echo "Failure:   $FAIL"
 echo "Meta:      $META"
+echo "Script:    $SCRIPT_LOG"
 echo "Outcome:   $OUTCOME"
