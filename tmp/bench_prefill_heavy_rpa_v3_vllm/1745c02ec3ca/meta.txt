@@ -19,3 +19,4 @@ git_commit=59c55f0f60e5867772548250ac7345ccab200a24
 git_branch=sll
 vllm_commit=c51df43005726a09c6eb7348e8c1b00501c70a8e
 timestamp=20260516_113609
+bench_duration_seconds=230
