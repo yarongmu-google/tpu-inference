@@ -207,9 +207,14 @@ VLLM_COMMIT=$(python3 -c "import vllm, os; print(open(os.path.join(os.path.dirna
 # reason (e.g., not in a repo, no .git dir, hooks failing).
 echo "=== Local commit (no push) ==="
 if git rev-parse --git-dir >/dev/null 2>&1; then
-    # Include script.log so we always have the script's own diagnostic
-    # trail in the commit — even on runs where vllm.log didn't generate.
-    git add "$FAIL" "$META" "$LOG" "$SCRIPT_LOG" 2>/dev/null || true
+    # NOTE: -f is REQUIRED. The repo's top-level .gitignore has a
+    # global '*.log' rule, so without -f, `git add` silently skips
+    # vllm.log + script.log and the commit lands with only meta.txt
+    # + failure.txt. -f is safe here because the path list is
+    # narrow and explicit — no risk of sweeping in unrelated
+    # ignored files. The path-restricted `git commit -- <paths>`
+    # below provides the same guarantee at commit time.
+    git add -f "$FAIL" "$META" "$LOG" "$SCRIPT_LOG" 2>/dev/null || true
     git commit -m "[Debug] vllm engine init: MNB=$MNB outcome=$OUTCOME stamp=$STAMP" \
         -- "$FAIL" "$META" "$LOG" "$SCRIPT_LOG" 2>/dev/null \
         && echo "Committed locally as $(git rev-parse --short HEAD)" \
