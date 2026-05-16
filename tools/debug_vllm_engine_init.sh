@@ -28,9 +28,13 @@
 #   PROD_ENV=tmp/log/prod_env_prefill_heavy.sh   # sourced if exists,
 #                                                  so block sizes etc. apply
 #
-# Output (each run gets its own timestamped dir so runs don't clobber):
-#   /tmp/vllm_debug/mnb_<MNB>_<stamp>/vllm.log     — full vllm stdout+stderr
-#   /tmp/vllm_debug/mnb_<MNB>_<stamp>/failure.txt  — extracted Traceback
+# Output (each run gets its own timestamped dir so runs don't clobber).
+# Dir lives INSIDE the repo so the script can auto-commit the artifacts
+# locally (no push) — that way the failure mode of each bisection point
+# is preserved in git history for offline review.
+#   tmp/debug_vllm_engine_init/mnb_<MNB>_<stamp>/vllm.log     — full vllm stdout+stderr
+#   tmp/debug_vllm_engine_init/mnb_<MNB>_<stamp>/failure.txt  — extracted Traceback
+#   tmp/debug_vllm_engine_init/mnb_<MNB>_<stamp>/meta.txt     — params + outcome + git/vllm SHAs
 
 # NOT `set -e`: we EXPECT vllm to fail; -e would abort right after
 # the failure instead of letting us extract it.
@@ -44,10 +48,14 @@ TIMEOUT_S="${TIMEOUT_S:-240}"
 PROD_ENV="${PROD_ENV:-tmp/log/prod_env_prefill_heavy.sh}"
 
 STAMP="$(date +%Y%m%d_%H%M%S)"
-OUT_DIR="/tmp/vllm_debug/mnb_${MNB}_${STAMP}"
+# In-repo path so the final auto-commit step can stage it. The repo's
+# .gitignore for tmp/bench_*/**/vllm.log doesn't match tmp/debug_*/
+# so the full log is committable.
+OUT_DIR="tmp/debug_vllm_engine_init/mnb_${MNB}_${STAMP}"
 mkdir -p "$OUT_DIR"
 LOG="$OUT_DIR/vllm.log"
 FAIL="$OUT_DIR/failure.txt"
+META="$OUT_DIR/meta.txt"
 
 echo "=== vllm engine init debug ==="
 echo "MNB:             $MNB"
@@ -141,6 +149,61 @@ echo "=========================================="
 cat "$FAIL"
 echo "=========================================="
 echo
+
+# Write meta.txt: same shape as the sweep's per-combo meta.txt so any
+# future tooling that walks tmp/bench_*/**/meta.txt can also walk
+# tmp/debug_vllm_engine_init/**/meta.txt with the same parser.
+GIT_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "?")
+GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "?")
+# vllm commit: best-effort from the installed package; falls back to
+# `pip show` if the import path lookup fails. "?" if neither works.
+VLLM_COMMIT=$(python3 -c "import vllm, os; print(open(os.path.join(os.path.dirname(vllm.__file__), '..', 'commit.txt')).read().strip())" 2>/dev/null \
+    || python3 -c "import vllm; print(getattr(vllm, '__commit__', '?'))" 2>/dev/null \
+    || echo "?")
+{
+    echo "stamp=$STAMP"
+    echo "mnb=$MNB"
+    echo "max_model_len=$MAX_MODEL_LEN"
+    echo "max_num_seqs=$MAX_NUM_SEQS"
+    echo "model=$MODEL"
+    echo "timeout_s=$TIMEOUT_S"
+    echo "prod_env=$PROD_ENV"
+    echo "outcome=$OUTCOME"
+    echo "waited_s=$WAITED"
+    echo "git_branch=$GIT_BRANCH"
+    echo "git_commit=$GIT_COMMIT"
+    echo "vllm_commit=$VLLM_COMMIT"
+    echo "out_dir=$OUT_DIR"
+    # Replay any tpu_inference env vars that were active when the
+    # test ran (the script may have sourced them from PROD_ENV).
+    # Useful for re-running this exact configuration later.
+    for v in MAX_NUM_SEQS MAX_NUM_BATCHED_TOKENS MAX_MODEL_LEN BLOCK_SIZE \
+             LONG_PREFILL_TOKEN_THRESHOLD RPA_P_BLOCK_SIZES \
+             RPA_D_BLOCK_SIZES RPA_M_BLOCK_SIZES RPA_KERNEL_K; do
+        # Indirect expansion: "${!v}" → the value of the var named in v.
+        eval "val=\${$v:-}"
+        [ -n "$val" ] && echo "${v,,}=$val"
+    done
+} > "$META"
+
+# Auto-commit locally (no push). Path-restricted commit: only our
+# three files, even if the working tree has other staged or
+# unstaged changes from concurrent work. The `|| true` on each
+# step keeps the script exit code clean if git fails for some
+# reason (e.g., not in a repo, no .git dir, hooks failing).
+echo "=== Local commit (no push) ==="
+if git rev-parse --git-dir >/dev/null 2>&1; then
+    git add "$FAIL" "$META" "$LOG" 2>/dev/null || true
+    git commit -m "[Debug] vllm engine init: MNB=$MNB outcome=$OUTCOME stamp=$STAMP" \
+        -- "$FAIL" "$META" "$LOG" 2>/dev/null \
+        && echo "Committed locally as $(git rev-parse --short HEAD)" \
+        || echo "(commit skipped — nothing new to commit, or git refused)"
+else
+    echo "(not in a git repo — skipping auto-commit)"
+fi
+
+echo
 echo "Full log:  $LOG"
 echo "Failure:   $FAIL"
+echo "Meta:      $META"
 echo "Outcome:   $OUTCOME"
