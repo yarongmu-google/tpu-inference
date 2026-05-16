@@ -42,15 +42,15 @@ systolic cycles for those wasted positions.
 five nested loops, four step-sizes):
 
 ```python
-@pl.loop(0, num_bq)                                          # L0: Q-tile,     step = bq_sz
+@pl.loop(0, num_bq)                                          # L0: Q-VMEM,    step = bq_sz
 def compute_with_bq(bq_idx):
-    @pl.loop(start_bkv_idx, end_bkv_idx)                     # L1: KV-tile,    step = bkv_sz
+    @pl.loop(start_bkv_idx, end_bkv_idx)                     # L1: KV-VMEM,   step = bkv_sz
     def compute_with_bkv(bkv_idx):
         num_loops = cdiv(effective_bkv_sz, bkv_csz)          #     (# of bkv_csz chunks in this bkv_sz fetch)
-        @pl.loop(0, num_loops)                               # L2: KV sub-tile, step = bkv_csz (within bkv_sz)
+        @pl.loop(0, num_loops)                               # L2: KV-Vreg,   step = bkv_csz (within bkv_sz)
         def attention_loop(idx):
             bkv_start = idx * bkv_csz                        #     current bkv_csz chunk's offset
-            for bq_start in range(                           # L3: Q sub-tile, step = bq_csz (within bq_sz)
+            for bq_start in range(                           # L3: Q-Vreg,    step = bq_csz (within bq_sz)
                     0, actual_bq_sz, actual_bq_csz):
                 for kv_head_idx in range(                    # L4: KV head fan-out (serial, innermost)
                         actual_num_kv_heads):
@@ -67,16 +67,18 @@ def compute_with_bq(bq_idx):
 | Loop | Step | What it tiles |
 |---|---|---|
 | L0 outer Q  | `bq_sz`  | Q tokens DMA'd into VMEM per Q-pass through one iter |
-| L1 outer KV | `bkv_sz` | KV tokens DMA'd into VMEM per KV-pass through one Q-tile |
-| L2 inner KV | `bkv_csz` (≤ bkv_sz) | KV tokens processed per MXU compute call |
-| L3 inner Q  | `bq_csz` (≤ bq_sz)  | Q tokens processed per MXU compute call |
+| L1 outer KV | `bkv_sz` | KV tokens DMA'd into VMEM per KV-pass through one Q-VMEM |
+| L2 inner KV | `bkv_csz` (≤ bkv_sz) | KV tokens loaded into VRegs per MXU compute call |
+| L3 inner Q  | `bq_csz` (≤ bq_sz)  | Q tokens loaded into VRegs per MXU compute call |
 
-`*_sz` are the VMEM tile sizes (fetch into VMEM); `*_csz` are the
-compute sub-tile sizes (processed per matmul call). Per VMEM tile,
-the kernel does `sz / csz` compute sub-iterations — that's how
-DMA gets pipelined behind compute (while one sub-tile computes,
-the next is being prefetched). Inside L3 × L4, two matmuls fire
-per (bq_start, kv_head_idx): MXU₀ (Q @ K^T inside
+`*_sz` is the VMEM-resident tile (DMA destination from HBM);
+`*_csz` is the VReg-resident sub-tile (operand to the MXU). Per
+VMEM tile, the kernel does `sz / csz` VReg-load + compute
+sub-iterations — that's how DMA-to-VMEM gets pipelined behind
+MXU compute (while one VReg's worth of work is on the MXU, the
+next VReg-sized slice is loading from VMEM, and the next
+VMEM-sized slice is DMA-ing in from HBM). Inside L3 × L4, two
+matmuls fire per (bq_start, kv_head_idx): MXU₀ (Q @ K^T inside
 `flash_attention_step1_qk_softmax`) and MXU₁ (P @ V inside
 `flash_attention_step2_pv`).
 
