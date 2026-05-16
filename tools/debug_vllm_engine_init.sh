@@ -233,12 +233,26 @@ VLLM_COMMIT=$(python3 -c "import vllm, os; print(open(os.path.join(os.path.dirna
     done
 } > "$META"
 
-# Auto-commit locally (no push). Path-restricted commit: only our
-# three files, even if the working tree has other staged or
-# unstaged changes from concurrent work. The `|| true` on each
-# step keeps the script exit code clean if git fails for some
-# reason (e.g., not in a repo, no .git dir, hooks failing).
-echo "=== Local commit (no push) ==="
+# Print the run summary BEFORE the git commit. script.log is
+# captured by `tee -a`, but the commit step snapshots the file at
+# `git add` time — any output AFTER the add (commit hash, push
+# results) won't be in the committed script.log. By printing the
+# Full log: / Meta: / Outcome: lines BEFORE the commit, the
+# committed script.log captures the final summary; only the
+# commit's own diagnostic lines are lost, and those are
+# recoverable from outside (git log -1, origin/sll rev).
+echo
+echo "Full log:  $LOG"
+echo "Meta:      $META"
+echo "Script:    $SCRIPT_LOG"
+echo "Outcome:   $OUTCOME"
+echo
+
+# Auto-commit + push. Path-restricted commit: only our three files,
+# even if the working tree has other staged or unstaged changes
+# from concurrent work. The `|| true` on each step keeps the
+# script exit code clean if git fails (not in a repo, hooks, etc.).
+echo "=== Commit (NO_PUSH=1 to skip push at end) ==="
 if git rev-parse --git-dir >/dev/null 2>&1; then
     # NOTE: -f is REQUIRED. The repo's top-level .gitignore has a
     # global '*.log' rule, so without -f, `git add` silently skips
@@ -276,9 +290,3 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
 else
     echo "(not in a git repo — skipping auto-commit)"
 fi
-
-echo
-echo "Full log:  $LOG"
-echo "Meta:      $META"
-echo "Script:    $SCRIPT_LOG"
-echo "Outcome:   $OUTCOME"
