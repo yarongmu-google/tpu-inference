@@ -248,10 +248,31 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
     # The path-restricted `git commit -- <paths>` below provides
     # the same guarantee at commit time.
     git add -f "$META" "$LOG" "$SCRIPT_LOG" 2>/dev/null || true
-    git commit -m "[Debug] vllm engine init: MNB=$MNB outcome=$OUTCOME stamp=$STAMP" \
-        -- "$META" "$LOG" "$SCRIPT_LOG" 2>/dev/null \
-        && echo "Committed locally as $(git rev-parse --short HEAD)" \
-        || echo "(commit skipped — nothing new to commit, or git refused)"
+    if git commit -m "[Debug] vllm engine init: MNB=$MNB outcome=$OUTCOME stamp=$STAMP" \
+        -- "$META" "$LOG" "$SCRIPT_LOG" 2>/dev/null; then
+        echo "Committed locally as $(git rev-parse --short HEAD)"
+        # Auto-push (opt-out via NO_PUSH=1). Pull --rebase first
+        # because the push race has bitten this repo before; on
+        # conflict, abort the rebase and keep the local commit
+        # rather than crash. User syncs manually in that case.
+        if [ "${NO_PUSH:-0}" != "1" ]; then
+            echo "=== Pushing to origin (pull --rebase first) ==="
+            if git pull --rebase 2>&1; then
+                if git push 2>&1; then
+                    echo "Pushed OK."
+                else
+                    echo "WARN: push failed. Local commit kept; sync manually."
+                fi
+            else
+                echo "WARN: pull --rebase failed. Local commit kept; sync manually."
+                git rebase --abort 2>/dev/null || true
+            fi
+        else
+            echo "(NO_PUSH=1 — skipping push; commit is local only)"
+        fi
+    else
+        echo "(commit skipped — nothing new to commit, or git refused)"
+    fi
 else
     echo "(not in a git repo — skipping auto-commit)"
 fi
