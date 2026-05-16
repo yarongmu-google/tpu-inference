@@ -716,13 +716,30 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
             cache_dtype = self.dtype
         kv_cache_dtype = to_jax_dtype(cache_dtype)
         kv_packing = common_utils.get_dtype_packing(kv_cache_dtype)
-        self.num_tokens_paddings = runner_utils.get_token_paddings(
-            min_token_size=max(16, next_power_of_2(self.dp_size * kv_packing)),
-            max_token_size=scheduler_config.max_num_batched_tokens *
-            self.dp_size,
-            padding_gap=vllm_envs.VLLM_TPU_BUCKET_PADDING_GAP)
-        self.num_tokens_paddings = sorted(self.num_tokens_paddings +
-                                          additional_sizes)
+        if envs.SKIP_BUCKET_AUTOGEN:
+            # Fixed-workload mode: caller asserts the only bucket(s)
+            # they care about via additional_config.compilation_sizes.
+            # Skips vllm's defensive doubling-from-16 strategy, which
+            # is designed for unpredictable serving traffic and is pure
+            # waste on a fixed-shape benchmark. Saves compile time
+            # (each unused bucket is a separate XLA compile) and a few
+            # GB of persistent compiled-program HBM at large MNB.
+            if not additional_sizes:
+                raise ValueError(
+                    "SKIP_BUCKET_AUTOGEN=1 requires "
+                    "additional_config.compilation_sizes to be "
+                    "non-empty; otherwise there are no token buckets "
+                    "to pre-compile and the runner cannot dispatch.")
+            self.num_tokens_paddings = sorted(additional_sizes)
+        else:
+            self.num_tokens_paddings = runner_utils.get_token_paddings(
+                min_token_size=max(16, next_power_of_2(self.dp_size *
+                                                      kv_packing)),
+                max_token_size=scheduler_config.max_num_batched_tokens *
+                self.dp_size,
+                padding_gap=vllm_envs.VLLM_TPU_BUCKET_PADDING_GAP)
+            self.num_tokens_paddings = sorted(self.num_tokens_paddings +
+                                              additional_sizes)
         self.num_tokens_paddings_per_dp = [
             padding // self.dp_size for padding in self.num_tokens_paddings
         ]

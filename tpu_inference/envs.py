@@ -72,6 +72,17 @@ if TYPE_CHECKING:
     # the RPA_*_BLOCK_SIZES env vars. Only consulted when
     # RPA_KERNEL_K is also set.
     RPA_MAX_NUM_SUBSEQS: int | None = None
+    # Benchmark / fixed-workload mode: skip the auto-generated
+    # token-bucket list in tpu_runner.py and use ONLY the buckets
+    # listed in additional_config.compilation_sizes. vLLMs default
+    # bucket strategy (double from 16 up to MNB) is designed for
+    # unpredictable serving traffic; for a fixed-shape benchmark
+    # every request hits the same shape and the 14+ extra buckets
+    # are pure waste (compile time + persistent compiled-program
+    # HBM). Set this in concert with additional_config.compilation_sizes;
+    # an empty compilation_sizes with this flag set is a fail-loud
+    # error (otherwise no buckets would be pre-compiled at all).
+    SKIP_BUCKET_AUTOGEN: bool = False
 
 
 def env_with_choices(
@@ -246,6 +257,12 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Specify dtype for quantized linear weights
     "REQUANTIZE_WEIGHT_DTYPE":
     lambda: os.getenv("REQUANTIZE_WEIGHT_DTYPE", "float8_e4m3fn"),
+    # Benchmark / fixed-workload mode: skip vLLMs default bucket
+    # auto-generation in tpu_runner.py and use ONLY the buckets
+    # given in additional_config.compilation_sizes. See the
+    # TYPE_CHECKING declaration above for the full rationale.
+    "SKIP_BUCKET_AUTOGEN":
+    env_bool("SKIP_BUCKET_AUTOGEN", default=False),
     # Specify dtype for quantized MoE weights
     "MOE_REQUANTIZE_WEIGHT_DTYPE":
     lambda: os.getenv("MOE_REQUANTIZE_WEIGHT_DTYPE", "float8_e4m3fn"),
