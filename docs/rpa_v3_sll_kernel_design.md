@@ -50,30 +50,34 @@ def compute_with_bq(bq_idx):
             for bq_start in range(0, actual_bq_sz, actual_bq_csz):  # Q sub-tile
                 for kv_head_idx in range(actual_num_kv_heads):       # KV head
                     cur_p, cur_v, cur_exp_m_diff = \
-                        flash_attention_step1_qk_softmax(...)        # MXU₁
+                        flash_attention_step1_qk_softmax(...)        # MXU₀ (Q @ K^T)
                     if prev_lm_slice is not None:
-                        flash_attention_step2_pv(...)                # MXU₂
+                        flash_attention_step2_pv(...)                # MXU₁ (P @ V)
                                                                      # (prev kv head,
                                                                      #  pipelined with
-                                                                     #  current step1)
-            flash_attention_step2_pv(...)              # final step2 outside kv-head loop
+                                                                     #  current MXU₀)
+            flash_attention_step2_pv(...)              # final MXU₁ outside kv-head loop
 ```
 
-Step1 and step2 are pipelined: step2 for the *previous* kv head
-runs concurrently with step1 for the *current* kv head
+`flash_attention_step1_qk_softmax` and `flash_attention_step2_pv`
+are pipelined: the second matmul for the *previous* kv head runs
+concurrently with the first matmul for the *current* kv head
 (`kernel.py:1399-1403`).
 
-**The two MXU matmuls:**
+**The two MXU matmuls** (labels 0-indexed in this doc; the code
+function names remain `step1_qk_softmax` and `step2_pv`):
 
-- **MXU₁** (`kernel.py:776`, inside step1): `s = q @ k.T`
-- **MXU₂** (`kernel.py:848`, inside step2): `pv = p @ v`
+- **MXU₀** — `s = q @ k.T` at `kernel.py:776`, inside
+  `flash_attention_step1_qk_softmax`
+- **MXU₁** — `pv = p @ v` at `kernel.py:848`, inside
+  `flash_attention_step2_pv`
 
 **Per-kv-head matmul shapes** (one trip through the innermost loop):
 
 ```
               M (rows)              K (contract)      N (cols)
-MXU₁ Q @ K^T: bq_csz × GQA    @    head_dim     →    bkv_csz
-MXU₂ P @ V:   bq_csz × GQA    @    bkv_csz      →    head_dim
+MXU₀ Q @ K^T: bq_csz × GQA    @    head_dim     →    bkv_csz
+MXU₁ P @ V:   bq_csz × GQA    @    bkv_csz      →    head_dim
               ^^^^^^^^^^^^         ^^^^^^^^          ^^^^^^^^
               same in both         differs:          differs:
                                    head_dim (128)    bkv_csz (256+)
@@ -83,10 +87,22 @@ MXU₂ P @ V:   bq_csz × GQA    @    bkv_csz      →    head_dim
 where `GQA = num_q_heads_per_kv_head`. For **Llama 3.1 8B**: 32
 Q-heads, 8 KV-heads → GQA = 4, head_dim = 128.
 
-**Important**: MXU₂'s contracting K = `bkv_csz` (tuned, typically 256+),
-while MXU₁'s K = `head_dim` (fixed 128). So MXU₂ fires roughly
-`bkv_csz / head_dim` = 2× the MACs per launch as MXU₁. This
-matters in the totals below.
+**Important — the MXU's per-launch K-depth is 256, fixed.** Both
+MXUs fire the same systolic-array cycles per (M, N) tile: 256
+cycles deep, regardless of the matmul's actual K. So:
+
+  - MXU₀ K = `head_dim` ≤ 256: fits in one K-launch per (M, N)
+    tile, **K-padded** (half-utilized in the K direction when
+    head_dim=128).
+  - MXU₁ K = `bkv_csz`: if ≤ 256, fits in one K-launch
+    (K-padded if < 256); if > 256, needs `ceil(bkv_csz / 256)`
+    K-launches per (M, N) tile.
+
+**Ratio**: MXU₁ fires `ceil(bkv_csz / 256)` × the MACs per (M, N)
+tile as MXU₀. At `bkv_csz = 256` → 1× (equal). At `bkv_csz = 512`
+→ 2×. At `bkv_csz = 2048` → 8×. *The earlier framing
+`bkv_csz / head_dim` was wrong — the MXU systolic K-depth is 256,
+not head_dim.*
 
 ---
 
@@ -99,36 +115,40 @@ Loop counts at this iter:
 - `num_loops = cdiv(16, 256) = 1` (one KV sub-tile)
 - `bq_start` range: `[0]` (one Q sub-tile)
 - `kv_head_idx` loop: 8 (one matmul per KV head)
-- → **8 step1 + 8 step2 calls per iter**
+- → **8 MXU₀ + 8 MXU₁ matmul calls per iter**
 
-Each step1 matmul: `(128 × 4 = 512) @ (128, 256) → (512, 256)`.
-- MXU launches: `ceil(512/256) × ceil(256/256) = 2 × 1 = 2 per kv head`
-- MACs fired per launch: `256 × 256 × 128 = 8,388,608` (K = head_dim)
-- MACs fired per kv-head step1: `2 × 8,388,608 = 16,777,216`
+Each MXU₀ matmul: `(128 × 4 = 512) @ (128, 256) → (512, 256)`.
+- (M, N) tiles: `ceil(512/256) × ceil(256/256) = 2 × 1 = 2 per kv head`
+- MACs fired per tile: `256 × 256 × 256 = 16,777,216`
+  (MXU K-depth = 256; head_dim=128 is K-padded to 256)
+- MACs fired per kv-head MXU₀: `2 × 16,777,216 = 33,554,432`
 
-Each step2 matmul: `(512, 256) @ (256, 128) → (512, 128)`.
-- MXU launches: `ceil(512/256) × ceil(128/256) = 2 × 1 = 2 per kv head`
-- MACs fired per launch: `256 × 256 × 256 = 16,777,216` (K = bkv_csz)
-- MACs fired per kv-head step2: `2 × 16,777,216 = 33,554,432`
+Each MXU₁ matmul: `(512, 256) @ (256, 128) → (512, 128)`.
+- (M, N) tiles: `ceil(512/256) × ceil(128/256) = 2 × 1 = 2 per kv head`
+- MACs fired per tile: `256 × 256 × 256 = 16,777,216` (K = bkv_csz = 256 exactly)
+- MACs fired per kv-head MXU₁: `2 × 16,777,216 = 33,554,432`
 
 Per-iter totals (× 8 kv heads):
-- **MXU₁ fired**: `8 × 16,777,216 = 134,217,728`
-- **MXU₂ fired**: `8 × 33,554,432 = 268,435,456`
-- **Total fired**: `402,653,184` MACs
+- **MXU₀ fired**: `8 × 33,554,432 = 268,435,456`
+- **MXU₁ fired**: `8 × 33,554,432 = 268,435,456`
+- **Total fired**: `536,870,912` MACs
+
+(MXU₀ and MXU₁ fire equal MACs at `bkv_csz = 256` because the
+systolic K-depth is 256 either way — MXU₀'s K=128 gets padded.)
 
 Useful work per iter:
 - Useful Q rows: `q_len × GQA = 16 × 4 = 64` (of 512 padded)
 - Useful K cols / depth: `kv_len = 16` (of 256 padded)
-- MXU₁ useful MACs per kv head: `(useful_q x useful_k) × head_dim
+- MXU₀ useful MACs per kv head: `(useful_q x useful_k) × head_dim
   = (64 × 16) × 128 = 131,072`
-- MXU₂ useful MACs per kv head: `(useful_q x head_dim) × useful_K
+- MXU₁ useful MACs per kv head: `(useful_q x head_dim) × useful_K
   = (64 × 128) × 16 = 131,072`
 - Total useful per iter: `2 × 131,072 × 8 = 2,097,152` MACs
 
-**Per-iter MXU efficiency: `2,097,152 / 402,653,184 ≈ 0.52%`**.
+**Per-iter MXU efficiency: `2,097,152 / 536,870,912 ≈ 0.39%`**.
 
 For **16 short prefills** (each its own iter under MIXED):
-`16 × 402.7 M = 6.44 B MACs fired` to do `16 × 2.10 M = 33.5 M
+`16 × 536.9 M = 8.59 B MACs fired` to do `16 × 2.10 M = 33.5 M
 useful MACs`.
 
 ---
@@ -140,30 +160,33 @@ sweet spot from §6 table. This should be routed thorugh the L kernel so these t
 Loop counts:
 - `num_bq = 1` (256 tokens fit `bq_sz=256` exactly)
 - `num_loops = 1`, `bq_start = [0]`, `kv_head_idx = 8`
-- → **8 step1 + 8 step2 calls per iter** (same call count as M
-  kernel, but each matmul is bigger)
+- → **8 MXU₀ + 8 MXU₁ matmul calls per iter** (same call count as
+  M kernel, but each matmul is bigger)
 
-Each step1 matmul: `(256 × 4 = 1024) @ (128, 256) → (1024, 256)`.
-- MXU launches: `4 × 1 = 4 per kv head`
-- MACs fired per kv-head step1: `4 × 8,388,608 = 33,554,432`
+Each MXU₀ matmul: `(256 × 4 = 1024) @ (128, 256) → (1024, 256)`.
+- (M, N) tiles: `4 × 1 = 4 per kv head`
+- MACs fired per tile: `256 × 256 × 256 = 16,777,216`
+  (K=128 K-padded to 256)
+- MACs fired per kv-head MXU₀: `4 × 16,777,216 = 67,108,864`
 
-Each step2 matmul: `(1024, 256) @ (256, 128) → (1024, 128)`.
-- MXU launches: `4 × 1 = 4 per kv head`
-- MACs fired per kv-head step2: `4 × 16,777,216 = 67,108,864`
+Each MXU₁ matmul: `(1024, 256) @ (256, 128) → (1024, 128)`.
+- (M, N) tiles: `4 × 1 = 4 per kv head`
+- MACs fired per tile: `256 × 256 × 256 = 16,777,216`
+- MACs fired per kv-head MXU₁: `4 × 16,777,216 = 67,108,864`
 
 Per-bundle-iter totals (× 8 kv heads):
-- **MXU₁ fired**: `8 × 33,554,432 = 268,435,456`
-- **MXU₂ fired**: `8 × 67,108,864 = 536,870,912`
-- **Total fired**: `805,306,368` MACs
+- **MXU₀ fired**: `8 × 67,108,864 = 536,870,912`
+- **MXU₁ fired**: `8 × 67,108,864 = 536,870,912`
+- **Total fired**: `1,073,741,824` MACs (~1.07 B)
 
 Useful work per bundle iter:
 - 16 segments, each contributing block-diagonal cells only:
-  - MXU₁ per segment per kv head: `(16 × 4) × 16 × 128 = 131,072`
-  - MXU₂ per segment per kv head: `(16 × 4) × 128 × 16 = 131,072`
+  - MXU₀ per segment per kv head: `(16 × 4) × 16 × 128 = 131,072`
+  - MXU₁ per segment per kv head: `(16 × 4) × 128 × 16 = 131,072`
 - Per kv head: `16 × 2 × 131,072 = 4,194,304`
 - Per iter (× 8 kv heads): `33,554,432` MACs
 
-**Per-iter MXU efficiency: `33,554,432 / 805,306,368 ≈ 4.17%`**.
+**Per-iter MXU efficiency: `33,554,432 / 1,073,741,824 ≈ 3.13%`**.
 
 ---
 
@@ -171,17 +194,17 @@ Useful work per bundle iter:
 
 | | M kernel (per iter) | M kernel (16 iters) | SL bundle (1 iter, 256 tokens) |
 |---|---|---|---|
-| MXU₁ fired | 134.2 M | 2.15 B | 268.4 M |
-| MXU₂ fired | 268.4 M | 4.29 B | 536.9 M |
-| **Total fired** | 402.7 M | **6.44 B** | **805.3 M** |
+| MXU₀ fired | 268.4 M | 4.29 B | 536.9 M |
+| MXU₁ fired | 268.4 M | 4.29 B | 536.9 M |
+| **Total fired** | 536.9 M | **8.59 B** | **1.07 B** |
 | Total useful | 2.10 M | 33.5 M | 33.5 M |
-| MXU efficiency | 0.52% | 0.52% | **4.17%** |
+| MXU efficiency | 0.39% | 0.39% | **3.13%** |
 | **SL speedup over M** | — | — | **~8×** |
 
-The ~8× factor comes from `bq_sz / q_len = 128 / 16 = 8`. MXU₂
-contributes proportionally (2× the MAC count vs MXU₁ at this
-shape, same useful-work ratio), so the speedup is robust across
-both halves of attention.
+The ~8× factor comes from `bq_sz / q_len = 128 / 16 = 8`. MXU₀
+and MXU₁ fire equal MACs at `bkv_csz = 256` (both K-deep 256 on
+the systolic array), so the speedup factor is consistent across
+both matmuls.
 
 ---
 
@@ -194,12 +217,29 @@ SL speedup ≈ bq_sz / q_len     (for q_len < bq_sz)
 
 | q_len | M-iter useful / fired | M-iter efficiency | SL bundle pack | SL speedup |
 |---|---|---|---|---|
-| 8   | 0.52 M / 402.7 M | **0.13%** | 32 × 8  = 256 | **~16×** |
-| 16  | 2.10 M / 402.7 M | **0.52%** | 16 × 16 = 256 | **~8×** |
-| 32  | 8.39 M / 402.7 M | **2.08%** | 8 × 32  = 256 | **~4×** |
-| 64  | 33.55 M / 402.7 M | **8.33%** | 4 × 64  = 256 | **~2×** |
-| 96  | 75.50 M / 402.7 M | **18.75%** | 2 × 96  = 192 (wastes 64 slot) | **~1.3×** |
-| 128 | 134.2 M / 402.7 M | **33.3%** | 2 × 128 = 256 | **1× (no MXU win)** |
+| 8   | 0.52 M / 536.9 M | **0.097%** | 32 × 8  = 256 | **~16×** |
+| 16  | 2.10 M / 536.9 M | **0.39%**  | 16 × 16 = 256 | **~8×** |
+| 32  | 8.39 M / 536.9 M | **1.56%**  | 8 × 32  = 256 | **~4×** |
+| 64  | 33.55 M / 536.9 M | **6.25%** | 4 × 64  = 256 | **~2×** |
+| 96  | 75.50 M / 536.9 M | **14.06%** | 2 × 96 = 192 (wastes 64 slot) | **~1× (formula breaks; see note)** |
+| 128 | 134.2 M / 536.9 M | **25.0%**  | 2 × 128 = 256 | **1× (no MXU win)** |
+
+**Note on the q_len=96 entry**: the `bq_sz / q_len` formula
+predicts 128/96 ≈ 1.33×, but **the actual speedup is closer to
+1×** because q_len=96 doesn't divide 256 cleanly — the bundle
+packs 2 segments and pads 64 slots, giving the SL kernel the same
+2 iters' worth of work that M kernel processes. SL pays the
+bundle's full-tile MXU cost regardless of the wasted slots.
+General formula:
+
+```
+SL speedup = floor(SL_BUNDLE_CAP / q_len) × (bq_sz_M / bq_csz_SL)
+           = floor(256 / q_len) × (128 / 256)
+           = floor(256 / q_len) / 2
+```
+
+Equals `bq_sz / q_len` only when `q_len` divides `SL_BUNDLE_CAP`
+exactly (powers of 2 ≤ 128 in our case).
 
 So SL's MXU-fill advantage has teeth only when **per-prefill
 q_len is materially smaller than M's tuned `bq_sz`** (which is 128):
