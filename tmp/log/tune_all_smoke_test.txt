@@ -38,3 +38,38 @@ I0516 20:55:47.962191 131566653454272 local_db_manager.py:319] Final DB file: tm
 I0516 20:55:47.962213 131566653454272 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/smoke_test_decode/WorkBuckets.json
 I0516 20:55:47.962230 131566653454272 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/smoke_test_decode/CaseResults.json
 ===== 2026-05-16 20:55:52 decode done in 41s =====
+
+===== 2026-05-16 20:55:53 Tuning prefill (case_set_id=smoke_test_prefill) =====
+DB path: tmp/log/kernel_tuner_run/smoke_test_prefill
+WARNING:absl:Tensorflow library not found, tensorflow.io.gfile operations will use native shim calls. GCS paths (i.e. 'gs://...') cannot be accessed.
+INFO:numexpr.utils:Note: detected 224 virtual cores but NumExpr set to maximum of 64, check "NUMEXPR_MAX_THREADS" environment variable.
+INFO:numexpr.utils:Note: NumExpr detected 224 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+INFO:numexpr.utils:NumExpr defaulting to 16 threads.
+INFO 05-16 20:55:58 [__init__.py:59] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+I0516 20:55:58.758581 131147812071360 kernel_tuner_runner.py:115] Using case_set_id: smoke_test_prefill, run_id: 0, case_set_desc: smoke_test prefill kernel tune for this tuning run.
+I0516 20:55:58.758743 131147812071360 local_db_manager.py:53] Database initialized at tmp/log/kernel_tuner_run/smoke_test_prefill
+I0516 20:55:58.758783 131147812071360 kernel_tuner_base.py:132] Resume disabled (default). Set KERNEL_TUNER_RESUME=1 to resume from existing kernel.raw.jsonl. Existing jsonl will be rotated to .bak.<timestamp> on first access.
+I0516 20:55:58.763546 131147812071360 rpa_v3_kernel_tuner.py:372] SMOKE_TEST=1 detected: Truncating tuner search space to first value of each axis.
+I0516 20:55:58.763624 131147812071360 kernel_tuner_runner.py:148] Running in locally mode. Skipping Buildkite pipeline generation and running tuning jobs directly.
+I0516 20:55:58.763785 131147812071360 local_db_manager.py:102] Initialized case set: {'ID': 'smoke_test_prefill', 'Description': 'smoke_test prefill kernel tune', 'Status': 'CREATING', 'ScanSpace': 0}
+I0516 20:55:58.763815 131147812071360 kernel_tuner_base.py:319] Initialized new CaseSet with ID: smoke_test_prefill and description: smoke_test prefill kernel tune
+I0516 20:55:58.763947 131147812071360 rpa_v3_kernel_tuner.py:582] [generate_cases] 1 enumerated, 0 resumed-skip, 0 pre-flight-rejected
+I0516 20:55:58.764089 131147812071360 local_db_manager.py:164] Flushed: wrote 1 cases to KernelTuningCases
+I0516 20:55:58.764329 131147812071360 local_db_manager.py:136] Finished case set: ID=smoke_test_prefill, valid=1, invalid=0, duration=0.0s
+I0516 20:55:58.764357 131147812071360 kernel_tuner_base.py:374] 
+Complete Generate Tuning Cases for smoke_test_prefill, Valid Cases: 1 | Duration: 0s
+I0516 20:55:58.764382 131147812071360 kernel_tuner_base.py:534] Worker [unknown] Claimed CaseSetId: smoke_test_prefill, RunId: 0, Bucket 0 (0-1) for processing.
+I0516 20:55:58.764469 131147812071360 local_db_manager.py:236] Marked bucket as in progress: cs_id=smoke_test_prefill, r_id=0, b_id=0, worker=None
+I0516 20:55:58.764560 131147812071360 rpa_v3_kernel_tuner.py:888] Running rpa_v3 case=prefill K=128 key=TuningKey(q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='prefill', code_revision='937da767d86f') params=TunableParams(bq_sz=32, bkv_sz=512, bq_csz=32, bkv_csz=128, page_size=16, chunk_prefill_size=128, max_num_subseqs=None) iters=1
+I0516 20:56:06.288816 131147812071360 rpa_v3_kernel_tuner.py:804] [Debug] case=prefill K=128 actual_num_seqs=32 distribution=Array([ 0, 32, 32], dtype=int32)
+I0516 20:56:20.590774 131147812071360 rpa_v3_kernel_tuner.py:888] Running rpa_v3 case=prefill K=128 key=TuningKey(q_dtype='bfloat16', kv_dtype='bfloat16', num_q_heads=32, num_kv_heads=8, head_dim=128, max_model_len=8192, sliding_window=None, case='prefill', code_revision='937da767d86f') params=TunableParams(bq_sz=32, bkv_sz=512, bq_csz=32, bkv_csz=128, page_size=16, chunk_prefill_size=128, max_num_subseqs=None) iters=10
+I0516 20:56:32.974085 131147812071360 local_db_manager.py:300] Saved 1 results to CaseResults
+I0516 20:56:32.974358 131147812071360 local_db_manager.py:252] Marked bucket as completed: cs_id=smoke_test_prefill, r_id=0, b_id=0, tt_us=34209646
+I0516 20:56:32.974404 131147812071360 kernel_tuner_base.py:646] Worker [unknown] Completed Bucket 0 (0-1) for CaseSetId: smoke_test_prefill, RunId: 0. Total time: 34.21s.
+I0516 20:56:32.974434 131147812071360 local_db_manager.py:313] Database at tmp/log/kernel_tuner_run/smoke_test_prefill finalized with 1 cases, 0 invalid cases.
+I0516 20:56:32.974487 131147812071360 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/smoke_test_prefill/CaseSet.json
+I0516 20:56:32.974509 131147812071360 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/smoke_test_prefill/KernelTuningCases.json
+I0516 20:56:32.974526 131147812071360 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/smoke_test_prefill/kernel.raw.jsonl
+I0516 20:56:32.974542 131147812071360 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/smoke_test_prefill/WorkBuckets.json
+I0516 20:56:32.974558 131147812071360 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/smoke_test_prefill/CaseResults.json
+===== 2026-05-16 20:56:37 prefill done in 44s =====
