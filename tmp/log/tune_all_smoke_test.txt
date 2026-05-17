@@ -207,3 +207,19 @@ I0516 21:00:14.923606 132038330021824 local_db_manager.py:319] Final DB file: tm
 I0516 21:00:14.923621 132038330021824 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/smoke_test_mixed/WorkBuckets.json
 I0516 21:00:14.923636 132038330021824 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/smoke_test_mixed/CaseResults.json
 ===== 2026-05-16 21:00:15 mixed done in 6s =====
+
+===== 2026-05-16 21:00:16 ALL CASES DONE =====
+
+Inspector commands to extract winners (run on the same TPU VM):
+  python3 -m tools.kernel.tuner.v1.inspect_result_cli \
+      --source=local --db-path=tmp/log/kernel_tuner_run/smoke_test_decode \
+      query_min_latency \
+      --case_set_id=smoke_test_decode_20260516_205954 --run_id=0
+  python3 -m tools.kernel.tuner.v1.inspect_result_cli \
+      --source=local --db-path=tmp/log/kernel_tuner_run/smoke_test_prefill \
+      query_min_latency \
+      --case_set_id=smoke_test_prefill_20260516_205954 --run_id=0
+  python3 -m tools.kernel.tuner.v1.inspect_result_cli \
+      --source=local --db-path=tmp/log/kernel_tuner_run/smoke_test_mixed \
+      query_min_latency \
+      --case_set_id=smoke_test_mixed_20260516_205954 --run_id=0
