@@ -1,0 +1,25 @@
+=== vllm engine init debug ===
+MNB:                  458752
+MAX_MODEL_LEN:        8192
+MAX_NUM_SEQS:         1000
+MODEL:                meta-llama/Meta-Llama-3-8B-Instruct
+GPU_MEM_UTIL:         0.80
+SKIP_BUCKET_AUTOGEN:  1
+COMPILATION_SIZES:    458752
+TIMEOUT_S:            240
+OUT_DIR:              tmp/debug_vllm_engine_init/mnb_458752_20260516_173238
+
+Sourcing prod env: tmp/log/prod_env_prefill_heavy.sh
+=== Launching vllm serve ===
+(full stdout+stderr -> tmp/debug_vllm_engine_init/mnb_458752_20260516_173238/vllm.log)
+vllm PID: 2996795
+=== Waiting up to 240s for outcome ===
+Outcome: engine_init_failed (after 60s)
+=== Tearing down vllm ===
+
+Full log:  tmp/debug_vllm_engine_init/mnb_458752_20260516_173238/vllm.log
+Meta:      tmp/debug_vllm_engine_init/mnb_458752_20260516_173238/meta.txt
+Script:    tmp/debug_vllm_engine_init/mnb_458752_20260516_173238/script.log
+Outcome:   engine_init_failed
+
+=== Commit (NO_PUSH=1 to skip push at end) ===
