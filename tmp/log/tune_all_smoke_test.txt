@@ -124,3 +124,34 @@ Inspector commands to extract winners (run on the same TPU VM):
       --source=local --db-path=tmp/log/kernel_tuner_run/smoke_test_mixed \
       query_min_latency \
       --case_set_id=smoke_test_mixed_20260516_205511 --run_id=0
+===== 2026-05-16 20:59:54 Starting full kernel tune for smoke_test =====
+Cases: decode -> prefill -> mixed
+Branch: sll
+Git commit: 3aece538c2f9601bc5ac6619d3f14030c15f8d2c
+
+
+===== 2026-05-16 20:59:54 Tuning decode (case_set_id=smoke_test_decode) =====
+DB path: tmp/log/kernel_tuner_run/smoke_test_decode
+WARNING:absl:Tensorflow library not found, tensorflow.io.gfile operations will use native shim calls. GCS paths (i.e. 'gs://...') cannot be accessed.
+INFO:numexpr.utils:Note: detected 224 virtual cores but NumExpr set to maximum of 64, check "NUMEXPR_MAX_THREADS" environment variable.
+INFO:numexpr.utils:Note: NumExpr detected 224 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+INFO:numexpr.utils:NumExpr defaulting to 16 threads.
+INFO 05-16 20:59:59 [__init__.py:59] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+I0516 20:59:59.874280 138636859877312 kernel_tuner_runner.py:115] Using case_set_id: smoke_test_decode, run_id: 0, case_set_desc: smoke_test decode kernel tune for this tuning run.
+I0516 20:59:59.874376 138636859877312 local_db_manager.py:53] Database initialized at tmp/log/kernel_tuner_run/smoke_test_decode
+W0516 20:59:59.874415 138636859877312 kernel_tuner_base.py:126] KERNEL_TUNER_RESUME=1: will read existing kernel.raw.jsonl and skip combos already SUCCESS / FAILED_OOM / SKIPPED. code_revision is part of the skip-key — only entries from the current commit match.
+I0516 20:59:59.878451 138636859877312 rpa_v3_kernel_tuner.py:372] SMOKE_TEST=1 detected: Truncating tuner search space to first value of each axis.
+I0516 20:59:59.878525 138636859877312 kernel_tuner_runner.py:148] Running in locally mode. Skipping Buildkite pipeline generation and running tuning jobs directly.
+I0516 20:59:59.878635 138636859877312 kernel_tuner_base.py:312] CaseSetId smoke_test_decode already exists with the same description. Proceeding with the existing case set.
+I0516 20:59:59.878683 138636859877312 kernel_tuner_base.py:534] Worker [unknown] Claimed CaseSetId: smoke_test_decode, RunId: 0, Bucket 0 (0-1) for processing.
+I0516 20:59:59.878965 138636859877312 local_db_manager.py:236] Marked bucket as in progress: cs_id=smoke_test_decode, r_id=0, b_id=0, worker=None
+I0516 20:59:59.879127 138636859877312 kernel_tuner_base.py:221] Resume from tmp/log/kernel_tuner_run/smoke_test_decode/kernel.raw.jsonl: 1 rows (1 permanent → skip, 0 retry, 0 malformed)
+I0516 20:59:59.880398 138636859877312 local_db_manager.py:252] Marked bucket as completed: cs_id=smoke_test_decode, r_id=0, b_id=0, tt_us=1
+I0516 20:59:59.880485 138636859877312 kernel_tuner_base.py:646] Worker [unknown] Completed Bucket 0 (0-1) for CaseSetId: smoke_test_decode, RunId: 0. Total time: 0.00s.
+I0516 20:59:59.880515 138636859877312 local_db_manager.py:313] Database at tmp/log/kernel_tuner_run/smoke_test_decode finalized with 0 cases, 0 invalid cases.
+I0516 20:59:59.880572 138636859877312 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/smoke_test_decode/CaseSet.json
+I0516 20:59:59.880595 138636859877312 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/smoke_test_decode/KernelTuningCases.json
+I0516 20:59:59.880613 138636859877312 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/smoke_test_decode/kernel.raw.jsonl
+I0516 20:59:59.880630 138636859877312 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/smoke_test_decode/WorkBuckets.json
+I0516 20:59:59.880646 138636859877312 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/smoke_test_decode/CaseResults.json
+===== 2026-05-16 21:00:00 decode done in 6s =====
