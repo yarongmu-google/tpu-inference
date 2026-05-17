@@ -95,24 +95,16 @@ RECIPES: dict[tuple[str, str], dict[str, Any]] = {
             # widen this pin to a sweep axis once the tuner produces
             # winners at other K values.
             "RPA_KERNEL_K": 256,
-            # 2026-05-16: GPU memory utilization tuned to fit the
-            # LARGEST MNB in the axis above. Empirically verified per-MNB:
-            #     MNB     min util that boots
-            #     262144  0.88
-            #     327680  0.85
-            #     393216  0.82
-            #     458752  0.79  <- the binding constraint
-            # The constraint isn't HLO scratch alone (which scales
-            # linearly with MNB, ~9 G at 262144 -> ~16 G at 458752);
-            # there is also an ~2 G fixed overhead PLUS ~0.5 G per step
-            # of "mystery overhead" growing with KV cache size or
-            # in-flight prompt count. Empirically the fit is
-            # util = 1 - (HLO + 2 + 0.5 * (step from 0.9 baseline)) / 94.75.
-            # Using 0.79 across all combos costs ~5% concurrency at the
-            # smaller MNBs vs their max-util setting; net effect on
-            # throughput is negligible since each MNB's throughput is
-            # gated by MNB itself (prompts/call), not by max-in-flight.
-            "GPU_MEMORY_UTILIZATION": 0.79,
+            # 2026-05-16: GPU memory utilization conservative enough to
+            # leave HBM headroom for the LARGEST MNB in the axis above
+            # (458752 needs ~16 G HLO scratch + ~2 G TPU overhead;
+            # 94.75 - 0.82*94.75 = 17.1 G headroom -> fits with ~-1 G
+            # if MNB=458752 actually compiles to ~16 G scratch). vllm's
+            # default is ~0.92; using 0.82 across all combos costs ~10 G
+            # of KV cache vs the unrestricted budget — which translates
+            # to ~70 fewer concurrent prompts max, well above the
+            # actual in-flight count even at MNB=458752 (56 prompts).
+            "GPU_MEMORY_UTILIZATION": 0.82,
             # 2026-05-16: skip vllm's default bucket auto-generation
             # (16, 32, ..., MNB). For a fixed-shape benchmark the other
             # 13+ buckets are pure compile-time waste (~30s per combo)
