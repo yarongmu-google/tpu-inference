@@ -14,7 +14,6 @@
 
 import dataclasses
 import itertools
-import json
 import logging
 import os
 import subprocess
@@ -24,8 +23,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from tools.kernel.tuner.v1.cache_key_utils import (
-    should_skip_commit_cache_check, tuning_key_hash)
 from tools.kernel.tuner.v1.common.kernel_tuner_base import (KernelTunerBase,
                                                             TuningCase,
                                                             TuningStatus)
@@ -107,30 +104,6 @@ SMEM_LIMIT_BYTES = 0.9 * 1024 * 1024
 jax.config.parse_flags_with_absl()
 
 
-def estimate_vmem_for_combo(
-    num_kv_heads, num_q_heads, head_dim, bq_sz, bkv_sz,
-    q_dtype, kv_dtype,
-) -> int:
-    """Compute the per-iter VMEM footprint for a (model, block-sizes) combo.
-
-    Single source of truth: previously the same call+threshold check
-    was duplicated in `generate_cases` (pre-flight pruning, kwargs form)
-    and `measure_one` (runtime check, positional form using TuningKey
-    + TunableParams attributes). Two copies are easy to drift —
-    one update for a model-arch knob, the other forgotten. Funnel both
-    through this helper.
-    """
-    return get_vmem_estimate_bytes(
-        actual_num_kv_heads=num_kv_heads,
-        actual_num_q_heads_per_kv_head=num_q_heads // num_kv_heads,
-        actual_head_dim=head_dim,
-        bq_sz=bq_sz,
-        bkv_sz=bkv_sz,
-        q_dtype=q_dtype,
-        kv_dtype=kv_dtype,
-    )
-
-
 def get_decode_only_example(actual_num_seqs, max_model_len):
     """All seqs decode (q_len=1). distribution=[N, N, N]."""
     cu_q_lens = list(range(actual_num_seqs + 1))
@@ -204,7 +177,6 @@ def get_mixed_example(actual_num_seqs, max_num_tokens, max_model_len):
 
 @dataclasses.dataclass
 class TuningKey:
-    page_size: int
     q_dtype: str
     kv_dtype: str
     num_q_heads: int
@@ -213,12 +185,6 @@ class TuningKey:
     max_model_len: int
     sliding_window: int
     case: str
-    chunk_prefill_size: int  # 0 when not CASE_PREFILL
-    # tpu_inference HEAD short-SHA at tune time. Included in the
-    # idempotency cache key so a kernel.py change invalidates prior
-    # winners — old commits stale entries naturally do not match the
-    # current commits hash and get re-tuned. Default empty string for
-    # backwards-compat with older entries that pre-date this field.
     code_revision: str = ""
 
 
@@ -228,6 +194,8 @@ class TunableParams:
     bkv_sz: int
     bq_csz: int
     bkv_csz: int
+    page_size: int
+    chunk_prefill_size: int = 0
     # Decoupled-K only: prefetch-array sizing bound for the LOGICAL
     # kernel (`phys_seq_indices` / `q_offsets` shape). The static SMEM
     # model in `subseq_planner.max_M_under_smem` is approximate, so we
@@ -252,11 +220,12 @@ class RpaV3KernelTuner(KernelTunerBase):
                          job_bucket_size=100,
                          kernel_tuner_name="rpa_v3_kernel_tuner")
 
-        # tpu_inference HEAD short-SHA, baked into every TuningKey so
-        # idempotency invalidates when kernel.py (or any tpu_inference
-        # code the kernel transitively depends on) changes. Per the
+        # tpu_inference HEAD short-SHA, baked into every TuningKey.
+        # Consumed by `kernel.raw.jsonl`'s resume skip-key (full TuningKey
+        # JSON via `_combo_skip_key`), so a code change at the tpu_inference
+        # layer invalidates resume hits and forces a re-tune. Per the
         # users storage policy we do NOT garbage-collect older-commit
-        # entries; the registry just grows with code history.
+        # entries; raw.jsonl just grows with code history.
         #
         # Asymmetry note (intentional): the sweep-side cache key
         # (sweep.py is_completed) mixes BOTH tpu_inference and vllm
@@ -268,11 +237,15 @@ class RpaV3KernelTuner(KernelTunerBase):
         # results. If that assumption ever changes (e.g. the kernel
         # interface starts importing from vllm), add vllm SHA here.
         #
-        # SKIP_COMMIT_CACHE_CHECK=1 escape hatch: ignore code_revision
-        # when checking idempotency. Mirrors sweep.pys behaviour. Useful
-        # for re-using winners from prior commits when iterating on
-        # non-kernel code (docs, sweep recipes, runlogs) without paying
-        # a 3-4 hour re-tune.
+        # NOTE: resume behaviour is owned by the base class via
+        # `KERNEL_TUNER_RESUME=1` (opt-in). Default is fresh tune —
+        # any existing kernel.raw.jsonl is rotated to .bak.<timestamp>.
+        # When opted in, the skip-key includes the full TuningKey
+        # (including code_revision), so entries from prior commits
+        # don't match. There's no commit-stripping path; to reuse
+        # winners across commits you currently have to hand-edit
+        # raw.jsonl rows. See base-class _flush_raw_jsonl_once and
+        # _load_raw_jsonl_skip_set for the mechanism.
         try:
             self.code_revision = subprocess.run(
                 ["git", "rev-parse", "--short=12", "HEAD"],
@@ -285,88 +258,68 @@ class RpaV3KernelTuner(KernelTunerBase):
                 "Could not determine tpu_inference HEAD commit; "
                 "TuningKey.code_revision will be empty (cache invalidation "
                 "across commits will not work). Are we outside a git checkout?")
-        self._skip_commit_cache_check = should_skip_commit_cache_check()
-        if self._skip_commit_cache_check:
-            logger.warning(
-                "SKIP_COMMIT_CACHE_CHECK=1: code_revision will be ignored "
-                "when checking idempotency; entries from older commits will "
-                "be reused.")
+        # Resume / idempotency is owned by the base class via
+        # `kernel.raw.jsonl` (see `_load_raw_jsonl_skip_set` in
+        # `kernel_tuner_base.py`). Each combo's outcome is appended
+        # per-combo; resume reads it and skips known-permanent rows.
+        # `production.kernel` is the final-winners artifact and is
+        # deliberately NOT consulted here — keeping them separate
+        # avoids the prior conflation where the winners file doubled
+        # as a coarse subspace-level skip-set.
 
-        # ---- Idempotency: Load existing registry to skip tuned cases ----
-        #
-        # Granularity is by `tuning_key` only (page_size, case, K, model
-        # geometry, ...) — NOT by `(tuning_key, tunable_params)`. So once
-        # ANY winner exists for `(page=128, K=512)` in the registry, the
-        # tuner skips ALL `(bq, bkv, bq_csz, bkv_csz)` combos for that
-        # key on re-run.
-        #
-        # This works well for INCREMENTAL coverage (adding new K values
-        # or new page sizes to the search) but does NOT support EXPANDING
-        # the inner block-size grid (e.g. raising bkv_sz_lst max from
-        # 2048 to 8192 and re-running the same K). To re-tune an
-        # existing key with a wider inner grid, delete or trim the
-        # corresponding entries from production.kernel before running.
-        # If you need finer-grained idempotency, hash
-        # `(tuning_key, tunable_params)` instead.
-        self.completed_tuning_keys = set()
-        registry_path = os.environ.get("RPA_V3_KERNEL_REGISTRY")
-        if registry_path and os.path.exists(registry_path):
-            try:
-                with open(registry_path, "r") as f:
-                    registry_data = json.load(f)
-                for case_name, results in registry_data.get("results", {}).items():
-                    for entry in results:
-                        tk_dict = entry.get("tuning_key", {})
-                        # Skip malformed/empty entries — without this an
-                        # entry whose tuning_key is missing (e.g. {} from
-                        # a pre-rename schema or an incomplete write)
-                        # would absorb its hash ('{}') into the skip set
-                        # and silently make EVERY un-keyed combo a no-op.
-                        if not tk_dict:
-                            continue
-                        tk_hash = tuning_key_hash(
-                            tk_dict,
-                            skip_commit_cache_check=self._skip_commit_cache_check)
-                        self.completed_tuning_keys.add(tk_hash)
-                logger.info(f"Loaded {len(self.completed_tuning_keys)} completed TuningKeys from {registry_path}")
-            except Exception as e:
-                logger.warning(f"Failed to read existing kernel registry: {e}")
+        # =========================================================
+        # ENV CONTRACT — all `os.environ` reads happen in this block.
+        # No env reads occur AFTER this section. Grouped here as a
+        # single audit point for the class's input contract.
+        # =========================================================
 
-        # ---- Single Source of Truth: Read from environment ----
-        # These must be set by tune_all_cases.sh sourcing a .workload case file.
-        self.max_num_tokens = int(os.environ["MAX_NUM_BATCHED_TOKENS"])
-        self.max_model_len = int(os.environ["MAX_MODEL_LEN"])
-        self.max_num_seqs = int(os.environ["MAX_NUM_SEQS"])
+        # --- Tuner-config env vars ---
+        _smoke_test = os.environ.get("SMOKE_TEST") == "1"
+        _cases_env = os.environ.get("RPA_V3_TUNER_CASES")
 
-        # Model shape.
-        self.page_size = [64, 128, 256]
+        # --- Tuning keys (workload identity; doc §2 row 1) ---
+        # Same order as TuningKey dataclass: q_dtype, kv_dtype come
+        # from kernel-side constants below; the rest are env-read here.
+        _env_num_q_heads = int(os.environ["NUM_Q_HEADS"])
+        _env_num_kv_heads = int(os.environ["NUM_KV_HEADS"])
+        _env_head_dim = int(os.environ["HEAD_DIM"])
+        _env_max_model_len = int(os.environ["MAX_MODEL_LEN"])
 
-        # Synthetic KV-cache shape needs enough pages for the WORST-case
-        # tuning workload: smallest swept page_size + full max_model_len
-        # × max_num_seqs. Hard-coding 4096 was correct only at the
-        # original (max_num_seqs=32, max_model_len=8192, page_size=64)
-        # = 32 * 128 = 4096 fit. At max_num_seqs=128 the requirement
-        # is 16384, and the under-allocated cache made page indices
-        # wrap silently. Compute it from the actual sweep parameters.
-        smallest_page = min(self.page_size)
-        worst_pages_per_seq = cdiv(self.max_model_len, smallest_page)
-        self.total_num_pages = worst_pages_per_seq * self.max_num_seqs
+        # --- Per-axis search-space overrides (doc §2 row 3 vars) ---
+        # Comma-separated ints, e.g. RPA_V3_BQ_SZ_LST=256,512.
+        # Empty / unset = use the default below.
+        _env_bq_sz_override = os.environ.get("RPA_V3_BQ_SZ_LST")
+        _env_bkv_sz_override = os.environ.get("RPA_V3_BKV_SZ_LST")
+        _env_bq_csz_override = os.environ.get("RPA_V3_BQ_CSZ_LST")
+        _env_bkv_csz_override = os.environ.get("RPA_V3_BKV_CSZ_LST")
+        _env_k_override = os.environ.get("RPA_V3_K_LST")
+        _env_mnss_override = os.environ.get("RPA_V3_MAX_NUM_SUBSEQS_LST")
+        _env_page_size_override = os.environ.get("RPA_V3_PAGE_SIZE_LST")
+
+        # =========================================================
+        # Step A — Tuning keys (workload identity; doc §2 row 1).
+        # Order matches TuningKey dataclass fields. Service-tuned
+        # vars (MAX_NUM_BATCHED_TOKENS, MAX_NUM_SEQS — doc category
+        # 5) are deliberately NOT read at all; synthetic workload
+        # sizing derives per-combo in generate_inputs.
+        # =========================================================
         self.q_dtype = jnp.bfloat16
         # Switch to [jnp.float8_e4m3fn] if serving with quantized KV cache.
-        self.kv_dtype = [jnp.bfloat16]
-        self.num_q_heads = [int(os.environ["NUM_Q_HEADS"])]
-        self.num_kv_heads = [int(os.environ["NUM_KV_HEADS"])]
-        self.head_dim = [int(os.environ["HEAD_DIM"])]
+        self.kv_dtype = jnp.bfloat16
+        self.num_q_heads = [_env_num_q_heads]
+        self.num_kv_heads = [_env_num_kv_heads]
+        self.head_dim = [_env_head_dim]
+        self.max_model_len = _env_max_model_len
         self.sliding_window = [None]
 
-        # Cases to tune. Default is PREFILL only (the original target);
-        # the env var RPA_V3_TUNER_CASES overrides — comma-separated subset of
-        # {"decode","prefill","mixed"}. Lets a wrapper script tune one case
-        # per python invocation without code edits, and matches the local-DB
-        # convention of "one case_set_id per case".
-        cases_env = os.getenv("RPA_V3_TUNER_CASES")
-        if cases_env:
-            self.cases = [c.strip() for c in cases_env.split(",") if c.strip()]
+        # =========================================================
+        # Step B — Tuner control: which kernel cases to tune.
+        # =========================================================
+        # Default = PREFILL only (the original target);
+        # RPA_V3_TUNER_CASES env var overrides — comma-separated
+        # subset of {"decode","prefill","mixed","logical"}.
+        if _cases_env:
+            self.cases = [c.strip() for c in _cases_env.split(",") if c.strip()]
             valid = {CASE_DECODE, CASE_PREFILL, CASE_MIXED, CASE_LOGICAL}
             unknown = [c for c in self.cases if c not in valid]
             if unknown:
@@ -376,75 +329,80 @@ class RpaV3KernelTuner(KernelTunerBase):
         else:
             self.cases = [CASE_PREFILL]
 
-        # Tunable block-size sweep, anchored at the kernel's v7 default for
-        # this model (bq_sz=512, bkv_sz=2048, bq_csz=256, bkv_csz=512 — see
-        # get_default_block_sizes in kernel.py).
+        # =========================================================
+        # Step D — Tuning params search space (doc §2 row 3).
+        # block sizes, page_size, kernel_K (= chunk_prefill_size),
+        # mnss. Cross-producted by generate_cases() to yield
+        # (tuning_key, tunable_params) combos.
+        # =========================================================
+        # Tunable block-size defaults, anchored at the kernel's v7 default
+        # for this model (bq_sz=512, bkv_sz=2048, bq_csz=256, bkv_csz=512 —
+        # see get_default_block_sizes in kernel.py).
         self.bq_sz_lst = [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
         self.bkv_sz_lst = [512, 1024, 2048, 4096, 8192]
         self.bq_csz_lst = [32, 64, 128, 256, 512, 1024, 2048]
         self.bkv_csz_lst = [128, 256, 512, 1024, 2048]
-
-        # Chunk prefill sizes to sweep (PREFILL and LOGICAL).
         self.chunk_prefill_size_lst = [128, 256, 512, 1024, 2048, 4096, 8192]
+        self.page_size = [16, 32, 64, 128, 256, 512, 1024, 2048]
 
-        # max_num_subseqs sweep (LOGICAL only). Workload-relative: anchored
-        # to the formula `max_num_subseqs = max_num_seqs * (M + 1)` with
-        # M ranging across powers of 2. M is the chunks-per-req bound, so
-        # M=1 means "single chunk per req" (≈ coupled-K behaviour with the
-        # LOGICAL prefetches as a no-op), and larger M corresponds to
-        # finer chunking. The +max_num_seqs slack term in the formula
-        # accounts for one MIXED tail per req — even though our tuning
-        # workload doesnt emit MIXED tails, the kernel still allocates
-        # the slot and the SMEM accounting must include it for parity
-        # with production runs.
-        self.max_num_subseqs_lst = [
-            self.max_num_seqs * (M + 1) for M in (1, 2, 4, 8, 16, 32)
-        ]
-
-        if os.environ.get("SMOKE_TEST") == "1":
-            logger.info("SMOKE_TEST=1 detected: Truncating tuner search space to minimum.")
-            self.bq_sz_lst = [128]
-            self.bkv_sz_lst = [512]
-            self.bq_csz_lst = [128]
-            self.bkv_csz_lst = [256]
-            self.chunk_prefill_size_lst = [128]
-            self.page_size = [128]
-            self.max_num_subseqs_lst = [self.max_num_seqs * 2]   # M=1
-
-        # Per-axis overrides via env vars for ad-hoc fast-track tuning.
-        # Format: comma-separated ints. Empty / unset = use the default
-        # list set above. Useful for narrowing the LOGICAL sweep to the
-        # neighborhood of an existing winner from another case (e.g. pin
-        # everything to the PREFILL winners block sizes and sweep only
-        # max_num_subseqs to compare L kernel latency to P kernel latency
-        # at the same block sizes).
+        # max_num_subseqs sweep (LOGICAL only).
+        # 2026-05-16: doc-compliant SMEM-bound enumeration. mnss is
+        # category-3 (kernel-tuned) per doc §2 row 3, with a SMEM-
+        # driven cap. Previously derived as MNS * (M+1) which tied the
+        # kernel-tune search to a service-tuned var.
         #
-        # Examples:
-        #   RPA_V3_BQ_SZ_LST=256                   single value
-        #   RPA_V3_BKV_SZ_LST=1024,2048            two values
-        #   RPA_V3_PAGE_SIZE_LST=128               pin page size
-        def _override_lst_from_env(env_name, default_lst):
-            raw = os.environ.get(env_name)
+        # The upper bound here (65536) is deliberately set ABOVE any
+        # SMEM-feasible value (SMEM ~0.9 MiB caps mnss around ~14000-
+        # 15000 at the best page_size; less at narrower pages). The
+        # runtime `validate_smem_fits()` filters infeasible (page_size,
+        # mnss) combos before measurement, so enumerating clearly-too-
+        # large mnss values is harmless — they get pruned, not measured.
+        # Going wide here avoids hardcoding a hardware-specific number
+        # that could be wrong if SMEM or kernel internals change.
+        _MNSS_ENUMERATION_CEILING = 65536  # 2^16, safely past any feasible value
+        self.max_num_subseqs_lst = [
+            2**i for i in range(5, 17) if 2**i <= _MNSS_ENUMERATION_CEILING
+        ]
+        # Result: [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536]
+
+        # SMOKE_TEST truncation — fastest possible smoke (one combo per axis).
+        # Takes the first value of each list (no magic numbers, so future
+        # widening of any axis automatically extends what smoke covers).
+        if _smoke_test:
+            logger.info("SMOKE_TEST=1 detected: Truncating tuner search space to first value of each axis.")
+            self.bq_sz_lst = self.bq_sz_lst[:1]
+            self.bkv_sz_lst = self.bkv_sz_lst[:1]
+            self.bq_csz_lst = self.bq_csz_lst[:1]
+            self.bkv_csz_lst = self.bkv_csz_lst[:1]
+            self.chunk_prefill_size_lst = self.chunk_prefill_size_lst[:1]
+            self.page_size = self.page_size[:1]
+            self.max_num_subseqs_lst = self.max_num_subseqs_lst[:1]
+
+        # Apply per-axis overrides last. Useful for narrowing a sweep
+        # to the neighborhood of an existing winner (e.g., pin block
+        # sizes from the PREFILL winner and sweep only max_num_subseqs
+        # to compare L kernel latency to P kernel latency).
+        def _apply_override(raw, default_lst, env_name):
             if not raw:
                 return default_lst
             parsed = [int(x.strip()) for x in raw.split(",") if x.strip()]
             logger.info("%s override: %s -> %s", env_name, default_lst, parsed)
             return parsed
-
-        self.bq_sz_lst = _override_lst_from_env(
-            "RPA_V3_BQ_SZ_LST", self.bq_sz_lst)
-        self.bkv_sz_lst = _override_lst_from_env(
-            "RPA_V3_BKV_SZ_LST", self.bkv_sz_lst)
-        self.bq_csz_lst = _override_lst_from_env(
-            "RPA_V3_BQ_CSZ_LST", self.bq_csz_lst)
-        self.bkv_csz_lst = _override_lst_from_env(
-            "RPA_V3_BKV_CSZ_LST", self.bkv_csz_lst)
-        self.chunk_prefill_size_lst = _override_lst_from_env(
-            "RPA_V3_K_LST", self.chunk_prefill_size_lst)
-        self.max_num_subseqs_lst = _override_lst_from_env(
-            "RPA_V3_MAX_NUM_SUBSEQS_LST", self.max_num_subseqs_lst)
-        self.page_size = _override_lst_from_env(
-            "RPA_V3_PAGE_SIZE_LST", self.page_size)
+        self.bq_sz_lst = _apply_override(_env_bq_sz_override, self.bq_sz_lst,
+                                         "RPA_V3_BQ_SZ_LST")
+        self.bkv_sz_lst = _apply_override(_env_bkv_sz_override, self.bkv_sz_lst,
+                                          "RPA_V3_BKV_SZ_LST")
+        self.bq_csz_lst = _apply_override(_env_bq_csz_override, self.bq_csz_lst,
+                                          "RPA_V3_BQ_CSZ_LST")
+        self.bkv_csz_lst = _apply_override(_env_bkv_csz_override, self.bkv_csz_lst,
+                                           "RPA_V3_BKV_CSZ_LST")
+        self.chunk_prefill_size_lst = _apply_override(
+            _env_k_override, self.chunk_prefill_size_lst, "RPA_V3_K_LST")
+        self.max_num_subseqs_lst = _apply_override(
+            _env_mnss_override, self.max_num_subseqs_lst,
+            "RPA_V3_MAX_NUM_SUBSEQS_LST")
+        self.page_size = _apply_override(
+            _env_page_size_override, self.page_size, "RPA_V3_PAGE_SIZE_LST")
 
     def _block_sizes_valid(self, case, page_size, bq_sz, bkv_sz, bq_csz,
                            bkv_csz, K):
@@ -459,14 +417,10 @@ class RpaV3KernelTuner(KernelTunerBase):
         if case == CASE_DECODE:
             if bq_sz != 1 or bq_csz != 1:
                 return False
-        if case == CASE_PREFILL:
-            if K % bq_sz != 0:
-                return False
-            if bq_sz > K:
-                return False
-        if case == CASE_LOGICAL:
+        if case in (CASE_PREFILL, CASE_LOGICAL):
             # LOGICAL uses the same kernel path as PREFILL with K_kernel
-            # as the static_q_len, so the same bq_sz/K constraints apply.
+            # (= chunk_prefill_size) as the static_q_len, so the same
+            # bq_sz / K constraints apply to both.
             if K % bq_sz != 0:
                 return False
             if bq_sz > K:
@@ -474,54 +428,100 @@ class RpaV3KernelTuner(KernelTunerBase):
         return True
 
     def generate_cases(self) -> list[TuningCase]:
-        as_list = lambda x: x if isinstance(x, list) else [x]
-        sweep = dict(
-            page_size=as_list(self.page_size),
-            q_dtype=as_list(self.q_dtype),
-            kv_dtype=as_list(self.kv_dtype),
-            num_q_heads=as_list(self.num_q_heads),
-            num_kv_heads=as_list(self.num_kv_heads),
-            head_dim=as_list(self.head_dim),
-            max_model_len=as_list(self.max_model_len),
-            sliding_window=as_list(self.sliding_window),
-            cases=as_list(self.cases),
+        # Workload-key axes (cartesian-producted into every case).
+        # q_dtype + max_model_len are scalars by design (used as scalar
+        # elsewhere); wrap explicitly so the cartesian product walks one
+        # element. The other axes are already lists from __init__.
+        workload_axes = (
+            [self.q_dtype],
+            [self.kv_dtype],
+            self.num_q_heads,
+            self.num_kv_heads,
+            self.head_dim,
+            [self.max_model_len],
+            self.sliding_window,
         )
-        bq_sz_lst = as_list(self.bq_sz_lst)
-        bkv_sz_lst = as_list(self.bkv_sz_lst)
-        bq_csz_lst = as_list(self.bq_csz_lst)
-        bkv_csz_lst = as_list(self.bkv_csz_lst)
-        K_lst = as_list(self.chunk_prefill_size_lst)
+        # Per-case kernel-tuned axes. Cases differ in which axes they
+        # search vs pin: DECODE forces bq_sz=bq_csz=1 and skips K/mnss;
+        # PREFILL/MIXED don't sweep mnss; LOGICAL is the only case that
+        # sweeps mnss (= TunableParams.max_num_subseqs).
+        bq, bkv = self.bq_sz_lst, self.bkv_sz_lst
+        bqc, bkvc = self.bq_csz_lst, self.bkv_csz_lst
+        K, mns = self.chunk_prefill_size_lst, self.max_num_subseqs_lst
+        ps = self.page_size
+        per_case_axes = {
+            CASE_DECODE:  (ps, [1],  bkv, [1],  bkvc, [0], [None]),
+            CASE_PREFILL: (ps, bq,   bkv, bqc,  bkvc, K,   [None]),
+            CASE_LOGICAL: (ps, bq,   bkv, bqc,  bkvc, K,   mns),
+            CASE_MIXED:   (ps, bq,   bkv, bqc,  bkvc, [0], [None]),
+        }
+
+        # Resume skip-set: combos already recorded in `kernel.raw.jsonl`
+        # with a permanent status (SUCCESS / FAILED_OOM / SKIPPED) are
+        # known-done. Loading here lets us short-circuit BEFORE running
+        # the pre-flight checks again — saves work on resume and avoids
+        # appending duplicate SKIPPED rows for combos pre-flight-rejected
+        # on a prior run.
+        jsonl_skip = self._load_raw_jsonl_skip_set()
 
         out: list[TuningCase] = []
-        for (ps, qd, kd, nq, nk, hd, mml, sw, case) in itertools.product(
-                sweep["page_size"], sweep["q_dtype"], sweep["kv_dtype"],
-                sweep["num_q_heads"], sweep["num_kv_heads"],
-                sweep["head_dim"], sweep["max_model_len"],
-                sweep["sliding_window"], sweep["cases"]):
-            if case == CASE_DECODE:
-                bq_iter, bqc_iter, K_iter = [1], [1], [0]
-                mns_iter = [None]
-            elif case == CASE_PREFILL:
-                bq_iter, bqc_iter, K_iter = bq_sz_lst, bq_csz_lst, K_lst
-                mns_iter = [None]
-            elif case == CASE_LOGICAL:
-                # LOGICAL uses the PREFILL block-size sweep + K sweep AND
-                # additionally sweeps max_num_subseqs.
-                bq_iter, bqc_iter, K_iter = bq_sz_lst, bq_csz_lst, K_lst
-                mns_iter = as_list(self.max_num_subseqs_lst)
-            else:
-                bq_iter, bqc_iter, K_iter = bq_sz_lst, bq_csz_lst, [0]
-                mns_iter = [None]
+        n_resumed = 0
+        n_rejected = 0
+        for case in self.cases:
+            axes = per_case_axes[case]
+            for (qd, kd, nq, nk, hd, mml, sw,
+                 ps, bq_sz, bkv_sz, bq_csz, bkv_csz, K, mns
+                 ) in itertools.product(*workload_axes, *axes):
+                # Construct keys FIRST so any reject branch can record
+                # the combo in raw.jsonl (resume-completeness).
+                tuning_key = TuningKey(
+                    q_dtype=jnp.dtype(qd).name,
+                    kv_dtype=jnp.dtype(kd).name,
+                    num_q_heads=nq, num_kv_heads=nk, head_dim=hd,
+                    max_model_len=mml, sliding_window=sw,
+                    case=case, code_revision=self.code_revision,
+                )
+                tunable_params = TunableParams(
+                    bq_sz=bq_sz, bkv_sz=bkv_sz,
+                    bq_csz=bq_csz, bkv_csz=bkv_csz,
+                    page_size=ps, chunk_prefill_size=K,
+                    max_num_subseqs=mns,
+                )
 
-            for bq_sz, bkv_sz, bq_csz, bkv_csz, K, mns in itertools.product(
-                    bq_iter, bkv_sz_lst, bqc_iter, bkv_csz_lst, K_iter,
-                    mns_iter):
-                if not self._block_sizes_valid(case, ps, bq_sz, bkv_sz, bq_csz,
-                                               bkv_csz, K):
+                # Resume short-circuit: known-permanent combo from prior
+                # run. Skip without re-evaluating pre-flight or
+                # appending a duplicate row.
+                if (jsonl_skip and
+                        self._combo_skip_key(tuning_key, tunable_params)
+                        in jsonl_skip):
+                    n_resumed += 1
                     continue
+
+                # Pre-flight rejects: log SKIPPED so subsequent resumes
+                # see them as known-done. Without this, every resume
+                # re-evaluates these checks (cheap but leaves
+                # raw.jsonl an incomplete record of "what's done").
+                def _reject(reason: str):
+                    nonlocal n_rejected
+                    n_rejected += 1
+                    logger.debug("Pre-flight skip (%s): %s / %s",
+                                 reason, tuning_key, tunable_params)
+                    self._append_raw_jsonl(
+                        tuning_key=tuning_key,
+                        tunable_params=tunable_params,
+                        status=TuningStatus.SKIPPED,
+                        case_id=-1,
+                    )
+
+                if not self._block_sizes_valid(case, ps, bq_sz, bkv_sz,
+                                               bq_csz, bkv_csz, K):
+                    _reject("block_sizes_invalid")
+                    continue
+
                 # bkv_sz expressed in tokens; cap pages-per-block.
                 pages_per_seq = cdiv(mml, ps)
                 if bkv_sz // ps > pages_per_seq:
+                    _reject("bkv_exceeds_pages_per_seq")
                     continue
 
                 # LOGICAL combo-specific bounds: route through the same
@@ -529,37 +529,39 @@ class RpaV3KernelTuner(KernelTunerBase):
                 # pre-flight check and the workload construction stay
                 # in lockstep. See logical_workload_sizing.py.
                 if case == CASE_LOGICAL:
+                    eff_max_num_tokens_pre = mns * K
+                    eff_max_num_seqs_pre = max(
+                        1, 1 + eff_max_num_tokens_pre // mml)
                     sizing = size_logical_workload(
-                        max_num_seqs=self.max_num_seqs,
-                        max_num_tokens=self.max_num_tokens,
+                        max_num_seqs=eff_max_num_seqs_pre,
+                        max_num_tokens=eff_max_num_tokens_pre,
                         K=K, max_num_subseqs=mns)
                     if not sizing.valid:
+                        _reject("logical_sizing_invalid")
                         continue
 
-                # ---- Hybrid VMEM-Aware Tuning Pruning (Theoretical bounds) ----
-                # Mathematically estimate the kernels per-iteration VMEM
-                # footprint and drop combos that wont fit. This saves hours
-                # of guaranteed JAX compilation OOM crashes.
-                #
-                # The pre-flight uses the same VMEM_LIMIT_BYTES constant as
-                # the runtime check below (~60 MB on v7x — chosen as a safe
-                # margin under v7xs ~64 MB per-core VMEM capacity). A more
-                # aggressive pre-flight (e.g. 16 MiB v6e-era estimate) would
-                # silently prune valid v7x combos that the runtime check
-                # would happily accept.
+                # ---- VMEM pre-flight (mathematical pruning) ----
+                # The pre-flight uses the same VMEM_LIMIT_BYTES constant
+                # as the runtime check (~60 MB on v7x — safe margin
+                # under v7xs ~64 MB per-core VMEM capacity). A more
+                # aggressive pre-flight (e.g. 16 MiB v6e-era estimate)
+                # would silently prune valid v7x combos that the runtime
+                # check would happily accept.
                 #
                 # NOTE: VMEM_LIMIT_BYTES is conservative for v7x and may
-                # be too LENIENT for v6e (which has ~16 MB VMEM). When
-                # tuning targets a smaller-VMEM device, this constant
-                # should be auto-detected (e.g. via
-                # `pltpu.get_tpu_info().vmem_capacity_bytes`) or set
-                # device-specifically. Today the constant is hardcoded.
-                vmem_estimate = estimate_vmem_for_combo(
-                    num_kv_heads=nk, num_q_heads=nq, head_dim=hd,
+                # be too LENIENT for v6e (~16 MB VMEM). When tuning
+                # targets a smaller-VMEM device, this constant should be
+                # auto-detected (e.g. `pltpu.get_tpu_info().vmem_capacity_bytes`)
+                # or set device-specifically. Today the constant is hardcoded.
+                vmem_estimate = get_vmem_estimate_bytes(
+                    actual_num_kv_heads=nk,
+                    actual_num_q_heads_per_kv_head=nq // nk,
+                    actual_head_dim=hd,
                     bq_sz=bq_sz, bkv_sz=bkv_sz,
                     q_dtype=qd, kv_dtype=kd,
                 )
                 if vmem_estimate > VMEM_LIMIT_BYTES:
+                    _reject("vmem_overflow")
                     continue
 
                 # LOGICAL-only pre-flight SMEM check. The two iter-keyed
@@ -567,105 +569,117 @@ class RpaV3KernelTuner(KernelTunerBase):
                 # over the limit at the larger M values; pruning here
                 # avoids spending a full kernel-compile + run on a combo
                 # the runtime check at `run()` would reject anyway.
-                # Non-LOGICAL combos defer to the runtime check
-                # (preserving existing tune behaviour).
                 if case == CASE_LOGICAL:
+                    eff_max_num_seqs_pre = max(1, (mns * K) // mml)
                     smem_estimate = get_smem_estimate_bytes(
-                        self.max_num_seqs, pages_per_seq,
+                        eff_max_num_seqs_pre, pages_per_seq,
                         max_num_subseqs=mns)
                     if smem_estimate > SMEM_LIMIT_BYTES:
+                        _reject("smem_overflow")
                         continue
 
-                tuning_key = TuningKey(
-                    page_size=ps,
-                    q_dtype=jnp.dtype(qd).name,
-                    kv_dtype=jnp.dtype(kd).name,
-                    num_q_heads=nq,
-                    num_kv_heads=nk,
-                    head_dim=hd,
-                    max_model_len=mml,
-                    sliding_window=sw,
-                    case=case,
-                    chunk_prefill_size=K,
-                    code_revision=self.code_revision,
-                )
-
-                # Skip if we already successfully tuned this exact environment shape
-                tk_dict = dataclasses.asdict(tuning_key)
-                tk_hash = tuning_key_hash(
-                    tk_dict,
-                    skip_commit_cache_check=self._skip_commit_cache_check)
-                if tk_hash in self.completed_tuning_keys:
-                    continue
-
-                tunable_params = TunableParams(bq_sz=bq_sz,
-                                               bkv_sz=bkv_sz,
-                                               bq_csz=bq_csz,
-                                               bkv_csz=bkv_csz,
-                                               max_num_subseqs=mns)
                 out.append(TuningCase(tuning_key, tunable_params))
-        logger.info(f"[Debug] Generated {len(out)} cases")
+        logger.info(
+            "[generate_cases] %d enumerated, %d resumed-skip, %d pre-flight-rejected",
+            len(out), n_resumed, n_rejected)
         return out
 
     def _build_inputs(self, tuning_key: TuningKey,
                       tunable_params: TunableParams | None = None):
-        """Build the (cu_q_lens, kv_lens, decode_end, prefill_end,
-        actual_num_seqs) tuple for the case's synthetic workload.
+        """Build the synthetic workload + sizing for one combo.
 
-        For CASE_LOGICAL, `tunable_params` is required because the
-        workload shape depends on the tuned `max_num_subseqs` (it
-        determines M_per_phys = chunks per req in the synthetic
-        workload). For other cases, the workload is tuning-key-only
-        and `tunable_params` is ignored.
+        Single source of truth for per-combo sizing — derives
+        `eff_max_num_tokens` / `eff_max_num_seqs` here (per doc §2
+        row 5: kernel-tune does not read MAX_NUM_BATCHED_TOKENS /
+        MAX_NUM_SEQS from env). For LOGICAL, also computes the
+        `LogicalWorkloadSize` so callers can drive the iter-keyed
+        prefetch fill without re-invoking `size_logical_workload`.
+
+        Returns:
+            (cu_q_lens, kv_lens, decode_end, prefill_end,
+             actual_num_seqs, eff_max_num_tokens, eff_max_num_seqs,
+             logical_sizing)
+
+            `actual_num_seqs` semantics: PHYS count for D/P/M;
+            ITER count (= phys * m_per_phys) for LOGICAL, since
+            distribution[2] = num_total and the kernel's
+            dynamic_validate_inputs requires i <= j <= k.
+
+            `logical_sizing` is the full `LogicalWorkloadSize`
+            for CASE_LOGICAL, None for D/P/M.
         """
         case = tuning_key.case
-        max_num_seqs = self.max_num_seqs
+        mml = tuning_key.max_model_len
+
         if case == CASE_DECODE:
-            actual_num_seqs = min(32, max_num_seqs)
-            return get_decode_only_example(actual_num_seqs,
-                                           tuning_key.max_model_len) + (
-                                               actual_num_seqs, )
+            # Synthetic: 32 decode seqs, 1 token each.
+            eff_max_num_seqs = 32
+            eff_max_num_tokens = eff_max_num_seqs  # 1 token per seq
+            actual_num_seqs = eff_max_num_seqs
+            cu_q_lens, kv_lens, decode_end, prefill_end = (
+                get_decode_only_example(actual_num_seqs, mml))
+            return (cu_q_lens, kv_lens, decode_end, prefill_end,
+                    actual_num_seqs, eff_max_num_tokens,
+                    eff_max_num_seqs, None)
+
         if case == CASE_PREFILL:
-            K = tuning_key.chunk_prefill_size
+            K = tunable_params.chunk_prefill_size
             assert K > 0
-            actual_num_seqs = max(
-                1, min(self.max_num_tokens // K, max_num_seqs))
-            return get_prefill_only_example(actual_num_seqs, K,
-                                            tuning_key.max_model_len) + (
-                                                actual_num_seqs, )
+            # Synthetic: pack ≤32 K-sized chunks per call.
+            eff_max_num_seqs = max(1, min(mml // K, 32))
+            eff_max_num_tokens = eff_max_num_seqs * K
+            actual_num_seqs = eff_max_num_seqs
+            cu_q_lens, kv_lens, decode_end, prefill_end = (
+                get_prefill_only_example(actual_num_seqs, K, mml))
+            return (cu_q_lens, kv_lens, decode_end, prefill_end,
+                    actual_num_seqs, eff_max_num_tokens,
+                    eff_max_num_seqs, None)
+
         if case == CASE_LOGICAL:
             assert tunable_params is not None and (
                 tunable_params.max_num_subseqs is not None), (
                 "LOGICAL case requires tunable_params with max_num_subseqs "
                 f"set, got {tunable_params=}")
-            K = tuning_key.chunk_prefill_size
+            K = tunable_params.chunk_prefill_size
+            mns = tunable_params.max_num_subseqs
             assert K > 0
+            eff_max_num_tokens = mns * K
+            # Per user 2026-05-16: max_num_seqs derived from token
+            # budget / per-prompt size (= max_model_len), not from
+            # mnss directly.
+            eff_max_num_seqs = max(1, eff_max_num_tokens // mml)
             sizing = size_logical_workload(
-                max_num_seqs=max_num_seqs,
-                max_num_tokens=self.max_num_tokens,
-                K=K,
-                max_num_subseqs=tunable_params.max_num_subseqs)
+                max_num_seqs=eff_max_num_seqs,
+                max_num_tokens=eff_max_num_tokens,
+                K=K, max_num_subseqs=mns)
             assert sizing.valid, (
                 "LOGICAL combo passed generate_cases pre-flight but "
                 f"failed at _build_inputs sizing. {tuning_key=} "
-                f"{tunable_params=} max_num_seqs={max_num_seqs} "
-                f"max_num_tokens={self.max_num_tokens}. This is a "
-                "logic bug — both call sites must use size_logical_workload.")
-            # 5-tuple convention: last element is the ITER count (num_total
-            # in distribution[2]). For D / P / M, iter == phys count so
-            # the two are interchangeable. For LOGICAL, total_iters =
-            # actual_num_seqs * m_per_phys; passing the phys count here
-            # would make distribution[2] < distribution[1] and fail
-            # dynamic_validate_inputs (i <= j <= k). The phys count is
-            # recomputed via size_logical_workload at the iter-keyed
-            # prefetch fill site below.
-            return get_logical_only_example(
-                sizing.actual_num_seqs, K, sizing.m_per_phys,
-                tuning_key.max_model_len) + (sizing.total_iters, )
-        actual_num_seqs = min(8, max_num_seqs)
-        return get_mixed_example(actual_num_seqs, self.max_num_tokens,
-                                 tuning_key.max_model_len) + (
-                                     actual_num_seqs, )
+                f"{tunable_params=} "
+                f"eff_max_num_seqs={eff_max_num_seqs} "
+                f"eff_max_num_tokens={eff_max_num_tokens}. This is "
+                "a logic bug — both sites must use size_logical_workload.")
+            cu_q_lens, kv_lens, decode_end, prefill_end = (
+                get_logical_only_example(sizing.actual_num_seqs, K,
+                                         sizing.m_per_phys, mml))
+            # actual_num_seqs in the returned tuple is the ITER count
+            # for LOGICAL (= sizing.total_iters): distribution[2] =
+            # num_total, and the kernel's dynamic_validate_inputs
+            # requires i <= j <= k. Phys count is in logical_sizing.
+            return (cu_q_lens, kv_lens, decode_end, prefill_end,
+                    sizing.total_iters, eff_max_num_tokens,
+                    eff_max_num_seqs, sizing)
+
+        # CASE_MIXED: 1 decode + (N-1) prefill chunks; total tokens
+        # = one full prompt (max_model_len).
+        eff_max_num_seqs = 8
+        eff_max_num_tokens = mml
+        actual_num_seqs = eff_max_num_seqs
+        cu_q_lens, kv_lens, decode_end, prefill_end = (
+            get_mixed_example(actual_num_seqs, eff_max_num_tokens, mml))
+        return (cu_q_lens, kv_lens, decode_end, prefill_end,
+                actual_num_seqs, eff_max_num_tokens,
+                eff_max_num_seqs, None)
 
     def generate_inputs(self, tuning_key: TuningKey,
                         tunable_params: TunableParams | None = None):
@@ -680,8 +694,19 @@ class RpaV3KernelTuner(KernelTunerBase):
         mns_for_cache = (tunable_params.max_num_subseqs
                          if tuning_key.case == CASE_LOGICAL and
                          tunable_params is not None else None)
-        cache_key = (tuning_key.case, tuning_key.chunk_prefill_size,
-                     tuning_key.page_size, tuning_key.q_dtype,
+        # 2026-05-16: page_size moved from TuningKey to TunableParams.
+        # Required for cache_key correctness — same page_size with
+        # different block sizes is a different cached input set, AND
+        # different page_size with same block sizes is also different.
+        # Our local run() (line 935) always passes tunable_params; if
+        # the base class fallback ever calls without it, fail loud.
+        assert tunable_params is not None, (
+            "generate_inputs requires tunable_params (page_size + block "
+            "sizes are tunable_params fields per docs/tuning_architecture.md "
+            "§2 row 3). Local run() at the bottom of this file always passes "
+            "tunable_params; this assertion catches base-class fallback paths.")
+        cache_key = (tuning_key.case, tunable_params.chunk_prefill_size,
+                     tunable_params.page_size, tuning_key.q_dtype,
                      tuning_key.kv_dtype, tuning_key.num_q_heads,
                      tuning_key.num_kv_heads, tuning_key.head_dim,
                      tuning_key.max_model_len, tuning_key.sliding_window,
@@ -710,8 +735,12 @@ class RpaV3KernelTuner(KernelTunerBase):
             self._KERNEL_INPUTS_CACHE = None
         self._INPUT_CACHE_KEY = cache_key
 
-        cu_q_lens, kv_lens, decode_end, prefill_end, actual_num_seqs = (
-            self._build_inputs(tuning_key, tunable_params))
+        # Per-combo synthetic-workload sizing lives entirely in
+        # _build_inputs (single source of truth — no env-derived
+        # MNS/MNB; per doc §2 row 5).
+        (cu_q_lens, kv_lens, decode_end, prefill_end, actual_num_seqs,
+         eff_max_num_tokens, eff_max_num_seqs,
+         logical_sizing) = self._build_inputs(tuning_key, tunable_params)
 
         (
             page_size,
@@ -723,7 +752,7 @@ class RpaV3KernelTuner(KernelTunerBase):
             max_model_len,
             _,
         ) = get_simplified_raw_key(
-            tuning_key.page_size,
+            tunable_params.page_size,
             tuning_key.q_dtype,
             tuning_key.kv_dtype,
             tuning_key.num_q_heads,
@@ -736,15 +765,21 @@ class RpaV3KernelTuner(KernelTunerBase):
         kv_dtype = jnp.dtype(kv_dtype_name)
         self.pages_per_seq = cdiv(max_model_len, page_size)
 
+        # Tensor allocations use the per-combo eff_* from _build_inputs
+        # for every case. KV cache pool sized at
+        # (eff_max_num_seqs × pages_per_seq) — was previously
+        # self.total_num_pages (init-time worst-case).
+        eff_total_num_pages = eff_max_num_seqs * self.pages_per_seq
+
         cu_q_lens = jnp.array(cu_q_lens, dtype=jnp.int32)
         kv_lens = jnp.array(kv_lens, dtype=jnp.int32)
         cu_q_lens = jnp.pad(cu_q_lens,
-                            (0, self.max_num_seqs + 1 - cu_q_lens.shape[0]))
-        kv_lens = jnp.pad(kv_lens, (0, self.max_num_seqs - kv_lens.shape[0]))
+                            (0, eff_max_num_seqs + 1 - cu_q_lens.shape[0]))
+        kv_lens = jnp.pad(kv_lens, (0, eff_max_num_seqs - kv_lens.shape[0]))
 
-        q_shape = (self.max_num_tokens, num_q_heads, head_dim)
-        kv_shape = (self.max_num_tokens, num_kv_heads, head_dim)
-        kv_cache_shape = get_kv_cache_shape(self.total_num_pages, page_size,
+        q_shape = (eff_max_num_tokens, num_q_heads, head_dim)
+        kv_shape = (eff_max_num_tokens, num_kv_heads, head_dim)
+        kv_cache_shape = get_kv_cache_shape(eff_total_num_pages, page_size,
                                             num_kv_heads, head_dim, kv_dtype)
 
         rng = np.random.default_rng(1234)
@@ -759,15 +794,15 @@ class RpaV3KernelTuner(KernelTunerBase):
                              dtype=kv_dtype)
         page_indices = jnp.array(rng.integers(
             0,
-            self.total_num_pages,
-            size=(self.max_num_seqs * self.pages_per_seq, ),
+            eff_total_num_pages,
+            size=(eff_max_num_seqs * self.pages_per_seq, ),
             dtype=np.int32),
                                  dtype=jnp.int32)
 
         distribution = jnp.array([decode_end, prefill_end, actual_num_seqs],
                                  dtype=jnp.int32)
         logger.info(
-            f"[Debug] case={tuning_key.case} K={tuning_key.chunk_prefill_size}"
+            f"[Debug] case={tuning_key.case} K={tunable_params.chunk_prefill_size}"
             f" actual_num_seqs={actual_num_seqs} {distribution=}")
 
         cache_dict = {
@@ -784,25 +819,18 @@ class RpaV3KernelTuner(KernelTunerBase):
         # LOGICAL: build the iter-keyed prefetch arrays from the
         # synthetic workload. phys_seq_indices: [0]*M + [1]*M + ... +
         # [N-1]*M, padded to mns. q_offsets: [0, K, 2K, ..., (M-1)*K]
-        # repeated N times, padded to mns. Padding values are 0 (kernel
-        # never reads beyond distribution[2] = N*M).
-        #
-        # `actual_num_seqs` from _build_inputs is the iter count for
-        # LOGICAL (carries through to distribution[2]); the PHYS count
-        # for the fill loop is recomputed via size_logical_workload.
-        if (tuning_key.case == CASE_LOGICAL and tunable_params is not None
-                and tunable_params.max_num_subseqs is not None):
+        # repeated N times, padded to mns. Padding values are 0
+        # (kernel never reads beyond distribution[2] = N*M). Sizing
+        # comes from _build_inputs (no second size_logical_workload
+        # invocation here).
+        if logical_sizing is not None:
             mns = tunable_params.max_num_subseqs
-            K = tuning_key.chunk_prefill_size
-            sizing = size_logical_workload(
-                max_num_seqs=self.max_num_seqs,
-                max_num_tokens=self.max_num_tokens,
-                K=K, max_num_subseqs=mns)
+            K = tunable_params.chunk_prefill_size
             phys_seq_indices_np = np.zeros(mns, dtype=np.int32)
             q_offsets_np = np.zeros(mns, dtype=np.int32)
             i = 0
-            for phys in range(sizing.actual_num_seqs):
-                for chunk_idx in range(sizing.m_per_phys):
+            for phys in range(logical_sizing.actual_num_seqs):
+                for chunk_idx in range(logical_sizing.m_per_phys):
                     phys_seq_indices_np[i] = phys
                     q_offsets_np[i] = chunk_idx * K
                     i += 1
@@ -823,7 +851,7 @@ class RpaV3KernelTuner(KernelTunerBase):
         # (bq_sz=512, bkv_sz=2048 on v7) exceeds 64MB VMEM. Pass tiny
         # block sizes for the no-op buckets so they compile cheaply; the
         # runtime cost is ~tens of us of empty-launch overhead per call.
-        ps = tuning_key.page_size
+        ps = tunable_params.page_size
         d_minimal = (1, ps, 1, ps)        # decode requires bq_sz=bq_csz=1
         pm_minimal = (16, ps, 16, ps)     # smallest legal block for p/m
         kwargs = {
@@ -835,7 +863,7 @@ class RpaV3KernelTuner(KernelTunerBase):
             kwargs["m_block_sizes"] = pm_minimal
         elif tuning_key.case == CASE_PREFILL:
             kwargs["p_block_sizes"] = block_tuple
-            kwargs["chunk_prefill_size"] = tuning_key.chunk_prefill_size
+            kwargs["chunk_prefill_size"] = tunable_params.chunk_prefill_size
             kwargs["d_block_sizes"] = d_minimal
             kwargs["m_block_sizes"] = pm_minimal
         elif tuning_key.case == CASE_LOGICAL:
@@ -845,7 +873,7 @@ class RpaV3KernelTuner(KernelTunerBase):
             # not None` check selects the LOGICAL branch when run()
             # passes the iter-keyed prefetches via positional args.
             kwargs["p_block_sizes"] = block_tuple
-            kwargs["chunk_prefill_size"] = tuning_key.chunk_prefill_size
+            kwargs["chunk_prefill_size"] = tunable_params.chunk_prefill_size
             kwargs["d_block_sizes"] = d_minimal
             kwargs["m_block_sizes"] = pm_minimal
         else:
@@ -858,7 +886,7 @@ class RpaV3KernelTuner(KernelTunerBase):
             tunable_params: TunableParams,
             iters: int = 1) -> tuple[TuningStatus, float, float]:
         logger.info(f"Running rpa_v3 case={tuning_key.case} "
-                    f"K={tuning_key.chunk_prefill_size} "
+                    f"K={tunable_params.chunk_prefill_size} "
                     f"key={tuning_key} params={tunable_params} iters={iters}")
         inputs = self.generate_inputs(tuning_key, tunable_params)
         args = [
@@ -884,10 +912,11 @@ class RpaV3KernelTuner(KernelTunerBase):
             logger.info(f"[Debug] Validate failed: {err=}")
             return TuningStatus.UNKNOWN_ERROR, float("inf"), float("inf")
 
-        vmem_estimate = estimate_vmem_for_combo(
-            num_kv_heads=tuning_key.num_kv_heads,
-            num_q_heads=tuning_key.num_q_heads,
-            head_dim=tuning_key.head_dim,
+        vmem_estimate = get_vmem_estimate_bytes(
+            actual_num_kv_heads=tuning_key.num_kv_heads,
+            actual_num_q_heads_per_kv_head=(
+                tuning_key.num_q_heads // tuning_key.num_kv_heads),
+            actual_head_dim=tuning_key.head_dim,
             bq_sz=tunable_params.bq_sz,
             bkv_sz=tunable_params.bkv_sz,
             q_dtype=tuning_key.q_dtype,
@@ -902,8 +931,25 @@ class RpaV3KernelTuner(KernelTunerBase):
         # max_num_subseqs; pass through to the SMEM estimator for an
         # accurate check. Non-LOGICAL: max_num_subseqs=None ->
         # collapses to max_num_seqs (coupled-K identity).
+        # 2026-05-16: per-case derivation — kernel-tune no longer reads
+        # env MAX_NUM_SEQS (doc §2 row 5). For LOGICAL, derive from
+        # (mnss × K) / max_model_len. For D/P/M, use the same per-case
+        # constants generate_inputs uses for synthetic workload sizing.
+        case = tuning_key.case
+        mml = tuning_key.max_model_len
+        if (case == CASE_LOGICAL
+                and tunable_params.max_num_subseqs is not None):
+            _mns = tunable_params.max_num_subseqs
+            _K = tunable_params.chunk_prefill_size
+            _smem_check_mns = max(1, (_mns * _K) // mml)
+        elif case == CASE_DECODE:
+            _smem_check_mns = 32
+        elif case == CASE_PREFILL:
+            _smem_check_mns = max(1, min(mml // tunable_params.chunk_prefill_size, 32))
+        else:  # CASE_MIXED
+            _smem_check_mns = 8
         smem_estimate = get_smem_estimate_bytes(
-            self.max_num_seqs,
+            _smem_check_mns,
             self.pages_per_seq,
             max_num_subseqs=tunable_params.max_num_subseqs)
         if smem_estimate > SMEM_LIMIT_BYTES:

@@ -115,6 +115,26 @@ class KernelTunerBase(ABC):
         # the JSONL never does. Source of truth for resume.
         self.raw_jsonl_path = None
 
+        # Resume from prior raw.jsonl is OPT-IN via KERNEL_TUNER_RESUME=1.
+        # Default: fresh tune — old jsonl is rotated to .bak.<timestamp>
+        # on first access; the skip-set is empty. Writes (_append_raw_jsonl)
+        # are NOT gated — they always go to the (now-empty) jsonl, so a
+        # later opt-in run can resume the in-flight write history.
+        self._resume_enabled = os.environ.get("KERNEL_TUNER_RESUME") == "1"
+        self._jsonl_flushed = False
+        if self._resume_enabled:
+            logger.warning(
+                "KERNEL_TUNER_RESUME=1: will read existing "
+                "kernel.raw.jsonl and skip combos already SUCCESS / "
+                "FAILED_OOM / SKIPPED. code_revision is part of the "
+                "skip-key — only entries from the current commit match.")
+        else:
+            logger.info(
+                "Resume disabled (default). Set KERNEL_TUNER_RESUME=1 "
+                "to resume from existing kernel.raw.jsonl. Existing "
+                "jsonl will be rotated to .bak.<timestamp> on first "
+                "access.")
+
     # Statuses where re-running the combo is wasted time — SUCCESS
     # already has its measurement, FAILED_OOM / SKIPPED reproduce
     # identically. UNKNOWN_ERROR is intentionally OUT so post-bugfix
@@ -136,16 +156,41 @@ class KernelTunerBase(ABC):
             sort_keys=True, default=str,
         )
 
+    def _flush_raw_jsonl_once(self) -> None:
+        """Rotate any existing raw.jsonl to `.bak.<timestamp>`. One-shot
+        per tuner instance — subsequent calls are no-ops. Used when
+        resume is disabled (the default) to guarantee the active jsonl
+        is the complete record of THIS tune, not a mix of prior runs.
+        """
+        if self._jsonl_flushed or self.raw_jsonl_path is None:
+            return
+        from pathlib import Path
+        path = Path(self.raw_jsonl_path)
+        if path.exists():
+            bak = path.with_suffix(
+                f".bak.{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+            path.rename(bak)
+            logger.info("Resume disabled — rotated %s -> %s", path, bak)
+        self._jsonl_flushed = True
+
     def _load_raw_jsonl_skip_set(self) -> set:
         """Read every prior row from `self.raw_jsonl_path` and return
         the set of combo keys whose status is permanent. No-op (empty
-        set) when raw_jsonl_path is None or the file doesn't exist.
+        set) when raw_jsonl_path is None, the file doesn't exist, or
+        KERNEL_TUNER_RESUME is not opted in.
+
+        When resume is opt-out (default), this rotates any existing
+        jsonl to `.bak.<timestamp>` on first call so the active jsonl
+        is a clean record of THIS tune.
 
         Tolerates a truncated trailing line — if a Ctrl-C interrupted
         a partial write, the last line may be incomplete; we json-decode
         per-line and silently skip any line that fails to parse. The
         earlier complete lines still count.
         """
+        if not self._resume_enabled:
+            self._flush_raw_jsonl_once()
+            return set()
         if self.raw_jsonl_path is None:
             return set()
         from pathlib import Path

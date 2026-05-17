@@ -236,6 +236,10 @@ class TestLoadRawJsonlSkipSet(unittest.TestCase):
 
     def setUp(self):
         self.tuner = _make_tuner()
+        # Resume is opt-in (default OFF since 2026-05-16 base-class change
+        # to gate via KERNEL_TUNER_RESUME=1). These tests exercise the
+        # reader path directly, so force-enable.
+        self.tuner._resume_enabled = True
         self.tmp = tempfile.TemporaryDirectory()
         self.path = Path(self.tmp.name) / "kernel.raw.jsonl"
 
@@ -293,6 +297,80 @@ class TestLoadRawJsonlSkipSet(unittest.TestCase):
         self.assertEqual(len(skip), 1)
 
 
+class TestResumeOptIn(unittest.TestCase):
+    """`KERNEL_TUNER_RESUME` opt-in gating + flush-on-fresh-tune."""
+
+    def setUp(self):
+        self.tuner = _make_tuner()
+        # Tuner reads KERNEL_TUNER_RESUME at __init__; default off.
+        self.assertFalse(self.tuner._resume_enabled,
+                         "Test assumes env unset → resume disabled.")
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = Path(self.tmp.name) / "kernel.raw.jsonl"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_skip_set_empty_when_resume_disabled(self):
+        """Default (no opt-in): skip-set is empty REGARDLESS of jsonl
+        content, so every combo is re-run."""
+        with open(self.path, "w") as f:
+            f.write(json.dumps({"tuning_key": {"a": 1},
+                                "tunable_params": {"b": 1},
+                                "status": "SUCCESS"}) + "\n")
+        self.tuner.raw_jsonl_path = self.path
+        self.assertEqual(self.tuner._load_raw_jsonl_skip_set(), set())
+
+    def test_existing_jsonl_rotated_to_bak_when_resume_disabled(self):
+        """Fresh tune (default) rotates existing jsonl to .bak.<ts>
+        on first _load_raw_jsonl_skip_set call. Guarantees the active
+        jsonl is a clean record of THIS tune."""
+        with open(self.path, "w") as f:
+            f.write(json.dumps({"tuning_key": {"a": 1},
+                                "tunable_params": {"b": 1},
+                                "status": "SUCCESS"}) + "\n")
+        self.tuner.raw_jsonl_path = self.path
+        self.tuner._load_raw_jsonl_skip_set()
+        # Original gone.
+        self.assertFalse(self.path.exists())
+        # A .bak.* sibling exists.
+        baks = list(self.path.parent.glob("kernel.raw.bak.*"))
+        self.assertEqual(len(baks), 1, f"Expected 1 .bak; got {baks}")
+
+    def test_flush_is_idempotent(self):
+        """_flush_raw_jsonl_once is a no-op on second call (so multiple
+        _load_raw_jsonl_skip_set calls don't spam .bak files)."""
+        with open(self.path, "w") as f:
+            f.write(json.dumps({"tuning_key": {"a": 1},
+                                "tunable_params": {"b": 1},
+                                "status": "SUCCESS"}) + "\n")
+        self.tuner.raw_jsonl_path = self.path
+        self.tuner._load_raw_jsonl_skip_set()
+        # Simulate a subsequent write between calls.
+        self.path.write_text(json.dumps({"tuning_key": {"a": 2},
+                                         "tunable_params": {"b": 2},
+                                         "status": "SUCCESS"}) + "\n")
+        self.tuner._load_raw_jsonl_skip_set()
+        # Still ONE .bak, not two — second call skipped the rotation.
+        baks = list(self.path.parent.glob("kernel.raw.bak.*"))
+        self.assertEqual(len(baks), 1)
+        # The mid-test write was NOT rotated (it's the active jsonl now).
+        self.assertTrue(self.path.exists())
+
+    def test_writes_unaffected_by_resume_state(self):
+        """_append_raw_jsonl is not gated — writes always happen so a
+        later opt-in run can resume from this run's accumulated state."""
+        self.tuner.raw_jsonl_path = self.path
+        tk = _TK(page_size=128, case="logical", chunk_prefill_size=128)
+        tp = _TP(bq_sz=128, bkv_sz=512, bq_csz=128, bkv_csz=256,
+                 max_num_subseqs=256)
+        self.tuner._append_raw_jsonl(
+            tuning_key=tk, tunable_params=tp,
+            status=TuningStatus.SUCCESS, case_id=0)
+        self.assertTrue(self.path.exists())
+        self.assertIn("SUCCESS", self.path.read_text())
+
+
 class TestComboSkipKey(unittest.TestCase):
     """`_combo_skip_key` — stable hashable identifier."""
 
@@ -319,6 +397,7 @@ class TestComboSkipKey(unittest.TestCase):
         same combo. Without this property, resume would never skip
         anything (writer's key never matches reader's key)."""
         tuner = _make_tuner()
+        tuner._resume_enabled = True  # Reader path needs opt-in.
         tmp = tempfile.TemporaryDirectory()
         try:
             path = Path(tmp.name) / "kernel.raw.jsonl"

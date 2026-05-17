@@ -206,8 +206,9 @@ echo ""
 
 {
     echo "=== Layer 1: Hardware Tuning ==="
-    # Export the registry path so the tuner can skip already-tuned cases
-    export RPA_V3_KERNEL_REGISTRY="$PROD_KERNEL"
+    # Resume is owned by raw.jsonl in the tune DB dir (per-combo,
+    # base-class _load_raw_jsonl_skip_set). production.kernel is the
+    # final-winners artifact only — never consulted for resume.
 
     # Execute the tuner against the SSoT workload boundaries
     tools/kernel/tuner/v1/tune_all_cases.sh "$WORKLOAD" "$WORKLOAD_BASENAME"
