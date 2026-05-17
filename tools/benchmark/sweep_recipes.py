@@ -40,10 +40,119 @@ for block sizes; the service-side analogue is a follow-up.
 
 import argparse
 import json
+import math
 import os
 import sys
 from pathlib import Path
 from typing import Any
+
+
+# ============================================================================
+# GPU memory utilization estimator
+# ============================================================================
+#
+# vllm's `--gpu-memory-utilization` is the fraction of total HBM vllm reserves
+# for its own state (weights + KV cache). The remaining (1 - util) × HBM is
+# headroom for everything XLA/TPU needs outside vllm's view:
+#   - HLO program scratch (activations during the forward pass; SCALES with MNB)
+#   - TPU runtime overhead (libtpu reservations, IPC buffers)
+#   - vllm internal allocations that scale with in-flight prompt count
+#
+# Larger MNB ⇒ larger forward-pass activations ⇒ more HLO scratch needed ⇒
+# LESS room for KV cache ⇒ lower max util. This formula captures that trade-off.
+#
+# Calibration: four end-to-end debug runs on 2026-05-16 with Llama 3 8B on
+# v7x-1 / TP=1, all using SKIP_BUCKET_AUTOGEN=1 to isolate one bucket's
+# scratch:
+#     MNB     observed working util     HLO observed     overhead observed
+#     262144  0.88                      9.01 GiB         2.01 GiB
+#     327680  0.85                     11.26 GiB         2.49 GiB
+#     393216  0.82                     13.51 GiB         2.98 GiB
+#     458752  0.79                     15.76 GiB         3.48 GiB
+#
+# HLO scratch is LINEAR in MNB (verified within 0.1 GiB across all 4 points):
+#     HLO ≈ 9.01 / 262144 × MNB GiB
+#
+# Overhead scales roughly LINEARLY with prompts-in-flight (= MNB / INPUT_LEN):
+#     overhead ≈ 1.0 + 0.062 × (MNB / INPUT_LEN) GiB
+# (0.062 × 32 prompts + 1.0 = 2.984 ≈ 2.01 observed — slightly conservative)
+#
+# The formula rounds util DOWN to nearest 0.01 for safety (it should never
+# return a value HIGHER than the empirical floor). The sweep widens by
+# +0.01 / +0.02 to recover the real working value and explore tighter fits.
+
+def estimate_gpu_memory_utilization(
+    mnb: int,
+    input_len: int = 8192,
+    *,
+    hbm_total_gib: float = 94.75,
+    hlo_per_mnb_gib: float = 9.01 / 262144,
+    overhead_base_gib: float = 1.0,
+    overhead_per_prompt_gib: float = 0.062,
+) -> float:
+    """Estimate the maximum GPU_MEMORY_UTILIZATION that fits a given MNB.
+
+    Returns a value rounded DOWN to the nearest 0.01 — calling code should
+    treat this as the safe FLOOR. To find the empirical sweet spot, sweep
+    {est, est + 0.01, est + 0.02} and let the sweep pick the winner; values
+    above est+0.02 typically OOM in the runs we have data for.
+
+    Args:
+      mnb: max_num_batched_tokens (tokens per kernel call).
+      input_len: prompt length in tokens — needed to compute the
+        in-flight prompt count for overhead scaling. Defaults to 8192
+        (the canonical prefill_heavy workload).
+      hbm_total_gib: total HBM per chip. Default 94.75 G (v7x-1; observed
+        via vllm's tpu_worker `total_hbm_limit_gb` line).
+      hlo_per_mnb_gib: empirical HLO-scratch slope (GiB per MNB token).
+        Calibrated from the verified MNB=262144 run.
+      overhead_base_gib: constant overhead component (libtpu runtime).
+      overhead_per_prompt_gib: per-in-flight-prompt overhead growth.
+
+    Returns:
+      Estimated max util as a float rounded DOWN to 2 decimals (e.g. 0.85).
+
+    Defaults are pinned to Llama 3 8B / v7x-1 / TP=1 because that is the
+    sole configuration the formula has been calibrated against. Other
+    (model, hardware, TP) combinations need their own coefficients
+    re-derived from a verification sweep.
+    """
+    hlo_gib = hlo_per_mnb_gib * mnb
+    prompts_in_flight = mnb / input_len
+    overhead_gib = (
+        overhead_base_gib + overhead_per_prompt_gib * prompts_in_flight
+    )
+    headroom_needed_gib = hlo_gib + overhead_gib
+    util = 1.0 - headroom_needed_gib / hbm_total_gib
+    return math.floor(util * 100) / 100
+
+
+def _throughput_coupled_axes() -> list[dict[str, Any]]:
+    """Build (MAX_NUM_BATCHED_TOKENS, GPU_MEMORY_UTILIZATION) pairs for
+    the throughput recipe.
+
+    For each MNB in the HBM-feasible axis (capped at 458752 per the
+    single-chip-TP=1 KV+HLO budget), generate three util candidates:
+    {est, est+0.01, est+0.02} where est is the formula floor. The sweep
+    runs all three; the higher values may OOM and get marked failed
+    (handled gracefully by sweep.py — exit 0 on partial success). The
+    winner is the (MNB, util) combo with the highest req/s — found via
+    the existing build_service_registry ranking.
+
+    Total combos generated here: 5 MNB × 3 util = 15 (cross-product with
+    MAX_NUM_SEQS axis in the recipe gives the final combo count).
+    """
+    axis_mnb = [131072, 262144, 327680, 393216, 458752]
+    pairs: list[dict[str, Any]] = []
+    for mnb in axis_mnb:
+        est = estimate_gpu_memory_utilization(mnb, input_len=8192)
+        for delta in (0.00, 0.01, 0.02):
+            pairs.append({
+                "MAX_NUM_BATCHED_TOKENS": mnb,
+                # round() avoids 0.83 + 0.01 = 0.8400000000000001
+                "GPU_MEMORY_UTILIZATION": round(est + delta, 2),
+            })
+    return pairs
 
 
 # (kernel_id, service_id) -> recipe.
@@ -64,23 +173,28 @@ from typing import Any
 # at the scheduler level.
 RECIPES: dict[tuple[str, str], dict[str, Any]] = {
     ("rpa_v3", "vllm"): {
+        # MAX_NUM_BATCHED_TOKENS lives in coupled_axes (paired with
+        # GPU_MEMORY_UTILIZATION), NOT in sweep_axes. Each MNB has a
+        # DIFFERENT optimal util (larger MNB needs more HLO headroom ->
+        # lower util) so cartesian-product would generate many infeasible
+        # combos. See _throughput_coupled_axes() for the per-MNB util
+        # bands the sweep explores.
         "sweep_axes": {
-            # 2026-05-16: trimmed exponential axis -> linear, HBM-feasible
-            # values only. The math (single-chip TP=1, Llama 3 8B,
-            # 8192-token prompts, 128 KiB/token KV):
-            #   MNB     prompts/call   KV need    HLO scratch    min util
-            #   131072  16             16 G       ~5 G           0.92 (orig default; verified 4.9 req/s)
-            #   262144  32             32 G       ~9 G           0.88 (verified started 2026-05-16)
-            #   327680  40             40 G       ~11 G          0.86 (predicted)
-            #   393216  48             48 G       ~14 G          0.84 (predicted)
-            #   458752  56             56 G       ~16 G          0.82 (predicted, marginal)
-            #   524288  64             64 G       ~18 G          infeasible (sum > 94.75 G total HBM)
-            # 524288 / 1081344 dropped: math says they can't fit on a
-            # single chip at TP=1 at any util. To explore beyond 458752
-            # we'd need TP>1 (shards weights AND KV cache across chips).
-            "MAX_NUM_BATCHED_TOKENS":       [131072, 262144, 327680, 393216, 458752],
             "MAX_NUM_SEQS":                 [128, 256, 1000],
         },
+        # 2026-05-16: per-MNB GPU_MEMORY_UTILIZATION sweep, generated by
+        # estimate_gpu_memory_utilization(). For each MNB in
+        # [131072..458752], sweep {est, est+0.01, est+0.02}. Smaller MNBs
+        # have wider headroom margins so higher util is achievable;
+        # larger MNBs need progressively lower util because HLO scratch
+        # scales linearly with MNB. The sweep finds the winning
+        # (MNB, util) per the rank_metric; values that OOM are marked
+        # failed and don't affect the winner.
+        # 524288+ excluded entirely: single-chip TP=1 cannot fit the
+        # required KV cache (64 prompts × 1 GiB) plus HLO scratch
+        # (~18 GiB) plus weights (15 GiB) in 94.75 GiB HBM at any util.
+        # TP>1 is the path to >458752.
+        "coupled_axes": _throughput_coupled_axes(),
         "fixed": {
             # page_size winner from the all-three-flavors tune.
             "BLOCK_SIZE": 128,
@@ -95,16 +209,6 @@ RECIPES: dict[tuple[str, str], dict[str, Any]] = {
             # widen this pin to a sweep axis once the tuner produces
             # winners at other K values.
             "RPA_KERNEL_K": 256,
-            # 2026-05-16: GPU memory utilization conservative enough to
-            # leave HBM headroom for the LARGEST MNB in the axis above
-            # (458752 needs ~16 G HLO scratch + ~2 G TPU overhead;
-            # 94.75 - 0.82*94.75 = 17.1 G headroom -> fits with ~-1 G
-            # if MNB=458752 actually compiles to ~16 G scratch). vllm's
-            # default is ~0.92; using 0.82 across all combos costs ~10 G
-            # of KV cache vs the unrestricted budget — which translates
-            # to ~70 fewer concurrent prompts max, well above the
-            # actual in-flight count even at MNB=458752 (56 prompts).
-            "GPU_MEMORY_UTILIZATION": 0.82,
             # 2026-05-16: skip vllm's default bucket auto-generation
             # (16, 32, ..., MNB). For a fixed-shape benchmark the other
             # 13+ buckets are pure compile-time waste (~30s per combo)
@@ -253,7 +357,10 @@ def synthesize_service_spec(
         "sweep_name": f"{kernel_id}_{service_id}",
         "timeout_seconds": recipe["timeout_seconds"],
         "sweep_axes": {k: list(v) for k, v in recipe["sweep_axes"].items()},
-        "coupled_axes": [],
+        # Recipes can include a coupled_axes list (e.g., per-MNB
+        # GPU_MEMORY_UTILIZATION pairing — see _throughput_coupled_axes()).
+        # Default empty for recipes that only use sweep_axes + fixed.
+        "coupled_axes": [dict(d) for d in recipe.get("coupled_axes", [])],
         "fixed": dict(recipe["fixed"]),
         # Rank fields are sweep.py-irrelevant (sweep.py only enumerates
         # combos), so the validator there ignores them. The orchestrator
