@@ -142,11 +142,20 @@ def _throughput_coupled_axes() -> list[dict[str, Any]]:
     Total combos generated here: 5 MNB × 3 util = 15 (cross-product with
     MAX_NUM_SEQS axis in the recipe gives the final combo count).
     """
-    axis_mnb = [131072, 262144, 327680, 393216, 458752]
+    # 475136 added 2026-05-16 after verifying it boots at util=0.77 (the
+    # formula floor). 58 prompts/call is the single-chip TP=1 ceiling
+    # for this (model, hardware, INPUT_LEN); 491520+ math says infeasible.
+    axis_mnb = [131072, 262144, 327680, 393216, 458752, 475136]
     pairs: list[dict[str, Any]] = []
     for mnb in axis_mnb:
         est = estimate_gpu_memory_utilization(mnb, input_len=8192)
-        for delta in (0.00, 0.01, 0.02):
+        # 475136 is the ceiling: formula's +0.02 (= util=0.79) is math-
+        # proven to OOM (XLA pool short ~1 G). Drop it to save the
+        # ~5 min of compile-then-OOM the sweep would otherwise burn.
+        # Other MNBs keep +0.02 because we haven't verified the formula's
+        # +0.02 bound for them; the sweep handles OOMs gracefully.
+        deltas = (0.00, 0.01) if mnb == 475136 else (0.00, 0.01, 0.02)
+        for delta in deltas:
             pairs.append({
                 "MAX_NUM_BATCHED_TOKENS": mnb,
                 # round() avoids 0.83 + 0.01 = 0.8400000000000001
