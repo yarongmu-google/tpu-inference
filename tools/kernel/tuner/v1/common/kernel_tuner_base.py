@@ -537,25 +537,21 @@ class KernelTunerBase(ABC):
         self.storage_manager.mark_bucket_in_progress(caseset_id, run_id,
                                                      bucket_id)
 
-        processed_ids = self.storage_manager.get_already_processed_ids(
-            caseset_id, run_id, begin_case_id, end_case_id)
         all_configs = self.storage_manager.get_bucket_configs(
             caseset_id, begin_case_id, end_case_id)
 
-        # Combo-keyed skip-set loaded from the durable JSONL log.
-        # This is additive to `processed_ids` (case-id-positional, from
-        # the SQLite DB). The JSONL-driven skip survives a wider search
-        # space across runs: a new tune attempt that adds combos to
-        # the grid keeps the (tuning_key, tunable_params)-level skip
-        # for the OLD combos — the SQLite case_ids would shift, the
-        # JSONL keys do not.
+        # Resume is sourced entirely from kernel.raw.jsonl. The prior
+        # SQLite `processed_ids` skip (case-id-positional) was removed
+        # 2026-05-16: it conflicted with raw.jsonl by skipping cases
+        # that hadn't been re-evaluated against the current code, and
+        # put resume behaviour under non-explicit control. Resume is
+        # now strictly opt-in via KERNEL_TUNER_RESUME=1 (handled by
+        # _load_raw_jsonl_skip_set + the wrapper's DB-dir wipe).
         jsonl_skip = self._load_raw_jsonl_skip_set()
 
         bucket_start_perf = time.perf_counter()
         results_buffer = []
         for cid in range(begin_case_id, end_case_id):
-            if cid in processed_ids:
-                continue
             config = all_configs.get(cid)
             if not config:
                 continue

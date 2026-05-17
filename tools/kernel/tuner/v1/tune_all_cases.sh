@@ -9,12 +9,13 @@
 #
 # Outputs:
 #   tmp/log/tune_all_<label>.txt                       — runlog (auto-committed per case)
-#   tmp/log/kernel_tuner_run/<label>_<case>/           — local DB (one dir per case),
-#                                                        durable across reboot, reused
-#                                                        on kill-restart for resumable
-#                                                        tuning. Set KERNEL_TUNER_FRESH=1
-#                                                        to force a timestamped suffix
-#                                                        and start a fresh DB.
+#   tmp/log/kernel_tuner_run/<label>_<case>/           — local DB (one dir per case).
+#                                                        Fresh-vs-resume is HUMAN-controlled
+#                                                        via KERNEL_TUNER_RESUME:
+#                                                          unset (default): wraps wipes the
+#                                                            dir before tuning -> fresh tune.
+#                                                          =1: dir kept; raw.jsonl skip-set
+#                                                            resumes already-done combos.
 #
 # Time budget (per existing PREFILL trial, async-dispatch timing):
 #   DECODE: ~5–10 min  (q_len=1 collapses the search space)
@@ -56,27 +57,18 @@ esac
 DEFAULT_LABEL=$(basename "$CASE_FILE" .workload)
 LABEL="${2:-$DEFAULT_LABEL}"
 
-# Per-run timestamp for case_set_id. By default it is **empty** so
-# CASE_SET_ID is stable across runs (`${LABEL}_${CASE}`) — that way a
-# kill-restart REUSES the prior runs DB and the kernel_tuner_base
-# already-processed-ids skip lets the new run pick up where the old
-# one stopped (per-(tuning_key, tunable_params) combo skip — see
-# kernel_tuner_base.py:362 + local_db_manager.get_already_processed_ids).
-# Set KERNEL_TUNER_FRESH=1 to add a timestamp suffix and force a
-# fresh DB (useful when comparing two independent runs end-to-end —
-# rare; default is "resume").
-#
-# Stable case_set_id requires a stable case_set_desc too —
-# kernel_tuner_base raises on description mismatch (see
-# kernel_tuner_base.py:130). The desc is human-readable only, so
-# making it date-independent is fine.
-if [ "${KERNEL_TUNER_FRESH:-0}" = "1" ]; then
-    DATE_SUFFIX="_$(date +%Y%m%d_%H%M%S)"
-else
-    DATE_SUFFIX=""
-fi
+# case_set_id is stable: ${LABEL}_${CASE} (no date, no commit, no
+# auto-discrimination). Fresh-vs-resume is HUMAN-CONTROLLED via
+# KERNEL_TUNER_RESUME:
+#   unset (default): the per-case loop wipes the DB dir before
+#     running the tuner — guaranteed fresh tune.
+#   =1:              the DB dir is kept as-is; raw.jsonl resume kicks
+#     in via the base class's _load_raw_jsonl_skip_set +
+#     _combo_skip_key, skipping combos already SUCCESS / FAILED_OOM /
+#     SKIPPED.
+DATE_SUFFIX=""
 # Date kept as a separate var purely for filename / log purposes
-# below; it is no longer wired into CASE_SET_ID by default.
+# below; it is no longer wired into CASE_SET_ID.
 DATE=$(date +%Y%m%d_%H%M%S)
 
 # Load the workload definitions into the environment.
@@ -192,6 +184,18 @@ for CASE in $CASES_TO_TUNE; do
         echo ""
         echo "===== $(date '+%F %T') Tuning $CASE (case_set_id=$CASE_SET_ID) ====="
         echo "DB path: $DB_PATH"
+        # Fresh-vs-resume gate. Wiping the whole DB dir (SQLite
+        # case_set + kernel.raw.jsonl + manifests) is the only way
+        # to guarantee a fresh tune: just rotating raw.jsonl leaves
+        # the SQLite case_set populated from a prior run, and the
+        # base class reuses it, causing the new run to skip every
+        # combo (the bug observed 2026-05-16 at 21:03).
+        if [ "${KERNEL_TUNER_RESUME:-0}" != "1" ]; then
+            rm -rf "$DB_PATH"
+            echo "Fresh tune — wiped $DB_PATH (set KERNEL_TUNER_RESUME=1 to resume)"
+        else
+            echo "Resume — keeping existing $DB_PATH (KERNEL_TUNER_RESUME=1)"
+        fi
         START_S=$(date +%s)
 
         # RPA_V3_TUNER_CASES set per-case here intentionally — overrides
