@@ -235,6 +235,24 @@ fi
 if [ -n "${BLOCK_SIZE:-}" ]; then
     SERVE_ARGS+=(--block-size "$BLOCK_SIZE")
 fi
+# 2026-05-16: HBM-headroom controls for large MNB. Both knobs are
+# optional — if unset, vllm uses its defaults and behavior is
+# unchanged. With both set, the combo can fit MNB ~262K-458K on a
+# single chip without CompileTimeHbmOom (see sweep_recipes.py rationale).
+if [ -n "${GPU_MEMORY_UTILIZATION:-}" ]; then
+    SERVE_ARGS+=(--gpu-memory-utilization "$GPU_MEMORY_UTILIZATION")
+fi
+if [ "${SKIP_BUCKET_AUTOGEN:-0}" = "1" ]; then
+    # Pin the only bucket we care about (= the combo's MNB). Without
+    # this, tpu_inference would refuse with "SKIP_BUCKET_AUTOGEN=1
+    # requires additional_config.compilation_sizes to be non-empty"
+    # (intentional fail-loud: see tpu_inference/runner/tpu_runner.py).
+    # Also export SKIP_BUCKET_AUTOGEN so the vllm child + EngineCore
+    # grandchild inherit it (tpu_inference.envs reads os.environ).
+    export SKIP_BUCKET_AUTOGEN
+    SERVE_ARGS+=(--additional-config \
+        "{\"compilation_sizes\":[$MAX_NUM_BATCHED_TOKENS]}")
+fi
 
 # Tear down ONLY our vllm — never `pkill -f vllm`, that nukes neighbors.
 # We launch in its own process group (via `set -m`) so a single

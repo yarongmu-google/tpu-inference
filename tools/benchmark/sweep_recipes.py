@@ -65,7 +65,20 @@ from typing import Any
 RECIPES: dict[tuple[str, str], dict[str, Any]] = {
     ("rpa_v3", "vllm"): {
         "sweep_axes": {
-            "MAX_NUM_BATCHED_TOKENS":       [8192, 16384, 32768, 65536, 131072, 262144, 524288, 1081344],
+            # 2026-05-16: trimmed exponential axis -> linear, HBM-feasible
+            # values only. The math (single-chip TP=1, Llama 3 8B,
+            # 8192-token prompts, 128 KiB/token KV):
+            #   MNB     prompts/call   KV need    HLO scratch    min util
+            #   131072  16             16 G       ~5 G           0.92 (orig default; verified 4.9 req/s)
+            #   262144  32             32 G       ~9 G           0.88 (verified started 2026-05-16)
+            #   327680  40             40 G       ~11 G          0.86 (predicted)
+            #   393216  48             48 G       ~14 G          0.84 (predicted)
+            #   458752  56             56 G       ~16 G          0.82 (predicted, marginal)
+            #   524288  64             64 G       ~18 G          infeasible (sum > 94.75 G total HBM)
+            # 524288 / 1081344 dropped: math says they can't fit on a
+            # single chip at TP=1 at any util. To explore beyond 458752
+            # we'd need TP>1 (shards weights AND KV cache across chips).
+            "MAX_NUM_BATCHED_TOKENS":       [131072, 262144, 327680, 393216, 458752],
             "MAX_NUM_SEQS":                 [128, 256, 1000],
         },
         "fixed": {
@@ -82,6 +95,24 @@ RECIPES: dict[tuple[str, str], dict[str, Any]] = {
             # widen this pin to a sweep axis once the tuner produces
             # winners at other K values.
             "RPA_KERNEL_K": 256,
+            # 2026-05-16: GPU memory utilization conservative enough to
+            # leave HBM headroom for the LARGEST MNB in the axis above
+            # (458752 needs ~16 G HLO scratch + ~2 G TPU overhead;
+            # 94.75 - 0.82*94.75 = 17.1 G headroom -> fits with ~-1 G
+            # if MNB=458752 actually compiles to ~16 G scratch). vllm's
+            # default is ~0.92; using 0.82 across all combos costs ~10 G
+            # of KV cache vs the unrestricted budget — which translates
+            # to ~70 fewer concurrent prompts max, well above the
+            # actual in-flight count even at MNB=458752 (56 prompts).
+            "GPU_MEMORY_UTILIZATION": 0.82,
+            # 2026-05-16: skip vllm's default bucket auto-generation
+            # (16, 32, ..., MNB). For a fixed-shape benchmark the other
+            # 13+ buckets are pure compile-time waste (~30s per combo)
+            # and contribute no throughput. tpu_inference reads this
+            # env var and, when set, uses only the buckets listed in
+            # --additional-config compilation_sizes (which run_benchmark.sh
+            # auto-pins to [MAX_NUM_BATCHED_TOKENS] when this is set).
+            "SKIP_BUCKET_AUTOGEN": 1,
         },
         "timeout_seconds": 1800,
         # Default rank: best throughput. Stated explicitly so a future
