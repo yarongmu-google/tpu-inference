@@ -111,10 +111,12 @@ Loose priority convention:
   `find tmp/debug_vllm_engine_init -name "*.log" | xargs git add -f`
   and a single backfill commit. Cosmetic — newer runs are fine.
 
-- **P2 (2026-05-16)** Set `SKIP_COMMIT_CACHE_CHECK=1` as a default in
-  `tools/run_pipeline.sh` (or its successor). The kernel-tuner's
-  resume cache currently invalidates on any tpu-inference commit, even
-  documentation-only ones. Captured in
-  `memory/project_kernel_tuner_durability.md` and the related project
-  memory. Without this, every doc edit forces a re-tune of the
-  resumed buckets.
+- **P2 (2026-05-16, updated)** Add a cross-commit resume mode to
+  `kernel_tuner_base._load_raw_jsonl_skip_set` / `_combo_skip_key`
+  that strips `code_revision` from the skip-key. Today the resume
+  key includes the full TuningKey (including SHA), so any commit
+  bump invalidates resume even for doc-only edits. Tabled in
+  the 2026-05-16 refactor session; mechanism design open (see
+  `memory/feedback_separate_winners_from_resume.md`). Note: the
+  prior `SKIP_COMMIT_CACHE_CHECK=1` proposal is dead — that env
+  var no longer affects the kernel tuner; only sweep.py honors it.
