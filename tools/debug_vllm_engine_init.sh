@@ -150,8 +150,14 @@ echo "vllm PID: $VLLM_PID"
 
 # Poll for one of three outcomes:
 #   (a) wrapper logs "Engine core initialization failed"  → got our cause
-#   (b) "Uvicorn running on" appears                     → MNB actually OK
+#   (b) vllm V1 logs "Application startup complete"      → MNB actually OK
 #   (c) timeout (vllm hung)                              → also informative
+# Note on (b): vllm V1 (commit c51df4300+) emits the uvicorn-style
+# "Started server process" + "Application startup complete" lines via
+# uvicorn's INFO logger, NOT the bare "Uvicorn running on" string. The
+# older string never appears in vllm V1 logs, so the previous regex
+# never matched a successful start — runs timed out with `outcome=timeout`
+# even when the engine was healthy.
 echo "=== Waiting up to ${TIMEOUT_S}s for outcome ==="
 WAITED=0
 OUTCOME="timeout"
@@ -160,7 +166,7 @@ while [ "$WAITED" -lt "$TIMEOUT_S" ]; do
         OUTCOME="engine_init_failed"
         break
     fi
-    if grep -q "Uvicorn running on" "$LOG" 2>/dev/null; then
+    if grep -q "Application startup complete" "$LOG" 2>/dev/null; then
         OUTCOME="started"
         break
     fi
