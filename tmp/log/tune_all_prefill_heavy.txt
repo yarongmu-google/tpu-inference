@@ -1,0 +1,30 @@
+===== 2026-05-16 21:02:59 Starting full kernel tune for prefill_heavy =====
+Cases: decode -> prefill -> mixed
+Branch: sll
+Git commit: 30a002c23748f61ddd1e9bfdf5999921ba52437c
+
+
+===== 2026-05-16 21:02:59 Tuning decode (case_set_id=prefill_heavy_decode) =====
+DB path: tmp/log/kernel_tuner_run/prefill_heavy_decode
+WARNING:absl:Tensorflow library not found, tensorflow.io.gfile operations will use native shim calls. GCS paths (i.e. 'gs://...') cannot be accessed.
+INFO:numexpr.utils:Note: detected 224 virtual cores but NumExpr set to maximum of 64, check "NUMEXPR_MAX_THREADS" environment variable.
+INFO:numexpr.utils:Note: NumExpr detected 224 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 16.
+INFO:numexpr.utils:NumExpr defaulting to 16 threads.
+INFO 05-16 21:03:05 [__init__.py:59] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+I0516 21:03:05.585415 135493023696832 kernel_tuner_runner.py:115] Using case_set_id: prefill_heavy_decode, run_id: 0, case_set_desc: prefill_heavy decode kernel tune for this tuning run.
+I0516 21:03:05.585525 135493023696832 local_db_manager.py:53] Database initialized at tmp/log/kernel_tuner_run/prefill_heavy_decode
+I0516 21:03:05.585560 135493023696832 kernel_tuner_base.py:132] Resume disabled (default). Set KERNEL_TUNER_RESUME=1 to resume from existing kernel.raw.jsonl. Existing jsonl will be rotated to .bak.<timestamp> on first access.
+I0516 21:03:05.590394 135493023696832 kernel_tuner_runner.py:148] Running in locally mode. Skipping Buildkite pipeline generation and running tuning jobs directly.
+I0516 21:03:05.590526 135493023696832 kernel_tuner_base.py:312] CaseSetId prefill_heavy_decode already exists with the same description. Proceeding with the existing case set.
+I0516 21:03:05.590580 135493023696832 kernel_tuner_base.py:534] Worker [unknown] Claimed CaseSetId: prefill_heavy_decode, RunId: 0, Bucket 0 (0-1) for processing.
+I0516 21:03:05.590878 135493023696832 local_db_manager.py:236] Marked bucket as in progress: cs_id=prefill_heavy_decode, r_id=0, b_id=0, worker=None
+I0516 21:03:05.591019 135493023696832 kernel_tuner_base.py:173] Resume disabled — rotated tmp/log/kernel_tuner_run/prefill_heavy_decode/kernel.raw.jsonl -> tmp/log/kernel_tuner_run/prefill_heavy_decode/kernel.raw.bak.20260516_210305
+I0516 21:03:05.592057 135493023696832 local_db_manager.py:252] Marked bucket as completed: cs_id=prefill_heavy_decode, r_id=0, b_id=0, tt_us=1
+I0516 21:03:05.592102 135493023696832 kernel_tuner_base.py:646] Worker [unknown] Completed Bucket 0 (0-1) for CaseSetId: prefill_heavy_decode, RunId: 0. Total time: 0.00s.
+I0516 21:03:05.592132 135493023696832 local_db_manager.py:313] Database at tmp/log/kernel_tuner_run/prefill_heavy_decode finalized with 0 cases, 0 invalid cases.
+I0516 21:03:05.592176 135493023696832 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_decode/CaseSet.json
+I0516 21:03:05.592195 135493023696832 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_decode/KernelTuningCases.json
+I0516 21:03:05.592209 135493023696832 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_decode/kernel.raw.bak.20260516_210305
+I0516 21:03:05.592220 135493023696832 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_decode/WorkBuckets.json
+I0516 21:03:05.592234 135493023696832 local_db_manager.py:319] Final DB file: tmp/log/kernel_tuner_run/prefill_heavy_decode/CaseResults.json
+===== 2026-05-16 21:03:06 decode done in 7s =====
