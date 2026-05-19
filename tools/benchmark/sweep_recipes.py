@@ -372,6 +372,175 @@ def build_kernel_fixed(
     return out
 
 
+# ============================================================================
+# Layer 4: build_sweep_part — per-(kernel, mode) sweep dim derivation
+# ============================================================================
+#
+# Returns the JSON-compatible sweep portion: sweep_axes + coupled_axes +
+# rank/timeout metadata. The Cat 4 fixed env (BLOCK_SIZE, RPA_*, LPTT, ...)
+# comes from Layer 1; Layer 5 (synthesize_service_spec) merges them.
+#
+# v1 derivation (this file):
+#   - MNB candidates: 5-point sweep around the HBM-feasible MNB estimate,
+#     spacing = est/64 (proportional). Step ±2 each side; ±1 step;
+#     center = est. Total 5 candidates.
+#   - For each MNB: 3 util candidates ({floor, +0.01, +0.02}) — existing
+#     pattern, probes the empirical edge above the formula's floor.
+#   - For each (MNB, util): MNS_max derived from KV-cache budget. MNS
+#     sweep around it: throughput -> {1, max×0.95, max, max×1.05};
+#     latency -> {1}.
+#
+# Kernel-agnostic for v1: MNB and MNS feasibility are HBM-bounded, not
+# kernel-bounded. Phase 2 adds kernel-specific HLO scratch + per-kernel
+# MNS range tuning.
+
+_MODE_METADATA: dict[str, dict[str, Any]] = {
+    "throughput": {
+        "rank_metric": "metrics.RequestThroughput",
+        "rank_descending": True,
+        "timeout_seconds": 1800,
+    },
+    "latency": {
+        "rank_metric": "metrics.MeanTTFT",
+        "rank_descending": False,
+        "timeout_seconds": 600,
+    },
+}
+
+VALID_MODES = frozenset(_MODE_METADATA.keys())
+
+
+def _solve_max_feasible_mnb(
+    input_len: int,
+    hbm_total_gib: float,
+    min_util: float = 0.77,
+) -> int:
+    """Solve for max MNB where util_floor(MNB) >= `min_util`.
+
+    Algebraic inversion of `estimate_gpu_memory_utilization`:
+        util_floor(MNB) = 1 - (9.01*MNB/262144 + 1.0 + 0.062*MNB/input_len) / HBM
+    Set util_floor = min_util, solve for MNB:
+        MNB = [HBM*(1 - min_util) - 1.0] / (9.01/262144 + 0.062/input_len)
+
+    `min_util=0.77` is calibrated to land near the empirical OOM ceiling
+    (MNB ~475K at util ~0.77 for Llama 3 8B / v7x-1 — per the 2026-05-16
+    debug runs and existing `_throughput_coupled_axes` data). Returns 0
+    if HBM is too small for the workload at that floor.
+    """
+    coef = 9.01 / 262144 + 0.062 / input_len
+    rhs = hbm_total_gib * (1.0 - min_util) - 1.0
+    if rhs <= 0 or coef <= 0:
+        return 0
+    return int(rhs / coef)
+
+
+def build_sweep_part(
+    kernel: str,
+    mode: str,
+    workload: dict[str, Any],
+    *,
+    hbm_total_gib: float = 94.75,
+) -> dict[str, Any]:
+    """Build the JSON-compatible sweep portion for (kernel, mode, workload).
+
+    Args:
+      kernel: routing — "D" / "M" / "P" / "L". Validated but kernel-
+        agnostic for v1 value derivation (MNB+MNS are HBM-bounded).
+      mode:   "throughput" or "latency".
+      workload: parsed `.workload` env. Required keys:
+        MAX_MODEL_LEN, INPUT_LEN, NUM_KV_HEADS, HEAD_DIM, NUM_LAYERS,
+        WEIGHTS_GIB. Missing -> KeyError.
+      hbm_total_gib: single-chip HBM total (default 94.75 = v7x-1).
+
+    Returns:
+      dict with:
+        sweep_axes:        {}  (empty in v1 — everything moved to coupled)
+        coupled_axes:      list of {MNB, GPU_MEMORY_UTILIZATION, MAX_NUM_SEQS}
+        rank_metric:       per-mode
+        rank_descending:   per-mode
+        timeout_seconds:   per-mode
+
+    Raises:
+      ValueError on unknown kernel or mode.
+      KeyError on missing required workload field.
+    """
+    if kernel not in PRIMARY_CASE_MAP:
+        raise ValueError(
+            f"unknown kernel {kernel!r}; expected one of "
+            f"{sorted(PRIMARY_CASE_MAP)}")
+    if mode not in VALID_MODES:
+        raise ValueError(
+            f"unknown mode {mode!r}; expected one of {sorted(VALID_MODES)}")
+
+    mml         = workload["MAX_MODEL_LEN"]
+    input_len   = workload["INPUT_LEN"]
+    num_kv      = workload["NUM_KV_HEADS"]
+    head_dim    = workload["HEAD_DIM"]
+    num_layers  = workload["NUM_LAYERS"]
+    weights_gib = workload["WEIGHTS_GIB"]
+    kv_dtype_bytes = 2  # bf16; could become workload-dependent
+
+    # KV cache footprint per token per seq: 2 (K+V) * num_layers *
+    # num_kv_heads * head_dim * bytes. For Llama 3 8B / bf16:
+    # 2*32*8*128*2 = 131072 = 128 KiB. * 8192-token mml = 1 GiB per seq.
+    bytes_per_token_kv = num_layers * 2 * num_kv * head_dim * kv_dtype_bytes
+
+    mnb_est = _solve_max_feasible_mnb(input_len, hbm_total_gib)
+    if mnb_est == 0:
+        # HBM too small at min_util=0.5 — no feasible MNB.
+        return {
+            "sweep_axes": {},
+            "coupled_axes": [],
+            **_MODE_METADATA[mode],
+        }
+
+    # 5-point MNB sweep: ±2 steps around the estimate, step = est/64.
+    mnb_step = max(1, mnb_est // 64)
+    mnb_candidates = [mnb_est + d * mnb_step for d in (-2, -1, 0, 1, 2)]
+    mnb_candidates = [m for m in mnb_candidates if m > 0]
+
+    coupled: list[dict[str, Any]] = []
+    for mnb in mnb_candidates:
+        util_floor = estimate_gpu_memory_utilization(
+            mnb, input_len, hbm_total_gib=hbm_total_gib)
+        if util_floor <= 0:
+            continue
+        for util_delta in (0.00, 0.01, 0.02):
+            util = round(util_floor + util_delta, 2)
+            if util >= 1.0:
+                continue
+            kv_budget_gib = util * hbm_total_gib - weights_gib
+            if kv_budget_gib <= 0:
+                continue
+            # MNS_max = whole-prompt count that fits in remaining KV budget.
+            mns_max = max(
+                1,
+                int(kv_budget_gib * (2 ** 30)
+                    / (mml * bytes_per_token_kv)))
+
+            if mode == "latency":
+                mns_list = [1]
+            else:  # throughput
+                step_pct = 0.05
+                mns_neg = max(1, round(mns_max * (1 - step_pct)))
+                mns_pos = max(1, round(mns_max * (1 + step_pct)))
+                # MNS=1 sanity check + 3 around max.
+                mns_list = sorted({1, mns_neg, mns_max, mns_pos})
+
+            for mns in mns_list:
+                coupled.append({
+                    "MAX_NUM_BATCHED_TOKENS": mnb,
+                    "GPU_MEMORY_UTILIZATION": util,
+                    "MAX_NUM_SEQS": mns,
+                })
+
+    return {
+        "sweep_axes": {},
+        "coupled_axes": coupled,
+        **_MODE_METADATA[mode],
+    }
+
+
 # (kernel_id, service_id) -> recipe.
 #
 # `sweep_axes`     — knobs the orchestrator varies via cartesian product.
