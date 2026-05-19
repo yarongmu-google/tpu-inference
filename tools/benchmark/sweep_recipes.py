@@ -46,6 +46,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from tools.benchmark.sweep import SpecError
+
 
 # ============================================================================
 # GPU memory utilization estimator
@@ -162,6 +164,212 @@ def _throughput_coupled_axes() -> list[dict[str, Any]]:
                 "GPU_MEMORY_UTILIZATION": round(est + delta, 2),
             })
     return pairs
+
+
+# ============================================================================
+# Layer 1: build_kernel_fixed — kernel-side fixed env from registry
+# ============================================================================
+#
+# Given a routing choice (D/M/P/L) and a parsed `production.kernel`
+# registry, return the env vars to pin in `fixed` for combos using this
+# routing. All Cat 4 vars (BLOCK_SIZE, RPA_KERNEL_K, RPA_MAX_NUM_SUBSEQS,
+# RPA_*_BLOCK_SIZES, LONG_PREFILL_TOKEN_THRESHOLD) come from the
+# registry's min-latency primary winner; supporting cases conform at
+# the same page_size; SKIP_BUCKET_AUTOGEN=1 is invariant.
+#
+# Per docs/tuning_architecture.md §2:
+#   Cat 4 (kernel-derived env aliases): all RPA_* + BLOCK_SIZE + LPTT.
+#   Cat 6 (deployment opt):              SKIP_BUCKET_AUTOGEN.
+# Cat 3 tunable_params never appear in output — those are kernel-internal.
+
+# Routing -> case_name as stored in the registry's "results" dict.
+PRIMARY_CASE_MAP = {
+    "D": "decode",
+    "M": "mixed",
+    "P": "prefill",
+    "L": "logical",
+}
+
+# Cases that MUST be present at primary's page_size for the routing to
+# be valid. Missing -> SpecError. Primary case itself excluded.
+REQUIRED_CASES_MAP = {
+    "D": [],
+    "M": ["decode"],
+    "P": ["decode", "mixed"],
+    "L": ["decode", "mixed"],
+}
+
+# All four cases are LOOKED UP; if present at primary's page_size their
+# block sizes are emitted as RPA_*_BLOCK_SIZES env vars. Non-required
+# cases are emitted as a courtesy (Option Y — symmetric env surface).
+# Runtime ignores env vars it doesn't read.
+ALL_CASES = ["decode", "mixed", "prefill", "logical"]
+
+# case_name -> env var for its block sizes.
+ENV_PER_CASE = {
+    "decode":  "RPA_D_BLOCK_SIZES",
+    "mixed":   "RPA_M_BLOCK_SIZES",
+    "prefill": "RPA_P_BLOCK_SIZES",
+    "logical": "RPA_L_BLOCK_SIZES",
+}
+
+# Strict per-routing pin schema. `pin=` may set ONLY these keys; extras
+# raise ValueError. All keys are optional (pinning a subset is fine).
+PIN_SCHEMA = {
+    "D": {"page_size"},
+    "M": {"page_size"},
+    "P": {"page_size", "K"},
+    "L": {"page_size", "K", "mnss"},
+}
+
+
+def _fmt_block_sizes(tp: dict) -> str:
+    """Format block sizes as 'bq,bkv,bq_csz,bkv_csz' — the env-var
+    string the kernel runtime parses."""
+    return f"{tp['bq_sz']},{tp['bkv_sz']},{tp['bq_csz']},{tp['bkv_csz']}"
+
+
+def _select_primary_winner(
+    registry: dict, case: str, pin: dict,
+) -> dict | None:
+    """Return the min-latency winner in `registry['results'][case]`,
+    optionally filtered by `pin`'s subset of {page_size, K, mnss}.
+    None if no entries remain.
+
+    Defensive: missing latency_us sorts last (treated as +inf), so a
+    corrupt row without latency never silently wins.
+    """
+    candidates = registry.get("results", {}).get(case, [])
+    if pin:
+        def _matches(entry: dict) -> bool:
+            tp = entry.get("tunable_params", {})
+            for key, registry_field in (
+                ("page_size", "page_size"),
+                ("K", "chunk_prefill_size"),
+                ("mnss", "max_num_subseqs"),
+            ):
+                if key in pin and tp.get(registry_field) != pin[key]:
+                    return False
+            return True
+        candidates = [e for e in candidates if _matches(e)]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda e: e.get("latency_us", float("inf")))
+
+
+def _best_at_page_size(
+    registry: dict, case: str, page_size: int,
+) -> dict | None:
+    """Min-latency winner in `case` whose tunable_params.page_size matches."""
+    candidates = [
+        e for e in registry.get("results", {}).get(case, [])
+        if e.get("tunable_params", {}).get("page_size") == page_size
+    ]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda e: e.get("latency_us", float("inf")))
+
+
+def build_kernel_fixed(
+    kernel: str,
+    registry: dict,
+    pin: dict | None = None,
+) -> dict:
+    """Return Cat 4 + routing-constant + Cat 6 env vars for `kernel` routing.
+
+    Args:
+        kernel: routing choice — "D" / "M" / "P" / "L".
+        registry: parsed `production.kernel` JSON.
+        pin: optional subset of {page_size, K, mnss} to override the
+            default min-latency primary-winner selection. Keys outside
+            PIN_SCHEMA[kernel] raise ValueError. All keys are optional.
+
+    Returns:
+        dict[str, int|str] of env vars:
+            BLOCK_SIZE                       (always)
+            SKIP_BUCKET_AUTOGEN              (always, = 1)
+            LONG_PREFILL_TOKEN_THRESHOLD     (always; routing-dependent)
+            RPA_<X>_BLOCK_SIZES              (each case present at chosen
+                                              page_size; required ones must
+                                              exist, others are courtesy emits)
+            RPA_KERNEL_K                     (P / L only)
+            RPA_MAX_NUM_SUBSEQS              (L only)
+
+    LPTT per routing:
+        D, M -> 0
+        P    -> K
+        L    -> K * mnss
+
+    Raises:
+        ValueError on invalid `kernel` or pin keys outside PIN_SCHEMA[kernel].
+        SpecError on missing required winners (primary case empty, or
+            required supporting case missing at primary's page_size, or
+            LOGICAL primary missing max_num_subseqs).
+    """
+    if kernel not in PRIMARY_CASE_MAP:
+        raise ValueError(
+            f"unknown kernel routing {kernel!r}; expected one of "
+            f"{sorted(PRIMARY_CASE_MAP)}")
+
+    pin = pin or {}
+    allowed_pin_keys = PIN_SCHEMA[kernel]
+    extra = set(pin) - allowed_pin_keys
+    if extra:
+        raise ValueError(
+            f"pin keys {sorted(extra)} not allowed for kernel={kernel!r}; "
+            f"allowed for this routing: {sorted(allowed_pin_keys)}")
+
+    primary_case = PRIMARY_CASE_MAP[kernel]
+
+    primary = _select_primary_winner(registry, primary_case, pin)
+    if primary is None:
+        raise SpecError(
+            f"no {primary_case} winner in registry"
+            + (f" matching pin={pin}" if pin else ""))
+
+    primary_tp = primary["tunable_params"]
+    page_size = primary_tp["page_size"]
+    K = primary_tp.get("chunk_prefill_size", 0)
+    mnss = primary_tp.get("max_num_subseqs")
+
+    out: dict[str, int | str] = {
+        "BLOCK_SIZE": page_size,
+        "SKIP_BUCKET_AUTOGEN": 1,
+    }
+
+    # Emit block-size envs for every case present at this page_size.
+    # Required cases (primary + REQUIRED_CASES_MAP) raise on missing.
+    required = set(REQUIRED_CASES_MAP[kernel])
+    for case in ALL_CASES:
+        if case == primary_case:
+            winner = primary
+        else:
+            winner = _best_at_page_size(registry, case, page_size)
+            if winner is None:
+                if case in required:
+                    raise SpecError(
+                        f"kernel={kernel!r} routing requires a {case} "
+                        f"winner at page_size={page_size}, none found")
+                continue
+        out[ENV_PER_CASE[case]] = _fmt_block_sizes(winner["tunable_params"])
+
+    # Routing-dependent Cat 4 + LPTT.
+    if kernel == "P":
+        out["RPA_KERNEL_K"] = K
+        out["LONG_PREFILL_TOKEN_THRESHOLD"] = K
+    elif kernel == "L":
+        if mnss is None:
+            raise SpecError(
+                "logical winner missing max_num_subseqs in tunable_params; "
+                "required for kernel='L'. Re-tune with the post-2026-05-16 "
+                "tuner that emits this field.")
+        out["RPA_KERNEL_K"] = K
+        out["RPA_MAX_NUM_SUBSEQS"] = mnss
+        out["LONG_PREFILL_TOKEN_THRESHOLD"] = K * mnss
+    else:  # D, M
+        out["LONG_PREFILL_TOKEN_THRESHOLD"] = 0
+
+    return out
 
 
 # (kernel_id, service_id) -> recipe.
