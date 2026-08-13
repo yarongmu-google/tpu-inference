@@ -50,10 +50,22 @@ def sparse_moe_distributed_fwd(
     kernel_down_proj: jax.Array,
 ):
     """
+
     The sparse MoE forward pass with fully distributed logic.
     This assumes it is running within a distributed TPU.
     """
 
+
+    import os
+    if os.getenv('ENABLE_PALLAS_TP_MOE', '0') == '1':
+        from tpu_inference.kernels.experimental.e2e_qwen3.kernel import apply_tp_moe
+        import jax.numpy as jnp
+        import jax
+        
+        router_mask = jnp.zeros((x_TD.shape[0], moe_instance.num_experts), dtype=x_TD.dtype)
+        y_out = apply_tp_moe(x_TD, router_mask, kernel_gating, kernel_up_proj, kernel_down_proj, top_k=moe_instance.num_experts_per_tok)
+        y_out = jax.lax.psum(y_out, axis_name=moe_instance.expert_axis_name)
+        return y_out
     # 1. Global Permute
     (
         sorted_inputs,

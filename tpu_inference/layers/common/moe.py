@@ -63,6 +63,7 @@ class MoEBackend(Enum):
     DENSE_MAT = "dense_mat"
     # Also only used in the JAX path for now
     MEGABLX_GMM = "megablox_gmm"
+    PALLAS_TP_MOE = "pallas_tp_moe"
 
     @classmethod
     def fused_moe_backends(cls):

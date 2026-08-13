@@ -266,6 +266,10 @@ def select_moe_backend(use_ep: bool) -> MoEBackend:
     Returns:
         The selected MoE backend.
     """
+    if os.getenv('ENABLE_PALLAS_TP_MOE', '0') == '1':
+        from tpu_inference.layers.common.moe import MoEBackend
+        return MoEBackend.PALLAS_TP_MOE
+
     if envs.USE_MOE_EP_KERNEL:
         if use_ep:
             logger.info_once("[MoE]: Using fused MoE EP kernel")
