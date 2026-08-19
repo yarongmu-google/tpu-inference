@@ -14,6 +14,16 @@
 """TPU-Friendly Fused Mixture of Experts (MoE) kernel."""
 
 import functools
+import os
+
+# Top-k implementation selector (read at trace time). "reference" is the
+# original max+argmax extract loop; "maxmask" and "tallax" are alternative
+# formulations, instrumented with jax.named_scope stage
+# markers (Mosaic lowers scope boundaries to hardware trace_start/stop, so
+# xprof shows per-stage sub-kernel spans - set the device trace level to
+# include them when profiling).
+#   FUSED_MOE_TOPK_IMPL=reference|maxmask|tallax
+_TOPK_IMPL = os.environ.get("FUSED_MOE_TOPK_IMPL", "reference")
 
 import jax
 import jax.numpy as jnp
@@ -381,6 +391,136 @@ def _fused_ep_moe_kernel(
             t2e += mask.astype(jnp.int32)
             if k_id != top_k - 1:
                 input = jnp.where(mask, -jnp.inf, input)
+
+        if renormalize_topk_logits:
+            for k_id in range(top_k):
+                top_k_logits_lst[k_id] /= top_k_logits_sum
+
+        expert_sizes = jnp.sum(t2e, axis=0, keepdims=True)
+        expert_starts = jnp.zeros_like(expert_sizes)
+        return top_k_logits_lst, t2e_routing, expert_sizes, expert_starts
+
+    def get_top_k_maxmask(input, top_k, renormalize_topk_logits):
+        """Argmax-free iterative max-extract (the maxmask variant).
+
+        Same contract as get_top_k. Two changes:
+          - the winner is identified by VALUE equality against the
+            broadcast max (bit-exact: a max reduce selects an operand
+            unrounded, so `==` against its broadcast cannot miss), and the
+            routing index is recovered with an integer iota-max over the
+            winner mask. No argmax anywhere - which sidesteps Mosaic's
+            missing bf16 argmax (the reference upcasts everything to f32
+            for it), so the scan runs in the input's native dtype.
+          - ties: equality may mark several winners; the iota-max picks
+            the highest expert id and ONLY that one is knocked out, so
+            per-pass semantics match the reference (one extraction per
+            pass; tie order differs from argmax's first-index rule).
+        """
+        assert len(input.shape) == 2, input.shape
+        padded_k_shape = (input.shape[0], padded_top_k)
+        top_k_logits_lst = []
+        t2e = jnp.zeros(input.shape, dtype=jnp.int32)
+        t2e_routing = jnp.zeros(padded_k_shape, dtype=jnp.int32)
+        iota = jax.lax.broadcasted_iota(jnp.int32, input.shape, 1)
+        padded_k_iota = jax.lax.broadcasted_iota(jnp.int32, padded_k_shape, 1)
+        top_k_logits_sum = jnp.zeros(padded_k_shape, jnp.float32)
+        valid = iota < num_experts
+
+        for k_id in range(top_k):
+            with jax.named_scope(f"mm_red{k_id}"):
+                mx = jnp.max(input[:, :num_experts], axis=1, keepdims=True)
+            top_k_logits = jnp.broadcast_to(mx, padded_k_shape).astype(
+                jnp.float32)
+            top_k_logits_lst.append(top_k_logits)
+            if renormalize_topk_logits:
+                top_k_logits_sum += top_k_logits
+            with jax.named_scope(f"mm_cmp{k_id}"):
+                # winner mask by value equality (no argmax)
+                win = (input == broadcast_minor(mx, input.shape)) & valid
+            with jax.named_scope(f"mm_idx{k_id}"):
+                # routing index = iota-max over the winner mask (i32 reduce)
+                idx = jnp.max(jnp.where(win, iota, 0), axis=1, keepdims=True)
+            top_k_indices = jnp.broadcast_to(idx, padded_k_shape)
+            t2e_routing = jnp.where(padded_k_iota == k_id, top_k_indices,
+                                    t2e_routing)
+            with jax.named_scope(f"mm_mask{k_id}"):
+                # knock out ONLY the selected winner (reference semantics)
+                sel = iota == broadcast_minor(idx, input.shape)
+                t2e += sel.astype(jnp.int32)
+                if k_id != top_k - 1:
+                    input = jnp.where(sel, -jnp.inf, input)
+
+        if renormalize_topk_logits:
+            for k_id in range(top_k):
+                top_k_logits_lst[k_id] /= top_k_logits_sum
+
+        expert_sizes = jnp.sum(t2e, axis=0, keepdims=True)
+        expert_starts = jnp.zeros_like(expert_sizes)
+        return top_k_logits_lst, t2e_routing, expert_sizes, expert_starts
+
+    def get_top_k_tallax(input, top_k, renormalize_topk_logits, rounds=16):
+        """Threshold-search top-k (the tallax variant).
+
+        Finds each token's k-th-value threshold tau by BRANCHLESS binary
+        search on the value range - `rounds` sweeps independent of top_k -
+        then derives the same outputs as get_top_k from the selection mask.
+        The search maintains count(x >= lo) >= top_k as an invariant, so
+        the final mask selects at least top_k experts; ties at tau may
+        select more, and the extraction keeps the first top_k by expert id
+        (deterministic; same approximation class as argmax tie-breaking).
+
+        The routing DERIVATION is still k-dependent (two cheap reduces per
+        slot: an iota-min and a value pick) - tallax's k-independence
+        applies to the threshold search only. Whether the total beats
+        maxmask's k x (max + eq + iota-max) at a given (E, k) is exactly
+        what the measurement step decides.
+        """
+        assert len(input.shape) == 2, input.shape
+        x = input.astype(jnp.float32)
+        padded_k_shape = (input.shape[0], padded_top_k)
+        iota = jax.lax.broadcasted_iota(jnp.int32, x.shape, 1)
+        padded_k_iota = jax.lax.broadcasted_iota(jnp.int32, padded_k_shape, 1)
+        valid = iota < num_experts
+        neg = jnp.float32(-jnp.inf)
+
+        with jax.named_scope("tx_bounds"):
+            xv = jnp.where(valid, x, neg)
+            hi = jnp.max(xv, axis=1, keepdims=True)
+            lo = jnp.min(jnp.where(valid, x, hi), axis=1, keepdims=True)
+
+        with jax.named_scope("tx_search"):
+            for _ in range(rounds):
+                mid = 0.5 * (lo + hi)
+                cnt = jnp.sum(
+                    (xv >= broadcast_minor(mid, x.shape)).astype(jnp.float32),
+                    axis=1, keepdims=True)
+                ge_k = cnt >= top_k
+                lo = jnp.where(ge_k, mid, lo)
+                hi = jnp.where(ge_k, hi, mid)
+
+        with jax.named_scope("tx_mask"):
+            sel = (xv >= broadcast_minor(lo, x.shape)) & valid
+
+        top_k_logits_lst = []
+        t2e = jnp.zeros(x.shape, dtype=jnp.int32)
+        t2e_routing = jnp.zeros(padded_k_shape, dtype=jnp.int32)
+        top_k_logits_sum = jnp.zeros(padded_k_shape, jnp.float32)
+        for k_id in range(top_k):
+            with jax.named_scope(f"tx_extract{k_id}"):
+                # first remaining selected expert (smallest id)
+                idx = jnp.min(jnp.where(sel, iota, num_experts), axis=1,
+                              keepdims=True)
+                hit = iota == broadcast_minor(idx, x.shape)
+                val = jnp.max(jnp.where(hit, xv, neg), axis=1, keepdims=True)
+                sel = sel & ~hit
+            top_k_logits = jnp.broadcast_to(val, padded_k_shape)
+            top_k_logits_lst.append(top_k_logits)
+            if renormalize_topk_logits:
+                top_k_logits_sum += top_k_logits
+            t2e_routing = jnp.where(padded_k_iota == k_id,
+                                    jnp.broadcast_to(idx, padded_k_shape),
+                                    t2e_routing)
+            t2e += hit.astype(jnp.int32)
 
         if renormalize_topk_logits:
             for k_id in range(top_k):
@@ -1138,7 +1278,12 @@ def _fused_ep_moe_kernel(
 
         b_gating = b_gating_x2_vmem[bt_sem_id]
         b_gating_score = apply_scoring_fn(scoring_fn, b_gating)
-        top_k_logits_lst, t2e_routing, expert_sizes, expert_starts = get_top_k(
+        topk_fn = {
+            "reference": get_top_k,
+            "maxmask": get_top_k_maxmask,
+            "tallax": get_top_k_tallax,
+        }[_TOPK_IMPL]
+        top_k_logits_lst, t2e_routing, expert_sizes, expert_starts = topk_fn(
             b_gating_score, top_k, renormalize_topk_logits)
 
         all_reduce_metadata(bt_sem_id, t2e_routing, expert_starts,
