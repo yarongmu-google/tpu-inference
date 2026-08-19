@@ -86,6 +86,12 @@ def _decode_moe_kernel(
     gates_ref,       # SMEM [E, C] f32 per-row gate weights
     counts_ref,      # SMEM [E] i32
     gathered_ref,    # VMEM [C, D] staging
+    yout_ref,        # VMEM [C, D] f32 gmm2 output (ref-indexable for RMW)
+    topk_idx_vmem,   # VMEM [T, K] i32 routing results (vector-writable)
+    topk_w_vmem,     # VMEM [T, K] f32
+    topk_idx_smem,   # SMEM [T, K] i32 (scalar-readable copy)
+    topk_w_smem,     # SMEM [T, K] f32
+    copy_sem,        # DMA semaphore for the vmem->smem routing copies
     *,
     num_experts: int,
     experts_per_block: int,
@@ -106,6 +112,18 @@ def _decode_moe_kernel(
         with jax.named_scope("moe_routing"):
             weights, indices = _routing(gating_ref, top_k, renormalize,
                                         num_experts)
+            # Traced arrays cannot be dynamically indexed on TPU (registers,
+            # not memory) - land them in VMEM (vector store) and copy to
+            # SMEM so the list builder can read them with scalar indices
+            # (the v1 t2e_routing vmem->smem pattern).
+            topk_idx_vmem[...] = indices
+            topk_w_vmem[...] = weights
+            pltpu.make_async_copy(topk_idx_vmem, topk_idx_smem,
+                                  copy_sem).start()
+            pltpu.make_async_copy(topk_idx_vmem, topk_idx_smem,
+                                  copy_sem).wait()
+            pltpu.make_async_copy(topk_w_vmem, topk_w_smem, copy_sem).start()
+            pltpu.make_async_copy(topk_w_vmem, topk_w_smem, copy_sem).wait()
         # ONE scalar pass over the (token, slot) pairs: B*k iterations
         # (Rupeng-structured; v1's per-expert rescan would be B*k*E/8).
         with jax.named_scope("moe_lists"):
@@ -115,13 +133,13 @@ def _decode_moe_kernel(
             def _pair(p, carry):
                 tok = p // top_k
                 k_id = p % top_k
-                e = indices[tok, k_id]
+                e = topk_idx_smem[tok, k_id]
                 c = counts_ref[e]
 
                 @pl.when(c < capacity)
                 def _do():
                     rows_ref[e, c] = tok
-                    gates_ref[e, c] = weights[tok, k_id]
+                    gates_ref[e, c] = topk_w_smem[tok, k_id]
                     counts_ref[e] = c + 1
 
                 return carry
@@ -164,8 +182,10 @@ def _decode_moe_kernel(
 
             with jax.named_scope("moe_gmm2"):
                 w2 = w2_ref[le]                             # [I, D]
-                y = jnp.dot(a, w2,
-                            preferred_element_type=jnp.float32)  # [C, D]
+                # through a ref: traced arrays cannot be dynamically sliced
+                # in the combine loop below.
+                yout_ref[...] = jnp.dot(a, w2,
+                                        preferred_element_type=jnp.float32)
 
             with jax.named_scope("moe_combine"):
                 def _s(c, carry):
@@ -175,7 +195,7 @@ def _decode_moe_kernel(
                         g = gates_ref[e, c]
                         acc_ref[pl.ds(row, 1), :] = (
                             acc_ref[pl.ds(row, 1), :]
-                            + g * y[pl.ds(c, 1), :])
+                            + g * yout_ref[pl.ds(c, 1), :])
 
                     return carry
 
@@ -229,6 +249,12 @@ def fused_moe_decode(
             pltpu.SMEM((e, capacity), jnp.float32),          # gates
             pltpu.SMEM((e,), jnp.int32),                     # counts
             pltpu.VMEM((capacity, d), tokens.dtype),         # gathered
+            pltpu.VMEM((capacity, d), jnp.float32),          # yout
+            pltpu.VMEM((t, top_k), jnp.int32),               # topk_idx_vmem
+            pltpu.VMEM((t, top_k), jnp.float32),             # topk_w_vmem
+            pltpu.SMEM((t, top_k), jnp.int32),               # topk_idx_smem
+            pltpu.SMEM((t, top_k), jnp.float32),             # topk_w_smem
+            pltpu.SemaphoreType.DMA,                         # copy_sem
         ],
     )
     kernel = functools.partial(
