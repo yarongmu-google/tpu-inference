@@ -72,10 +72,10 @@ def _routing(gating_ref, top_k, renormalize, num_experts):
     return w, i
 
 
-def _decode_moe_kernel(
-    # inputs
-    tokens_ref,      # [T, D] VMEM-resident (grid-invariant)
-    gating_ref,      # [T, E] VMEM-resident
+def _moe_compute(
+    # views (VMEM refs: kernel inputs or gathered scratch)
+    tokens_ref,      # [T, D] the UNION batch
+    gating_ref,      # [T, E]
     w1_ref,          # [NE, D, 2I] this grid step's expert block
     w2_ref,          # [NE, I, D]
     # outputs
@@ -207,6 +207,88 @@ def _decode_moe_kernel(
         out_ref[...] = acc_ref[...].astype(out_ref.dtype)
 
 
+def _decode_moe_kernel(tokens_ref, gating_ref, w1_ref, w2_ref, out_ref,
+                       *scratch, **params):
+    """Single-device view: tokens/gating arrive as the union batch."""
+    _moe_compute(tokens_ref, gating_ref, w1_ref, w2_ref, out_ref,
+                 *scratch, **params)
+
+
+def _decode_moe_kernel_ag(
+    tokens_local_ref,   # [T/P, D] this device's token shard (VMEM)
+    gating_local_ref,   # [T/P, E]
+    w1_ref, w2_ref, out_ref,
+    # AG scratch first, then _moe_compute's scratch
+    tokens_full,        # VMEM [T, D] the gathered union
+    gating_full,        # VMEM [T, E]
+    send_sem,           # DMA
+    recv_sem,           # DMA
+    *scratch,
+    num_devices: int,
+    axis_name: str,
+    **params,
+):
+    """In-kernel VMEM-direct all-gather (v0.2): each device remote-copies
+    its contiguous token/gating shard straight into every peer's VMEM
+    scratch (no HBM staging, no per-row machinery - P-1 static descriptors
+    per buffer), then runs the same compute body on the union.
+
+    Idiom per tests/pallas/tpu_pallas_distributed_test.py
+    (test_basic_remote_vmem_dma): ready-semaphore handshake before remote
+    VMEM writes; memory space rides on the refs, the copy call is the
+    same make_async_remote_copy.
+    """
+    blk = pl.program_id(0)
+
+    @pl.when(blk == 0)
+    def _all_gather():
+        my_id = lax.axis_index(axis_name)
+        t_loc = tokens_local_ref.shape[0]
+
+        with jax.named_scope("moe_ag_barrier"):
+            # The GLOBAL barrier semaphore (requires collective_id in
+            # CompilerParams): the one semaphore remote signals may target.
+            barrier_sem = pltpu.get_barrier_semaphore()
+            for p in range(num_devices):
+                @pl.when(p != my_id)
+                def _sig(p=p):
+                    pl.semaphore_signal(barrier_sem, device_id=(jnp.int32(p),),
+                                        device_id_type=pl.DeviceIdType.MESH)
+            pl.semaphore_wait(barrier_sem, num_devices - 1)
+
+        with jax.named_scope("moe_ag_local"):
+            tokens_full[pl.ds(my_id * t_loc, t_loc), :] = tokens_local_ref[...]
+            gating_full[pl.ds(my_id * t_loc, t_loc), :] = gating_local_ref[...]
+
+        with jax.named_scope("moe_ag_remote"):
+            copies = []
+            for p in range(num_devices):
+                @pl.when(p != my_id)
+                def _send(p=p):
+                    for src, dst in ((tokens_local_ref, tokens_full),
+                                     (gating_local_ref, gating_full)):
+                        pltpu.make_async_remote_copy(
+                            src_ref=src,
+                            dst_ref=dst.at[pl.ds(my_id * t_loc, t_loc), :],
+                            send_sem=send_sem,
+                            recv_sem=recv_sem,
+                            device_id=(jnp.int32(p),),
+                            device_id_type=pl.DeviceIdType.MESH,
+                        ).start()
+            # drain: 2 sends per peer out, 2 shards per peer in. The wait
+            # amount is inferred from the ref shape, so the dummy waits must
+            # match the TRANSFERRED shapes (one [T/P,D] token shard + one
+            # [T/P,E] gating shard per peer, per direction) - waiting on the
+            # full [T,D] buffer would expect P times the bytes and hang.
+            for _ in range(num_devices - 1):
+                for shard in (tokens_local_ref, gating_local_ref):
+                    pltpu.make_async_copy(shard, shard, send_sem).wait()
+                    pltpu.make_async_copy(shard, shard, recv_sem).wait()
+
+    _moe_compute(tokens_full, gating_full, w1_ref, w2_ref, out_ref,
+                 *scratch, **params)
+
+
 @functools.partial(
     jax.jit,
     static_argnames=("top_k", "renormalize", "capacity", "experts_per_block",
@@ -272,3 +354,123 @@ def fused_moe_decode(
         out_shape=jax.ShapeDtypeStruct((t, d), tokens.dtype),
         interpret=interpret,
     )(tokens, gating_output, w1, w2)
+
+
+def fused_moe_decode_tp(
+    tokens_local: jax.Array,   # [T/P, D] this device's token shard
+    w1_local: jax.Array,       # [E, D, 2*I/P] gate|up LOCALLY concatenated
+    w2_local: jax.Array,       # [E, I/P, D]
+    gating_local: jax.Array,   # [T/P, E]
+    *,
+    axis_name: str,
+    top_k: int,
+    renormalize: bool = True,
+    capacity: int = 32,
+    experts_per_block: int = 8,
+    interpret: bool = False,
+) -> jax.Array:
+    """v0.1 TP wrapper for the DP-attention serving context (call under
+    shard_map): all-gather the token/gating shards to the union batch,
+    run the decode kernel against this device's I-sharded expert slices,
+    reduce-scatter the partial along the TOKEN axis so each device keeps
+    the finished rows of its own tokens.
+
+    Weight contract: w1_local is [E, D, 2*I_local] with THIS device's gate
+    slice concatenated before its up slice (reshape a global [E, D, 2, I]
+    sharded on the last axis). ICI cost: (P-1)/P * [T,D] in + same out
+    (~7.3 MB/device at Qwen shapes), overlappable under the weight stream.
+    """
+    tokens = lax.all_gather(tokens_local, axis_name, axis=0, tiled=True)
+    gating = lax.all_gather(gating_local, axis_name, axis=0, tiled=True)
+    out = fused_moe_decode(
+        tokens, w1_local, w2_local, gating,
+        top_k=top_k, renormalize=renormalize, capacity=capacity,
+        experts_per_block=experts_per_block, interpret=interpret)
+    return lax.psum_scatter(out, axis_name, scatter_dimension=0, tiled=True)
+
+
+@functools.partial(
+    jax.jit,
+    static_argnames=("axis_name", "num_devices", "top_k", "renormalize",
+                     "capacity", "experts_per_block", "interpret"),
+)
+def fused_moe_decode_tp_fused(
+    tokens_local: jax.Array,   # [T/P, D]
+    w1_local: jax.Array,       # [E, D, 2*I/P]
+    w2_local: jax.Array,       # [E, I/P, D]
+    gating_local: jax.Array,   # [T/P, E]
+    *,
+    axis_name: str,
+    num_devices: int,
+    top_k: int,
+    renormalize: bool = True,
+    capacity: int = 32,
+    experts_per_block: int = 8,
+    interpret=False,
+) -> jax.Array:
+    """v0.2: the all-gather fused INTO the kernel as VMEM-direct ICI remote
+    copies (P-1 static descriptors per buffer, no HBM staging, no per-row
+    machinery), overlapping the first weight-block prefetch. Exit stays an
+    external psum_scatter (in-kernel RS = the next step, Rupeng-style
+    direct writes)."""
+    if interpret is True:
+        # Remote DMAs/semaphore signals need the TPU-simulating interpret
+        # machine (jax/_src/pallas/mosaic/interpret/); plain interpret=True
+        # routes to the discharge interpreter, which raises "Remote signal
+        # not implemented" / cannot take mesh device ids.
+        interpret = pltpu.InterpretParams(dma_execution_mode="on_wait")
+    t_loc, d = tokens_local.shape
+    t = t_loc * num_devices
+    e, _, i2 = w1_local.shape
+    assert e % experts_per_block == 0, (e, experts_per_block)
+    num_blocks = e // experts_per_block
+
+    grid_spec = pltpu.PrefetchScalarGridSpec(
+        num_scalar_prefetch=0,
+        grid=(num_blocks,),
+        in_specs=[
+            pl.BlockSpec(tokens_local.shape, lambda i: (0, 0)),
+            pl.BlockSpec(gating_local.shape, lambda i: (0, 0)),
+            pl.BlockSpec((experts_per_block, d, i2), lambda i: (i, 0, 0)),
+            pl.BlockSpec((experts_per_block, i2 // 2, d),
+                         lambda i: (i, 0, 0)),
+        ],
+        out_specs=pl.BlockSpec((t, d), lambda i: (0, 0)),
+        scratch_shapes=[
+            pltpu.VMEM((t, d), tokens_local.dtype),          # tokens_full
+            pltpu.VMEM((t, gating_local.shape[1]),
+                       gating_local.dtype),                  # gating_full
+            pltpu.SemaphoreType.DMA,                         # send_sem
+            pltpu.SemaphoreType.DMA,                         # recv_sem
+            pltpu.VMEM((t, d), jnp.float32),                 # acc
+            pltpu.SMEM((e, capacity), jnp.int32),            # rows
+            pltpu.SMEM((e, capacity), jnp.float32),          # gates
+            pltpu.SMEM((e,), jnp.int32),                     # counts
+            pltpu.VMEM((capacity, d), tokens_local.dtype),   # gathered
+            pltpu.VMEM((capacity, d), jnp.float32),          # yout
+            pltpu.VMEM((t, top_k), jnp.int32),               # topk_idx_vmem
+            pltpu.VMEM((t, top_k), jnp.float32),             # topk_w_vmem
+            pltpu.SMEM((t, top_k), jnp.int32),               # topk_idx_smem
+            pltpu.SMEM((t, top_k), jnp.float32),             # topk_w_smem
+            pltpu.SemaphoreType.DMA,                         # copy_sem
+        ],
+    )
+    kernel = functools.partial(
+        _decode_moe_kernel_ag,
+        num_devices=num_devices,
+        axis_name=axis_name,
+        num_experts=e,
+        experts_per_block=experts_per_block,
+        capacity=capacity,
+        top_k=top_k,
+        renormalize=renormalize,
+        act_dtype=tokens_local.dtype,
+    )
+    out = pl.pallas_call(
+        kernel,
+        grid_spec=grid_spec,
+        out_shape=jax.ShapeDtypeStruct((t, d), tokens_local.dtype),
+        compiler_params=pltpu.CompilerParams(collective_id=13),
+        interpret=interpret,
+    )(tokens_local, gating_local, w1_local, w2_local)
+    return lax.psum_scatter(out, axis_name, scatter_dimension=0, tiled=True)
