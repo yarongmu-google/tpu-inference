@@ -22,7 +22,7 @@ jax.named_scope spans -> hardware trace markers for per-stage xprof):
   routing   (grid step 0): scoring + top-k (argmax-free maxmask: winner by
             value-equality vs the broadcast max - no bf16-argmax gap) ->
             per-expert row lists + gate weights via ONE scalar pass over
-            the (token, slot) pairs (B*k iterations - Rupeng-structured,
+            the (token, slot) pairs (B*k iterations - gmm_fused_rs-structured,
             not the per-expert rescans of v1).
   gather    per expert: C rows staged from the VMEM-resident tokens by
             scalar-indexed dynamic slices (vector loads, zero DMA).
@@ -33,7 +33,7 @@ jax.named_scope spans -> hardware trace markers for per-stage xprof):
 
 v0 scope: bf16 weights/acts, no shared expert, no in-kernel RS, capacity
 C rows/expert with overflow DROPPED (assert-checked in tests; production
-needs the spill path from the proposal doc).
+needs a spill path).
 """
 
 import functools
@@ -132,7 +132,7 @@ def _moe_compute(
             pltpu.make_async_copy(topk_w_vmem, topk_w_smem, copy_sem).start()
             pltpu.make_async_copy(topk_w_vmem, topk_w_smem, copy_sem).wait()
         # ONE scalar pass over the (token, slot) pairs: B*k iterations
-        # (Rupeng-structured; v1's per-expert rescan would be B*k*E/8).
+        # (gmm_fused_rs-structured; v1's per-expert rescan would be B*k*E/8).
         with jax.named_scope("moe_lists"):
             for e in range(num_experts):
                 counts_ref[e] = 0
@@ -437,7 +437,7 @@ def fused_moe_decode_tp_fused(
     """v0.2: the all-gather fused INTO the kernel as VMEM-direct ICI remote
     copies (P-1 static descriptors per buffer, no HBM staging, no per-row
     machinery), overlapping the first weight-block prefetch. Exit stays an
-    external psum_scatter (in-kernel RS = the next step, Rupeng-style
+    external psum_scatter (in-kernel RS = the next step, gmm_fused_rs-style
     direct writes)."""
     if interpret is True:
         # Remote DMAs/semaphore signals need the TPU-simulating interpret
