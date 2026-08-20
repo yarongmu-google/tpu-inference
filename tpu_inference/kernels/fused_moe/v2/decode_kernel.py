@@ -99,7 +99,14 @@ def _moe_compute(
     top_k: int,
     renormalize: bool,
     act_dtype,
+    bd1c: int | None = None,
+    bd2c: int | None = None,
 ):
+    """bd1c/bd2c (v1's compute-block naming): sub-tile sizes for the D axis
+    of gmm1 (its contraction dim) and gmm2 (its output dim) - the
+    VMEM->VReg dispatch granularity. None = one whole-D dot per expert
+    (Mosaic picks the internal tiling). The other gmm dims stay unsplit:
+    C <= 64 and 2*I_local are already MXU-sized at decode shapes."""
     blk = pl.program_id(0)
     num_blocks = pl.num_programs(0)
     t = tokens_ref.shape[0]
@@ -171,21 +178,29 @@ def _moe_compute(
 
                 lax.fori_loop(0, capacity, _g, 0)
 
+            d = tokens_ref.shape[1]
+
             with jax.named_scope("moe_gmm1"):
-                x = gathered_ref[...]                       # [C, D]
-                w1 = w1_ref[le]                             # [D, 2I]
-                h = jnp.dot(x, w1,
-                            preferred_element_type=jnp.float32)  # [C, 2I]
+                kc = bd1c or d
+                h = jnp.zeros((capacity, w1_ref.shape[-1]), jnp.float32)
+                for k0 in range(0, d, kc):
+                    h = h + jnp.dot(
+                        gathered_ref[:, k0:k0 + kc],        # [C, kc]
+                        w1_ref[le, k0:k0 + kc, :],          # [kc, 2I]
+                        preferred_element_type=jnp.float32)
                 i_half = h.shape[-1] // 2
                 gate, up = h[:, :i_half], h[:, i_half:]
                 a = (jax.nn.silu(gate) * up).astype(act_dtype)   # [C, I]
 
             with jax.named_scope("moe_gmm2"):
-                w2 = w2_ref[le]                             # [I, D]
                 # through a ref: traced arrays cannot be dynamically sliced
                 # in the combine loop below.
-                yout_ref[...] = jnp.dot(a, w2,
-                                        preferred_element_type=jnp.float32)
+                nc = bd2c or d
+                for n0 in range(0, d, nc):
+                    yout_ref[:, n0:n0 + nc] = jnp.dot(
+                        a,
+                        w2_ref[le, :, n0:n0 + nc],          # [I, nc]
+                        preferred_element_type=jnp.float32)
 
             with jax.named_scope("moe_combine"):
                 def _s(c, carry):
@@ -292,7 +307,7 @@ def _decode_moe_kernel_ag(
 @functools.partial(
     jax.jit,
     static_argnames=("top_k", "renormalize", "capacity", "experts_per_block",
-                     "interpret"),
+                     "bd1c", "bd2c", "interpret"),
 )
 def fused_moe_decode(
     tokens: jax.Array,        # [T, D]
@@ -304,6 +319,8 @@ def fused_moe_decode(
     renormalize: bool = True,
     capacity: int = 32,
     experts_per_block: int = 8,
+    bd1c: int | None = None,
+    bd2c: int | None = None,
     interpret: bool = False,
 ) -> jax.Array:
     """Decode-regime fused MoE. Returns [T, D] (full sum; shard the weights
@@ -311,6 +328,7 @@ def fused_moe_decode(
     t, d = tokens.shape
     e, _, i2 = w1.shape
     assert e % experts_per_block == 0, (e, experts_per_block)
+    assert d % (bd1c or d) == 0 and d % (bd2c or d) == 0, (d, bd1c, bd2c)
     num_blocks = e // experts_per_block
 
     grid_spec = pltpu.PrefetchScalarGridSpec(
@@ -347,6 +365,8 @@ def fused_moe_decode(
         top_k=top_k,
         renormalize=renormalize,
         act_dtype=tokens.dtype,
+        bd1c=bd1c,
+        bd2c=bd2c,
     )
     return pl.pallas_call(
         kernel,
@@ -367,6 +387,8 @@ def fused_moe_decode_tp(
     renormalize: bool = True,
     capacity: int = 32,
     experts_per_block: int = 8,
+    bd1c: int | None = None,
+    bd2c: int | None = None,
     interpret: bool = False,
 ) -> jax.Array:
     """v0.1 TP wrapper for the DP-attention serving context (call under
@@ -385,14 +407,16 @@ def fused_moe_decode_tp(
     out = fused_moe_decode(
         tokens, w1_local, w2_local, gating,
         top_k=top_k, renormalize=renormalize, capacity=capacity,
-        experts_per_block=experts_per_block, interpret=interpret)
+        experts_per_block=experts_per_block, bd1c=bd1c, bd2c=bd2c,
+        interpret=interpret)
     return lax.psum_scatter(out, axis_name, scatter_dimension=0, tiled=True)
 
 
 @functools.partial(
     jax.jit,
     static_argnames=("axis_name", "num_devices", "top_k", "renormalize",
-                     "capacity", "experts_per_block", "interpret"),
+                     "capacity", "experts_per_block", "bd1c", "bd2c",
+                     "interpret"),
 )
 def fused_moe_decode_tp_fused(
     tokens_local: jax.Array,   # [T/P, D]
@@ -406,6 +430,8 @@ def fused_moe_decode_tp_fused(
     renormalize: bool = True,
     capacity: int = 32,
     experts_per_block: int = 8,
+    bd1c: int | None = None,
+    bd2c: int | None = None,
     interpret=False,
 ) -> jax.Array:
     """v0.2: the all-gather fused INTO the kernel as VMEM-direct ICI remote
@@ -423,6 +449,7 @@ def fused_moe_decode_tp_fused(
     t = t_loc * num_devices
     e, _, i2 = w1_local.shape
     assert e % experts_per_block == 0, (e, experts_per_block)
+    assert d % (bd1c or d) == 0 and d % (bd2c or d) == 0, (d, bd1c, bd2c)
     num_blocks = e // experts_per_block
 
     grid_spec = pltpu.PrefetchScalarGridSpec(
@@ -465,6 +492,8 @@ def fused_moe_decode_tp_fused(
         top_k=top_k,
         renormalize=renormalize,
         act_dtype=tokens_local.dtype,
+        bd1c=bd1c,
+        bd2c=bd2c,
     )
     out = pl.pallas_call(
         kernel,

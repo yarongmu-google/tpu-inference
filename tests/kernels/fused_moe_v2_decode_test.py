@@ -44,8 +44,10 @@ def _reference_moe(tokens, w1, w2, gating, top_k, renormalize):
     return out
 
 
+@pytest.mark.parametrize("bd1c,bd2c", [(None, None), (128, 128)],
+                         ids=["whole_d_dots", "chunked_dots"])
 @pytest.mark.parametrize("t,d,e,i,k", [(32, 256, 16, 128, 4)])
-def test_decode_kernel_matches_reference(t, d, e, i, k):
+def test_decode_kernel_matches_reference(t, d, e, i, k, bd1c, bd2c):
     rng = np.random.default_rng(0)
     tokens = jnp.asarray(rng.standard_normal((t, d)), jnp.float32)
     w1 = jnp.asarray(rng.standard_normal((e, d, 2 * i)) * 0.02, jnp.float32)
@@ -55,7 +57,7 @@ def test_decode_kernel_matches_reference(t, d, e, i, k):
     got = fused_moe_decode(
         tokens, w1, w2, gating,
         top_k=k, renormalize=True, capacity=t,  # capacity=T: no drops
-        experts_per_block=4, interpret=True,
+        experts_per_block=4, bd1c=bd1c, bd2c=bd2c, interpret=True,
     )
     want = _reference_moe(tokens, w1, w2, gating, k, renormalize=True)
 
@@ -63,8 +65,10 @@ def test_decode_kernel_matches_reference(t, d, e, i, k):
                                rtol=2e-2, atol=2e-2)
 
 
+@pytest.mark.parametrize("bd1c,bd2c", [(None, None), (128, 128)],
+                         ids=["whole_d_dots", "chunked_dots"])
 @pytest.mark.parametrize("t,d,e,i,k", [(32, 256, 16, 128, 4)])
-def test_decode_kernel_lowers_for_tpu_on_cpu(t, d, e, i, k):
+def test_decode_kernel_lowers_for_tpu_on_cpu(t, d, e, i, k, bd1c, bd2c):
     """Mosaic lowerability gate, hardware-free: cross-platform lowering via
     an abstract mesh runs the full Pallas->Mosaic pipeline (layout
     inference, dialect verification) - this is what caught the
@@ -80,7 +84,8 @@ def test_decode_kernel_lowers_for_tpu_on_cpu(t, d, e, i, k):
     gating = jnp.asarray(rng.standard_normal((t, e)), jnp.float32)
 
     fn = functools.partial(fused_moe_decode, top_k=k, renormalize=True,
-                           capacity=t, experts_per_block=4, interpret=False)
+                           capacity=t, experts_per_block=4,
+                           bd1c=bd1c, bd2c=bd2c, interpret=False)
     amesh = mesh_lib.AbstractMesh(
         (1,), ("x",),
         abstract_device=mesh_lib.AbstractDevice(

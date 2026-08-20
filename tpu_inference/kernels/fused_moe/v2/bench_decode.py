@@ -24,10 +24,18 @@ out.
 Run on a single-host TPU VM (P chips):
 
     python -m tpu_inference.kernels.fused_moe.v2.bench_decode
+    python -m tpu_inference.kernels.fused_moe.v2.bench_decode --tune
     python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
         --variants=v1,v01,v02 --tokens=512 --iters=30
     python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
         --profile-dir=/tmp/moe_xprof --variants=v02
+
+--tune sweeps the kernel parameters itself (staged coordinate descent:
+experts_per_block x capacity, then bd1c, then bd2c), measures each config,
+and prints the winner as ready-to-paste flags. Capacity candidates start
+at the ACTUAL max expert load of the routing (overflow rows are silently
+dropped - an accuracy bug, not a speed tradeoff - so the tuner never goes
+below it).
 
 With --profile-dir, a trace is captured around a few iterations; the v2
 kernels' jax.named_scope stages (moe_routing, moe_ag_*, moe_gather,
@@ -98,6 +106,13 @@ def main() -> None:
                         help="v2: max rows per expert (overflow drops)")
     parser.add_argument("--experts-per-block", type=int, default=8,
                         help="v2: experts per grid step (weight-block size)")
+    parser.add_argument("--bd1c", type=int, default=0,
+                        help="v2: gmm1 D-contraction sub-tile (0 = whole D)")
+    parser.add_argument("--bd2c", type=int, default=0,
+                        help="v2: gmm2 D-output sub-tile (0 = whole D)")
+    parser.add_argument("--tune", action="store_true",
+                        help="sweep v2 kernel params, print the winner "
+                        "(ignores the one-off param flags above)")
     parser.add_argument("--variants", type=str, default="v1,v01,v02",
                         help="comma list from {v1, v01, v02}")
     parser.add_argument("--iters", type=int, default=30)
@@ -162,14 +177,16 @@ def main() -> None:
 
         variants["v1_ep_a2a"] = run_v1
 
-    if "v01" in args.variants or "v02" in args.variants:
+    v2_selected = "v01" in args.variants or "v02" in args.variants
+    if v2_selected:
         tok_l = jax.device_put(tokens, NamedSharding(mesh_v2, P("x", None)))
         gate_l = jax.device_put(gating, NamedSharding(mesh_v2, P("x", None)))
         w1_l = jax.device_put(
             w1, NamedSharding(mesh_v2, P(None, None, None, "x")))
         w2_l = jax.device_put(w2, NamedSharding(mesh_v2, P(None, "x", None)))
 
-        def _sharded(fused: bool) -> Callable[[], jax.Array]:
+        def v2_runner(fused: bool, ne: int, cap: int, bd1c: int | None,
+                      bd2c: int | None) -> Callable[[], jax.Array]:
             def fn(tok: jax.Array, w1x: jax.Array, w2x: jax.Array,
                    gate: jax.Array) -> jax.Array:
                 w1_flat = w1x.reshape(w1x.shape[0], w1x.shape[1], -1)
@@ -177,14 +194,13 @@ def main() -> None:
                     return fused_moe_decode_tp_fused(
                         tok, w1_flat, w2x, gate,
                         axis_name="x", num_devices=p, top_k=k,
-                        renormalize=True, capacity=args.capacity,
-                        experts_per_block=args.experts_per_block,
+                        renormalize=True, capacity=cap,
+                        experts_per_block=ne, bd1c=bd1c, bd2c=bd2c,
                         interpret=args.interpret)
                 return fused_moe_decode_tp(
                     tok, w1_flat, w2x, gate,
-                    axis_name="x", top_k=k, renormalize=True,
-                    capacity=args.capacity,
-                    experts_per_block=args.experts_per_block,
+                    axis_name="x", top_k=k, renormalize=True, capacity=cap,
+                    experts_per_block=ne, bd1c=bd1c, bd2c=bd2c,
                     interpret=args.interpret)
 
             jitted = jax.jit(jax.shard_map(
@@ -195,9 +211,71 @@ def main() -> None:
             return lambda: jitted(tok_l, w1_l, w2_l, gate_l)
 
         if "v01" in args.variants:
-            variants["v2_tp_external_collectives"] = _sharded(fused=False)
+            variants["v2_tp_external_collectives"] = v2_runner(
+                fused=False, ne=args.experts_per_block, cap=args.capacity,
+                bd1c=args.bd1c or None, bd2c=args.bd2c or None)
         if "v02" in args.variants:
-            variants["v2_tp_inkernel_ag"] = _sharded(fused=True)
+            variants["v2_tp_inkernel_ag"] = v2_runner(
+                fused=True, ne=args.experts_per_block, cap=args.capacity,
+                bd1c=args.bd1c or None, bd2c=args.bd2c or None)
+
+    if args.tune:
+        if "v1_ep_a2a" in variants:
+            v1_us, _ = _time(variants["v1_ep_a2a"], iters=args.iters,
+                             warmup=args.warmup)
+            print(f"\n[tune] v1 baseline (its own tuned defaults): "
+                  f"{v1_us:.1f} us")
+        if not v2_selected:
+            return
+        # capacity floor from the actual routing
+        top_i = jax.lax.top_k(jax.nn.softmax(gating, axis=-1), k)[1]
+        max_load = int(jnp.max(jnp.bincount(top_i.reshape(-1), length=e)))
+        cap0 = -(-max_load // 8) * 8
+        print(f"[tune] max expert load = {max_load} -> capacity >= {cap0}")
+        ne_cands = [x for x in (4, 8, 16) if e % x == 0]
+        cap_cands = sorted({cap0, 2 * cap0})
+        bd_cands = [x for x in (512, 1024, 2048) if x < d and d % x == 0]
+
+        for fused, label in ((False, "v01"), (True, "v02")):
+            if label not in args.variants:
+                continue
+            best_us: float | None = None
+            best: tuple[int, int, int | None, int | None] | None = None
+
+            def measure(ne: int, cap: int, b1: int | None,
+                        b2: int | None) -> None:
+                nonlocal best_us, best
+                tag = f"  ne={ne} cap={cap} bd1c={b1 or 0} bd2c={b2 or 0}"
+                try:
+                    us, _ = _time(
+                        v2_runner(fused=fused, ne=ne, cap=cap,
+                                  bd1c=b1, bd2c=b2),
+                        iters=args.iters, warmup=args.warmup)
+                except Exception as ex:  # e.g. VMEM oversubscription
+                    print(f"{tag}: failed ({type(ex).__name__})")
+                    return
+                print(f"{tag}: {us:.1f} us")
+                if best_us is None or us < best_us:
+                    best_us, best = us, (ne, cap, b1, b2)
+
+            print(f"\n[tune] {label} stage 1: experts_per_block x capacity")
+            for ne in ne_cands:
+                for cap in cap_cands:
+                    measure(ne, cap, None, None)
+            if best is None:
+                print(f"[tune] {label}: every stage-1 config failed")
+                continue
+            print(f"[tune] {label} stage 2: gmm1 D-chunk (bd1c)")
+            for b1 in bd_cands:
+                measure(best[0], best[1], b1, best[3])
+            print(f"[tune] {label} stage 3: gmm2 D-chunk (bd2c)")
+            for b2 in bd_cands:
+                measure(best[0], best[1], best[2], b2)
+            ne, cap, b1, b2 = best
+            print(f"[tune] {label} WINNER: --experts-per-block={ne} "
+                  f"--capacity={cap} --bd1c={b1 or 0} --bd2c={b2 or 0} "
+                  f"-> {best_us:.1f} us")
+        return
 
     # sanity: variants agree (loose - bf16, and v2 drops capacity overflow)
     outs = {name: np.asarray(fn(), np.float32)
