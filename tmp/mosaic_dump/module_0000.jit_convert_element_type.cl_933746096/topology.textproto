@@ -1,0 +1,7 @@
+platform_id: 9500091469671262378
+platform_name: "tpu"
+platform_version: "TFRT TPU7x\nBuilt on Jun 17 2026 11:08:48 (1781719728) cl/933746096"
+platform_specific_topology {
+  type_url: "type.googleapis.com/xla.TpuPjRtTopologyDescriptionProto"
+  value: "\n%\010\006\030\001\"\007default*\006\010\002\020\002\030\0012\006\010\001\020\001\030\001:\000H\001X\001`\001\022\004\n\000\030\001"
+}

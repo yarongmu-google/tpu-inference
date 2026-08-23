@@ -1,0 +1,14 @@
+HloLiveRange (max 2):
+  InstructionSequence:
+    0:args_0_.1
+    1:copy.1
+  BufferLiveRange:
+    args_0_.1{}:0-2
+    copy.1{}:1-2
+  Live ranges at 1 (peak):
+    args_0_.1{}: 4294967296 bytes (cumulative: 4294967296 bytes)
+    copy.1{}: 4294967296 bytes (cumulative: 8589934592 bytes)
+  Stack trace breakdown for peak usage: 8 589 934 592 bytes
+    main.1 (100.0%, total: 8 589 934 592 bytes, current: 0 bytes, remaining: 8 589 934 592 bytes)
+      ├── args[0] (50.0%, total: 4 294 967 296 bytes, current: 4 294 967 296 bytes, remaining: 4 294 967 296 bytes)
+      └── copy.1 (50.0%, total: 4 294 967 296 bytes, current: 4 294 967 296 bytes, remaining: 0 bytes)

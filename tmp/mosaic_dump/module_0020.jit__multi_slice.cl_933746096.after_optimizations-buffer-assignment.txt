@@ -1,0 +1,24 @@
+BufferAssignment:
+allocation 0: size 32, output shape is |(bf16[512,128,4096], bf16[512,128,4096], bf16[512,128,4096], bf16[512,128,4096], bf16[512,128,4096], /*index=5*/bf16[512,128,4096], bf16[512,128,4096], bf16[512,128,4096])|, maybe-live-out:
+ value: <20 tuple.1{} @0> (size=32,offset=0): (bf16[512,128,4096]{2,1,0:T(8,128)(2,1)}, bf16[512,128,4096]{2,1,0:T(8,128)(2,1)}, bf16[512,128,4096]{2,1,0:T(8,128)(2,1)}, bf16[512,128,4096]{2,1,0:T(8,128)(2,1)}, bf16[512,128,4096]{2,1,0:T(8,128)(2,1)}, /*index=5*/bf16[512,128,4096]{2,1,0:T(8,128)(2,1)}, bf16[512,128,4096]{2,1,0:T(8,128)(2,1)}, bf16[512,128,4096]{2,1,0:T(8,128)(2,1)})
+allocation 1: size 4294967296, parameter 0, shape |bf16[512,1024,4096]| at ShapeIndex {}:
+ value: <10 self.1 @0> (size=4294967296,offset=0): bf16[512,1024,4096]{2,1,0:T(8,128)(2,1)}
+allocation 2: size 536870912, maybe-live-out:
+ value: <12 fusion{0} @0> (size=536870912,offset=0): bf16[512,128,4096]{2,1,0:T(8,128)(2,1)}
+allocation 3: size 536870912, maybe-live-out:
+ value: <13 fusion{1} @0> (size=536870912,offset=0): bf16[512,128,4096]{2,1,0:T(8,128)(2,1)}
+allocation 4: size 536870912, maybe-live-out:
+ value: <14 fusion{2} @0> (size=536870912,offset=0): bf16[512,128,4096]{2,1,0:T(8,128)(2,1)}
+allocation 5: size 536870912, maybe-live-out:
+ value: <15 fusion{3} @0> (size=536870912,offset=0): bf16[512,128,4096]{2,1,0:T(8,128)(2,1)}
+allocation 6: size 536870912, maybe-live-out:
+ value: <16 fusion{4} @0> (size=536870912,offset=0): bf16[512,128,4096]{2,1,0:T(8,128)(2,1)}
+allocation 7: size 536870912, maybe-live-out:
+ value: <17 fusion{5} @0> (size=536870912,offset=0): bf16[512,128,4096]{2,1,0:T(8,128)(2,1)}
+allocation 8: size 536870912, maybe-live-out:
+ value: <18 fusion{6} @0> (size=536870912,offset=0): bf16[512,128,4096]{2,1,0:T(8,128)(2,1)}
+allocation 9: size 536870912, maybe-live-out:
+ value: <19 fusion{7} @0> (size=536870912,offset=0): bf16[512,128,4096]{2,1,0:T(8,128)(2,1)}
+allocation 10: size 33554432, color 1, preallocated-temp:
+allocation 11: size 32, preallocated-temp:
+ value: <11 fusion{} @0> (size=32,offset=0): (bf16[512,128,4096]{2,1,0:T(8,128)(2,1)}, bf16[512,128,4096]{2,1,0:T(8,128)(2,1)}, bf16[512,128,4096]{2,1,0:T(8,128)(2,1)}, bf16[512,128,4096]{2,1,0:T(8,128)(2,1)}, bf16[512,128,4096]{2,1,0:T(8,128)(2,1)}, /*index=5*/bf16[512,128,4096]{2,1,0:T(8,128)(2,1)}, bf16[512,128,4096]{2,1,0:T(8,128)(2,1)}, bf16[512,128,4096]{2,1,0:T(8,128)(2,1)})

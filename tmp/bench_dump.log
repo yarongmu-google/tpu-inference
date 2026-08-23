@@ -1,6 +1,6 @@
 
 + git rev-parse --short HEAD
-d26bac7e74
+f2bf8b8cdc
 + exit=0
 
 + python -c import jax; print(jax.__version__); print(jax.devices())
@@ -9,104 +9,255 @@ d26bac7e74
 + exit=0
 
 + python -c import tpu_inference.kernels.fused_moe.v2.decode_kernel as m; print(m.__file__)
-WARNING 08-23 10:53:06 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 08-23 11:08:02 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-23 10:53:09 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-23 10:53:09 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-23 10:53:10 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-23 11:08:06 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-23 11:08:06 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-23 11:08:06 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 /home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py
 + exit=0
 
 + python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=3 --warmup=1
-WARNING 08-23 10:53:12 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 08-23 11:08:08 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-23 10:53:15 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-23 10:53:15 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-23 10:53:15 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
-F0823 10:53:16.228699  912183 parse_flags_from_env.cc:234] Unknown flag in XLA_FLAGS: --xla_mosaic_dump_to=tmp/mosaic_dump
-+ exit=1
-
-+ ls tmp/mosaic_dump
-+ exit=0
-
-+ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v1,v02 --iters=30 --warmup=5
-WARNING 08-23 10:53:17 [tpu_platform.py:447] Pin memory is not supported on TPU.
-/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
-  raw_cnt = _raw_device_count_nvml()
-/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
-  raw_cnt = _raw_device_count_nvml()
-INFO 08-23 10:53:21 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-23 10:53:21 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-23 10:53:21 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
-devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
-weights/device = 1536 MiB
-WARNING 08-23 10:54:46 [tuned_block_sizes.py:423] [Fused MOE kernel] using default block sizes for key: (4096, 1024, 512, 10, 2, 2, 512, 8): (64, 512, 1024, 2048, 32, 512, 1024, 2048)
+INFO 08-23 11:08:12 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-23 11:08:12 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-23 11:08:12 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 Traceback (most recent call last):
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/lowering.py", line 1610, in _lower_jaxpr_to_func_common
-    func_op.verify()
-jaxlib.mlir._mlir_libs._mlir.ir.MLIRError: Verification failed:
-error: "dma_start:"("dma_start/dma_start"(callsite(callsite("_fused_ep_moe_kernel.<locals>.start_fetch_b_gating"("/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v1/kernel.py":350:10 to :34) at "_fused_ep_moe_kernel"("/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v1/kernel.py":1271:4 to :33)) at callsite("_fused_ep_moe_kernel.<locals>.start_fetch_b_gating"("/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v1/kernel.py":350:10 to :34) at "_fused_ep_moe_kernel"("/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v1/kernel.py":1271:4 to :33))))): 'tpu.enqueue_dma' op DMA source and target element type mismatch
- note: "dma_start:"("dma_start/dma_start"(callsite(callsite("_fused_ep_moe_kernel.<locals>.start_fetch_b_gating"("/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v1/kernel.py":350:10 to :34) at "_fused_ep_moe_kernel"("/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v1/kernel.py":1271:4 to :33)) at callsite("_fused_ep_moe_kernel.<locals>.start_fetch_b_gating"("/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v1/kernel.py":350:10 to :34) at "_fused_ep_moe_kernel"("/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v1/kernel.py":1271:4 to :33))))): see current operation: "tpu.enqueue_dma"(%156, %153, %149) <{operandSegmentSizes = array<i32: 1, 0, 1, 1, 0, 0, 0>, priority = 0 : i32, strict_ordering = false}> : (memref<?x512xf32, #tpu.memory_space<hbm>>, memref<?x512xbf16, #tpu.memory_space<vmem>>, memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) -> ()
+  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/compiler.py", line 353, in backend_compile_and_load
+    return backend.compile_and_load(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+jax.errors.JaxRuntimeError: INTERNAL: Mosaic failed to compile TPU kernel: E2003: CompileTimeMosaicUnprovenMemoryAccessAlignment: cannot statically prove that index in dimension 0 is a multiple of 16
+See https://openxla.org/xla/errors/error_2003 for more details.
 
-The above exception was the direct cause of the following exception:
+at location: loc("get:"("get/get"(callsite("_decode_moe_kernel.<locals>._process.<locals>._g.<locals>._do"("/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py":335:49 to 336:45) at "_decode_moe_kernel.<locals>._process.<locals>._g.<locals>._do"("/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py":335:49 to 336:45)))))
 
-Traceback (most recent call last):
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v1/kernel.py", line 1812, in kernel
-    return fused_moe(
-jax._src.source_info_util.JaxStackTraceBeforeTransformation: jax._src.pallas.mosaic.error_handling.VerificationError: Pallas encountered an internal verification error. Please file a bug at https://github.com/jax-ml/jax/issues/new/choose. Error details: 'tpu.enqueue_dma' op DMA source and target element type mismatch
- see current operation: "tpu.enqueue_dma"(%156, %153, %149) <{operandSegmentSizes = array<i32: 1, 0, 1, 1, 0, 0, 0>, priority = 0 : i32, strict_ordering = false}> : (memref<?x512xf32, #tpu.memory_space<hbm>>, memref<?x512xbf16, #tpu.memory_space<vmem>>, memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) -> ()
+The MLIR operation involved:
+  %248 = "tpu.vector_load"(%arg6, %247, %60) <{operandSegmentSizes = array<i32: 1, 2, 0>, strides = array<i32>}> : (memref<512x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, index, index) -> vector<1x4096xbf16>
+... additional diagnostics were skipped.
 
-The preceding stack trace is the source of the JAX operation that, once transformed by JAX, triggered the following exception.
+Please report a bug at: https://github.com/jax-ml/jax/issues/new/choose
 
---------------------
 
 The above exception was the direct cause of the following exception:
 
 Traceback (most recent call last):
   File "<frozen runpy>", line 198, in _run_module_as_main
   File "<frozen runpy>", line 88, in _run_code
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 310, in <module>
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 313, in <module>
     main()
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 288, in main
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 291, in main
     outs = {name: np.asarray(fn(), np.float32)
                              ^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 177, in run_v1
-    return fused_ep_moe(
-           ^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/pallas_call.py", line 974, in _pallas_call_lowering
-    return mlir.lower_per_platform(
-           ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/pallas_call.py", line 906, in tpu_lowering
-    return mosaic_tpu_backend.pallas_call_tpu_lowering_rule(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/pallas_call_registration.py", line 405, in pallas_call_tpu_lowering_rule
-    mosaic_module = lowering.lower_jaxpr_to_pipelined_module(
-                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/lowering.py", line 1014, in lower_jaxpr_to_pipelined_module
-    lower_jaxpr_into_pipelined_module(
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/lowering.py", line 1113, in lower_jaxpr_into_pipelined_module
-    func_op = _lower_jaxpr_to_func_common(
-              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/lowering.py", line 1612, in _lower_jaxpr_to_func_common
-    raise error_handling.mlir_error_to_verification_error(e) from e
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v1/kernel.py", line 1271, in _fused_ep_moe_kernel
-    start_fetch_b_gating(bt_id=0)
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v1/kernel.py", line 350, in _fused_ep_moe_kernel.<locals>.start_fetch_b_gating
-    ).start(priority=priority)
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v1/kernel.py", line 1271, in _fused_ep_moe_kernel
-    start_fetch_b_gating(bt_id=0)
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v1/kernel.py", line 350, in dma_start/dma_start"(callsite(callsite("_fused_ep_moe_kernel.<locals>.start_fetch_b_gating
-    ).start(priority=priority)
-jax._src.pallas.mosaic.error_handling.VerificationError: Pallas encountered an internal verification error. Please file a bug at https://github.com/jax-ml/jax/issues/new/choose. Error details: 'tpu.enqueue_dma' op DMA source and target element type mismatch
- see current operation: "tpu.enqueue_dma"(%156, %153, %149) <{operandSegmentSizes = array<i32: 1, 0, 1, 1, 0, 0, 0>, priority = 0 : i32, strict_ordering = false}> : (memref<?x512xf32, #tpu.memory_space<hbm>>, memref<?x512xbf16, #tpu.memory_space<vmem>>, memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) -> ()
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 226, in <lambda>
+    return lambda: jitted(tok_l, w1_l, w2_l, w_r)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py", line 335, in _decode_moe_kernel.<locals>._process.<locals>._g.<locals>._do
+    g_vmem[pl.ds(c, 1), :] = tokens_full_vmem[
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py", line 335, in get/get"(callsite("_decode_moe_kernel.<locals>._process.<locals>._g.<locals>._do
+    g_vmem[pl.ds(c, 1), :] = tokens_full_vmem[
+jax._src.pallas.mosaic.error_handling.MosaicError: INTERNAL: Mosaic failed to compile TPU kernel: E2003: CompileTimeMosaicUnprovenMemoryAccessAlignment: cannot statically prove that index in dimension 0 is a multiple of 16
+See https://openxla.org/xla/errors/error_2003 for more details.
+
+The MLIR operation involved:
+  %248 = "tpu.vector_load"(%arg6, %247, %60) <{operandSegmentSizes = array<i32: 1, 2, 0>, strides = array<i32>}> : (memref<512x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, index, index) -> vector<1x4096xbf16>
+... additional diagnostics were skipped.
+
+Please report a bug at: https://github.com/jax-ml/jax/issues/new/choose
+
 --------------------
 For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
+weights/device = 1536 MiB
++ exit=1
+
++ ls tmp/mosaic_dump
+module_0000.jit_convert_element_type.cl_933746096
+module_0000.jit_convert_element_type.cl_933746096.after_codegen.txt
+module_0000.jit_convert_element_type.cl_933746096.after_optimizations-buffer-assignment-values.txt
+module_0000.jit_convert_element_type.cl_933746096.after_optimizations-buffer-assignment.txt
+module_0000.jit_convert_element_type.cl_933746096.after_optimizations-live-range.txt
+module_0000.jit_convert_element_type.cl_933746096.after_optimizations-memory-usage-report.txt
+module_0000.jit_convert_element_type.cl_933746096.after_optimizations.txt
+module_0000.jit_convert_element_type.cl_933746096.after_optimizations_after_buffer_assignment.txt
+module_0000.jit_convert_element_type.cl_933746096.after_optimizations_before_buffer_assignment.txt
+module_0000.jit_convert_element_type.cl_933746096.basic_compiler_metadata.txt
+module_0000.jit_convert_element_type.cl_933746096.before_optimizations.txt
+module_0000.jit_convert_element_type.cl_933746096.debug_options
+module_0000.jit_convert_element_type.cl_933746096.execution_options.txt
+module_0000.jit_convert_element_type.cl_933746096.flagfile
+module_0000.jit_convert_element_type.cl_933746096.hlo_module_config.txt
+module_0000.jit_convert_element_type.cl_933746096.target_arguments.txt
+module_0000.jit_convert_element_type.cl_933746096.tpu_comp_env.txt
+module_0000.jit_convert_element_type.cl_933746096.transfer_stats.txt
+module_0004.jit_convert_element_type.cl_933746096
+module_0004.jit_convert_element_type.cl_933746096.after_codegen.txt
+module_0004.jit_convert_element_type.cl_933746096.after_optimizations-buffer-assignment-values.txt
+module_0004.jit_convert_element_type.cl_933746096.after_optimizations-buffer-assignment.txt
+module_0004.jit_convert_element_type.cl_933746096.after_optimizations-live-range.txt
+module_0004.jit_convert_element_type.cl_933746096.after_optimizations-memory-usage-report.txt
+module_0004.jit_convert_element_type.cl_933746096.after_optimizations.txt
+module_0004.jit_convert_element_type.cl_933746096.after_optimizations_after_buffer_assignment.txt
+module_0004.jit_convert_element_type.cl_933746096.after_optimizations_before_buffer_assignment.txt
+module_0004.jit_convert_element_type.cl_933746096.basic_compiler_metadata.txt
+module_0004.jit_convert_element_type.cl_933746096.before_optimizations.txt
+module_0004.jit_convert_element_type.cl_933746096.debug_options
+module_0004.jit_convert_element_type.cl_933746096.execution_options.txt
+module_0004.jit_convert_element_type.cl_933746096.flagfile
+module_0004.jit_convert_element_type.cl_933746096.hlo_module_config.txt
+module_0004.jit_convert_element_type.cl_933746096.target_arguments.txt
+module_0004.jit_convert_element_type.cl_933746096.tpu_comp_env.txt
+module_0004.jit_convert_element_type.cl_933746096.transfer_stats.txt
+module_0008.jit_convert_element_type.cl_933746096
+module_0008.jit_convert_element_type.cl_933746096.after_codegen.txt
+module_0008.jit_convert_element_type.cl_933746096.after_optimizations-buffer-assignment-values.txt
+module_0008.jit_convert_element_type.cl_933746096.after_optimizations-buffer-assignment.txt
+module_0008.jit_convert_element_type.cl_933746096.after_optimizations-live-range.txt
+module_0008.jit_convert_element_type.cl_933746096.after_optimizations-memory-usage-report.txt
+module_0008.jit_convert_element_type.cl_933746096.after_optimizations.txt
+module_0008.jit_convert_element_type.cl_933746096.after_optimizations_after_buffer_assignment.txt
+module_0008.jit_convert_element_type.cl_933746096.after_optimizations_before_buffer_assignment.txt
+module_0008.jit_convert_element_type.cl_933746096.basic_compiler_metadata.txt
+module_0008.jit_convert_element_type.cl_933746096.before_optimizations.txt
+module_0008.jit_convert_element_type.cl_933746096.debug_options
+module_0008.jit_convert_element_type.cl_933746096.execution_options.txt
+module_0008.jit_convert_element_type.cl_933746096.flagfile
+module_0008.jit_convert_element_type.cl_933746096.hlo_module_config.txt
+module_0008.jit_convert_element_type.cl_933746096.target_arguments.txt
+module_0008.jit_convert_element_type.cl_933746096.tpu_comp_env.txt
+module_0008.jit_convert_element_type.cl_933746096.transfer_stats.txt
+module_0012.jit__multi_slice.cl_933746096
+module_0012.jit__multi_slice.cl_933746096.after_codegen.txt
+module_0012.jit__multi_slice.cl_933746096.after_optimizations-buffer-assignment-values.txt
+module_0012.jit__multi_slice.cl_933746096.after_optimizations-buffer-assignment.txt
+module_0012.jit__multi_slice.cl_933746096.after_optimizations-live-range.txt
+module_0012.jit__multi_slice.cl_933746096.after_optimizations-memory-usage-report.txt
+module_0012.jit__multi_slice.cl_933746096.after_optimizations.txt
+module_0012.jit__multi_slice.cl_933746096.after_optimizations_after_buffer_assignment.txt
+module_0012.jit__multi_slice.cl_933746096.after_optimizations_before_buffer_assignment.txt
+module_0012.jit__multi_slice.cl_933746096.basic_compiler_metadata.txt
+module_0012.jit__multi_slice.cl_933746096.before_optimizations.txt
+module_0012.jit__multi_slice.cl_933746096.debug_options
+module_0012.jit__multi_slice.cl_933746096.execution_options.txt
+module_0012.jit__multi_slice.cl_933746096.flagfile
+module_0012.jit__multi_slice.cl_933746096.hlo_module_config.txt
+module_0012.jit__multi_slice.cl_933746096.target_arguments.txt
+module_0012.jit__multi_slice.cl_933746096.tpu_comp_env.txt
+module_0012.jit__multi_slice.cl_933746096.transfer_stats.txt
+module_0016.jit__multi_slice.cl_933746096
+module_0016.jit__multi_slice.cl_933746096.after_codegen.txt
+module_0016.jit__multi_slice.cl_933746096.after_optimizations-buffer-assignment-values.txt
+module_0016.jit__multi_slice.cl_933746096.after_optimizations-buffer-assignment.txt
+module_0016.jit__multi_slice.cl_933746096.after_optimizations-live-range.txt
+module_0016.jit__multi_slice.cl_933746096.after_optimizations-memory-usage-report.txt
+module_0016.jit__multi_slice.cl_933746096.after_optimizations.txt
+module_0016.jit__multi_slice.cl_933746096.after_optimizations_after_buffer_assignment.txt
+module_0016.jit__multi_slice.cl_933746096.after_optimizations_before_buffer_assignment.txt
+module_0016.jit__multi_slice.cl_933746096.basic_compiler_metadata.txt
+module_0016.jit__multi_slice.cl_933746096.before_optimizations.txt
+module_0016.jit__multi_slice.cl_933746096.debug_options
+module_0016.jit__multi_slice.cl_933746096.execution_options.txt
+module_0016.jit__multi_slice.cl_933746096.flagfile
+module_0016.jit__multi_slice.cl_933746096.hlo_module_config.txt
+module_0016.jit__multi_slice.cl_933746096.target_arguments.txt
+module_0016.jit__multi_slice.cl_933746096.tpu_comp_env.txt
+module_0016.jit__multi_slice.cl_933746096.transfer_stats.txt
+module_0020.jit__multi_slice.cl_933746096
+module_0020.jit__multi_slice.cl_933746096.after_codegen.txt
+module_0020.jit__multi_slice.cl_933746096.after_optimizations-buffer-assignment-values.txt
+module_0020.jit__multi_slice.cl_933746096.after_optimizations-buffer-assignment.txt
+module_0020.jit__multi_slice.cl_933746096.after_optimizations-live-range.txt
+module_0020.jit__multi_slice.cl_933746096.after_optimizations-memory-usage-report.txt
+module_0020.jit__multi_slice.cl_933746096.after_optimizations.txt
+module_0020.jit__multi_slice.cl_933746096.after_optimizations_after_buffer_assignment.txt
+module_0020.jit__multi_slice.cl_933746096.after_optimizations_before_buffer_assignment.txt
+module_0020.jit__multi_slice.cl_933746096.basic_compiler_metadata.txt
+module_0020.jit__multi_slice.cl_933746096.before_optimizations.txt
+module_0020.jit__multi_slice.cl_933746096.debug_options
+module_0020.jit__multi_slice.cl_933746096.execution_options.txt
+module_0020.jit__multi_slice.cl_933746096.flagfile
+module_0020.jit__multi_slice.cl_933746096.hlo_module_config.txt
+module_0020.jit__multi_slice.cl_933746096.target_arguments.txt
+module_0020.jit__multi_slice.cl_933746096.tpu_comp_env.txt
+module_0020.jit__multi_slice.cl_933746096.transfer_stats.txt
+module_0024.jit_fn.cl_933746096
+module_0024.jit_fn.cl_933746096.after_optimizations-buffer-assignment-values.txt
+module_0024.jit_fn.cl_933746096.after_optimizations-buffer-assignment.txt
+module_0024.jit_fn.cl_933746096.after_optimizations-live-range.txt
+module_0024.jit_fn.cl_933746096.after_optimizations-memory-usage-report.txt
+module_0024.jit_fn.cl_933746096.after_optimizations.txt
+module_0024.jit_fn.cl_933746096.after_optimizations_after_buffer_assignment.txt
+module_0024.jit_fn.cl_933746096.after_optimizations_before_buffer_assignment.txt
+module_0024.jit_fn.cl_933746096.before_optimizations.txt
+module_0024.jit_fn.cl_933746096.debug_options
+module_0024.jit_fn.cl_933746096.execution_options.txt
+module_0024.jit_fn.cl_933746096.flagfile
+module_0024.jit_fn.cl_933746096.hlo_module_config.txt
+module_0024.jit_fn.cl_933746096.target_arguments.txt
+module_0024.jit_fn.cl_933746096.tpu_comp_env.txt
++ exit=0
+
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=30 --warmup=5
+WARNING 08-23 11:09:40 [tpu_platform.py:447] Pin memory is not supported on TPU.
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+INFO 08-23 11:09:44 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-23 11:09:44 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-23 11:09:44 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+Traceback (most recent call last):
+  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/compiler.py", line 353, in backend_compile_and_load
+    return backend.compile_and_load(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+jax.errors.JaxRuntimeError: INTERNAL: Mosaic failed to compile TPU kernel: E2003: CompileTimeMosaicUnprovenMemoryAccessAlignment: cannot statically prove that index in dimension 0 is a multiple of 16
+See https://openxla.org/xla/errors/error_2003 for more details.
+
+at location: loc("get:"("get/get"(callsite("_decode_moe_kernel.<locals>._process.<locals>._g.<locals>._do"("/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py":335:49 to 336:45) at "_decode_moe_kernel.<locals>._process.<locals>._g.<locals>._do"("/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py":335:49 to 336:45)))))
+
+The MLIR operation involved:
+  %248 = "tpu.vector_load"(%arg6, %247, %60) <{operandSegmentSizes = array<i32: 1, 2, 0>, strides = array<i32>}> : (memref<512x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, index, index) -> vector<1x4096xbf16>
+... additional diagnostics were skipped.
+
+Please report a bug at: https://github.com/jax-ml/jax/issues/new/choose
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 313, in <module>
+    main()
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 291, in main
+    outs = {name: np.asarray(fn(), np.float32)
+                             ^^^^
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 226, in <lambda>
+    return lambda: jitted(tok_l, w1_l, w2_l, w_r)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py", line 335, in _decode_moe_kernel.<locals>._process.<locals>._g.<locals>._do
+    g_vmem[pl.ds(c, 1), :] = tokens_full_vmem[
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py", line 335, in get/get"(callsite("_decode_moe_kernel.<locals>._process.<locals>._g.<locals>._do
+    g_vmem[pl.ds(c, 1), :] = tokens_full_vmem[
+jax._src.pallas.mosaic.error_handling.MosaicError: INTERNAL: Mosaic failed to compile TPU kernel: E2003: CompileTimeMosaicUnprovenMemoryAccessAlignment: cannot statically prove that index in dimension 0 is a multiple of 16
+See https://openxla.org/xla/errors/error_2003 for more details.
+
+The MLIR operation involved:
+  %248 = "tpu.vector_load"(%arg6, %247, %60) <{operandSegmentSizes = array<i32: 1, 2, 0>, strides = array<i32>}> : (memref<512x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, index, index) -> vector<1x4096xbf16>
+... additional diagnostics were skipped.
+
+Please report a bug at: https://github.com/jax-ml/jax/issues/new/choose
+
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
+weights/device = 1536 MiB
 + exit=1
 
 log: tmp/bench_dump.log   dumps: tmp/mosaic_dump/

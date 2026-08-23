@@ -1,0 +1,26 @@
+BufferAssignment:
+allocation 0: size 512, color 7, thread-local:
+ value: <2 add.2 @7> (size=512,offset=0): bf16[]{:T(256)S(7)}
+allocation 1: size 1073741824, parameter 1, shape |bf16[512,4096,2,128]| at ShapeIndex {}:
+ value: <6 param.5 @0> (size=1073741824,offset=0): bf16[512,4096,2,128]{3,2,1,0:T(2,128)(2,1)}
+allocation 2: size 536870912, parameter 2, shape |bf16[512,128,4096]| at ShapeIndex {}:
+ value: <8 param.6 @0> (size=536870912,offset=0): bf16[512,128,4096]{2,1,0:T(8,128)(2,1)}
+allocation 3: size 4194304, parameter 3, shape |bf16[512,4096]| at ShapeIndex {}:
+ value: <5 param.7 @0> (size=4194304,offset=0): bf16[512,4096]{1,0:T(8,128)(2,1)}
+allocation 4: size 524288, output shape is |bf16[64,4096]|, maybe-live-out:
+ value: <3 reduce-scatter.1 @0> (size=524288,offset=0): bf16[64,4096]{1,0:T(8,128)(2,1)}
+allocation 5: size 524288, parameter 0, shape |bf16[64,4096]| at ShapeIndex {}:
+ value: <4 param.4 @0> (size=524288,offset=0): bf16[64,4096]{1,0:T(8,128)(2,1)}
+allocation 6: size 512, color 7, thread-local:
+ value: <1 reduce_scatter.11 @7> (size=512,offset=0): bf16[]{:T(256)S(7)}
+allocation 7: size 512, color 7, thread-local:
+ value: <0 reduce_scatter.10 @7> (size=512,offset=0): bf16[]{:T(256)S(7)}
+allocation 8: size 1077952544, preallocated-temp:
+ value: <7 reshape.3 @0> (size=1073741824,offset=0): bf16[512,4096,256]{2,1,0:T(8,128)(2,1)}
+ value: <9 fused_moe_decode_tp_fused.1 @0> (size=4194304,offset=1073741824): bf16[512,4096]{1,0:T(8,128)(2,1)}
+ value: <11 prepare_done_reduce-scatter.2.cloned.1.call-start @0> (size=0,offset=0): token[]
+ value: <12 reduce-scatter.2.cloned.1.call-start{} @0> (size=32,offset=1077952512): ((bf16[512,4096]{1,0:T(8,128)(2,1)}, token[]), bf16[64,4096]{1,0:T(8,128)(2,1)})
+ value: <13 reduce-scatter.2.cloned.1.call-start{0} @0> (size=32,offset=1077936128): (bf16[512,4096]{1,0:T(8,128)(2,1)}, token[])
+allocation 9: size 4, color 2, preallocated-temp:
+ value: <10 prepare_start_reduce-scatter.2.cloned.1.call-start @2> (size=4,offset=0): s32[]{:S(2)}
+allocation 10: size 67108864, color 1, preallocated-temp:

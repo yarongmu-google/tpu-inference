@@ -1,0 +1,93 @@
+
+Total bytes used: 41943104 (40.00MiB)
+
+Used values:
+<10 self.1 @0>
+ positions:
+  self.1
+ uses:
+  fusion, operand 0
+ from instruction: %self.1 = bf16[512,4096]{1,0:T(8,128)(2,1)} parameter(0), metadata={op_name="self"}, backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"0"}],"used_scoped_memory_configs":[]}
+<11 fusion{} @0>
+ positions:
+  fusion {}
+ uses:
+  get-tuple-element, operand 0 {}
+  get-tuple-element.1, operand 0 {}
+  get-tuple-element.2, operand 0 {}
+  get-tuple-element.3, operand 0 {}
+  get-tuple-element.4, operand 0 {}
+  get-tuple-element.5, operand 0 {}
+  get-tuple-element.6, operand 0 {}
+  get-tuple-element.7, operand 0 {}
+ from instruction: %fusion = (bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, /*index=5*/bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}) fusion(%self.1), kind=kLoop, calls=%fused_computation, metadata={op_name="jit(_multi_slice)/slice" stack_frame_id=4}, backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"23488103"}],"used_scoped_memory_configs":[],"aliasing_operands":{"lists":[]}}
+<12 fusion{0} @0>
+ positions:
+  fusion {0}
+  get-tuple-element
+  tuple.1 {7}
+ uses:
+  tuple.1, operand 7
+ from instruction: %fusion = (bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, /*index=5*/bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}) fusion(%self.1), kind=kLoop, calls=%fused_computation, metadata={op_name="jit(_multi_slice)/slice" stack_frame_id=4}, backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"23488103"}],"used_scoped_memory_configs":[],"aliasing_operands":{"lists":[]}}
+<13 fusion{1} @0>
+ positions:
+  fusion {1}
+  get-tuple-element.1
+  tuple.1 {6}
+ uses:
+  tuple.1, operand 6
+ from instruction: %fusion = (bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, /*index=5*/bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}) fusion(%self.1), kind=kLoop, calls=%fused_computation, metadata={op_name="jit(_multi_slice)/slice" stack_frame_id=4}, backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"23488103"}],"used_scoped_memory_configs":[],"aliasing_operands":{"lists":[]}}
+<14 fusion{2} @0>
+ positions:
+  fusion {2}
+  get-tuple-element.2
+  tuple.1 {5}
+ uses:
+  tuple.1, operand 5
+ from instruction: %fusion = (bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, /*index=5*/bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}) fusion(%self.1), kind=kLoop, calls=%fused_computation, metadata={op_name="jit(_multi_slice)/slice" stack_frame_id=4}, backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"23488103"}],"used_scoped_memory_configs":[],"aliasing_operands":{"lists":[]}}
+<15 fusion{3} @0>
+ positions:
+  fusion {3}
+  get-tuple-element.3
+  tuple.1 {4}
+ uses:
+  tuple.1, operand 4
+ from instruction: %fusion = (bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, /*index=5*/bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}) fusion(%self.1), kind=kLoop, calls=%fused_computation, metadata={op_name="jit(_multi_slice)/slice" stack_frame_id=4}, backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"23488103"}],"used_scoped_memory_configs":[],"aliasing_operands":{"lists":[]}}
+<16 fusion{4} @0>
+ positions:
+  fusion {4}
+  get-tuple-element.4
+  tuple.1 {3}
+ uses:
+  tuple.1, operand 3
+ from instruction: %fusion = (bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, /*index=5*/bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}) fusion(%self.1), kind=kLoop, calls=%fused_computation, metadata={op_name="jit(_multi_slice)/slice" stack_frame_id=4}, backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"23488103"}],"used_scoped_memory_configs":[],"aliasing_operands":{"lists":[]}}
+<17 fusion{5} @0>
+ positions:
+  fusion {5}
+  get-tuple-element.5
+  tuple.1 {2}
+ uses:
+  tuple.1, operand 2
+ from instruction: %fusion = (bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, /*index=5*/bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}) fusion(%self.1), kind=kLoop, calls=%fused_computation, metadata={op_name="jit(_multi_slice)/slice" stack_frame_id=4}, backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"23488103"}],"used_scoped_memory_configs":[],"aliasing_operands":{"lists":[]}}
+<18 fusion{6} @0>
+ positions:
+  fusion {6}
+  get-tuple-element.6
+  tuple.1 {1}
+ uses:
+  tuple.1, operand 1
+ from instruction: %fusion = (bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, /*index=5*/bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}) fusion(%self.1), kind=kLoop, calls=%fused_computation, metadata={op_name="jit(_multi_slice)/slice" stack_frame_id=4}, backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"23488103"}],"used_scoped_memory_configs":[],"aliasing_operands":{"lists":[]}}
+<19 fusion{7} @0>
+ positions:
+  fusion {7}
+  get-tuple-element.7
+  tuple.1 {0}
+ uses:
+  tuple.1, operand 0
+ from instruction: %fusion = (bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, /*index=5*/bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}) fusion(%self.1), kind=kLoop, calls=%fused_computation, metadata={op_name="jit(_multi_slice)/slice" stack_frame_id=4}, backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"23488103"}],"used_scoped_memory_configs":[],"aliasing_operands":{"lists":[]}}
+<20 tuple.1{} @0>
+ positions:
+  tuple.1 {}
+ uses:
+  (none)
+ from instruction: %tuple.1 = (bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, /*index=5*/bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}) tuple(%get-tuple-element.7, %get-tuple-element.6, %get-tuple-element.5, %get-tuple-element.4, %get-tuple-element.3, /*index=5*/%get-tuple-element.2, %get-tuple-element.1, %get-tuple-element), backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"0"}],"used_scoped_memory_configs":[]}

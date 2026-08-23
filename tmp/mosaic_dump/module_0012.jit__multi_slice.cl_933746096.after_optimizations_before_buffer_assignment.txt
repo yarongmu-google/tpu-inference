@@ -1,0 +1,52 @@
+HloModule jit__multi_slice, is_scheduled=true, entry_computation_layout={(bf16[512,4096]{1,0:T(8,128)(2,1)})->(bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, /*index=5*/bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)})}, allow_spmd_sharding_propagation_to_parameters={true}, allow_spmd_sharding_propagation_to_output={true,true,true,true,true,true,true,true}, frontend_attributes={arg_layout_modes="default",arg_memory_spaces="0",out_layout_modes="default;default;default;default;default;default;default;default",out_memory_spaces="0;0;0;0;0;0;0;0"}
+
+FileNames
+1 "<frozen runpy>"
+2 "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py"
+
+FunctionNames
+1 "_run_module_as_main"
+2 "_run_code"
+3 "<module>"
+4 "main"
+
+FileLocations
+1 {file_name_id=1 function_name_id=1 line=198 end_line=199 column=11 end_column=42}
+2 {file_name_id=1 function_name_id=2 line=88 end_line=88 column=4 end_column=27}
+3 {file_name_id=2 function_name_id=3 line=313 end_line=313 column=4 end_column=10}
+4 {file_name_id=2 function_name_id=4 line=194 end_line=194 column=16 end_column=76}
+
+StackFrames
+1 {file_location_id=1 parent_frame_id=1}
+2 {file_location_id=2 parent_frame_id=2}
+3 {file_location_id=3 parent_frame_id=3}
+4 {file_location_id=4 parent_frame_id=4}
+
+
+%fused_computation (param_0: bf16[512,4096]) -> (bf16[64,4096], bf16[64,4096], bf16[64,4096], bf16[64,4096], bf16[64,4096], /*index=5*/bf16[64,4096], bf16[64,4096], bf16[64,4096]) {
+  %param_0 = bf16[512,4096]{1,0:T(8,128)(2,1)} parameter(0)
+  %slice.0 = bf16[64,4096]{1,0:T(8,128)(2,1)} slice(%param_0), slice={[448:512], [0:4096]}, metadata={op_name="jit(_multi_slice)/slice" stack_frame_id=4}
+  %slice.1 = bf16[64,4096]{1,0:T(8,128)(2,1)} slice(%param_0), slice={[384:448], [0:4096]}, metadata={op_name="jit(_multi_slice)/slice" stack_frame_id=4}
+  %slice.2 = bf16[64,4096]{1,0:T(8,128)(2,1)} slice(%param_0), slice={[320:384], [0:4096]}, metadata={op_name="jit(_multi_slice)/slice" stack_frame_id=4}
+  %slice.3 = bf16[64,4096]{1,0:T(8,128)(2,1)} slice(%param_0), slice={[256:320], [0:4096]}, metadata={op_name="jit(_multi_slice)/slice" stack_frame_id=4}
+  %slice.4 = bf16[64,4096]{1,0:T(8,128)(2,1)} slice(%param_0), slice={[192:256], [0:4096]}, metadata={op_name="jit(_multi_slice)/slice" stack_frame_id=4}
+  %slice.5 = bf16[64,4096]{1,0:T(8,128)(2,1)} slice(%param_0), slice={[128:192], [0:4096]}, metadata={op_name="jit(_multi_slice)/slice" stack_frame_id=4}
+  %slice.6 = bf16[64,4096]{1,0:T(8,128)(2,1)} slice(%param_0), slice={[64:128], [0:4096]}, metadata={op_name="jit(_multi_slice)/slice" stack_frame_id=4}
+  %slice.7 = bf16[64,4096]{1,0:T(8,128)(2,1)} slice(%param_0), slice={[0:64], [0:4096]}, metadata={op_name="jit(_multi_slice)/slice" stack_frame_id=4}
+  ROOT %tuple.7 = (bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, /*index=5*/bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}) tuple(%slice.0, %slice.1, %slice.2, %slice.3, %slice.4, /*index=5*/%slice.5, %slice.6, %slice.7)
+}
+
+ENTRY %main.1 (self.1: bf16[512,4096]) -> (bf16[64,4096], bf16[64,4096], bf16[64,4096], bf16[64,4096], bf16[64,4096], /*index=5*/bf16[64,4096], bf16[64,4096], bf16[64,4096]) {
+  %self.1 = bf16[512,4096]{1,0:T(8,128)(2,1)} parameter(0), metadata={op_name="self"}, backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"0"}],"used_scoped_memory_configs":[]}
+  %fusion = (bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, /*index=5*/bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}) fusion(%self.1), kind=kLoop, calls=%fused_computation, metadata={op_name="jit(_multi_slice)/slice" stack_frame_id=4}, backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"23488103"}],"used_scoped_memory_configs":[]}
+  %get-tuple-element.7 = bf16[64,4096]{1,0:T(8,128)(2,1)} get-tuple-element(%fusion), index=7, metadata={op_name="jit(_multi_slice)/slice" stack_frame_id=4}, backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"0"}],"used_scoped_memory_configs":[]}
+  %get-tuple-element.6 = bf16[64,4096]{1,0:T(8,128)(2,1)} get-tuple-element(%fusion), index=6, metadata={op_name="jit(_multi_slice)/slice" stack_frame_id=4}, backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"0"}],"used_scoped_memory_configs":[]}
+  %get-tuple-element.5 = bf16[64,4096]{1,0:T(8,128)(2,1)} get-tuple-element(%fusion), index=5, metadata={op_name="jit(_multi_slice)/slice" stack_frame_id=4}, backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"0"}],"used_scoped_memory_configs":[]}
+  %get-tuple-element.4 = bf16[64,4096]{1,0:T(8,128)(2,1)} get-tuple-element(%fusion), index=4, metadata={op_name="jit(_multi_slice)/slice" stack_frame_id=4}, backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"0"}],"used_scoped_memory_configs":[]}
+  %get-tuple-element.3 = bf16[64,4096]{1,0:T(8,128)(2,1)} get-tuple-element(%fusion), index=3, metadata={op_name="jit(_multi_slice)/slice" stack_frame_id=4}, backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"0"}],"used_scoped_memory_configs":[]}
+  %get-tuple-element.2 = bf16[64,4096]{1,0:T(8,128)(2,1)} get-tuple-element(%fusion), index=2, metadata={op_name="jit(_multi_slice)/slice" stack_frame_id=4}, backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"0"}],"used_scoped_memory_configs":[]}
+  %get-tuple-element.1 = bf16[64,4096]{1,0:T(8,128)(2,1)} get-tuple-element(%fusion), index=1, metadata={op_name="jit(_multi_slice)/slice" stack_frame_id=4}, backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"0"}],"used_scoped_memory_configs":[]}
+  %get-tuple-element = bf16[64,4096]{1,0:T(8,128)(2,1)} get-tuple-element(%fusion), index=0, metadata={op_name="jit(_multi_slice)/slice" stack_frame_id=4}, backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"0"}],"used_scoped_memory_configs":[]}
+  ROOT %tuple.1 = (bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, /*index=5*/bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}, bf16[64,4096]{1,0:T(8,128)(2,1)}) tuple(%get-tuple-element.7, %get-tuple-element.6, %get-tuple-element.5, %get-tuple-element.4, %get-tuple-element.3, /*index=5*/%get-tuple-element.2, %get-tuple-element.1, %get-tuple-element), backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"0"}],"used_scoped_memory_configs":[]}
+}
+

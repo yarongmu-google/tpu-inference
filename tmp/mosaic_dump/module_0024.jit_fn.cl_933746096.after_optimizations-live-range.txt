@@ -1,0 +1,47 @@
+HloLiveRange (max 16):
+  InstructionSequence:
+    0:param.5
+    1:param.7
+    2:param.6
+    3:param.4
+    4:prepare_start_reduce-scatter.2.cloned.1.call-start
+    5:reshape.3
+    6:fused_moe_decode_tp_fused.1
+    7:prepare_done_reduce-scatter.2.cloned.1.call-start
+    8:param_1
+    9:param_0.2
+    10:param_1.1
+    11:param_0.1
+    12:reduce-scatter.1
+    13:reduce-scatter.2.cloned.1
+    14:reduce-scatter.2.cloned.1.call-start
+    15:reduce-scatter.2.cloned.1.call-done
+  BufferLiveRange:
+    reduce-scatter.1{}:12-16
+    param.4{}:0-16
+    param.7{}:0-16
+    param.5{}:0-16
+    reshape.3{}:5-6
+    param.6{}:0-16
+    fused_moe_decode_tp_fused.1{}:6-15
+    prepare_start_reduce-scatter.2.cloned.1.call-start{}:4-7
+    prepare_done_reduce-scatter.2.cloned.1.call-start{}:7-15
+    reduce-scatter.2.cloned.1.call-start{}:14-15
+    reduce-scatter.2.cloned.1.call-start{0}:14-15
+  Live ranges at 6 (peak):
+    param.5{}: 1073741824 bytes (cumulative: 1073741824 bytes)
+    reshape.3{}: 1073741824 bytes (cumulative: 2147483648 bytes)
+    param.6{}: 536870912 bytes (cumulative: 2684354560 bytes)
+    fused_moe_decode_tp_fused.1{}: 4194304 bytes (cumulative: 2688548864 bytes)
+    param.7{}: 4194304 bytes (cumulative: 2692743168 bytes)
+    param.4{}: 524288 bytes (cumulative: 2693267456 bytes)
+    prepare_start_reduce-scatter.2.cloned.1.call-start{}: 4 bytes (cumulative: 2693267460 bytes)
+  Stack trace breakdown for peak usage: 2 693 267 460 bytes
+    main.3_spmd (100.0%, total: 2 693 267 460 bytes, current: 0 bytes, remaining: 2 693 267 460 bytes)
+      ├── jit(fn)/shard_map/reshape (39.9%, total: 1 073 741 824 bytes, current: 1 073 741 824 bytes, remaining: 1 619 525 636 bytes)
+      ├── w1x (39.9%, total: 1 073 741 824 bytes, current: 1 073 741 824 bytes, remaining: 545 783 812 bytes)
+      ├── w2x (19.9%, total: 536 870 912 bytes, current: 536 870 912 bytes, remaining: 8 912 900 bytes)
+      ├── jit(fn)/shard_map/jit(fused_moe_decode_tp_fused)/pallas_call (0.2%, total: 4 194 304 bytes, current: 4 194 304 bytes, remaining: 4 718 596 bytes)
+      ├── r (0.2%, total: 4 194 304 bytes, current: 4 194 304 bytes, remaining: 524 292 bytes)
+      ├── tok (0.0%, total: 524 288 bytes, current: 524 288 bytes, remaining: 4 bytes)
+      └── prepare_start_reduce-scatter.2.cloned.1.call-start (0.0%, total: 4 bytes, current: 4 bytes, remaining: 0 bytes)
