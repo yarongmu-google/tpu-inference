@@ -203,3 +203,7 @@ shellcheck*/
 csrc/moe/marlin_moe_wna16/kernel_*
 
 !/support_matrices/**
+
+# keep tmp/ tracked (VM bench logs + mosaic pass dumps are committed here)
+!tmp/
+!tmp/**
