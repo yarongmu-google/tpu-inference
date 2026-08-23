@@ -1,0 +1,6 @@
+module attributes {stable_mosaic.version = 15 : i64} {
+  "stable_mosaic.func.func"() ({
+  ^bb0(%arg0: i32):
+    "stable_mosaic.func.return"() : () -> ()
+  }) {dimension_semantics = [#tpu.dimension_semantics<core_parallel>], function_type = (i32) -> (), iteration_bounds = array<i64: 2>, sym_name = "main", sym_visibility = "private", tpu.core_type = #tpu.core_type<sc_scalar_subcore>, window_params = []} : () -> ()
+}

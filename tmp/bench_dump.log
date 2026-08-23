@@ -1,6 +1,6 @@
 
 + git rev-parse --short HEAD
-f2bf8b8cdc
+2067f35cd1
 + exit=0
 
 + python -c import jax; print(jax.__version__); print(jax.devices())
@@ -9,26 +9,26 @@ f2bf8b8cdc
 + exit=0
 
 + python -c import tpu_inference.kernels.fused_moe.v2.decode_kernel as m; print(m.__file__)
-WARNING 08-23 11:08:02 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 08-23 11:20:44 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-23 11:08:06 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-23 11:08:06 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-23 11:08:06 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-23 11:20:48 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-23 11:20:48 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-23 11:20:48 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 /home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py
 + exit=0
 
 + python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=3 --warmup=1
-WARNING 08-23 11:08:08 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 08-23 11:20:50 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-23 11:08:12 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-23 11:08:12 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-23 11:08:12 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-23 11:20:53 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-23 11:20:53 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-23 11:20:54 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 Traceback (most recent call last):
   File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/compiler.py", line 353, in backend_compile_and_load
     return backend.compile_and_load(
@@ -78,140 +78,56 @@ weights/device = 1536 MiB
 + exit=1
 
 + ls tmp/mosaic_dump
-module_0000.jit_convert_element_type.cl_933746096
-module_0000.jit_convert_element_type.cl_933746096.after_codegen.txt
-module_0000.jit_convert_element_type.cl_933746096.after_optimizations-buffer-assignment-values.txt
-module_0000.jit_convert_element_type.cl_933746096.after_optimizations-buffer-assignment.txt
-module_0000.jit_convert_element_type.cl_933746096.after_optimizations-live-range.txt
-module_0000.jit_convert_element_type.cl_933746096.after_optimizations-memory-usage-report.txt
-module_0000.jit_convert_element_type.cl_933746096.after_optimizations.txt
-module_0000.jit_convert_element_type.cl_933746096.after_optimizations_after_buffer_assignment.txt
-module_0000.jit_convert_element_type.cl_933746096.after_optimizations_before_buffer_assignment.txt
-module_0000.jit_convert_element_type.cl_933746096.basic_compiler_metadata.txt
-module_0000.jit_convert_element_type.cl_933746096.before_optimizations.txt
-module_0000.jit_convert_element_type.cl_933746096.debug_options
-module_0000.jit_convert_element_type.cl_933746096.execution_options.txt
-module_0000.jit_convert_element_type.cl_933746096.flagfile
-module_0000.jit_convert_element_type.cl_933746096.hlo_module_config.txt
-module_0000.jit_convert_element_type.cl_933746096.target_arguments.txt
-module_0000.jit_convert_element_type.cl_933746096.tpu_comp_env.txt
-module_0000.jit_convert_element_type.cl_933746096.transfer_stats.txt
-module_0004.jit_convert_element_type.cl_933746096
-module_0004.jit_convert_element_type.cl_933746096.after_codegen.txt
-module_0004.jit_convert_element_type.cl_933746096.after_optimizations-buffer-assignment-values.txt
-module_0004.jit_convert_element_type.cl_933746096.after_optimizations-buffer-assignment.txt
-module_0004.jit_convert_element_type.cl_933746096.after_optimizations-live-range.txt
-module_0004.jit_convert_element_type.cl_933746096.after_optimizations-memory-usage-report.txt
-module_0004.jit_convert_element_type.cl_933746096.after_optimizations.txt
-module_0004.jit_convert_element_type.cl_933746096.after_optimizations_after_buffer_assignment.txt
-module_0004.jit_convert_element_type.cl_933746096.after_optimizations_before_buffer_assignment.txt
-module_0004.jit_convert_element_type.cl_933746096.basic_compiler_metadata.txt
-module_0004.jit_convert_element_type.cl_933746096.before_optimizations.txt
-module_0004.jit_convert_element_type.cl_933746096.debug_options
-module_0004.jit_convert_element_type.cl_933746096.execution_options.txt
-module_0004.jit_convert_element_type.cl_933746096.flagfile
-module_0004.jit_convert_element_type.cl_933746096.hlo_module_config.txt
-module_0004.jit_convert_element_type.cl_933746096.target_arguments.txt
-module_0004.jit_convert_element_type.cl_933746096.tpu_comp_env.txt
-module_0004.jit_convert_element_type.cl_933746096.transfer_stats.txt
-module_0008.jit_convert_element_type.cl_933746096
-module_0008.jit_convert_element_type.cl_933746096.after_codegen.txt
-module_0008.jit_convert_element_type.cl_933746096.after_optimizations-buffer-assignment-values.txt
-module_0008.jit_convert_element_type.cl_933746096.after_optimizations-buffer-assignment.txt
-module_0008.jit_convert_element_type.cl_933746096.after_optimizations-live-range.txt
-module_0008.jit_convert_element_type.cl_933746096.after_optimizations-memory-usage-report.txt
-module_0008.jit_convert_element_type.cl_933746096.after_optimizations.txt
-module_0008.jit_convert_element_type.cl_933746096.after_optimizations_after_buffer_assignment.txt
-module_0008.jit_convert_element_type.cl_933746096.after_optimizations_before_buffer_assignment.txt
-module_0008.jit_convert_element_type.cl_933746096.basic_compiler_metadata.txt
-module_0008.jit_convert_element_type.cl_933746096.before_optimizations.txt
-module_0008.jit_convert_element_type.cl_933746096.debug_options
-module_0008.jit_convert_element_type.cl_933746096.execution_options.txt
-module_0008.jit_convert_element_type.cl_933746096.flagfile
-module_0008.jit_convert_element_type.cl_933746096.hlo_module_config.txt
-module_0008.jit_convert_element_type.cl_933746096.target_arguments.txt
-module_0008.jit_convert_element_type.cl_933746096.tpu_comp_env.txt
-module_0008.jit_convert_element_type.cl_933746096.transfer_stats.txt
-module_0012.jit__multi_slice.cl_933746096
-module_0012.jit__multi_slice.cl_933746096.after_codegen.txt
-module_0012.jit__multi_slice.cl_933746096.after_optimizations-buffer-assignment-values.txt
-module_0012.jit__multi_slice.cl_933746096.after_optimizations-buffer-assignment.txt
-module_0012.jit__multi_slice.cl_933746096.after_optimizations-live-range.txt
-module_0012.jit__multi_slice.cl_933746096.after_optimizations-memory-usage-report.txt
-module_0012.jit__multi_slice.cl_933746096.after_optimizations.txt
-module_0012.jit__multi_slice.cl_933746096.after_optimizations_after_buffer_assignment.txt
-module_0012.jit__multi_slice.cl_933746096.after_optimizations_before_buffer_assignment.txt
-module_0012.jit__multi_slice.cl_933746096.basic_compiler_metadata.txt
-module_0012.jit__multi_slice.cl_933746096.before_optimizations.txt
-module_0012.jit__multi_slice.cl_933746096.debug_options
-module_0012.jit__multi_slice.cl_933746096.execution_options.txt
-module_0012.jit__multi_slice.cl_933746096.flagfile
-module_0012.jit__multi_slice.cl_933746096.hlo_module_config.txt
-module_0012.jit__multi_slice.cl_933746096.target_arguments.txt
-module_0012.jit__multi_slice.cl_933746096.tpu_comp_env.txt
-module_0012.jit__multi_slice.cl_933746096.transfer_stats.txt
-module_0016.jit__multi_slice.cl_933746096
-module_0016.jit__multi_slice.cl_933746096.after_codegen.txt
-module_0016.jit__multi_slice.cl_933746096.after_optimizations-buffer-assignment-values.txt
-module_0016.jit__multi_slice.cl_933746096.after_optimizations-buffer-assignment.txt
-module_0016.jit__multi_slice.cl_933746096.after_optimizations-live-range.txt
-module_0016.jit__multi_slice.cl_933746096.after_optimizations-memory-usage-report.txt
-module_0016.jit__multi_slice.cl_933746096.after_optimizations.txt
-module_0016.jit__multi_slice.cl_933746096.after_optimizations_after_buffer_assignment.txt
-module_0016.jit__multi_slice.cl_933746096.after_optimizations_before_buffer_assignment.txt
-module_0016.jit__multi_slice.cl_933746096.basic_compiler_metadata.txt
-module_0016.jit__multi_slice.cl_933746096.before_optimizations.txt
-module_0016.jit__multi_slice.cl_933746096.debug_options
-module_0016.jit__multi_slice.cl_933746096.execution_options.txt
-module_0016.jit__multi_slice.cl_933746096.flagfile
-module_0016.jit__multi_slice.cl_933746096.hlo_module_config.txt
-module_0016.jit__multi_slice.cl_933746096.target_arguments.txt
-module_0016.jit__multi_slice.cl_933746096.tpu_comp_env.txt
-module_0016.jit__multi_slice.cl_933746096.transfer_stats.txt
-module_0020.jit__multi_slice.cl_933746096
-module_0020.jit__multi_slice.cl_933746096.after_codegen.txt
-module_0020.jit__multi_slice.cl_933746096.after_optimizations-buffer-assignment-values.txt
-module_0020.jit__multi_slice.cl_933746096.after_optimizations-buffer-assignment.txt
-module_0020.jit__multi_slice.cl_933746096.after_optimizations-live-range.txt
-module_0020.jit__multi_slice.cl_933746096.after_optimizations-memory-usage-report.txt
-module_0020.jit__multi_slice.cl_933746096.after_optimizations.txt
-module_0020.jit__multi_slice.cl_933746096.after_optimizations_after_buffer_assignment.txt
-module_0020.jit__multi_slice.cl_933746096.after_optimizations_before_buffer_assignment.txt
-module_0020.jit__multi_slice.cl_933746096.basic_compiler_metadata.txt
-module_0020.jit__multi_slice.cl_933746096.before_optimizations.txt
-module_0020.jit__multi_slice.cl_933746096.debug_options
-module_0020.jit__multi_slice.cl_933746096.execution_options.txt
-module_0020.jit__multi_slice.cl_933746096.flagfile
-module_0020.jit__multi_slice.cl_933746096.hlo_module_config.txt
-module_0020.jit__multi_slice.cl_933746096.target_arguments.txt
-module_0020.jit__multi_slice.cl_933746096.tpu_comp_env.txt
-module_0020.jit__multi_slice.cl_933746096.transfer_stats.txt
-module_0024.jit_fn.cl_933746096
-module_0024.jit_fn.cl_933746096.after_optimizations-buffer-assignment-values.txt
-module_0024.jit_fn.cl_933746096.after_optimizations-buffer-assignment.txt
-module_0024.jit_fn.cl_933746096.after_optimizations-live-range.txt
-module_0024.jit_fn.cl_933746096.after_optimizations-memory-usage-report.txt
-module_0024.jit_fn.cl_933746096.after_optimizations.txt
-module_0024.jit_fn.cl_933746096.after_optimizations_after_buffer_assignment.txt
-module_0024.jit_fn.cl_933746096.after_optimizations_before_buffer_assignment.txt
-module_0024.jit_fn.cl_933746096.before_optimizations.txt
-module_0024.jit_fn.cl_933746096.debug_options
-module_0024.jit_fn.cl_933746096.execution_options.txt
-module_0024.jit_fn.cl_933746096.flagfile
-module_0024.jit_fn.cl_933746096.hlo_module_config.txt
-module_0024.jit_fn.cl_933746096.target_arguments.txt
-module_0024.jit_fn.cl_933746096.tpu_comp_env.txt
+1787509337814533925-0000-mosaic-dump-anonymous-post-deserialization.txt
+1787509337859330681-0000-mosaic-dump-anonymous-post-serialization.txt
+1787509337864309177-0000-mosaic-dump-anonymous-sparsecore-module-original.txt
+1787509337864309177-0001-mosaic-dump-anonymous-mosaic-module-original.txt
+1787509337864309177-0002-mosaic-dump-anonymous-post-mosaic-module-convert-integer-memrefs.txt
+1787509337864309177-0003-mosaic-dump-anonymous-post-mosaic-module-infer-memref-layout.txt
+1787509337864309177-0004-mosaic-dump-anonymous-post-simplify.txt
+1787509337864309177-0005-mosaic-dump-anonymous-post-mosaic-module-canonicalize-operations.txt
+1787509337864309177-0006-mosaic-dump-anonymous-post-mosaic-module-canonicalize-memory-space.txt
+1787509337864309177-0007-mosaic-dump-anonymous-post-tiling-propagation.txt
+1787509337864309177-0008-mosaic-dump-anonymous-post-mosaic-module-logical-to-physical-device-id.txt
+1787509337864309177-0009-mosaic-dump-anonymous-post-mosaic-module-lower-to-mlo.txt
+1787509337864309177-0010-mosaic-dump-anonymous-sparsecore-module-post-emit-scs.txt
+1787509337866530710-0000-mosaic-dump-anonymous-post-deserialization.txt
+1787509337911130407-0000-mosaic-dump-anonymous-post-serialization.txt
+1787509337914358571-0000-mosaic-dump-anonymous-sparsecore-module-original.txt
+1787509337914358571-0001-mosaic-dump-anonymous-mosaic-module-original.txt
+1787509337914358571-0002-mosaic-dump-anonymous-post-mosaic-module-convert-integer-memrefs.txt
+1787509337914358571-0003-mosaic-dump-anonymous-post-mosaic-module-infer-memref-layout.txt
+1787509337914358571-0004-mosaic-dump-anonymous-post-simplify.txt
+1787509337914358571-0005-mosaic-dump-anonymous-post-mosaic-module-canonicalize-operations.txt
+1787509337914358571-0006-mosaic-dump-anonymous-post-mosaic-module-canonicalize-memory-space.txt
+1787509337914358571-0007-mosaic-dump-anonymous-post-tiling-propagation.txt
+1787509337914358571-0008-mosaic-dump-anonymous-post-mosaic-module-logical-to-physical-device-id.txt
+1787509337914358571-0009-mosaic-dump-anonymous-post-mosaic-module-lower-to-mlo.txt
+1787509337914358571-0010-mosaic-dump-anonymous-sparsecore-module-post-emit-scs.txt
+1787509337916000593-0000-mosaic-dump-anonymous-post-deserialization.txt
+1787509338054497988-0000-mosaic-dump-anonymous-post-deserialization.txt
+1787509338062347660-0000-mosaic-dump-anonymous-post-deserialization.txt
+1787509338066313575-0001-mosaic-dump-anonymous-original.txt
+1787509338066313575-0002-mosaic-dump-anonymous-post-infer-memref-layout.txt
+1787509338066313575-0003-mosaic-dump-anonymous-post-infer-memref-layout-simplify.txt
+1787509338066313575-0004-mosaic-dump-anonymous-post-infer-memref-space.txt
+1787509338066313575-0005-mosaic-dump-anonymous-post-canonicalize-operations.txt
+1787509338066313575-0006-mosaic-dump-anonymous-post-pre-canon-optimization.txt
+1787509338066313575-0007-mosaic-dump-anonymous-post-canonicalize-mosaic.txt
+1787509338066313575-0008-mosaic-dump-anonymous-post-canonicalize-mosaic-simplify.txt
+1787509338066313575-0009-mosaic-dump-anonymous-post-tiling-propagation.txt
+1787509338066313575-0010-mosaic-dump-anonymous-post-infer-vector-layout-failed.txt
 + exit=0
 
 + python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=30 --warmup=5
-WARNING 08-23 11:09:40 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 08-23 11:22:22 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-23 11:09:44 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-23 11:09:44 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-23 11:09:44 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-23 11:22:25 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-23 11:22:25 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-23 11:22:25 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 Traceback (most recent call last):
   File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/compiler.py", line 353, in backend_compile_and_load
     return backend.compile_and_load(

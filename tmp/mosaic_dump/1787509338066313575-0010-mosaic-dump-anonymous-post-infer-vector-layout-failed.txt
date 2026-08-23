@@ -1,0 +1,1018 @@
+module attributes {stable_mosaic.version = 15 : i64} {
+  func.func @_decode_moe_kernel(%arg0: i32, %arg1: memref<64x4096xbf16, #tpu.tiled<(8,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, %arg2: memref<512x4096xbf16, #tpu.tiled<(8,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, %arg3: memref<4x4096x256xbf16, #tpu.tiled<(8,128)(2,1),[1024,2,1]>, #tpu.memory_space<vmem>>, %arg4: memref<4x128x4096xbf16, #tpu.tiled<(8,128)(2,1),[512,32,1]>, #tpu.memory_space<vmem>>, %arg5: memref<512x4096xbf16, #tpu.tiled<(8,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, %arg6: memref<512x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, %arg7: memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>> {llo.passthrough_operand}, %arg8: memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>> {llo.passthrough_operand}, %arg9: memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>> {llo.passthrough_operand}, %arg10: memref<512x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>>, %arg11: memref<512x32xi32, #tpu.tiled<(8,128),[1,1]>, #tpu.memory_space<smem>>, %arg12: memref<512x32xf32, #tpu.tiled<(8,128),[1,1]>, #tpu.memory_space<smem>>, %arg13: memref<1x512xi32, #tpu.tiled<(1,128),[4,1]>, #tpu.memory_space<smem>>, %arg14: memref<2x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>>, %arg15: memref<2x32x4096xf32, #tpu.tiled<(8,128),[128,32,1]>, #tpu.memory_space<vmem>>, %arg16: memref<512x10xi32, #tpu.tiled<(8,128),[1,1]>, #tpu.memory_space<vmem>>, %arg17: memref<512x10xf32, #tpu.tiled<(8,128),[1,1]>, #tpu.memory_space<vmem>>, %arg18: memref<512x32xi32, #tpu.tiled<(8,128),[1,1]>, #tpu.memory_space<vmem>>, %arg19: memref<512x32xf32, #tpu.tiled<(8,128),[1,1]>, #tpu.memory_space<vmem>>, %arg20: memref<1x512xi32, #tpu.tiled<(1,128),[4,1]>, #tpu.memory_space<vmem>>, %arg21: memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>> {llo.passthrough_operand}) attributes {dimension_semantics = [#tpu.dimension_semantics<arbitrary>], iteration_bounds = array<i64: 128>, scalar_prefetch = 0 : i64, scratch_operands = 16 : i64, tpu.core_type = #tpu.core_type<tc>, window_params = [{pipeline_mode = #tpu.pipeline_mode<synchronous>, transform_indices = @transform_0, window_bounds = array<i64: 64, 4096>}, {pipeline_mode = #tpu.pipeline_mode<synchronous>, transform_indices = @transform_1, window_bounds = array<i64: 512, 4096>}, {transform_indices = @transform_2, window_bounds = array<i64: 4, 4096, 256>}, {transform_indices = @transform_3, window_bounds = array<i64: 4, 128, 4096>}, {pipeline_mode = #tpu.pipeline_mode<synchronous>, transform_indices = @transform_4, window_bounds = array<i64: 512, 4096>}]} {
+    %cst = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<1.000000e+00> : vector<32x128xf32>
+    %cst_0 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<0.000000e+00> : vector<32x256xf32>
+    %cst_1 = arith.constant {out_layout = [#tpu.vpad<"16,{*,*},(16,128)">]} dense<0.000000e+00> : vector<1x4096xbf16>
+    %cst_2 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128),-2">]} dense<32> : vector<512xi32>
+    %cst_3 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<384> : vector<512x512xi32>
+    %cst_4 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<7> : vector<512x512xi32>
+    %cst_5 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<448> : vector<512x512xi32>
+    %cst_6 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<6> : vector<512x512xi32>
+    %cst_7 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<480> : vector<512x512xi32>
+    %cst_8 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<5> : vector<512x512xi32>
+    %cst_9 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<496> : vector<512x512xi32>
+    %cst_10 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<504> : vector<512x512xi32>
+    %cst_11 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<3> : vector<512x512xi32>
+    %cst_12 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<508> : vector<512x512xi32>
+    %cst_13 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<510> : vector<512x512xi32>
+    %cst_14 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<32767> : vector<512x512xi32>
+    %cst_15 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<511> : vector<512x512xi32>
+    %cst_16 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<15> : vector<512x512xi32>
+    %cst_17 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<256> : vector<512x512xi32>
+    %cst_18 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<128> : vector<512x512xi32>
+    %cst_19 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<64> : vector<512x512xi32>
+    %cst_20 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<32> : vector<512x512xi32>
+    %cst_21 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<16> : vector<512x512xi32>
+    %cst_22 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<8> : vector<512x512xi32>
+    %cst_23 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<4> : vector<512x512xi32>
+    %cst_24 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<2> : vector<512x512xi32>
+    %cst_25 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<0> : vector<512x512xi32>
+    %cst_26 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<1> : vector<512x512xi32>
+    %cst_27 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<0.000000e+00> : vector<512x512xf32>
+    %cst_28 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<0.000000e+00> : vector<512x4096xf32>
+    %cst_29 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<1.44269502> : vector<64x10xf32>
+    %cst_30 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<0xFF800000> : vector<512x64xf32>
+    %cst_31 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<0> : vector<512x64xi32>
+    %c127_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 127 : i32
+    %c3 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 3 : index
+    %c2 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 2 : index
+    %c1 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 1 : index
+    %cst_32 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<0.000000e+00> : vector<32x4096xf32>
+    %c384_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 384 : i32
+    %c448_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 448 : i32
+    %c480_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 480 : i32
+    %c496_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 496 : i32
+    %c504_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 504 : i32
+    %c508_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 508 : i32
+    %c510_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 510 : i32
+    %c511_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 511 : i32
+    %c256_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 256 : i32
+    %c128_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 128 : i32
+    %c32_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 32 : i32
+    %c16_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 16 : i32
+    %c7_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 7 : i32
+    %c6_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 6 : i32
+    %c5_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 5 : i32
+    %c4_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 4 : i32
+    %c3_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 3 : i32
+    %c2_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 2 : i32
+    %cst_33 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128),-2">]} dense<0.000000e+00> : vector<64xf32>
+    %cst_34 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128),-2">]} dense<-2147483648> : vector<64xi32>
+    %cst_35 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128),-2">]} dense<0xFF800000> : vector<64xf32>
+    %cst_36 = arith.constant {out_layout = [#tpu.vpad<"32,{*,*},(8,128)">]} dense<0.000000e+00> : vector<512x64xf32>
+    %c0 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 0 : index
+    %c64_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 64 : i32
+    %c1_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 1 : i32
+    %c8_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 8 : i32
+    %c0_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 0 : i32
+    %0 = tpu.reinterpret_cast %arg11 {in_layout = [#tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x32xi32, #tpu.tiled<(8,128),[1,1]>, #tpu.memory_space<smem>> -> memref<512x32xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<smem>>
+    %1 = tpu.reinterpret_cast %arg12 {in_layout = [#tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x32xf32, #tpu.tiled<(8,128),[1,1]>, #tpu.memory_space<smem>> -> memref<512x32xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<smem>>
+    %2 = tpu.reinterpret_cast %arg16 {in_layout = [#tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x10xi32, #tpu.tiled<(8,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<512x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>
+    %3 = tpu.reinterpret_cast %arg17 {in_layout = [#tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x10xf32, #tpu.tiled<(8,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<512x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>
+    %4 = tpu.reinterpret_cast %arg18 {in_layout = [#tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x32xi32, #tpu.tiled<(8,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<512x32xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>
+    %5 = tpu.reinterpret_cast %arg19 {in_layout = [#tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x32xf32, #tpu.tiled<(8,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<512x32xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>
+    %6 = arith.cmpi eq, %arg0, %c0_i32 {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : i32
+    scf.if %6 {
+      %24 = tpu.device_id {in_layout = [], out_layout = [#tpu.vpad<"none">]} : i32
+      %25 = arith.remsi %24, %c8_i32 {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : i32
+      %26 = arith.muli %25, %c64_i32 {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : i32
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_routing"}> {in_layout = []} : () -> ()
+      %27 = tpu.vector_load %arg2[%c0, %c0] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"16,{0,0},(8,128)">], strides = array<i32>} : memref<512x4096xbf16, #tpu.tiled<(8,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, vector<512x4096xbf16>, 
+      %28 = tpu.vector_load %arg1[%c0, %c0] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"16,{0,0},(8,128)">], strides = array<i32>} : memref<64x4096xbf16, #tpu.tiled<(8,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, vector<64x4096xbf16>, 
+      %29 = tpu.matmul %27, %28, %cst_36 {dimension_numbers = #tpu.dot_dimension_numbers<[1], [1], [0], [0], [0, 0, 1, 0], [], []>, in_layout = [#tpu.vpad<"16,{0,0},(16,128)">, #tpu.vpad<"16,{0,0},(16,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">], transpose_lhs_hint = false} : vector<512x4096xbf16>, vector<64x4096xbf16>, vector<512x64xf32> -> vector<512x64xf32>
+      %30 = tpu.iota {dimensions = array<i32: 0>, out_layout = [#tpu.vpad<"32,{0,*},(8,128)">]} : vector<512x64xi32>
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_topk0"}> {in_layout = []} : () -> ()
+      %31 = vector.multi_reduction <maximumf>, %29, %cst_35 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{*,*},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">]} [0] : vector<512x64xf32> to vector<64xf32>
+      %32 = tpu.reshape %31 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<64xf32> -> vector<1x64xf32>
+      %33 = vector.broadcast %32 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<1x64xf32> to vector<512x64xf32>
+      %34 = arith.cmpf oeq, %29, %33 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xf32>
+      %35 = arith.select %34, %30, %cst_31 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi1>, vector<512x64xi32>
+      %36 = vector.multi_reduction <maxsi>, %35, %cst_34 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{*,*},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">]} [0] : vector<512x64xi32> to vector<64xi32>
+      %37 = tpu.reshape %36 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<64xi32> -> vector<1x64xi32>
+      %38 = vector.broadcast %37 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<1x64xi32> to vector<512x64xi32>
+      %39 = arith.cmpi eq, %30, %38 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi32>
+      %40 = arith.select %39, %cst_30, %29 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi1>, vector<512x64xf32>
+      "tpu.trace_stop"() {in_layout = []} : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_topk1"}> {in_layout = []} : () -> ()
+      %41 = vector.multi_reduction <maximumf>, %40, %cst_35 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{*,*},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">]} [0] : vector<512x64xf32> to vector<64xf32>
+      %42 = tpu.reshape %41 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<64xf32> -> vector<1x64xf32>
+      %43 = vector.broadcast %42 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<1x64xf32> to vector<512x64xf32>
+      %44 = arith.cmpf oeq, %40, %43 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xf32>
+      %45 = arith.select %44, %30, %cst_31 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi1>, vector<512x64xi32>
+      %46 = vector.multi_reduction <maxsi>, %45, %cst_34 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{*,*},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">]} [0] : vector<512x64xi32> to vector<64xi32>
+      %47 = tpu.reshape %46 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<64xi32> -> vector<1x64xi32>
+      %48 = vector.broadcast %47 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<1x64xi32> to vector<512x64xi32>
+      %49 = arith.cmpi eq, %30, %48 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi32>
+      %50 = arith.select %49, %cst_30, %40 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi1>, vector<512x64xf32>
+      "tpu.trace_stop"() {in_layout = []} : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_topk2"}> {in_layout = []} : () -> ()
+      %51 = vector.multi_reduction <maximumf>, %50, %cst_35 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{*,*},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">]} [0] : vector<512x64xf32> to vector<64xf32>
+      %52 = tpu.reshape %51 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<64xf32> -> vector<1x64xf32>
+      %53 = vector.broadcast %52 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<1x64xf32> to vector<512x64xf32>
+      %54 = arith.cmpf oeq, %50, %53 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xf32>
+      %55 = arith.select %54, %30, %cst_31 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi1>, vector<512x64xi32>
+      %56 = vector.multi_reduction <maxsi>, %55, %cst_34 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{*,*},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">]} [0] : vector<512x64xi32> to vector<64xi32>
+      %57 = tpu.reshape %56 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<64xi32> -> vector<1x64xi32>
+      %58 = vector.broadcast %57 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<1x64xi32> to vector<512x64xi32>
+      %59 = arith.cmpi eq, %30, %58 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi32>
+      %60 = arith.select %59, %cst_30, %50 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi1>, vector<512x64xf32>
+      "tpu.trace_stop"() {in_layout = []} : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_topk3"}> {in_layout = []} : () -> ()
+      %61 = vector.multi_reduction <maximumf>, %60, %cst_35 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{*,*},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">]} [0] : vector<512x64xf32> to vector<64xf32>
+      %62 = tpu.reshape %61 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<64xf32> -> vector<1x64xf32>
+      %63 = vector.broadcast %62 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<1x64xf32> to vector<512x64xf32>
+      %64 = arith.cmpf oeq, %60, %63 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xf32>
+      %65 = arith.select %64, %30, %cst_31 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi1>, vector<512x64xi32>
+      %66 = vector.multi_reduction <maxsi>, %65, %cst_34 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{*,*},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">]} [0] : vector<512x64xi32> to vector<64xi32>
+      %67 = tpu.reshape %66 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<64xi32> -> vector<1x64xi32>
+      %68 = vector.broadcast %67 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<1x64xi32> to vector<512x64xi32>
+      %69 = arith.cmpi eq, %30, %68 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi32>
+      %70 = arith.select %69, %cst_30, %60 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi1>, vector<512x64xf32>
+      "tpu.trace_stop"() {in_layout = []} : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_topk4"}> {in_layout = []} : () -> ()
+      %71 = vector.multi_reduction <maximumf>, %70, %cst_35 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{*,*},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">]} [0] : vector<512x64xf32> to vector<64xf32>
+      %72 = tpu.reshape %71 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<64xf32> -> vector<1x64xf32>
+      %73 = vector.broadcast %72 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<1x64xf32> to vector<512x64xf32>
+      %74 = arith.cmpf oeq, %70, %73 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xf32>
+      %75 = arith.select %74, %30, %cst_31 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi1>, vector<512x64xi32>
+      %76 = vector.multi_reduction <maxsi>, %75, %cst_34 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{*,*},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">]} [0] : vector<512x64xi32> to vector<64xi32>
+      %77 = tpu.reshape %76 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<64xi32> -> vector<1x64xi32>
+      %78 = vector.broadcast %77 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<1x64xi32> to vector<512x64xi32>
+      %79 = arith.cmpi eq, %30, %78 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi32>
+      %80 = arith.select %79, %cst_30, %70 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi1>, vector<512x64xf32>
+      "tpu.trace_stop"() {in_layout = []} : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_topk5"}> {in_layout = []} : () -> ()
+      %81 = vector.multi_reduction <maximumf>, %80, %cst_35 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{*,*},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">]} [0] : vector<512x64xf32> to vector<64xf32>
+      %82 = tpu.reshape %81 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<64xf32> -> vector<1x64xf32>
+      %83 = vector.broadcast %82 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<1x64xf32> to vector<512x64xf32>
+      %84 = arith.cmpf oeq, %80, %83 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xf32>
+      %85 = arith.select %84, %30, %cst_31 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi1>, vector<512x64xi32>
+      %86 = vector.multi_reduction <maxsi>, %85, %cst_34 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{*,*},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">]} [0] : vector<512x64xi32> to vector<64xi32>
+      %87 = tpu.reshape %86 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<64xi32> -> vector<1x64xi32>
+      %88 = vector.broadcast %87 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<1x64xi32> to vector<512x64xi32>
+      %89 = arith.cmpi eq, %30, %88 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi32>
+      %90 = arith.select %89, %cst_30, %80 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi1>, vector<512x64xf32>
+      "tpu.trace_stop"() {in_layout = []} : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_topk6"}> {in_layout = []} : () -> ()
+      %91 = vector.multi_reduction <maximumf>, %90, %cst_35 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{*,*},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">]} [0] : vector<512x64xf32> to vector<64xf32>
+      %92 = tpu.reshape %91 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<64xf32> -> vector<1x64xf32>
+      %93 = vector.broadcast %92 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<1x64xf32> to vector<512x64xf32>
+      %94 = arith.cmpf oeq, %90, %93 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xf32>
+      %95 = arith.select %94, %30, %cst_31 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi1>, vector<512x64xi32>
+      %96 = vector.multi_reduction <maxsi>, %95, %cst_34 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{*,*},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">]} [0] : vector<512x64xi32> to vector<64xi32>
+      %97 = tpu.reshape %96 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<64xi32> -> vector<1x64xi32>
+      %98 = vector.broadcast %97 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<1x64xi32> to vector<512x64xi32>
+      %99 = arith.cmpi eq, %30, %98 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi32>
+      %100 = arith.select %99, %cst_30, %90 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi1>, vector<512x64xf32>
+      "tpu.trace_stop"() {in_layout = []} : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_topk7"}> {in_layout = []} : () -> ()
+      %101 = vector.multi_reduction <maximumf>, %100, %cst_35 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{*,*},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">]} [0] : vector<512x64xf32> to vector<64xf32>
+      %102 = tpu.reshape %101 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<64xf32> -> vector<1x64xf32>
+      %103 = vector.broadcast %102 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<1x64xf32> to vector<512x64xf32>
+      %104 = arith.cmpf oeq, %100, %103 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xf32>
+      %105 = arith.select %104, %30, %cst_31 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi1>, vector<512x64xi32>
+      %106 = vector.multi_reduction <maxsi>, %105, %cst_34 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{*,*},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">]} [0] : vector<512x64xi32> to vector<64xi32>
+      %107 = tpu.reshape %106 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<64xi32> -> vector<1x64xi32>
+      %108 = vector.broadcast %107 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<1x64xi32> to vector<512x64xi32>
+      %109 = arith.cmpi eq, %30, %108 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi32>
+      %110 = arith.select %109, %cst_30, %100 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi1>, vector<512x64xf32>
+      "tpu.trace_stop"() {in_layout = []} : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_topk8"}> {in_layout = []} : () -> ()
+      %111 = vector.multi_reduction <maximumf>, %110, %cst_35 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{*,*},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">]} [0] : vector<512x64xf32> to vector<64xf32>
+      %112 = tpu.reshape %111 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<64xf32> -> vector<1x64xf32>
+      %113 = vector.broadcast %112 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<1x64xf32> to vector<512x64xf32>
+      %114 = arith.cmpf oeq, %110, %113 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xf32>
+      %115 = arith.select %114, %30, %cst_31 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi1>, vector<512x64xi32>
+      %116 = vector.multi_reduction <maxsi>, %115, %cst_34 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{*,*},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">]} [0] : vector<512x64xi32> to vector<64xi32>
+      %117 = tpu.reshape %116 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<64xi32> -> vector<1x64xi32>
+      %118 = vector.broadcast %117 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<1x64xi32> to vector<512x64xi32>
+      %119 = arith.cmpi eq, %30, %118 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi32>
+      %120 = arith.select %119, %cst_30, %110 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi1>, vector<512x64xf32>
+      "tpu.trace_stop"() {in_layout = []} : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_topk9"}> {in_layout = []} : () -> ()
+      %121 = vector.multi_reduction <maximumf>, %120, %cst_35 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{*,*},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">]} [0] : vector<512x64xf32> to vector<64xf32>
+      %122 = tpu.reshape %121 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<64xf32> -> vector<1x64xf32>
+      %123 = vector.broadcast %122 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<1x64xf32> to vector<512x64xf32>
+      %124 = arith.cmpf oeq, %120, %123 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xf32>
+      %125 = arith.select %124, %30, %cst_31 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x64xi1>, vector<512x64xi32>
+      %126 = vector.multi_reduction <maxsi>, %125, %cst_34 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{*,*},(8,128),-2">], out_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">]} [0] : vector<512x64xi32> to vector<64xi32>
+      "tpu.trace_stop"() {in_layout = []} : () -> ()
+      %127 = tpu.reshape %31 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{0,*},(8,128)">]} : vector<64xf32> -> vector<64x1xf32>
+      %128 = tpu.reshape %41 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{0,*},(8,128)">]} : vector<64xf32> -> vector<64x1xf32>
+      %129 = tpu.reshape %51 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{0,*},(8,128)">]} : vector<64xf32> -> vector<64x1xf32>
+      %130 = tpu.reshape %61 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{0,*},(8,128)">]} : vector<64xf32> -> vector<64x1xf32>
+      %131 = tpu.reshape %71 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{0,*},(8,128)">]} : vector<64xf32> -> vector<64x1xf32>
+      %132 = tpu.reshape %81 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{0,*},(8,128)">]} : vector<64xf32> -> vector<64x1xf32>
+      %133 = tpu.reshape %91 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{0,*},(8,128)">]} : vector<64xf32> -> vector<64x1xf32>
+      %134 = tpu.reshape %101 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{0,*},(8,128)">]} : vector<64xf32> -> vector<64x1xf32>
+      %135 = tpu.reshape %111 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{0,*},(8,128)">]} : vector<64xf32> -> vector<64x1xf32>
+      %136 = tpu.reshape %121 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{0,*},(8,128)">]} : vector<64xf32> -> vector<64x1xf32>
+      %137 = tpu.concatenate %127, %128, %129, %130, %131, %132, %133, %134, %135, %136 in 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,1},(8,128)">, #tpu.vpad<"32,{0,2},(8,128)">, #tpu.vpad<"32,{0,3},(8,128)">, #tpu.vpad<"32,{0,4},(8,128)">, #tpu.vpad<"32,{0,5},(8,128)">, #tpu.vpad<"32,{0,6},(8,128)">, #tpu.vpad<"32,{0,7},(8,128)">, #tpu.vpad<"32,{0,8},(8,128)">, #tpu.vpad<"32,{0,9},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<64x1xf32>, vector<64x1xf32>, vector<64x1xf32>, vector<64x1xf32>, vector<64x1xf32>, vector<64x1xf32>, vector<64x1xf32>, vector<64x1xf32>, vector<64x1xf32>, vector<64x1xf32> -> vector<64x10xf32>
+      %138 = tpu.reshape %36 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{0,*},(8,128)">]} : vector<64xi32> -> vector<64x1xi32>
+      %139 = tpu.reshape %46 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{0,*},(8,128)">]} : vector<64xi32> -> vector<64x1xi32>
+      %140 = tpu.reshape %56 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{0,*},(8,128)">]} : vector<64xi32> -> vector<64x1xi32>
+      %141 = tpu.reshape %66 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{0,*},(8,128)">]} : vector<64xi32> -> vector<64x1xi32>
+      %142 = tpu.reshape %76 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{0,*},(8,128)">]} : vector<64xi32> -> vector<64x1xi32>
+      %143 = tpu.reshape %86 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{0,*},(8,128)">]} : vector<64xi32> -> vector<64x1xi32>
+      %144 = tpu.reshape %96 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{0,*},(8,128)">]} : vector<64xi32> -> vector<64x1xi32>
+      %145 = tpu.reshape %106 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{0,*},(8,128)">]} : vector<64xi32> -> vector<64x1xi32>
+      %146 = tpu.reshape %116 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{0,*},(8,128)">]} : vector<64xi32> -> vector<64x1xi32>
+      %147 = tpu.reshape %126 {in_layout = [#tpu.vpad<"32,{*,0},(8,128),-2">], out_layout = [#tpu.vpad<"32,{0,*},(8,128)">]} : vector<64xi32> -> vector<64x1xi32>
+      %148 = tpu.concatenate %138, %139, %140, %141, %142, %143, %144, %145, %146, %147 in 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,1},(8,128)">, #tpu.vpad<"32,{0,2},(8,128)">, #tpu.vpad<"32,{0,3},(8,128)">, #tpu.vpad<"32,{0,4},(8,128)">, #tpu.vpad<"32,{0,5},(8,128)">, #tpu.vpad<"32,{0,6},(8,128)">, #tpu.vpad<"32,{0,7},(8,128)">, #tpu.vpad<"32,{0,8},(8,128)">, #tpu.vpad<"32,{0,9},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<64x1xi32>, vector<64x1xi32>, vector<64x1xi32>, vector<64x1xi32>, vector<64x1xi32>, vector<64x1xi32>, vector<64x1xi32>, vector<64x1xi32>, vector<64x1xi32>, vector<64x1xi32> -> vector<64x10xi32>
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_topk_softmax"}> {in_layout = []} : () -> ()
+      %149 = vector.extract_strided_slice %137 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], offsets = [0, 0], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">], sizes = [64, 1], strides = [1, 1]} : vector<64x10xf32> to vector<64x1xf32>
+      %150 = vector.broadcast %149 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,*},(8,128)">]} : vector<64x1xf32> to vector<64x10xf32>
+      %151 = arith.subf %137, %150 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<64x10xf32>
+      %152 = arith.mulf %151, %cst_29 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<64x10xf32>
+      %153 = math.exp2 %152 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<64x10xf32>
+      %154 = vector.multi_reduction <add>, %153, %cst_33 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{*,*},(8,128),-2">], out_layout = [#tpu.vpad<"32,{0,*},(8,128),-1">]} [1] : vector<64x10xf32> to vector<64xf32>
+      %155 = tpu.reshape %154 {in_layout = [#tpu.vpad<"32,{0,*},(8,128),-1">], out_layout = [#tpu.vpad<"32,{0,*},(8,128)">]} : vector<64xf32> -> vector<64x1xf32>
+      %156 = vector.broadcast %155 {in_layout = [#tpu.vpad<"32,{0,*},(8,128)">], out_layout = [#tpu.vpad<"32,{0,*},(8,128)">]} : vector<64x1xf32> to vector<64x10xf32>
+      %157 = arith.divf %153, %156 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<64x10xf32>
+      "tpu.trace_stop"() {in_layout = []} : () -> ()
+      %158 = arith.index_cast %26 {in_layout = [#tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : i32 to index
+      tpu.vector_store %2[%158, %c0], %148 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], strides = array<i32>} : memref<512x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>, vector<64x10xi32>, 
+      tpu.vector_store %3[%158, %c0], %157 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], strides = array<i32>} : memref<512x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>, vector<64x10xf32>, 
+      "tpu.trace_stop"() {in_layout = []} : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_ag_local"}> {in_layout = []} : () -> ()
+      %159 = tpu.vector_load %arg1[%c0, %c0] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"16,{0,0},(8,128)">], strides = array<i32>} : memref<64x4096xbf16, #tpu.tiled<(8,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, vector<64x4096xbf16>, 
+      tpu.vector_store %arg6[%158, %c0], %159 {in_layout = [#tpu.vpad<"16,{0,0},(16,128)">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], strides = array<i32>} : memref<512x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, vector<64x4096xbf16>, 
+      "tpu.trace_stop"() {in_layout = []} : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_ag_barrier"}> {in_layout = []} : () -> ()
+      %160 = tpu.sem_barrier {in_layout = [], out_layout = [#tpu.vpad<"none">]} : memref<!tpu.semaphore, #tpu.memory_space<semaphore_mem>>
+      tpu.sem_signal %160, %c1_i32 device_id %c0_i32 {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]} : memref<!tpu.semaphore, #tpu.memory_space<semaphore_mem>>
+      tpu.sem_signal %160, %c1_i32 device_id %c1_i32 {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]} : memref<!tpu.semaphore, #tpu.memory_space<semaphore_mem>>
+      tpu.sem_signal %160, %c1_i32 device_id %c2_i32 {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]} : memref<!tpu.semaphore, #tpu.memory_space<semaphore_mem>>
+      tpu.sem_signal %160, %c1_i32 device_id %c3_i32 {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]} : memref<!tpu.semaphore, #tpu.memory_space<semaphore_mem>>
+      tpu.sem_signal %160, %c1_i32 device_id %c4_i32 {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]} : memref<!tpu.semaphore, #tpu.memory_space<semaphore_mem>>
+      tpu.sem_signal %160, %c1_i32 device_id %c5_i32 {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]} : memref<!tpu.semaphore, #tpu.memory_space<semaphore_mem>>
+      tpu.sem_signal %160, %c1_i32 device_id %c6_i32 {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]} : memref<!tpu.semaphore, #tpu.memory_space<semaphore_mem>>
+      tpu.sem_signal %160, %c1_i32 device_id %c7_i32 {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]} : memref<!tpu.semaphore, #tpu.memory_space<semaphore_mem>>
+      tpu.sem_wait %160, %c8_i32 {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">]} : memref<!tpu.semaphore, #tpu.memory_space<semaphore_mem>>
+      "tpu.trace_stop"() {in_layout = []} : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_ag_remote"}> {in_layout = []} : () -> ()
+      %161 = arith.cmpi ne, %25, %c0_i32 {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : i32
+      scf.if %161 {
+        %533 = tpu.memref_slice %arg6[%26, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>> -> memref<64x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%arg1 : memref<64x4096xbf16, #tpu.tiled<(8,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>) target(%533 : memref<64x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>) source_semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) target_semaphore(%arg8 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) device_id(%c0_i32) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+        %534 = tpu.memref_slice %2[%26, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<64x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%534 : memref<64x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) target(%534 : memref<64x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) source_semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) target_semaphore(%arg9 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) device_id(%c0_i32) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+        %535 = tpu.memref_slice %3[%26, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<64x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%535 : memref<64x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) target(%535 : memref<64x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) source_semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) target_semaphore(%arg9 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) device_id(%c0_i32) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+      } {in_layout = [#tpu.vpad<"none">]}
+      %162 = arith.cmpi ne, %25, %c1_i32 {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : i32
+      scf.if %162 {
+        %533 = tpu.memref_slice %arg6[%26, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>> -> memref<64x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%arg1 : memref<64x4096xbf16, #tpu.tiled<(8,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>) target(%533 : memref<64x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>) source_semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) target_semaphore(%arg8 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) device_id(%c1_i32) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+        %534 = tpu.memref_slice %2[%26, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<64x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%534 : memref<64x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) target(%534 : memref<64x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) source_semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) target_semaphore(%arg9 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) device_id(%c1_i32) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+        %535 = tpu.memref_slice %3[%26, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<64x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%535 : memref<64x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) target(%535 : memref<64x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) source_semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) target_semaphore(%arg9 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) device_id(%c1_i32) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+      } {in_layout = [#tpu.vpad<"none">]}
+      %163 = arith.cmpi ne, %25, %c2_i32 {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : i32
+      scf.if %163 {
+        %533 = tpu.memref_slice %arg6[%26, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>> -> memref<64x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%arg1 : memref<64x4096xbf16, #tpu.tiled<(8,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>) target(%533 : memref<64x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>) source_semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) target_semaphore(%arg8 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) device_id(%c2_i32) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+        %534 = tpu.memref_slice %2[%26, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<64x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%534 : memref<64x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) target(%534 : memref<64x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) source_semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) target_semaphore(%arg9 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) device_id(%c2_i32) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+        %535 = tpu.memref_slice %3[%26, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<64x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%535 : memref<64x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) target(%535 : memref<64x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) source_semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) target_semaphore(%arg9 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) device_id(%c2_i32) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+      } {in_layout = [#tpu.vpad<"none">]}
+      %164 = arith.cmpi ne, %25, %c3_i32 {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : i32
+      scf.if %164 {
+        %533 = tpu.memref_slice %arg6[%26, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>> -> memref<64x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%arg1 : memref<64x4096xbf16, #tpu.tiled<(8,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>) target(%533 : memref<64x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>) source_semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) target_semaphore(%arg8 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) device_id(%c3_i32) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+        %534 = tpu.memref_slice %2[%26, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<64x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%534 : memref<64x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) target(%534 : memref<64x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) source_semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) target_semaphore(%arg9 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) device_id(%c3_i32) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+        %535 = tpu.memref_slice %3[%26, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<64x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%535 : memref<64x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) target(%535 : memref<64x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) source_semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) target_semaphore(%arg9 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) device_id(%c3_i32) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+      } {in_layout = [#tpu.vpad<"none">]}
+      %165 = arith.cmpi ne, %25, %c4_i32 {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : i32
+      scf.if %165 {
+        %533 = tpu.memref_slice %arg6[%26, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>> -> memref<64x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%arg1 : memref<64x4096xbf16, #tpu.tiled<(8,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>) target(%533 : memref<64x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>) source_semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) target_semaphore(%arg8 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) device_id(%c4_i32) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+        %534 = tpu.memref_slice %2[%26, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<64x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%534 : memref<64x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) target(%534 : memref<64x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) source_semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) target_semaphore(%arg9 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) device_id(%c4_i32) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+        %535 = tpu.memref_slice %3[%26, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<64x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%535 : memref<64x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) target(%535 : memref<64x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) source_semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) target_semaphore(%arg9 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) device_id(%c4_i32) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+      } {in_layout = [#tpu.vpad<"none">]}
+      %166 = arith.cmpi ne, %25, %c5_i32 {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : i32
+      scf.if %166 {
+        %533 = tpu.memref_slice %arg6[%26, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>> -> memref<64x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%arg1 : memref<64x4096xbf16, #tpu.tiled<(8,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>) target(%533 : memref<64x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>) source_semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) target_semaphore(%arg8 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) device_id(%c5_i32) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+        %534 = tpu.memref_slice %2[%26, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<64x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%534 : memref<64x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) target(%534 : memref<64x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) source_semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) target_semaphore(%arg9 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) device_id(%c5_i32) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+        %535 = tpu.memref_slice %3[%26, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<64x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%535 : memref<64x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) target(%535 : memref<64x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) source_semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) target_semaphore(%arg9 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) device_id(%c5_i32) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+      } {in_layout = [#tpu.vpad<"none">]}
+      %167 = arith.cmpi ne, %25, %c6_i32 {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : i32
+      scf.if %167 {
+        %533 = tpu.memref_slice %arg6[%26, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>> -> memref<64x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%arg1 : memref<64x4096xbf16, #tpu.tiled<(8,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>) target(%533 : memref<64x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>) source_semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) target_semaphore(%arg8 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) device_id(%c6_i32) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+        %534 = tpu.memref_slice %2[%26, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<64x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%534 : memref<64x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) target(%534 : memref<64x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) source_semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) target_semaphore(%arg9 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) device_id(%c6_i32) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+        %535 = tpu.memref_slice %3[%26, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<64x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%535 : memref<64x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) target(%535 : memref<64x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) source_semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) target_semaphore(%arg9 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) device_id(%c6_i32) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+      } {in_layout = [#tpu.vpad<"none">]}
+      %168 = arith.cmpi ne, %25, %c7_i32 {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : i32
+      scf.if %168 {
+        %533 = tpu.memref_slice %arg6[%26, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>> -> memref<64x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%arg1 : memref<64x4096xbf16, #tpu.tiled<(8,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>) target(%533 : memref<64x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>) source_semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) target_semaphore(%arg8 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) device_id(%c7_i32) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+        %534 = tpu.memref_slice %2[%26, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<64x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%534 : memref<64x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) target(%534 : memref<64x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) source_semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) target_semaphore(%arg9 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) device_id(%c7_i32) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+        %535 = tpu.memref_slice %3[%26, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<64x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%535 : memref<64x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) target(%535 : memref<64x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) source_semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) target_semaphore(%arg9 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) device_id(%c7_i32) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+      } {in_layout = [#tpu.vpad<"none">]}
+      "tpu.trace_stop"() {in_layout = []} : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_ag_drain_meta"}> {in_layout = []} : () -> ()
+      %169 = tpu.memref_slice %2[%c0_i32, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<448x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>
+      tpu.wait_dma2 semaphore(%arg9 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) src(%169 : memref<448x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) dst(%169 : memref<448x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+      %170 = tpu.memref_slice %3[%c0_i32, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<448x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>
+      tpu.wait_dma2 semaphore(%arg9 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) src(%170 : memref<448x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) dst(%170 : memref<448x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+      "tpu.trace_stop"() {in_layout = []} : () -> ()
+      tpu.vector_store %arg10[%c0, %c0], %cst_28 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], strides = array<i32>} : memref<512x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>>, vector<512x4096xf32>, 
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_lists"}> {in_layout = []} : () -> ()
+      %171 = tpu.vector_load %2[%c0, %c0] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">], strides = array<i32>} : memref<512x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>, vector<512x10xi32>, 
+      %172 = tpu.vector_load %3[%c0, %c0] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">], strides = array<i32>} : memref<512x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>, vector<512x10xf32>, 
+      %173 = tpu.iota {dimensions = array<i32: 1>, out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<512x512xi32>
+      %174 = tpu.iota {dimensions = array<i32: 0>, out_layout = [#tpu.vpad<"32,{0,*},(8,128)">]} : vector<512x512xi32>
+      %175 = vector.extract_strided_slice %171 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], offsets = [0, 0], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">], sizes = [512, 1], strides = [1, 1]} : vector<512x10xi32> to vector<512x1xi32>
+      %176 = tpu.reshape %175 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128),-1">]} : vector<512x1xi32> -> vector<1x512xi32>
+      %177 = vector.broadcast %176 {in_layout = [#tpu.vpad<"32,{0,0},(8,128),-1">], out_layout = [#tpu.vpad<"32,{0,0},(8,128),-1">]} : vector<1x512xi32> to vector<512x512xi32>
+      %178 = arith.cmpi eq, %174, %177 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %179 = arith.extui %178 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1> to vector<512x512xi32>
+      %180 = vector.extract_strided_slice %172 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], offsets = [0, 0], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">], sizes = [512, 1], strides = [1, 1]} : vector<512x10xf32> to vector<512x1xf32>
+      %181 = tpu.reshape %180 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128),-1">]} : vector<512x1xf32> -> vector<1x512xf32>
+      %182 = vector.broadcast %181 {in_layout = [#tpu.vpad<"32,{0,0},(8,128),-1">], out_layout = [#tpu.vpad<"32,{0,0},(8,128),-1">]} : vector<1x512xf32> to vector<512x512xf32>
+      %183 = arith.select %178, %182, %cst_27 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xf32>
+      %184 = vector.extract_strided_slice %171 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], offsets = [0, 1], out_layout = [#tpu.vpad<"32,{0,1},(8,128)">], sizes = [512, 1], strides = [1, 1]} : vector<512x10xi32> to vector<512x1xi32>
+      %185 = tpu.reshape %184 {in_layout = [#tpu.vpad<"32,{0,1},(8,128)">], out_layout = [#tpu.vpad<"32,{0,1},(8,128),-1">]} : vector<512x1xi32> -> vector<1x512xi32>
+      %186 = vector.broadcast %185 {in_layout = [#tpu.vpad<"32,{0,1},(8,128),-1">], out_layout = [#tpu.vpad<"32,{0,1},(8,128),-1">]} : vector<1x512xi32> to vector<512x512xi32>
+      %187 = arith.cmpi eq, %174, %186 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %188 = arith.extui %187 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1> to vector<512x512xi32>
+      %189 = arith.addi %179, %188 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %190 = vector.extract_strided_slice %172 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], offsets = [0, 1], out_layout = [#tpu.vpad<"32,{0,1},(8,128)">], sizes = [512, 1], strides = [1, 1]} : vector<512x10xf32> to vector<512x1xf32>
+      %191 = tpu.reshape %190 {in_layout = [#tpu.vpad<"32,{0,1},(8,128)">], out_layout = [#tpu.vpad<"32,{0,1},(8,128),-1">]} : vector<512x1xf32> -> vector<1x512xf32>
+      %192 = vector.broadcast %191 {in_layout = [#tpu.vpad<"32,{0,1},(8,128),-1">], out_layout = [#tpu.vpad<"32,{0,1},(8,128),-1">]} : vector<1x512xf32> to vector<512x512xf32>
+      %193 = arith.select %187, %192, %183 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xf32>
+      %194 = vector.extract_strided_slice %171 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], offsets = [0, 2], out_layout = [#tpu.vpad<"32,{0,2},(8,128)">], sizes = [512, 1], strides = [1, 1]} : vector<512x10xi32> to vector<512x1xi32>
+      %195 = tpu.reshape %194 {in_layout = [#tpu.vpad<"32,{0,2},(8,128)">], out_layout = [#tpu.vpad<"32,{0,2},(8,128),-1">]} : vector<512x1xi32> -> vector<1x512xi32>
+      %196 = vector.broadcast %195 {in_layout = [#tpu.vpad<"32,{0,2},(8,128),-1">], out_layout = [#tpu.vpad<"32,{0,2},(8,128),-1">]} : vector<1x512xi32> to vector<512x512xi32>
+      %197 = arith.cmpi eq, %174, %196 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %198 = arith.extui %197 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1> to vector<512x512xi32>
+      %199 = arith.addi %189, %198 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %200 = vector.extract_strided_slice %172 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], offsets = [0, 2], out_layout = [#tpu.vpad<"32,{0,2},(8,128)">], sizes = [512, 1], strides = [1, 1]} : vector<512x10xf32> to vector<512x1xf32>
+      %201 = tpu.reshape %200 {in_layout = [#tpu.vpad<"32,{0,2},(8,128)">], out_layout = [#tpu.vpad<"32,{0,2},(8,128),-1">]} : vector<512x1xf32> -> vector<1x512xf32>
+      %202 = vector.broadcast %201 {in_layout = [#tpu.vpad<"32,{0,2},(8,128),-1">], out_layout = [#tpu.vpad<"32,{0,2},(8,128),-1">]} : vector<1x512xf32> to vector<512x512xf32>
+      %203 = arith.select %197, %202, %193 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xf32>
+      %204 = vector.extract_strided_slice %171 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], offsets = [0, 3], out_layout = [#tpu.vpad<"32,{0,3},(8,128)">], sizes = [512, 1], strides = [1, 1]} : vector<512x10xi32> to vector<512x1xi32>
+      %205 = tpu.reshape %204 {in_layout = [#tpu.vpad<"32,{0,3},(8,128)">], out_layout = [#tpu.vpad<"32,{0,3},(8,128),-1">]} : vector<512x1xi32> -> vector<1x512xi32>
+      %206 = vector.broadcast %205 {in_layout = [#tpu.vpad<"32,{0,3},(8,128),-1">], out_layout = [#tpu.vpad<"32,{0,3},(8,128),-1">]} : vector<1x512xi32> to vector<512x512xi32>
+      %207 = arith.cmpi eq, %174, %206 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %208 = arith.extui %207 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1> to vector<512x512xi32>
+      %209 = arith.addi %199, %208 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %210 = vector.extract_strided_slice %172 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], offsets = [0, 3], out_layout = [#tpu.vpad<"32,{0,3},(8,128)">], sizes = [512, 1], strides = [1, 1]} : vector<512x10xf32> to vector<512x1xf32>
+      %211 = tpu.reshape %210 {in_layout = [#tpu.vpad<"32,{0,3},(8,128)">], out_layout = [#tpu.vpad<"32,{0,3},(8,128),-1">]} : vector<512x1xf32> -> vector<1x512xf32>
+      %212 = vector.broadcast %211 {in_layout = [#tpu.vpad<"32,{0,3},(8,128),-1">], out_layout = [#tpu.vpad<"32,{0,3},(8,128),-1">]} : vector<1x512xf32> to vector<512x512xf32>
+      %213 = arith.select %207, %212, %203 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xf32>
+      %214 = vector.extract_strided_slice %171 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], offsets = [0, 4], out_layout = [#tpu.vpad<"32,{0,4},(8,128)">], sizes = [512, 1], strides = [1, 1]} : vector<512x10xi32> to vector<512x1xi32>
+      %215 = tpu.reshape %214 {in_layout = [#tpu.vpad<"32,{0,4},(8,128)">], out_layout = [#tpu.vpad<"32,{0,4},(8,128),-1">]} : vector<512x1xi32> -> vector<1x512xi32>
+      %216 = vector.broadcast %215 {in_layout = [#tpu.vpad<"32,{0,4},(8,128),-1">], out_layout = [#tpu.vpad<"32,{0,4},(8,128),-1">]} : vector<1x512xi32> to vector<512x512xi32>
+      %217 = arith.cmpi eq, %174, %216 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %218 = arith.extui %217 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1> to vector<512x512xi32>
+      %219 = arith.addi %209, %218 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %220 = vector.extract_strided_slice %172 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], offsets = [0, 4], out_layout = [#tpu.vpad<"32,{0,4},(8,128)">], sizes = [512, 1], strides = [1, 1]} : vector<512x10xf32> to vector<512x1xf32>
+      %221 = tpu.reshape %220 {in_layout = [#tpu.vpad<"32,{0,4},(8,128)">], out_layout = [#tpu.vpad<"32,{0,4},(8,128),-1">]} : vector<512x1xf32> -> vector<1x512xf32>
+      %222 = vector.broadcast %221 {in_layout = [#tpu.vpad<"32,{0,4},(8,128),-1">], out_layout = [#tpu.vpad<"32,{0,4},(8,128),-1">]} : vector<1x512xf32> to vector<512x512xf32>
+      %223 = arith.select %217, %222, %213 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xf32>
+      %224 = vector.extract_strided_slice %171 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], offsets = [0, 5], out_layout = [#tpu.vpad<"32,{0,5},(8,128)">], sizes = [512, 1], strides = [1, 1]} : vector<512x10xi32> to vector<512x1xi32>
+      %225 = tpu.reshape %224 {in_layout = [#tpu.vpad<"32,{0,5},(8,128)">], out_layout = [#tpu.vpad<"32,{0,5},(8,128),-1">]} : vector<512x1xi32> -> vector<1x512xi32>
+      %226 = vector.broadcast %225 {in_layout = [#tpu.vpad<"32,{0,5},(8,128),-1">], out_layout = [#tpu.vpad<"32,{0,5},(8,128),-1">]} : vector<1x512xi32> to vector<512x512xi32>
+      %227 = arith.cmpi eq, %174, %226 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %228 = arith.extui %227 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1> to vector<512x512xi32>
+      %229 = arith.addi %219, %228 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %230 = vector.extract_strided_slice %172 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], offsets = [0, 5], out_layout = [#tpu.vpad<"32,{0,5},(8,128)">], sizes = [512, 1], strides = [1, 1]} : vector<512x10xf32> to vector<512x1xf32>
+      %231 = tpu.reshape %230 {in_layout = [#tpu.vpad<"32,{0,5},(8,128)">], out_layout = [#tpu.vpad<"32,{0,5},(8,128),-1">]} : vector<512x1xf32> -> vector<1x512xf32>
+      %232 = vector.broadcast %231 {in_layout = [#tpu.vpad<"32,{0,5},(8,128),-1">], out_layout = [#tpu.vpad<"32,{0,5},(8,128),-1">]} : vector<1x512xf32> to vector<512x512xf32>
+      %233 = arith.select %227, %232, %223 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xf32>
+      %234 = vector.extract_strided_slice %171 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], offsets = [0, 6], out_layout = [#tpu.vpad<"32,{0,6},(8,128)">], sizes = [512, 1], strides = [1, 1]} : vector<512x10xi32> to vector<512x1xi32>
+      %235 = tpu.reshape %234 {in_layout = [#tpu.vpad<"32,{0,6},(8,128)">], out_layout = [#tpu.vpad<"32,{0,6},(8,128),-1">]} : vector<512x1xi32> -> vector<1x512xi32>
+      %236 = vector.broadcast %235 {in_layout = [#tpu.vpad<"32,{0,6},(8,128),-1">], out_layout = [#tpu.vpad<"32,{0,6},(8,128),-1">]} : vector<1x512xi32> to vector<512x512xi32>
+      %237 = arith.cmpi eq, %174, %236 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %238 = arith.extui %237 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1> to vector<512x512xi32>
+      %239 = arith.addi %229, %238 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %240 = vector.extract_strided_slice %172 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], offsets = [0, 6], out_layout = [#tpu.vpad<"32,{0,6},(8,128)">], sizes = [512, 1], strides = [1, 1]} : vector<512x10xf32> to vector<512x1xf32>
+      %241 = tpu.reshape %240 {in_layout = [#tpu.vpad<"32,{0,6},(8,128)">], out_layout = [#tpu.vpad<"32,{0,6},(8,128),-1">]} : vector<512x1xf32> -> vector<1x512xf32>
+      %242 = vector.broadcast %241 {in_layout = [#tpu.vpad<"32,{0,6},(8,128),-1">], out_layout = [#tpu.vpad<"32,{0,6},(8,128),-1">]} : vector<1x512xf32> to vector<512x512xf32>
+      %243 = arith.select %237, %242, %233 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xf32>
+      %244 = vector.extract_strided_slice %171 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], offsets = [0, 7], out_layout = [#tpu.vpad<"32,{0,7},(8,128)">], sizes = [512, 1], strides = [1, 1]} : vector<512x10xi32> to vector<512x1xi32>
+      %245 = tpu.reshape %244 {in_layout = [#tpu.vpad<"32,{0,7},(8,128)">], out_layout = [#tpu.vpad<"32,{0,7},(8,128),-1">]} : vector<512x1xi32> -> vector<1x512xi32>
+      %246 = vector.broadcast %245 {in_layout = [#tpu.vpad<"32,{0,7},(8,128),-1">], out_layout = [#tpu.vpad<"32,{0,7},(8,128),-1">]} : vector<1x512xi32> to vector<512x512xi32>
+      %247 = arith.cmpi eq, %174, %246 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %248 = arith.extui %247 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1> to vector<512x512xi32>
+      %249 = arith.addi %239, %248 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %250 = vector.extract_strided_slice %172 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], offsets = [0, 7], out_layout = [#tpu.vpad<"32,{0,7},(8,128)">], sizes = [512, 1], strides = [1, 1]} : vector<512x10xf32> to vector<512x1xf32>
+      %251 = tpu.reshape %250 {in_layout = [#tpu.vpad<"32,{0,7},(8,128)">], out_layout = [#tpu.vpad<"32,{0,7},(8,128),-1">]} : vector<512x1xf32> -> vector<1x512xf32>
+      %252 = vector.broadcast %251 {in_layout = [#tpu.vpad<"32,{0,7},(8,128),-1">], out_layout = [#tpu.vpad<"32,{0,7},(8,128),-1">]} : vector<1x512xf32> to vector<512x512xf32>
+      %253 = arith.select %247, %252, %243 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xf32>
+      %254 = vector.extract_strided_slice %171 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], offsets = [0, 8], out_layout = [#tpu.vpad<"32,{0,8},(8,128)">], sizes = [512, 1], strides = [1, 1]} : vector<512x10xi32> to vector<512x1xi32>
+      %255 = tpu.reshape %254 {in_layout = [#tpu.vpad<"32,{0,8},(8,128)">], out_layout = [#tpu.vpad<"32,{0,8},(8,128),-1">]} : vector<512x1xi32> -> vector<1x512xi32>
+      %256 = vector.broadcast %255 {in_layout = [#tpu.vpad<"32,{0,8},(8,128),-1">], out_layout = [#tpu.vpad<"32,{0,8},(8,128),-1">]} : vector<1x512xi32> to vector<512x512xi32>
+      %257 = arith.cmpi eq, %174, %256 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %258 = arith.extui %257 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1> to vector<512x512xi32>
+      %259 = arith.addi %249, %258 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %260 = vector.extract_strided_slice %172 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], offsets = [0, 8], out_layout = [#tpu.vpad<"32,{0,8},(8,128)">], sizes = [512, 1], strides = [1, 1]} : vector<512x10xf32> to vector<512x1xf32>
+      %261 = tpu.reshape %260 {in_layout = [#tpu.vpad<"32,{0,8},(8,128)">], out_layout = [#tpu.vpad<"32,{0,8},(8,128),-1">]} : vector<512x1xf32> -> vector<1x512xf32>
+      %262 = vector.broadcast %261 {in_layout = [#tpu.vpad<"32,{0,8},(8,128),-1">], out_layout = [#tpu.vpad<"32,{0,8},(8,128),-1">]} : vector<1x512xf32> to vector<512x512xf32>
+      %263 = arith.select %257, %262, %253 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xf32>
+      %264 = vector.extract_strided_slice %171 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], offsets = [0, 9], out_layout = [#tpu.vpad<"32,{0,9},(8,128)">], sizes = [512, 1], strides = [1, 1]} : vector<512x10xi32> to vector<512x1xi32>
+      %265 = tpu.reshape %264 {in_layout = [#tpu.vpad<"32,{0,9},(8,128)">], out_layout = [#tpu.vpad<"32,{0,9},(8,128),-1">]} : vector<512x1xi32> -> vector<1x512xi32>
+      %266 = vector.broadcast %265 {in_layout = [#tpu.vpad<"32,{0,9},(8,128),-1">], out_layout = [#tpu.vpad<"32,{0,9},(8,128),-1">]} : vector<1x512xi32> to vector<512x512xi32>
+      %267 = arith.cmpi eq, %174, %266 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %268 = arith.extui %267 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1> to vector<512x512xi32>
+      %269 = arith.addi %259, %268 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %270 = vector.extract_strided_slice %172 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], offsets = [0, 9], out_layout = [#tpu.vpad<"32,{0,9},(8,128)">], sizes = [512, 1], strides = [1, 1]} : vector<512x10xf32> to vector<512x1xf32>
+      %271 = tpu.reshape %270 {in_layout = [#tpu.vpad<"32,{0,9},(8,128)">], out_layout = [#tpu.vpad<"32,{0,9},(8,128),-1">]} : vector<512x1xf32> -> vector<1x512xf32>
+      %272 = vector.broadcast %271 {in_layout = [#tpu.vpad<"32,{0,9},(8,128),-1">], out_layout = [#tpu.vpad<"32,{0,9},(8,128),-1">]} : vector<1x512xf32> to vector<512x512xf32>
+      %273 = arith.select %267, %272, %263 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xf32>
+      %274 = tpu.dynamic_rotate %269 by %c1_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %275 = arith.cmpi sge, %173, %cst_26 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">, #tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<512x512xi32>
+      %276 = arith.select %275, %274, %cst_25 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %277 = arith.addi %269, %276 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %278 = tpu.dynamic_rotate %277 by %c2_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %279 = arith.cmpi sge, %173, %cst_24 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">, #tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<512x512xi32>
+      %280 = arith.select %279, %278, %cst_25 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %281 = arith.addi %277, %280 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %282 = tpu.dynamic_rotate %281 by %c4_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %283 = arith.cmpi sge, %173, %cst_23 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">, #tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<512x512xi32>
+      %284 = arith.select %283, %282, %cst_25 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %285 = arith.addi %281, %284 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %286 = tpu.dynamic_rotate %285 by %c8_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %287 = arith.cmpi sge, %173, %cst_22 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">, #tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<512x512xi32>
+      %288 = arith.select %287, %286, %cst_25 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %289 = arith.addi %285, %288 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %290 = tpu.dynamic_rotate %289 by %c16_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %291 = arith.cmpi sge, %173, %cst_21 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">, #tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<512x512xi32>
+      %292 = arith.select %291, %290, %cst_25 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %293 = arith.addi %289, %292 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %294 = tpu.dynamic_rotate %293 by %c32_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %295 = arith.cmpi sge, %173, %cst_20 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">, #tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<512x512xi32>
+      %296 = arith.select %295, %294, %cst_25 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %297 = arith.addi %293, %296 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %298 = tpu.dynamic_rotate %297 by %c64_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %299 = arith.cmpi sge, %173, %cst_19 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">, #tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<512x512xi32>
+      %300 = arith.select %299, %298, %cst_25 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %301 = arith.addi %297, %300 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %302 = tpu.dynamic_rotate %301 by %c128_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %303 = arith.cmpi sge, %173, %cst_18 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">, #tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<512x512xi32>
+      %304 = arith.select %303, %302, %cst_25 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %305 = arith.addi %301, %304 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %306 = tpu.dynamic_rotate %305 by %c256_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %307 = arith.cmpi sge, %173, %cst_17 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">, #tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<512x512xi32>
+      %308 = arith.select %307, %306, %cst_25 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %309 = arith.addi %305, %308 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %310 = arith.subi %309, %269 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %311 = vector.extract_strided_slice %309 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], offsets = [0, 511], out_layout = [#tpu.vpad<"32,{0,127},(8,128)">], sizes = [512, 1], strides = [1, 1]} : vector<512x512xi32> to vector<512x1xi32>
+      %312 = tpu.reshape %311 {in_layout = [#tpu.vpad<"32,{0,127},(8,128)">], out_layout = [#tpu.vpad<"32,{0,127},(8,128),-1">]} : vector<512x1xi32> -> vector<512xi32>
+      %313 = arith.cmpi sgt, %269, %cst_25 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %314 = arith.subi %173, %310 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %315 = arith.select %313, %314, %cst_25 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %316 = arith.shli %269, %cst_16 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %317 = arith.ori %315, %316 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %318 = tpu.dynamic_rotate %173 by %c511_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %319 = tpu.dynamic_rotate %273 by %c511_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xf32>, i32 -> vector<512x512xf32>
+      %320 = tpu.dynamic_rotate %317 by %c511_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %321 = arith.andi %317, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %322 = arith.shrsi %317, %cst_16 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %323 = arith.muli %321, %322 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %324 = arith.andi %320, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %325 = arith.shrsi %320, %cst_16 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %326 = arith.muli %324, %325 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %327 = arith.cmpi eq, %326, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %328 = arith.cmpi slt, %173, %cst_15 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">, #tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<512x512xi32>
+      %329 = arith.andi %327, %328 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>
+      %330 = arith.select %329, %318, %173 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %331 = arith.select %329, %319, %273 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xf32>
+      %332 = arith.cmpi eq, %323, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %333 = arith.select %332, %cst_25, %322 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %334 = arith.select %329, %cst_26, %333 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %335 = arith.andi %320, %cst_14 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %336 = arith.subi %335, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %337 = arith.andi %317, %cst_14 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %338 = arith.select %329, %336, %337 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %339 = arith.shli %334, %cst_16 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %340 = arith.ori %338, %339 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %341 = tpu.dynamic_rotate %330 by %c510_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %342 = tpu.dynamic_rotate %331 by %c510_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xf32>, i32 -> vector<512x512xf32>
+      %343 = tpu.dynamic_rotate %340 by %c510_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %344 = arith.shrsi %340, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %345 = arith.andi %344, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %346 = arith.shrsi %340, %cst_16 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %347 = arith.muli %345, %346 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %348 = arith.shrsi %343, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %349 = arith.andi %348, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %350 = arith.shrsi %343, %cst_16 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %351 = arith.muli %349, %350 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %352 = arith.cmpi eq, %351, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %353 = arith.cmpi slt, %173, %cst_13 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">, #tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<512x512xi32>
+      %354 = arith.andi %352, %353 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>
+      %355 = arith.select %354, %341, %330 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %356 = arith.select %354, %342, %331 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xf32>
+      %357 = arith.cmpi eq, %347, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %358 = arith.select %357, %cst_25, %346 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %359 = arith.select %354, %cst_26, %358 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %360 = arith.andi %343, %cst_14 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %361 = arith.subi %360, %cst_24 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %362 = arith.andi %340, %cst_14 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %363 = arith.select %354, %361, %362 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %364 = arith.shli %359, %cst_16 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %365 = arith.ori %363, %364 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %366 = tpu.dynamic_rotate %355 by %c508_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %367 = tpu.dynamic_rotate %356 by %c508_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xf32>, i32 -> vector<512x512xf32>
+      %368 = tpu.dynamic_rotate %365 by %c508_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %369 = arith.shrsi %365, %cst_24 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %370 = arith.andi %369, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %371 = arith.shrsi %365, %cst_16 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %372 = arith.muli %370, %371 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %373 = arith.shrsi %368, %cst_24 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %374 = arith.andi %373, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %375 = arith.shrsi %368, %cst_16 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %376 = arith.muli %374, %375 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %377 = arith.cmpi eq, %376, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %378 = arith.cmpi slt, %173, %cst_12 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">, #tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<512x512xi32>
+      %379 = arith.andi %377, %378 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>
+      %380 = arith.select %379, %366, %355 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %381 = arith.select %379, %367, %356 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xf32>
+      %382 = arith.cmpi eq, %372, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %383 = arith.select %382, %cst_25, %371 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %384 = arith.select %379, %cst_26, %383 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %385 = arith.andi %368, %cst_14 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %386 = arith.subi %385, %cst_23 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %387 = arith.andi %365, %cst_14 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %388 = arith.select %379, %386, %387 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %389 = arith.shli %384, %cst_16 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %390 = arith.ori %388, %389 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %391 = tpu.dynamic_rotate %380 by %c504_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %392 = tpu.dynamic_rotate %381 by %c504_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xf32>, i32 -> vector<512x512xf32>
+      %393 = tpu.dynamic_rotate %390 by %c504_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %394 = arith.shrsi %390, %cst_11 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %395 = arith.andi %394, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %396 = arith.shrsi %390, %cst_16 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %397 = arith.muli %395, %396 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %398 = arith.shrsi %393, %cst_11 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %399 = arith.andi %398, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %400 = arith.shrsi %393, %cst_16 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %401 = arith.muli %399, %400 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %402 = arith.cmpi eq, %401, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %403 = arith.cmpi slt, %173, %cst_10 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">, #tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<512x512xi32>
+      %404 = arith.andi %402, %403 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>
+      %405 = arith.select %404, %391, %380 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %406 = arith.select %404, %392, %381 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xf32>
+      %407 = arith.cmpi eq, %397, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %408 = arith.select %407, %cst_25, %396 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %409 = arith.select %404, %cst_26, %408 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %410 = arith.andi %393, %cst_14 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %411 = arith.subi %410, %cst_22 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %412 = arith.andi %390, %cst_14 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %413 = arith.select %404, %411, %412 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %414 = arith.shli %409, %cst_16 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %415 = arith.ori %413, %414 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %416 = tpu.dynamic_rotate %405 by %c496_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %417 = tpu.dynamic_rotate %406 by %c496_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xf32>, i32 -> vector<512x512xf32>
+      %418 = tpu.dynamic_rotate %415 by %c496_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %419 = arith.shrsi %415, %cst_23 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %420 = arith.andi %419, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %421 = arith.shrsi %415, %cst_16 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %422 = arith.muli %420, %421 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %423 = arith.shrsi %418, %cst_23 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %424 = arith.andi %423, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %425 = arith.shrsi %418, %cst_16 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %426 = arith.muli %424, %425 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %427 = arith.cmpi eq, %426, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %428 = arith.cmpi slt, %173, %cst_9 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">, #tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<512x512xi32>
+      %429 = arith.andi %427, %428 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>
+      %430 = arith.select %429, %416, %405 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %431 = arith.select %429, %417, %406 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xf32>
+      %432 = arith.cmpi eq, %422, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %433 = arith.select %432, %cst_25, %421 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %434 = arith.select %429, %cst_26, %433 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %435 = arith.andi %418, %cst_14 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %436 = arith.subi %435, %cst_21 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %437 = arith.andi %415, %cst_14 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %438 = arith.select %429, %436, %437 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %439 = arith.shli %434, %cst_16 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %440 = arith.ori %438, %439 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %441 = tpu.dynamic_rotate %430 by %c480_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %442 = tpu.dynamic_rotate %431 by %c480_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xf32>, i32 -> vector<512x512xf32>
+      %443 = tpu.dynamic_rotate %440 by %c480_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %444 = arith.shrsi %440, %cst_8 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %445 = arith.andi %444, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %446 = arith.shrsi %440, %cst_16 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %447 = arith.muli %445, %446 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %448 = arith.shrsi %443, %cst_8 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %449 = arith.andi %448, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %450 = arith.shrsi %443, %cst_16 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %451 = arith.muli %449, %450 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %452 = arith.cmpi eq, %451, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %453 = arith.cmpi slt, %173, %cst_7 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">, #tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<512x512xi32>
+      %454 = arith.andi %452, %453 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>
+      %455 = arith.select %454, %441, %430 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %456 = arith.select %454, %442, %431 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xf32>
+      %457 = arith.cmpi eq, %447, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %458 = arith.select %457, %cst_25, %446 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %459 = arith.select %454, %cst_26, %458 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %460 = arith.andi %443, %cst_14 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %461 = arith.subi %460, %cst_20 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %462 = arith.andi %440, %cst_14 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %463 = arith.select %454, %461, %462 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %464 = arith.shli %459, %cst_16 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %465 = arith.ori %463, %464 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %466 = tpu.dynamic_rotate %455 by %c448_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %467 = tpu.dynamic_rotate %456 by %c448_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xf32>, i32 -> vector<512x512xf32>
+      %468 = tpu.dynamic_rotate %465 by %c448_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %469 = arith.shrsi %465, %cst_6 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %470 = arith.andi %469, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %471 = arith.shrsi %465, %cst_16 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %472 = arith.muli %470, %471 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %473 = arith.shrsi %468, %cst_6 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %474 = arith.andi %473, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %475 = arith.shrsi %468, %cst_16 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %476 = arith.muli %474, %475 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %477 = arith.cmpi eq, %476, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %478 = arith.cmpi slt, %173, %cst_5 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">, #tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<512x512xi32>
+      %479 = arith.andi %477, %478 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>
+      %480 = arith.select %479, %466, %455 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %481 = arith.select %479, %467, %456 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xf32>
+      %482 = arith.cmpi eq, %472, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %483 = arith.select %482, %cst_25, %471 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %484 = arith.select %479, %cst_26, %483 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %485 = arith.andi %468, %cst_14 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %486 = arith.subi %485, %cst_19 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %487 = arith.andi %465, %cst_14 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %488 = arith.select %479, %486, %487 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %489 = arith.shli %484, %cst_16 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %490 = arith.ori %488, %489 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %491 = tpu.dynamic_rotate %480 by %c384_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %492 = tpu.dynamic_rotate %481 by %c384_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xf32>, i32 -> vector<512x512xf32>
+      %493 = tpu.dynamic_rotate %490 by %c384_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %494 = arith.shrsi %490, %cst_4 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %495 = arith.andi %494, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %496 = arith.shrsi %490, %cst_16 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %497 = arith.muli %495, %496 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %498 = arith.shrsi %493, %cst_4 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %499 = arith.andi %498, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %500 = arith.shrsi %493, %cst_16 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %501 = arith.muli %499, %500 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %502 = arith.cmpi eq, %501, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %503 = arith.cmpi slt, %173, %cst_3 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">, #tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<512x512xi32>
+      %504 = arith.andi %502, %503 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>
+      %505 = arith.select %504, %491, %480 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %506 = arith.select %504, %492, %481 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xf32>
+      %507 = arith.cmpi eq, %497, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %508 = arith.select %507, %cst_25, %496 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %509 = arith.select %504, %cst_26, %508 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %510 = arith.andi %493, %cst_14 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %511 = arith.subi %510, %cst_18 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %512 = arith.andi %490, %cst_14 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %513 = arith.select %504, %511, %512 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %514 = arith.shli %509, %cst_16 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %515 = arith.ori %513, %514 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %516 = tpu.dynamic_rotate %505 by %c256_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %517 = tpu.dynamic_rotate %506 by %c256_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xf32>, i32 -> vector<512x512xf32>
+      %518 = tpu.dynamic_rotate %515 by %c256_i32 dim 1 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %519 = arith.shrsi %518, %cst_22 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %520 = arith.andi %519, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %521 = arith.shrsi %518, %cst_16 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %522 = arith.muli %520, %521 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %523 = arith.cmpi eq, %522, %cst_26 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi32>
+      %524 = arith.cmpi slt, %173, %cst_17 {in_layout = [#tpu.vpad<"32,{*,0},(8,128)">, #tpu.vpad<"32,{*,0},(8,128)">], out_layout = [#tpu.vpad<"32,{*,0},(8,128)">]} : vector<512x512xi32>
+      %525 = arith.andi %523, %524 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>
+      %526 = arith.select %525, %516, %505 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xi32>
+      %527 = arith.select %525, %517, %506 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"32,{0,0},(8,128)">], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">]} : vector<512x512xi1>, vector<512x512xf32>
+      %528 = vector.extract_strided_slice %526 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], offsets = [0, 0], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">], sizes = [512, 32], strides = [1, 1]} : vector<512x512xi32> to vector<512x32xi32>
+      tpu.vector_store %4[%c0, %c0], %528 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], strides = array<i32>} : memref<512x32xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>, vector<512x32xi32>, 
+      %529 = vector.extract_strided_slice %527 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">], offsets = [0, 0], out_layout = [#tpu.vpad<"32,{0,0},(8,128)">], sizes = [512, 32], strides = [1, 1]} : vector<512x512xf32> to vector<512x32xf32>
+      tpu.vector_store %5[%c0, %c0], %529 {in_layout = [#tpu.vpad<"32,{0,0},(8,128)">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], strides = array<i32>} : memref<512x32xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>, vector<512x32xf32>, 
+      %530 = arith.minsi %312, %cst_2 {in_layout = [#tpu.vpad<"32,{0,127},(8,128),-1">, #tpu.vpad<"32,{0,127},(8,128),-1">], out_layout = [#tpu.vpad<"32,{0,127},(8,128),-1">]} : vector<512xi32>
+      %531 = tpu.reshape %530 {in_layout = [#tpu.vpad<"32,{0,127},(8,128),-1">], out_layout = [#tpu.vpad<"32,{0,127},(8,128),-1">]} : vector<512xi32> -> vector<1x512xi32>
+      tpu.vector_store %arg20[%c0, %c0], %531 {in_layout = [#tpu.vpad<"32,{0,0},(1,128)">, #tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], strides = array<i32>} : memref<1x512xi32, #tpu.tiled<(1,128),[4,1]>, #tpu.memory_space<vmem>>, vector<1x512xi32>, 
+      "tpu.trace_stop"() {in_layout = []} : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_lists_smem"}> {in_layout = []} : () -> ()
+      tpu.enqueue_dma source(%4 : memref<512x32xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) target(%0 : memref<512x32xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<smem>>) target_semaphore(%arg21 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+      tpu.enqueue_dma source(%5 : memref<512x32xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) target(%1 : memref<512x32xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<smem>>) target_semaphore(%arg21 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+      tpu.enqueue_dma source(%arg20 : memref<1x512xi32, #tpu.tiled<(1,128),[4,1]>, #tpu.memory_space<vmem>>) target(%arg13 : memref<1x512xi32, #tpu.tiled<(1,128),[4,1]>, #tpu.memory_space<smem>>) target_semaphore(%arg21 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+      "tpu.trace_stop"() {in_layout = []} : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_ag_drain_tokens"}> {in_layout = []} : () -> ()
+      %532 = tpu.memref_slice %arg6[%c0_i32, %c0_i32] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>> -> memref<448x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>
+      tpu.wait_dma2 semaphore(%arg8 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) src(%532 : memref<448x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>) dst(%532 : memref<448x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+      tpu.wait_dma2 semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) src(%532 : memref<448x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>) dst(%532 : memref<448x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+      tpu.wait_dma2 semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) src(%169 : memref<448x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) dst(%169 : memref<448x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+      tpu.wait_dma2 semaphore(%arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) src(%170 : memref<448x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) dst(%170 : memref<448x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+      "tpu.trace_stop"() {in_layout = []} : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_lists_smem_drain"}> {in_layout = []} : () -> ()
+      tpu.wait_dma2 semaphore(%arg21 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) src(%4 : memref<512x32xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) dst(%0 : memref<512x32xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<smem>>) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+      tpu.wait_dma2 semaphore(%arg21 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) src(%5 : memref<512x32xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>) dst(%1 : memref<512x32xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<smem>>) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+      tpu.wait_dma2 semaphore(%arg21 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>>) src(%arg20 : memref<1x512xi32, #tpu.tiled<(1,128),[4,1]>, #tpu.memory_space<vmem>>) dst(%arg13 : memref<1x512xi32, #tpu.tiled<(1,128),[4,1]>, #tpu.memory_space<smem>>) {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]}
+      "tpu.trace_stop"() {in_layout = []} : () -> ()
+    } {in_layout = [#tpu.vpad<"none">]}
+    %7 = arith.muli %arg0, %c4_i32 {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : i32
+    %8 = arith.index_cast %7 {in_layout = [#tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : i32 to index
+    %9 = memref.load %arg13[%c0, %8] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<1x512xi32, #tpu.tiled<(1,128),[4,1]>, #tpu.memory_space<smem>>
+    %10 = arith.cmpi sgt, %9, %c0_i32 {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : i32
+    scf.if %10 {
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_gather"}> {in_layout = []} : () -> ()
+      scf.for %arg22 = %c0_i32 to %c32_i32 step %c1_i32  : i32 {
+        %44 = arith.index_cast %arg22 {in_layout = [#tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : i32 to index
+        %45 = memref.load %0[%8, %44] {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : memref<512x32xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<smem>>
+        %46 = arith.cmpi slt, %arg22, %9 {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : i32
+        scf.if %46 {
+          %48 = arith.index_cast %45 {in_layout = [#tpu.vpad<"none">], out_layout = [#tpu.vpad<"none">]} : i32 to index
+          %49 = tpu.vector_load %arg6[%48, %c0] {strides = array<i32>} : memref<512x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, vector<1x4096xbf16>, 
+          %50 = tpu.memref_slice %arg14[%c0_i32, %c0_i32, %c0_i32] : memref<2x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>> -> memref<1x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>>
+          %51 = tpu.memref_squeeze %50 : memref<1x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>> -> memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>
+          tpu.vector_store %51[%44, %c0], %49 {strides = array<i32>} : memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, vector<1x4096xbf16>, 
+        } {in_layout = [#tpu.vpad<"none">]}
+        %47 = arith.cmpi sge, %arg22, %9 : i32
+        scf.if %47 {
+          %48 = tpu.memref_slice %arg14[%c0_i32, %c0_i32, %c0_i32] : memref<2x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>> -> memref<1x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>>
+          %49 = tpu.memref_squeeze %48 : memref<1x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>> -> memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>
+          tpu.vector_store %49[%44, %c0], %cst_1 {strides = array<i32>} : memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, vector<1x4096xbf16>, 
+        }
+      }
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_gmm1"}> : () -> ()
+      %24 = tpu.memref_slice %arg14[%c0_i32, %c0_i32, %c0_i32] : memref<2x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>> -> memref<1x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>>
+      %25 = tpu.memref_squeeze %24 : memref<1x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>> -> memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>
+      %26 = tpu.vector_load %25[%c0, %c0] {strides = array<i32>} : memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, vector<32x4096xbf16>, 
+      %27 = tpu.vector_load %arg3[%c0, %c0, %c0] {strides = array<i32>} : memref<4x4096x256xbf16, #tpu.tiled<(8,128)(2,1),[1024,2,1]>, #tpu.memory_space<vmem>>, vector<1x4096x256xbf16>, 
+      %28 = tpu.reshape %27 : vector<1x4096x256xbf16> -> vector<4096x256xbf16>
+      %29 = tpu.matmul %26, %28, %cst_0 {dimension_numbers = #tpu.dot_dimension_numbers<[1], [0], [0], [1], [0, 0, 1, 1], [], []>, transpose_lhs_hint = false} : vector<32x4096xbf16>, vector<4096x256xbf16>, vector<32x256xf32> -> vector<32x256xf32>
+      %30 = vector.extract_strided_slice %29 {offsets = [0, 0], sizes = [32, 128], strides = [1, 1]} : vector<32x256xf32> to vector<32x128xf32>
+      %31 = vector.extract_strided_slice %29 {offsets = [0, 128], sizes = [32, 128], strides = [1, 1]} : vector<32x256xf32> to vector<32x128xf32>
+      %32 = arith.negf %30 : vector<32x128xf32>
+      %33 = math.exp %32 : vector<32x128xf32>
+      %34 = arith.addf %33, %cst : vector<32x128xf32>
+      %35 = arith.divf %cst, %34 : vector<32x128xf32>
+      %36 = arith.mulf %30, %35 : vector<32x128xf32>
+      %37 = arith.mulf %36, %31 : vector<32x128xf32>
+      %38 = tpu.truncf %37 {rounding_mode = #tpu.rounding_mode<to_nearest_even>} : vector<32x128xf32> -> vector<32x128xbf16>
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_gmm2"}> : () -> ()
+      %39 = tpu.vector_load %arg4[%c0, %c0, %c0] {strides = array<i32>} : memref<4x128x4096xbf16, #tpu.tiled<(8,128)(2,1),[512,32,1]>, #tpu.memory_space<vmem>>, vector<1x128x4096xbf16>, 
+      %40 = tpu.reshape %39 : vector<1x128x4096xbf16> -> vector<128x4096xbf16>
+      %41 = tpu.matmul %38, %40, %cst_32 {dimension_numbers = #tpu.dot_dimension_numbers<[1], [0], [0], [1], [0, 0, 1, 1], [], []>, transpose_lhs_hint = false} : vector<32x128xbf16>, vector<128x4096xbf16>, vector<32x4096xf32> -> vector<32x4096xf32>
+      %42 = tpu.memref_slice %arg15[%c0_i32, %c0_i32, %c0_i32] : memref<2x32x4096xf32, #tpu.tiled<(8,128),[128,32,1]>, #tpu.memory_space<vmem>> -> memref<1x32x4096xf32, #tpu.tiled<(8,128),[128,32,1]>, #tpu.memory_space<vmem>>
+      %43 = tpu.memref_squeeze %42 : memref<1x32x4096xf32, #tpu.tiled<(8,128),[128,32,1]>, #tpu.memory_space<vmem>> -> memref<32x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>>
+      tpu.vector_store %43[%c0, %c0], %41 {strides = array<i32>} : memref<32x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>>, vector<32x4096xf32>, 
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_combine"}> : () -> ()
+      scf.for %arg22 = %c0_i32 to %c32_i32 step %c1_i32  : i32 {
+        %44 = arith.cmpi slt, %arg22, %9 : i32
+        scf.if %44 {
+          %45 = arith.index_cast %arg22 : i32 to index
+          %46 = memref.load %0[%8, %45] : memref<512x32xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<smem>>
+          %47 = memref.load %1[%8, %45] : memref<512x32xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<smem>>
+          %48 = arith.index_cast %46 : i32 to index
+          %49 = tpu.vector_load %arg10[%48, %c0] {strides = array<i32>} : memref<512x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>>, vector<1x4096xf32>, 
+          %50 = tpu.vector_load %43[%45, %c0] {strides = array<i32>} : memref<32x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>>, vector<1x4096xf32>, 
+          %51 = vector.broadcast %47 : f32 to vector<1x4096xf32>
+          %52 = arith.mulf %51, %50 : vector<1x4096xf32>
+          %53 = arith.addf %49, %52 : vector<1x4096xf32>
+          tpu.vector_store %arg10[%48, %c0], %53 {strides = array<i32>} : memref<512x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>>, vector<1x4096xf32>, 
+        }
+      }
+      "tpu.trace_stop"() : () -> ()
+    } {in_layout = [#tpu.vpad<"none">]}
+    %11 = arith.addi %7, %c1_i32 : i32
+    %12 = arith.index_cast %11 : i32 to index
+    %13 = memref.load %arg13[%c0, %12] : memref<1x512xi32, #tpu.tiled<(1,128),[4,1]>, #tpu.memory_space<smem>>
+    %14 = arith.cmpi sgt, %13, %c0_i32 : i32
+    scf.if %14 {
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_gather"}> : () -> ()
+      scf.for %arg22 = %c0_i32 to %c32_i32 step %c1_i32  : i32 {
+        %44 = arith.index_cast %arg22 : i32 to index
+        %45 = memref.load %0[%12, %44] : memref<512x32xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<smem>>
+        %46 = arith.cmpi slt, %arg22, %13 : i32
+        scf.if %46 {
+          %48 = arith.index_cast %45 : i32 to index
+          %49 = tpu.vector_load %arg6[%48, %c0] {strides = array<i32>} : memref<512x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, vector<1x4096xbf16>, 
+          %50 = tpu.memref_slice %arg14[%c1_i32, %c0_i32, %c0_i32] : memref<2x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>> -> memref<1x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>>
+          %51 = tpu.memref_squeeze %50 : memref<1x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>> -> memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>
+          tpu.vector_store %51[%44, %c0], %49 {strides = array<i32>} : memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, vector<1x4096xbf16>, 
+        }
+        %47 = arith.cmpi sge, %arg22, %13 : i32
+        scf.if %47 {
+          %48 = tpu.memref_slice %arg14[%c1_i32, %c0_i32, %c0_i32] : memref<2x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>> -> memref<1x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>>
+          %49 = tpu.memref_squeeze %48 : memref<1x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>> -> memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>
+          tpu.vector_store %49[%44, %c0], %cst_1 {strides = array<i32>} : memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, vector<1x4096xbf16>, 
+        }
+      }
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_gmm1"}> : () -> ()
+      %24 = tpu.memref_slice %arg14[%c1_i32, %c0_i32, %c0_i32] : memref<2x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>> -> memref<1x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>>
+      %25 = tpu.memref_squeeze %24 : memref<1x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>> -> memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>
+      %26 = tpu.vector_load %25[%c0, %c0] {strides = array<i32>} : memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, vector<32x4096xbf16>, 
+      %27 = tpu.vector_load %arg3[%c1, %c0, %c0] {strides = array<i32>} : memref<4x4096x256xbf16, #tpu.tiled<(8,128)(2,1),[1024,2,1]>, #tpu.memory_space<vmem>>, vector<1x4096x256xbf16>, 
+      %28 = tpu.reshape %27 : vector<1x4096x256xbf16> -> vector<4096x256xbf16>
+      %29 = tpu.matmul %26, %28, %cst_0 {dimension_numbers = #tpu.dot_dimension_numbers<[1], [0], [0], [1], [0, 0, 1, 1], [], []>, transpose_lhs_hint = false} : vector<32x4096xbf16>, vector<4096x256xbf16>, vector<32x256xf32> -> vector<32x256xf32>
+      %30 = vector.extract_strided_slice %29 {offsets = [0, 0], sizes = [32, 128], strides = [1, 1]} : vector<32x256xf32> to vector<32x128xf32>
+      %31 = vector.extract_strided_slice %29 {offsets = [0, 128], sizes = [32, 128], strides = [1, 1]} : vector<32x256xf32> to vector<32x128xf32>
+      %32 = arith.negf %30 : vector<32x128xf32>
+      %33 = math.exp %32 : vector<32x128xf32>
+      %34 = arith.addf %33, %cst : vector<32x128xf32>
+      %35 = arith.divf %cst, %34 : vector<32x128xf32>
+      %36 = arith.mulf %30, %35 : vector<32x128xf32>
+      %37 = arith.mulf %36, %31 : vector<32x128xf32>
+      %38 = tpu.truncf %37 {rounding_mode = #tpu.rounding_mode<to_nearest_even>} : vector<32x128xf32> -> vector<32x128xbf16>
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_gmm2"}> : () -> ()
+      %39 = tpu.vector_load %arg4[%c1, %c0, %c0] {strides = array<i32>} : memref<4x128x4096xbf16, #tpu.tiled<(8,128)(2,1),[512,32,1]>, #tpu.memory_space<vmem>>, vector<1x128x4096xbf16>, 
+      %40 = tpu.reshape %39 : vector<1x128x4096xbf16> -> vector<128x4096xbf16>
+      %41 = tpu.matmul %38, %40, %cst_32 {dimension_numbers = #tpu.dot_dimension_numbers<[1], [0], [0], [1], [0, 0, 1, 1], [], []>, transpose_lhs_hint = false} : vector<32x128xbf16>, vector<128x4096xbf16>, vector<32x4096xf32> -> vector<32x4096xf32>
+      %42 = tpu.memref_slice %arg15[%c1_i32, %c0_i32, %c0_i32] : memref<2x32x4096xf32, #tpu.tiled<(8,128),[128,32,1]>, #tpu.memory_space<vmem>> -> memref<1x32x4096xf32, #tpu.tiled<(8,128),[128,32,1]>, #tpu.memory_space<vmem>>
+      %43 = tpu.memref_squeeze %42 : memref<1x32x4096xf32, #tpu.tiled<(8,128),[128,32,1]>, #tpu.memory_space<vmem>> -> memref<32x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>>
+      tpu.vector_store %43[%c0, %c0], %41 {strides = array<i32>} : memref<32x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>>, vector<32x4096xf32>, 
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_combine"}> : () -> ()
+      scf.for %arg22 = %c0_i32 to %c32_i32 step %c1_i32  : i32 {
+        %44 = arith.cmpi slt, %arg22, %13 : i32
+        scf.if %44 {
+          %45 = arith.index_cast %arg22 : i32 to index
+          %46 = memref.load %0[%12, %45] : memref<512x32xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<smem>>
+          %47 = memref.load %1[%12, %45] : memref<512x32xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<smem>>
+          %48 = arith.index_cast %46 : i32 to index
+          %49 = tpu.vector_load %arg10[%48, %c0] {strides = array<i32>} : memref<512x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>>, vector<1x4096xf32>, 
+          %50 = tpu.vector_load %43[%45, %c0] {strides = array<i32>} : memref<32x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>>, vector<1x4096xf32>, 
+          %51 = vector.broadcast %47 : f32 to vector<1x4096xf32>
+          %52 = arith.mulf %51, %50 : vector<1x4096xf32>
+          %53 = arith.addf %49, %52 : vector<1x4096xf32>
+          tpu.vector_store %arg10[%48, %c0], %53 {strides = array<i32>} : memref<512x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>>, vector<1x4096xf32>, 
+        }
+      }
+      "tpu.trace_stop"() : () -> ()
+    }
+    %15 = arith.addi %7, %c2_i32 : i32
+    %16 = arith.index_cast %15 : i32 to index
+    %17 = memref.load %arg13[%c0, %16] : memref<1x512xi32, #tpu.tiled<(1,128),[4,1]>, #tpu.memory_space<smem>>
+    %18 = arith.cmpi sgt, %17, %c0_i32 : i32
+    scf.if %18 {
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_gather"}> : () -> ()
+      scf.for %arg22 = %c0_i32 to %c32_i32 step %c1_i32  : i32 {
+        %44 = arith.index_cast %arg22 : i32 to index
+        %45 = memref.load %0[%16, %44] : memref<512x32xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<smem>>
+        %46 = arith.cmpi slt, %arg22, %17 : i32
+        scf.if %46 {
+          %48 = arith.index_cast %45 : i32 to index
+          %49 = tpu.vector_load %arg6[%48, %c0] {strides = array<i32>} : memref<512x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, vector<1x4096xbf16>, 
+          %50 = tpu.memref_slice %arg14[%c0_i32, %c0_i32, %c0_i32] : memref<2x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>> -> memref<1x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>>
+          %51 = tpu.memref_squeeze %50 : memref<1x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>> -> memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>
+          tpu.vector_store %51[%44, %c0], %49 {strides = array<i32>} : memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, vector<1x4096xbf16>, 
+        }
+        %47 = arith.cmpi sge, %arg22, %17 : i32
+        scf.if %47 {
+          %48 = tpu.memref_slice %arg14[%c0_i32, %c0_i32, %c0_i32] : memref<2x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>> -> memref<1x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>>
+          %49 = tpu.memref_squeeze %48 : memref<1x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>> -> memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>
+          tpu.vector_store %49[%44, %c0], %cst_1 {strides = array<i32>} : memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, vector<1x4096xbf16>, 
+        }
+      }
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_gmm1"}> : () -> ()
+      %24 = tpu.memref_slice %arg14[%c0_i32, %c0_i32, %c0_i32] : memref<2x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>> -> memref<1x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>>
+      %25 = tpu.memref_squeeze %24 : memref<1x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>> -> memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>
+      %26 = tpu.vector_load %25[%c0, %c0] {strides = array<i32>} : memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, vector<32x4096xbf16>, 
+      %27 = tpu.vector_load %arg3[%c2, %c0, %c0] {strides = array<i32>} : memref<4x4096x256xbf16, #tpu.tiled<(8,128)(2,1),[1024,2,1]>, #tpu.memory_space<vmem>>, vector<1x4096x256xbf16>, 
+      %28 = tpu.reshape %27 : vector<1x4096x256xbf16> -> vector<4096x256xbf16>
+      %29 = tpu.matmul %26, %28, %cst_0 {dimension_numbers = #tpu.dot_dimension_numbers<[1], [0], [0], [1], [0, 0, 1, 1], [], []>, transpose_lhs_hint = false} : vector<32x4096xbf16>, vector<4096x256xbf16>, vector<32x256xf32> -> vector<32x256xf32>
+      %30 = vector.extract_strided_slice %29 {offsets = [0, 0], sizes = [32, 128], strides = [1, 1]} : vector<32x256xf32> to vector<32x128xf32>
+      %31 = vector.extract_strided_slice %29 {offsets = [0, 128], sizes = [32, 128], strides = [1, 1]} : vector<32x256xf32> to vector<32x128xf32>
+      %32 = arith.negf %30 : vector<32x128xf32>
+      %33 = math.exp %32 : vector<32x128xf32>
+      %34 = arith.addf %33, %cst : vector<32x128xf32>
+      %35 = arith.divf %cst, %34 : vector<32x128xf32>
+      %36 = arith.mulf %30, %35 : vector<32x128xf32>
+      %37 = arith.mulf %36, %31 : vector<32x128xf32>
+      %38 = tpu.truncf %37 {rounding_mode = #tpu.rounding_mode<to_nearest_even>} : vector<32x128xf32> -> vector<32x128xbf16>
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_gmm2"}> : () -> ()
+      %39 = tpu.vector_load %arg4[%c2, %c0, %c0] {strides = array<i32>} : memref<4x128x4096xbf16, #tpu.tiled<(8,128)(2,1),[512,32,1]>, #tpu.memory_space<vmem>>, vector<1x128x4096xbf16>, 
+      %40 = tpu.reshape %39 : vector<1x128x4096xbf16> -> vector<128x4096xbf16>
+      %41 = tpu.matmul %38, %40, %cst_32 {dimension_numbers = #tpu.dot_dimension_numbers<[1], [0], [0], [1], [0, 0, 1, 1], [], []>, transpose_lhs_hint = false} : vector<32x128xbf16>, vector<128x4096xbf16>, vector<32x4096xf32> -> vector<32x4096xf32>
+      %42 = tpu.memref_slice %arg15[%c0_i32, %c0_i32, %c0_i32] : memref<2x32x4096xf32, #tpu.tiled<(8,128),[128,32,1]>, #tpu.memory_space<vmem>> -> memref<1x32x4096xf32, #tpu.tiled<(8,128),[128,32,1]>, #tpu.memory_space<vmem>>
+      %43 = tpu.memref_squeeze %42 : memref<1x32x4096xf32, #tpu.tiled<(8,128),[128,32,1]>, #tpu.memory_space<vmem>> -> memref<32x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>>
+      tpu.vector_store %43[%c0, %c0], %41 {strides = array<i32>} : memref<32x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>>, vector<32x4096xf32>, 
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_combine"}> : () -> ()
+      scf.for %arg22 = %c0_i32 to %c32_i32 step %c1_i32  : i32 {
+        %44 = arith.cmpi slt, %arg22, %17 : i32
+        scf.if %44 {
+          %45 = arith.index_cast %arg22 : i32 to index
+          %46 = memref.load %0[%16, %45] : memref<512x32xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<smem>>
+          %47 = memref.load %1[%16, %45] : memref<512x32xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<smem>>
+          %48 = arith.index_cast %46 : i32 to index
+          %49 = tpu.vector_load %arg10[%48, %c0] {strides = array<i32>} : memref<512x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>>, vector<1x4096xf32>, 
+          %50 = tpu.vector_load %43[%45, %c0] {strides = array<i32>} : memref<32x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>>, vector<1x4096xf32>, 
+          %51 = vector.broadcast %47 : f32 to vector<1x4096xf32>
+          %52 = arith.mulf %51, %50 : vector<1x4096xf32>
+          %53 = arith.addf %49, %52 : vector<1x4096xf32>
+          tpu.vector_store %arg10[%48, %c0], %53 {strides = array<i32>} : memref<512x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>>, vector<1x4096xf32>, 
+        }
+      }
+      "tpu.trace_stop"() : () -> ()
+    }
+    %19 = arith.addi %7, %c3_i32 : i32
+    %20 = arith.index_cast %19 : i32 to index
+    %21 = memref.load %arg13[%c0, %20] : memref<1x512xi32, #tpu.tiled<(1,128),[4,1]>, #tpu.memory_space<smem>>
+    %22 = arith.cmpi sgt, %21, %c0_i32 : i32
+    scf.if %22 {
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_gather"}> : () -> ()
+      scf.for %arg22 = %c0_i32 to %c32_i32 step %c1_i32  : i32 {
+        %44 = arith.index_cast %arg22 : i32 to index
+        %45 = memref.load %0[%20, %44] : memref<512x32xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<smem>>
+        %46 = arith.cmpi slt, %arg22, %21 : i32
+        scf.if %46 {
+          %48 = arith.index_cast %45 : i32 to index
+          %49 = tpu.vector_load %arg6[%48, %c0] {strides = array<i32>} : memref<512x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, vector<1x4096xbf16>, 
+          %50 = tpu.memref_slice %arg14[%c1_i32, %c0_i32, %c0_i32] : memref<2x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>> -> memref<1x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>>
+          %51 = tpu.memref_squeeze %50 : memref<1x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>> -> memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>
+          tpu.vector_store %51[%44, %c0], %49 {strides = array<i32>} : memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, vector<1x4096xbf16>, 
+        }
+        %47 = arith.cmpi sge, %arg22, %21 : i32
+        scf.if %47 {
+          %48 = tpu.memref_slice %arg14[%c1_i32, %c0_i32, %c0_i32] : memref<2x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>> -> memref<1x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>>
+          %49 = tpu.memref_squeeze %48 : memref<1x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>> -> memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>
+          tpu.vector_store %49[%44, %c0], %cst_1 {strides = array<i32>} : memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, vector<1x4096xbf16>, 
+        }
+      }
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_gmm1"}> : () -> ()
+      %24 = tpu.memref_slice %arg14[%c1_i32, %c0_i32, %c0_i32] : memref<2x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>> -> memref<1x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>>
+      %25 = tpu.memref_squeeze %24 : memref<1x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>> -> memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>
+      %26 = tpu.vector_load %25[%c0, %c0] {strides = array<i32>} : memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, vector<32x4096xbf16>, 
+      %27 = tpu.vector_load %arg3[%c3, %c0, %c0] {strides = array<i32>} : memref<4x4096x256xbf16, #tpu.tiled<(8,128)(2,1),[1024,2,1]>, #tpu.memory_space<vmem>>, vector<1x4096x256xbf16>, 
+      %28 = tpu.reshape %27 : vector<1x4096x256xbf16> -> vector<4096x256xbf16>
+      %29 = tpu.matmul %26, %28, %cst_0 {dimension_numbers = #tpu.dot_dimension_numbers<[1], [0], [0], [1], [0, 0, 1, 1], [], []>, transpose_lhs_hint = false} : vector<32x4096xbf16>, vector<4096x256xbf16>, vector<32x256xf32> -> vector<32x256xf32>
+      %30 = vector.extract_strided_slice %29 {offsets = [0, 0], sizes = [32, 128], strides = [1, 1]} : vector<32x256xf32> to vector<32x128xf32>
+      %31 = vector.extract_strided_slice %29 {offsets = [0, 128], sizes = [32, 128], strides = [1, 1]} : vector<32x256xf32> to vector<32x128xf32>
+      %32 = arith.negf %30 : vector<32x128xf32>
+      %33 = math.exp %32 : vector<32x128xf32>
+      %34 = arith.addf %33, %cst : vector<32x128xf32>
+      %35 = arith.divf %cst, %34 : vector<32x128xf32>
+      %36 = arith.mulf %30, %35 : vector<32x128xf32>
+      %37 = arith.mulf %36, %31 : vector<32x128xf32>
+      %38 = tpu.truncf %37 {rounding_mode = #tpu.rounding_mode<to_nearest_even>} : vector<32x128xf32> -> vector<32x128xbf16>
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_gmm2"}> : () -> ()
+      %39 = tpu.vector_load %arg4[%c3, %c0, %c0] {strides = array<i32>} : memref<4x128x4096xbf16, #tpu.tiled<(8,128)(2,1),[512,32,1]>, #tpu.memory_space<vmem>>, vector<1x128x4096xbf16>, 
+      %40 = tpu.reshape %39 : vector<1x128x4096xbf16> -> vector<128x4096xbf16>
+      %41 = tpu.matmul %38, %40, %cst_32 {dimension_numbers = #tpu.dot_dimension_numbers<[1], [0], [0], [1], [0, 0, 1, 1], [], []>, transpose_lhs_hint = false} : vector<32x128xbf16>, vector<128x4096xbf16>, vector<32x4096xf32> -> vector<32x4096xf32>
+      %42 = tpu.memref_slice %arg15[%c1_i32, %c0_i32, %c0_i32] : memref<2x32x4096xf32, #tpu.tiled<(8,128),[128,32,1]>, #tpu.memory_space<vmem>> -> memref<1x32x4096xf32, #tpu.tiled<(8,128),[128,32,1]>, #tpu.memory_space<vmem>>
+      %43 = tpu.memref_squeeze %42 : memref<1x32x4096xf32, #tpu.tiled<(8,128),[128,32,1]>, #tpu.memory_space<vmem>> -> memref<32x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>>
+      tpu.vector_store %43[%c0, %c0], %41 {strides = array<i32>} : memref<32x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>>, vector<32x4096xf32>, 
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_combine"}> : () -> ()
+      scf.for %arg22 = %c0_i32 to %c32_i32 step %c1_i32  : i32 {
+        %44 = arith.cmpi slt, %arg22, %21 : i32
+        scf.if %44 {
+          %45 = arith.index_cast %arg22 : i32 to index
+          %46 = memref.load %0[%20, %45] : memref<512x32xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<smem>>
+          %47 = memref.load %1[%20, %45] : memref<512x32xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<smem>>
+          %48 = arith.index_cast %46 : i32 to index
+          %49 = tpu.vector_load %arg10[%48, %c0] {strides = array<i32>} : memref<512x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>>, vector<1x4096xf32>, 
+          %50 = tpu.vector_load %43[%45, %c0] {strides = array<i32>} : memref<32x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>>, vector<1x4096xf32>, 
+          %51 = vector.broadcast %47 : f32 to vector<1x4096xf32>
+          %52 = arith.mulf %51, %50 : vector<1x4096xf32>
+          %53 = arith.addf %49, %52 : vector<1x4096xf32>
+          tpu.vector_store %arg10[%48, %c0], %53 {strides = array<i32>} : memref<512x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>>, vector<1x4096xf32>, 
+        }
+      }
+      "tpu.trace_stop"() : () -> ()
+    }
+    %23 = arith.cmpi eq, %arg0, %c127_i32 : i32
+    scf.if %23 {
+      %24 = tpu.vector_load %arg10[%c0, %c0] {strides = array<i32>} : memref<512x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>>, vector<512x4096xf32>, 
+      %25 = tpu.truncf %24 {rounding_mode = #tpu.rounding_mode<to_nearest_even>} : vector<512x4096xf32> -> vector<512x4096xbf16>
+      tpu.vector_store %arg5[%c0, %c0], %25 {strides = array<i32>} : memref<512x4096xbf16, #tpu.tiled<(8,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, vector<512x4096xbf16>, 
+    }
+    return
+  }
+  func.func @transform_0(%arg0: i32) -> (i32, i32) {
+    %c0_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 0 : i32
+    return {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">]} %c0_i32, %c0_i32 : i32, i32
+  }
+  func.func @transform_1(%arg0: i32) -> (i32, i32) {
+    %c0_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 0 : i32
+    return {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">]} %c0_i32, %c0_i32 : i32, i32
+  }
+  func.func @transform_2(%arg0: i32) -> (i32, i32, i32) {
+    %c0_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 0 : i32
+    return {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]} %arg0, %c0_i32, %c0_i32 : i32, i32, i32
+  }
+  func.func @transform_3(%arg0: i32) -> (i32, i32, i32) {
+    %c0_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 0 : i32
+    return {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">, #tpu.vpad<"none">]} %arg0, %c0_i32, %c0_i32 : i32, i32, i32
+  }
+  func.func @transform_4(%arg0: i32) -> (i32, i32) {
+    %c0_i32 = arith.constant {in_layout = [], out_layout = [#tpu.vpad<"none">]} 0 : i32
+    return {in_layout = [#tpu.vpad<"none">, #tpu.vpad<"none">]} %c0_i32, %c0_i32 : i32, i32
+  }
+}

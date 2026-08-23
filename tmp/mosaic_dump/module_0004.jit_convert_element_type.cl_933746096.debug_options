@@ -1,9 +1,0 @@
-xla_enable_hlo_sharding_v3: false
-xla_cpu_enable_fast_min_max: false
-xla_cpu_max_isa: "AVX2"
-xla_gpu_enable_libnvptxcompiler: false
-xla_gpu_experimental_autotune_post_fusion: false
-xla_gpu_use_embeded_device_lib: true
-xla_gpu_use_inprocess_lld: true
-xla_dump_to: "tmp/mosaic_dump"
-xla_detailed_logging: false
