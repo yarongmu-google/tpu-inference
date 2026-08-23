@@ -95,66 +95,56 @@ def _routing(*, logits_et, top_k, renormalize_topk_logits):
     return w, i
 
 
+def _row_wait(ref3, sem):
+    """Wait one row-DMA's worth of credits (the ref sizes the wait)."""
+    pltpu.make_async_copy(ref3.at[pl.ds(0, 1), :, :],
+                          ref3.at[pl.ds(0, 1), :, :], sem).wait()
+
+
 def _gather_rows_dma(*, tokens_full_vmem, g_vmem, rows_smem, e, cnt, row_sem):
     """Plan A gather: one local VMEM->VMEM row DMA per assigned token.
 
-    DMAs address at 32 B granularity - no tile-alignment proof needed,
-    which is why every production gather here is DMA-based (a dynamic
-    single-row vector load on a tiled memref is uncompilable: E2003).
-    Pad slots (c >= cnt) are never written and never read back; gmm rows
-    are independent, so garbage pad rows stay confined.
+    Both buffers are [rows, D/128, 128] so the dynamically indexed
+    dimension 0 is UNTILED (Mosaic tiles only the two minormost dims) -
+    dynamic row offsets on a tiled dimension are rejected for DMAs just
+    as for vector loads (E2003 / "offsets along tiled dimensions must be
+    aligned"). Same shape contract as gmm_fused_rs's dma_gather_gm_start.
+    Pad slots (c >= cnt) are never written and never read back.
     """
     def _issue(c, carry):
         row = rows_smem[e, c]
         pltpu.make_async_copy(
-            tokens_full_vmem.at[pl.ds(row, 1), :],
-            g_vmem.at[pl.ds(c, 1), :],
+            tokens_full_vmem.at[pl.ds(row, 1), :, :],
+            g_vmem.at[pl.ds(c, 1), :, :],
             row_sem).start()
         return carry
 
     lax.fori_loop(0, cnt, _issue, 0)
 
     def _drain(c, carry):
-        pltpu.make_async_copy(g_vmem.at[pl.ds(0, 1), :],
-                              g_vmem.at[pl.ds(0, 1), :],
-                              row_sem).wait()
+        _row_wait(g_vmem, row_sem)
         return carry
 
     lax.fori_loop(0, cnt, _drain, 0)
 
 
-def _gather_rows_take(*, tokens_full_vmem, g_vmem, rows_vmem, e):
-    """Plan B gather: one tpu.dynamic_gather via take_along_axis - may map
-    onto the ISA's native 8-address per-sublane vld. Backend acceptance at
-    these shapes is unverified; A/B against _gather_rows_dma on hardware.
-    """
-    t = tokens_full_vmem.shape[0]
-    num_experts = rows_vmem.shape[0]
-    # e is traced: rotate expert e's row to position 0, slice statically
-    rows = pltpu.roll(rows_vmem[...],
-                      shift=(num_experts - e) % num_experts,
-                      axis=0)[0]                          # [C]
-    rows = jnp.clip(rows, 0, t - 1)                       # pads clamped
-    idx = jnp.broadcast_to(rows[:, None], g_vmem.shape)   # [C, D]
-    g_vmem[...] = jnp.take_along_axis(tokens_full_vmem[...], idx, axis=0)
-
-
 def _decode_moe_kernel(
-    tokens_local_vmem,   # [T/P, D] this device's token shard (VMEM)
+    tokens_local_vmem,   # [T/P, DL, L] token shard (D split as DL x L=128
+                         #   so dim 0 stays untiled - see _gather_rows_dma)
     router_w_vmem,       # [E, D] router weight (upstream [out, in] layout, VMEM)
     w1_vmem,             # [NE, D, 2I] this grid step's expert block
     w2_vmem,             # [NE, I, D]
-    out_vmem,            # [T, D] union partials (caller reduce-scatters)
-    tokens_full_vmem,    # VMEM [T, D] the gathered union
+    out_vmem,            # [T, DL, L] union partials (caller reshapes + RS)
+    tokens_full_vmem,    # VMEM [T, DL, L] the gathered union
     send_sem,           # DMA - all outbound remote copies
     recv_sem_tokens,    # DMA - inbound token shards
     recv_sem_meta,      # DMA - inbound top-k idx/weight shards
-    acc_vmem,            # VMEM [T, D] f32 accumulator
+    acc_vmem,            # VMEM [T, DL, L] f32 accumulator
     rows_smem,           # SMEM [E, C] i32 per-expert row lists
     counts_smem,         # SMEM [1, E] i32
-    gathered_vmem,       # VMEM [2, C, D] staging, ping-pong by expert parity
-    yout_vmem,           # VMEM [2, C, D] f32 gmm2 output, same ping-pong
-    temp_vmem,           # VMEM [C, D] f32 combine staging (acc rows)
+    gathered_vmem,       # VMEM [2, C, DL, L] staging, ping-pong by parity
+    yout_vmem,           # VMEM [2, C, DL, L] f32 gmm2 output, same ping-pong
+    temp_vmem,           # VMEM [C, DL, L] f32 combine staging (acc rows)
     topk_idx_vmem,      # VMEM [T, k] i32 - AG'd routing results
     topk_w_vmem,        # VMEM [T, k] f32
     rows_vmem,          # VMEM [E, C] i32 - lane-compress output staging
@@ -175,11 +165,11 @@ def _decode_moe_kernel(
     act_dtype,
     bd1c: int | None = None,
     bd2c: int | None = None,
-    gather_impl: str = "dma",
 ):
     blk = pl.program_id(0)
     num_blocks = pl.num_programs(0)
-    t = tokens_full_vmem.shape[0]
+    t, dl, lanes = tokens_full_vmem.shape
+    d = dl * lanes
     # static under shard_map - same axis env as lax.axis_index below
     num_devices = lax.axis_size(axis_name)
 
@@ -201,7 +191,7 @@ def _decode_moe_kernel(
         with jax.named_scope("moe_routing"):
             logits_et = lax.dot_general(
                 router_w_vmem[...],          # [E, D]
-                tokens_local_vmem[...],      # [T/P, D]
+                tokens_local_vmem[...].reshape(-1, d),   # [T/P, D]
                 dimension_numbers=(((1,), (1,)), ((), ())),
                 preferred_element_type=jnp.float32,
             )                               # -> [E, T/P]
@@ -214,7 +204,7 @@ def _decode_moe_kernel(
             topk_w_vmem[pl.ds(row0, t_loc), :] = weights    # -> [T, k] VMEM
 
         with jax.named_scope("moe_ag_local"):
-            tokens_full_vmem[pl.ds(row0, t_loc), :] = tokens_local_vmem[...]  # -> [T, D] VMEM
+            tokens_full_vmem[pl.ds(row0, t_loc), :, :] = tokens_local_vmem[...]
 
         with jax.named_scope("moe_ag_barrier"):
             # The GLOBAL barrier semaphore (requires collective_id in
@@ -235,7 +225,7 @@ def _decode_moe_kernel(
                 def _send(p=p):
                     for src, dst, rsem in (
                         (tokens_local_vmem,
-                         tokens_full_vmem.at[pl.ds(row0, t_loc), :],
+                         tokens_full_vmem.at[pl.ds(row0, t_loc), :, :],
                          recv_sem_tokens),
                         (topk_idx_vmem.at[pl.ds(row0, t_loc), :],
                          topk_idx_vmem.at[pl.ds(row0, t_loc), :],
@@ -336,15 +326,11 @@ def _decode_moe_kernel(
             # The token transfer streamed in UNDER the list pass above;
             # settle it (and the send side, for semaphore hygiene) before
             # the first gather reads tokens_full_vmem.
-            pltpu.make_async_copy(
-                tokens_full_vmem.at[pl.ds(0, inbound * t_loc), :],
-                tokens_full_vmem.at[pl.ds(0, inbound * t_loc), :],
-                recv_sem_tokens).wait()
-            # send side: P-1 completions each of tokens, idx, w
-            pltpu.make_async_copy(
-                tokens_full_vmem.at[pl.ds(0, inbound * t_loc), :],
-                tokens_full_vmem.at[pl.ds(0, inbound * t_loc), :],
-                send_sem).wait()
+            for sem in (recv_sem_tokens, send_sem):
+                pltpu.make_async_copy(
+                    tokens_full_vmem.at[pl.ds(0, inbound * t_loc), :, :],
+                    tokens_full_vmem.at[pl.ds(0, inbound * t_loc), :, :],
+                    sem).wait()
             for buf in (topk_idx_vmem, topk_w_vmem):
                 pltpu.make_async_copy(buf.at[pl.ds(0, inbound * t_loc), :],
                                       buf.at[pl.ds(0, inbound * t_loc), :],
@@ -375,23 +361,17 @@ def _decode_moe_kernel(
             y_vmem = yout_vmem.at[le % 2]      # [2, C, D] -> [C, D]
 
             with jax.named_scope("moe_gather"):
-                if gather_impl == "dma":
-                    _gather_rows_dma(
-                        tokens_full_vmem=tokens_full_vmem, g_vmem=g_vmem,
-                        rows_smem=rows_smem, e=e, cnt=cnt, row_sem=row_sem)
-                else:
-                    _gather_rows_take(
-                        tokens_full_vmem=tokens_full_vmem, g_vmem=g_vmem,
-                        rows_vmem=rows_vmem, e=e)
-
-            d = tokens_full_vmem.shape[1]
+                _gather_rows_dma(
+                    tokens_full_vmem=tokens_full_vmem, g_vmem=g_vmem,
+                    rows_smem=rows_smem, e=e, cnt=cnt, row_sem=row_sem)
 
             with jax.named_scope("moe_gmm1"):
                 kc = bd1c or d
                 h = jnp.zeros((capacity, w1_vmem.shape[-1]), jnp.float32)
                 for k0 in range(0, d, kc):
+                    x = g_vmem[:, k0 // lanes:(k0 + kc) // lanes, :]
                     h = h + jnp.dot(
-                        g_vmem[:, k0:k0 + kc],               # [C, kc]
+                        x.reshape(capacity, kc),             # [C, kc]
                         w1_vmem[le, k0:k0 + kc, :],          # [kc, 2I]
                         preferred_element_type=jnp.float32)
                 i_half = h.shape[-1] // 2
@@ -410,10 +390,12 @@ def _decode_moe_kernel(
                     axis=1)[:, :1]                           # [C, 1] f32
                 nc = bd2c or d
                 for n0 in range(0, d, nc):
-                    y_vmem[:, n0:n0 + nc] = jnp.dot(
+                    y = jnp.dot(
                         a,
                         w2_vmem[le, :, n0:n0 + nc],          # [I, nc]
                         preferred_element_type=jnp.float32) * gate_col
+                    y_vmem[:, n0 // lanes:(n0 + nc) // lanes, :] = (
+                        y.reshape(capacity, nc // lanes, lanes))
 
             with jax.named_scope("moe_combine"):
                 # Scatter-add via DMA staging (dynamic single-row vector
@@ -424,17 +406,15 @@ def _decode_moe_kernel(
                 def _stage(c, carry):
                     row = rows_smem[e, c]
                     pltpu.make_async_copy(
-                        acc_vmem.at[pl.ds(row, 1), :],
-                        temp_vmem.at[pl.ds(c, 1), :],
+                        acc_vmem.at[pl.ds(row, 1), :, :],
+                        temp_vmem.at[pl.ds(c, 1), :, :],
                         row_sem).start()
                     return carry
 
                 lax.fori_loop(0, cnt, _stage, 0)
 
                 def _drain(c, carry):
-                    pltpu.make_async_copy(temp_vmem.at[pl.ds(0, 1), :],
-                                          temp_vmem.at[pl.ds(0, 1), :],
-                                          row_sem).wait()
+                    _row_wait(temp_vmem, row_sem)
                     return carry
 
                 lax.fori_loop(0, cnt, _drain, 0)
@@ -445,8 +425,8 @@ def _decode_moe_kernel(
                 def _wb(c, carry):
                     row = rows_smem[e, c]
                     pltpu.make_async_copy(
-                        temp_vmem.at[pl.ds(c, 1), :],
-                        acc_vmem.at[pl.ds(row, 1), :],
+                        temp_vmem.at[pl.ds(c, 1), :, :],
+                        acc_vmem.at[pl.ds(row, 1), :, :],
                         row_sem).start()
                     return carry
 
@@ -463,7 +443,7 @@ def _decode_moe_kernel(
     jax.jit,
     static_argnames=("mesh", "axis_name", "top_k", "renormalize_topk_logits",
                      "capacity", "be", "bd1c", "bd2c", "vmem_limit_bytes",
-                     "gather_impl", "interpret"),
+                     "interpret"),
 )
 def fused_moe_decode_tp_fused(
     tokens_local: jax.Array,   # [T/P, D]
@@ -480,7 +460,6 @@ def fused_moe_decode_tp_fused(
     bd1c: int | None = None,
     bd2c: int | None = None,
     vmem_limit_bytes: int = 64 * 1024 * 1024,
-    gather_impl: str = "dma",
     interpret=False,
 ) -> jax.Array:
     """v0.2: router-fused + topk-first, the all-gather fused INTO the
@@ -497,10 +476,18 @@ def fused_moe_decode_tp_fused(
         interpret = pltpu.InterpretParams(dma_execution_mode="on_wait")
     num_devices = mesh.shape[axis_name]
     t_loc, d = tokens_local.shape
+    # D is split as [DL, LANES] wherever a buffer is indexed by a dynamic
+    # ROW: Mosaic tiles the two minormost dims, so this keeps dim 0
+    # untiled and dynamic row offsets legal (E2003 otherwise).
+    lanes = 128
+    assert d % lanes == 0, d
+    dl = d // lanes
     t = t_loc * num_devices
     e, _, i2 = w1_local.shape
     assert e % be == 0, (e, be)
     assert d % (bd1c or d) == 0 and d % (bd2c or d) == 0, (d, bd1c, bd2c)
+    assert (bd1c or lanes) % lanes == 0 and (bd2c or lanes) % lanes == 0, (
+        bd1c, bd2c, lanes)
     assert router_w.shape == (e, d), (router_w.shape, e, d)
     num_blocks = e // be
 
@@ -532,24 +519,26 @@ def fused_moe_decode_tp_fused(
         num_scalar_prefetch=0,
         grid=(num_blocks,),
         in_specs=[
-            pl.BlockSpec(tokens_local.shape, lambda i: (0, 0)),
+            pl.BlockSpec((t_loc, dl, lanes), lambda i: (0, 0, 0)),
             pl.BlockSpec(router_w.shape, lambda i: (0, 0)),
             pl.BlockSpec((be, d, i2), lambda i: (i, 0, 0)),
             pl.BlockSpec((be, i2 // 2, d),
                          lambda i: (i, 0, 0)),
         ],
-        out_specs=pl.BlockSpec((t, d), lambda i: (0, 0)),
+        out_specs=pl.BlockSpec((t, dl, lanes), lambda i: (0, 0, 0)),
         scratch_shapes=[
-            pltpu.VMEM((t, d), tokens_local.dtype),          # tokens_full_vmem
+            pltpu.VMEM((t, dl, lanes),
+                       tokens_local.dtype),                  # tokens_full_vmem
             pltpu.SemaphoreType.DMA,                         # send_sem
             pltpu.SemaphoreType.DMA,                         # recv_sem_tokens
             pltpu.SemaphoreType.DMA,                         # recv_sem_meta
-            pltpu.VMEM((t, d), jnp.float32),                 # acc
+            pltpu.VMEM((t, dl, lanes), jnp.float32),         # acc
             pltpu.SMEM((e, capacity), jnp.int32),            # rows
             pltpu.SMEM((1, e), jnp.int32),                   # counts
-            pltpu.VMEM((2, capacity, d), tokens_local.dtype),  # gathered x2
-            pltpu.VMEM((2, capacity, d), jnp.float32),         # yout x2
-            pltpu.VMEM((capacity, d), jnp.float32),          # temp (combine)
+            pltpu.VMEM((2, capacity, dl, lanes),
+                       tokens_local.dtype),                  # gathered x2
+            pltpu.VMEM((2, capacity, dl, lanes), jnp.float32),  # yout x2
+            pltpu.VMEM((capacity, dl, lanes), jnp.float32),  # temp (combine)
             pltpu.VMEM((t, top_k), jnp.int32),               # topk_idx_vmem
             pltpu.VMEM((t, top_k), jnp.float32),             # topk_w_vmem
             pltpu.VMEM((e, capacity), jnp.int32),            # rows_vmem
@@ -571,16 +560,18 @@ def fused_moe_decode_tp_fused(
         act_dtype=tokens_local.dtype,
         bd1c=bd1c,
         bd2c=bd2c,
-        gather_impl=gather_impl,
     )
     out = pl.pallas_call(
         kernel,
         grid_spec=grid_spec,
-        out_shape=jax.ShapeDtypeStruct((t, d), tokens_local.dtype),
+        out_shape=jax.ShapeDtypeStruct((t, dl, lanes), tokens_local.dtype),
         compiler_params=pltpu.CompilerParams(
             collective_id=13,
             vmem_limit_bytes=vmem_limit_bytes,
         ),
         interpret=interpret,
-    )(tokens_local, router_w, w1_local, w2_local)
-    return lax.psum_scatter(out, axis_name, scatter_dimension=0, tiled=True)
+    )(tokens_local.reshape(t_loc, dl, lanes), router_w, w1_local, w2_local)
+    # the [DL, LANES] split is a kernel-internal layout detail; callers see
+    # [T/P, D]. Reshapes outside the kernel are free (same linear order).
+    return lax.psum_scatter(out.reshape(t, d), axis_name,
+                            scatter_dimension=0, tiled=True)
