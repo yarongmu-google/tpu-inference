@@ -109,6 +109,10 @@ def main() -> None:
                         help="v2: gmm1 D-contraction sub-tile (0 = whole D)")
     parser.add_argument("--bd2c", type=int, default=0,
                         help="v2: gmm2 D-output sub-tile (0 = whole D)")
+    parser.add_argument("--gather", type=str, default="dma",
+                        choices=["dma", "take"],
+                        help="v2 gather impl: per-row DMAs (A) or "
+                        "tpu.dynamic_gather via take_along_axis (B)")
     parser.add_argument("--tune", action="store_true",
                         help="sweep v2 kernel params, print the winner "
                         "(ignores the one-off param flags above)")
@@ -215,6 +219,7 @@ def main() -> None:
                     be=be,
                     bd1c=bd1c,
                     bd2c=bd2c,
+                    gather_impl=args.gather,
                     interpret=args.interpret,
                 )
 
