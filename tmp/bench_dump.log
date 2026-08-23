@@ -1,6 +1,6 @@
 
 + git rev-parse --short HEAD
-2067f35cd1
+f4ce33ce0e
 + exit=0
 
 + python -c import jax; print(jax.__version__); print(jax.devices())
@@ -9,38 +9,36 @@
 + exit=0
 
 + python -c import tpu_inference.kernels.fused_moe.v2.decode_kernel as m; print(m.__file__)
-WARNING 08-23 11:20:44 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 08-23 15:12:30 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-23 11:20:48 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-23 11:20:48 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-23 11:20:48 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-23 15:12:33 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-23 15:12:33 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-23 15:12:34 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 /home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py
 + exit=0
 
 + python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=3 --warmup=1
-WARNING 08-23 11:20:50 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 08-23 15:12:36 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-23 11:20:53 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-23 11:20:53 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-23 11:20:54 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-23 15:12:39 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-23 15:12:39 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-23 15:12:40 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 Traceback (most recent call last):
   File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/compiler.py", line 353, in backend_compile_and_load
     return backend.compile_and_load(
            ^^^^^^^^^^^^^^^^^^^^^^^^^
-jax.errors.JaxRuntimeError: INTERNAL: Mosaic failed to compile TPU kernel: E2003: CompileTimeMosaicUnprovenMemoryAccessAlignment: cannot statically prove that index in dimension 0 is a multiple of 16
-See https://openxla.org/xla/errors/error_2003 for more details.
+jax.errors.JaxRuntimeError: INTERNAL: Mosaic failed to compile TPU kernel: Offsets along tiled dimensions must be aligned to tiles. Failed to verify that the index at dimension 0 is divisible by the tile dimension 16. If it is, use tpu.assume_multiple to suppress this error.
 
-at location: loc("get:"("get/get"(callsite("_decode_moe_kernel.<locals>._process.<locals>._g.<locals>._do"("/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py":335:49 to 336:45) at "_decode_moe_kernel.<locals>._process.<locals>._g.<locals>._do"("/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py":335:49 to 336:45)))))
+at location: loc("dma_start:"("dma_start/dma_start"(callsite("_gather_rows_dma.<locals>._issue"("/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py":112:21 to :28) at "_gather_rows_dma.<locals>._issue"("/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py":112:21 to :28)))))
 
 The MLIR operation involved:
-  %248 = "tpu.vector_load"(%arg6, %247, %60) <{operandSegmentSizes = array<i32: 1, 2, 0>, strides = array<i32>}> : (memref<512x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, index, index) -> vector<1x4096xbf16>
-... additional diagnostics were skipped.
+  %332 = "tpu.memref_slice"(%330, %arg46, %65) <{operandSegmentSizes = array<i32: 1, 2, 0>}> : (memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, i32, i32) -> memref<1x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>
 
 Please report a bug at: https://github.com/jax-ml/jax/issues/new/choose
 
@@ -50,24 +48,22 @@ The above exception was the direct cause of the following exception:
 Traceback (most recent call last):
   File "<frozen runpy>", line 198, in _run_module_as_main
   File "<frozen runpy>", line 88, in _run_code
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 313, in <module>
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 318, in <module>
     main()
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 291, in main
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 296, in main
     outs = {name: np.asarray(fn(), np.float32)
                              ^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 226, in <lambda>
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 231, in <lambda>
     return lambda: jitted(tok_l, w1_l, w2_l, w_r)
                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py", line 335, in _decode_moe_kernel.<locals>._process.<locals>._g.<locals>._do
-    g_vmem[pl.ds(c, 1), :] = tokens_full_vmem[
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py", line 335, in get/get"(callsite("_decode_moe_kernel.<locals>._process.<locals>._g.<locals>._do
-    g_vmem[pl.ds(c, 1), :] = tokens_full_vmem[
-jax._src.pallas.mosaic.error_handling.MosaicError: INTERNAL: Mosaic failed to compile TPU kernel: E2003: CompileTimeMosaicUnprovenMemoryAccessAlignment: cannot statically prove that index in dimension 0 is a multiple of 16
-See https://openxla.org/xla/errors/error_2003 for more details.
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py", line 112, in _gather_rows_dma.<locals>._issue
+    row_sem).start()
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py", line 112, in dma_start/dma_start"(callsite("_gather_rows_dma.<locals>._issue
+    row_sem).start()
+jax._src.pallas.mosaic.error_handling.MosaicError: INTERNAL: Mosaic failed to compile TPU kernel: Offsets along tiled dimensions must be aligned to tiles. Failed to verify that the index at dimension 0 is divisible by the tile dimension 16. If it is, use tpu.assume_multiple to suppress this error.
 
 The MLIR operation involved:
-  %248 = "tpu.vector_load"(%arg6, %247, %60) <{operandSegmentSizes = array<i32: 1, 2, 0>, strides = array<i32>}> : (memref<512x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, index, index) -> vector<1x4096xbf16>
-... additional diagnostics were skipped.
+  %332 = "tpu.memref_slice"(%330, %arg46, %65) <{operandSegmentSizes = array<i32: 1, 2, 0>}> : (memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, i32, i32) -> memref<1x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>
 
 Please report a bug at: https://github.com/jax-ml/jax/issues/new/choose
 
@@ -117,29 +113,103 @@ weights/device = 1536 MiB
 1787509338066313575-0008-mosaic-dump-anonymous-post-canonicalize-mosaic-simplify.txt
 1787509338066313575-0009-mosaic-dump-anonymous-post-tiling-propagation.txt
 1787509338066313575-0010-mosaic-dump-anonymous-post-infer-vector-layout-failed.txt
+1787518884078304454-0000-mosaic-dump-anonymous-post-deserialization.txt
+1787518884123591732-0000-mosaic-dump-anonymous-post-serialization.txt
+1787518884128377992-0000-mosaic-dump-anonymous-sparsecore-module-original.txt
+1787518884128377992-0001-mosaic-dump-anonymous-mosaic-module-original.txt
+1787518884128377992-0002-mosaic-dump-anonymous-post-mosaic-module-convert-integer-memrefs.txt
+1787518884128377992-0003-mosaic-dump-anonymous-post-mosaic-module-infer-memref-layout.txt
+1787518884128377992-0004-mosaic-dump-anonymous-post-simplify.txt
+1787518884128377992-0005-mosaic-dump-anonymous-post-mosaic-module-canonicalize-operations.txt
+1787518884128377992-0006-mosaic-dump-anonymous-post-mosaic-module-canonicalize-memory-space.txt
+1787518884128377992-0007-mosaic-dump-anonymous-post-tiling-propagation.txt
+1787518884128377992-0008-mosaic-dump-anonymous-post-mosaic-module-logical-to-physical-device-id.txt
+1787518884128377992-0009-mosaic-dump-anonymous-post-mosaic-module-lower-to-mlo.txt
+1787518884128377992-0010-mosaic-dump-anonymous-sparsecore-module-post-emit-scs.txt
+1787518884130524449-0000-mosaic-dump-anonymous-post-deserialization.txt
+1787518884174446469-0000-mosaic-dump-anonymous-post-serialization.txt
+1787518884177898957-0000-mosaic-dump-anonymous-sparsecore-module-original.txt
+1787518884177898957-0001-mosaic-dump-anonymous-mosaic-module-original.txt
+1787518884177898957-0002-mosaic-dump-anonymous-post-mosaic-module-convert-integer-memrefs.txt
+1787518884177898957-0003-mosaic-dump-anonymous-post-mosaic-module-infer-memref-layout.txt
+1787518884177898957-0004-mosaic-dump-anonymous-post-simplify.txt
+1787518884177898957-0005-mosaic-dump-anonymous-post-mosaic-module-canonicalize-operations.txt
+1787518884177898957-0006-mosaic-dump-anonymous-post-mosaic-module-canonicalize-memory-space.txt
+1787518884177898957-0007-mosaic-dump-anonymous-post-tiling-propagation.txt
+1787518884177898957-0008-mosaic-dump-anonymous-post-mosaic-module-logical-to-physical-device-id.txt
+1787518884177898957-0009-mosaic-dump-anonymous-post-mosaic-module-lower-to-mlo.txt
+1787518884177898957-0010-mosaic-dump-anonymous-sparsecore-module-post-emit-scs.txt
+1787518884179521048-0000-mosaic-dump-anonymous-post-deserialization.txt
+1787518884315874618-0000-mosaic-dump-anonymous-post-deserialization.txt
+1787518884323938911-0000-mosaic-dump-anonymous-post-deserialization.txt
+1787518884328491263-0001-mosaic-dump-anonymous-original.txt
+1787518884328491263-0002-mosaic-dump-anonymous-post-infer-memref-layout.txt
+1787518884328491263-0003-mosaic-dump-anonymous-post-infer-memref-layout-simplify.txt
+1787518884328491263-0004-mosaic-dump-anonymous-post-infer-memref-space.txt
+1787518884328491263-0005-mosaic-dump-anonymous-post-canonicalize-operations.txt
+1787518884328491263-0006-mosaic-dump-anonymous-post-pre-canon-optimization.txt
+1787518884328491263-0007-mosaic-dump-anonymous-post-canonicalize-mosaic.txt
+1787518884328491263-0008-mosaic-dump-anonymous-post-canonicalize-mosaic-simplify.txt
+1787518884328491263-0009-mosaic-dump-anonymous-post-tiling-propagation-failed.txt
+1787523243289460853-0000-mosaic-dump-anonymous-post-deserialization.txt
+1787523243333475561-0000-mosaic-dump-anonymous-post-serialization.txt
+1787523243338252001-0000-mosaic-dump-anonymous-sparsecore-module-original.txt
+1787523243338252001-0001-mosaic-dump-anonymous-mosaic-module-original.txt
+1787523243338252001-0002-mosaic-dump-anonymous-post-mosaic-module-convert-integer-memrefs.txt
+1787523243338252001-0003-mosaic-dump-anonymous-post-mosaic-module-infer-memref-layout.txt
+1787523243338252001-0004-mosaic-dump-anonymous-post-simplify.txt
+1787523243338252001-0005-mosaic-dump-anonymous-post-mosaic-module-canonicalize-operations.txt
+1787523243338252001-0006-mosaic-dump-anonymous-post-mosaic-module-canonicalize-memory-space.txt
+1787523243338252001-0007-mosaic-dump-anonymous-post-tiling-propagation.txt
+1787523243338252001-0008-mosaic-dump-anonymous-post-mosaic-module-logical-to-physical-device-id.txt
+1787523243338252001-0009-mosaic-dump-anonymous-post-mosaic-module-lower-to-mlo.txt
+1787523243338252001-0010-mosaic-dump-anonymous-sparsecore-module-post-emit-scs.txt
+1787523243340410680-0000-mosaic-dump-anonymous-post-deserialization.txt
+1787523243383626146-0000-mosaic-dump-anonymous-post-serialization.txt
+1787523243386764116-0000-mosaic-dump-anonymous-sparsecore-module-original.txt
+1787523243386764116-0001-mosaic-dump-anonymous-mosaic-module-original.txt
+1787523243386764116-0002-mosaic-dump-anonymous-post-mosaic-module-convert-integer-memrefs.txt
+1787523243386764116-0003-mosaic-dump-anonymous-post-mosaic-module-infer-memref-layout.txt
+1787523243386764116-0004-mosaic-dump-anonymous-post-simplify.txt
+1787523243386764116-0005-mosaic-dump-anonymous-post-mosaic-module-canonicalize-operations.txt
+1787523243386764116-0006-mosaic-dump-anonymous-post-mosaic-module-canonicalize-memory-space.txt
+1787523243386764116-0007-mosaic-dump-anonymous-post-tiling-propagation.txt
+1787523243386764116-0008-mosaic-dump-anonymous-post-mosaic-module-logical-to-physical-device-id.txt
+1787523243386764116-0009-mosaic-dump-anonymous-post-mosaic-module-lower-to-mlo.txt
+1787523243386764116-0010-mosaic-dump-anonymous-sparsecore-module-post-emit-scs.txt
+1787523243388364353-0000-mosaic-dump-anonymous-post-deserialization.txt
+1787523243524165646-0000-mosaic-dump-anonymous-post-deserialization.txt
+1787523243532322910-0000-mosaic-dump-anonymous-post-deserialization.txt
+1787523243536904411-0001-mosaic-dump-anonymous-original.txt
+1787523243536904411-0002-mosaic-dump-anonymous-post-infer-memref-layout.txt
+1787523243536904411-0003-mosaic-dump-anonymous-post-infer-memref-layout-simplify.txt
+1787523243536904411-0004-mosaic-dump-anonymous-post-infer-memref-space.txt
+1787523243536904411-0005-mosaic-dump-anonymous-post-canonicalize-operations.txt
+1787523243536904411-0006-mosaic-dump-anonymous-post-pre-canon-optimization.txt
+1787523243536904411-0007-mosaic-dump-anonymous-post-canonicalize-mosaic.txt
+1787523243536904411-0008-mosaic-dump-anonymous-post-canonicalize-mosaic-simplify.txt
+1787523243536904411-0009-mosaic-dump-anonymous-post-tiling-propagation-failed.txt
 + exit=0
 
 + python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=30 --warmup=5
-WARNING 08-23 11:22:22 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 08-23 15:14:07 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-23 11:22:25 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-23 11:22:25 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-23 11:22:25 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-23 15:14:11 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-23 15:14:11 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-23 15:14:11 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 Traceback (most recent call last):
   File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/compiler.py", line 353, in backend_compile_and_load
     return backend.compile_and_load(
            ^^^^^^^^^^^^^^^^^^^^^^^^^
-jax.errors.JaxRuntimeError: INTERNAL: Mosaic failed to compile TPU kernel: E2003: CompileTimeMosaicUnprovenMemoryAccessAlignment: cannot statically prove that index in dimension 0 is a multiple of 16
-See https://openxla.org/xla/errors/error_2003 for more details.
+jax.errors.JaxRuntimeError: INTERNAL: Mosaic failed to compile TPU kernel: Offsets along tiled dimensions must be aligned to tiles. Failed to verify that the index at dimension 0 is divisible by the tile dimension 16. If it is, use tpu.assume_multiple to suppress this error.
 
-at location: loc("get:"("get/get"(callsite("_decode_moe_kernel.<locals>._process.<locals>._g.<locals>._do"("/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py":335:49 to 336:45) at "_decode_moe_kernel.<locals>._process.<locals>._g.<locals>._do"("/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py":335:49 to 336:45)))))
+at location: loc("dma_start:"("dma_start/dma_start"(callsite("_gather_rows_dma.<locals>._issue"("/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py":112:21 to :28) at "_gather_rows_dma.<locals>._issue"("/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py":112:21 to :28)))))
 
 The MLIR operation involved:
-  %248 = "tpu.vector_load"(%arg6, %247, %60) <{operandSegmentSizes = array<i32: 1, 2, 0>, strides = array<i32>}> : (memref<512x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, index, index) -> vector<1x4096xbf16>
-... additional diagnostics were skipped.
+  %332 = "tpu.memref_slice"(%330, %arg46, %65) <{operandSegmentSizes = array<i32: 1, 2, 0>}> : (memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, i32, i32) -> memref<1x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>
 
 Please report a bug at: https://github.com/jax-ml/jax/issues/new/choose
 
@@ -149,24 +219,22 @@ The above exception was the direct cause of the following exception:
 Traceback (most recent call last):
   File "<frozen runpy>", line 198, in _run_module_as_main
   File "<frozen runpy>", line 88, in _run_code
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 313, in <module>
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 318, in <module>
     main()
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 291, in main
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 296, in main
     outs = {name: np.asarray(fn(), np.float32)
                              ^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 226, in <lambda>
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 231, in <lambda>
     return lambda: jitted(tok_l, w1_l, w2_l, w_r)
                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py", line 335, in _decode_moe_kernel.<locals>._process.<locals>._g.<locals>._do
-    g_vmem[pl.ds(c, 1), :] = tokens_full_vmem[
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py", line 335, in get/get"(callsite("_decode_moe_kernel.<locals>._process.<locals>._g.<locals>._do
-    g_vmem[pl.ds(c, 1), :] = tokens_full_vmem[
-jax._src.pallas.mosaic.error_handling.MosaicError: INTERNAL: Mosaic failed to compile TPU kernel: E2003: CompileTimeMosaicUnprovenMemoryAccessAlignment: cannot statically prove that index in dimension 0 is a multiple of 16
-See https://openxla.org/xla/errors/error_2003 for more details.
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py", line 112, in _gather_rows_dma.<locals>._issue
+    row_sem).start()
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py", line 112, in dma_start/dma_start"(callsite("_gather_rows_dma.<locals>._issue
+    row_sem).start()
+jax._src.pallas.mosaic.error_handling.MosaicError: INTERNAL: Mosaic failed to compile TPU kernel: Offsets along tiled dimensions must be aligned to tiles. Failed to verify that the index at dimension 0 is divisible by the tile dimension 16. If it is, use tpu.assume_multiple to suppress this error.
 
 The MLIR operation involved:
-  %248 = "tpu.vector_load"(%arg6, %247, %60) <{operandSegmentSizes = array<i32: 1, 2, 0>, strides = array<i32>}> : (memref<512x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, index, index) -> vector<1x4096xbf16>
-... additional diagnostics were skipped.
+  %332 = "tpu.memref_slice"(%330, %arg46, %65) <{operandSegmentSizes = array<i32: 1, 2, 0>}> : (memref<32x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, i32, i32) -> memref<1x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>
 
 Please report a bug at: https://github.com/jax-ml/jax/issues/new/choose
 

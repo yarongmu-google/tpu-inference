@@ -1,0 +1,1103 @@
+module attributes {stable_mosaic.version = 15 : i64} {
+  func.func @_decode_moe_kernel(%arg0: i32, %arg1: memref<64x4096xbf16, #tpu.tiled<(8,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, %arg2: memref<512x4096xbf16, #tpu.tiled<(8,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, %arg3: memref<4x4096x256xbf16, #tpu.tiled<(8,128)(2,1),[1024,2,1]>, #tpu.memory_space<vmem>>, %arg4: memref<4x128x4096xbf16, #tpu.tiled<(8,128)(2,1),[512,32,1]>, #tpu.memory_space<vmem>>, %arg5: memref<512x4096xbf16, #tpu.tiled<(8,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, %arg6: memref<512x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>>, %arg7: memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>> {llo.passthrough_operand}, %arg8: memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>> {llo.passthrough_operand}, %arg9: memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>> {llo.passthrough_operand}, %arg10: memref<512x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>>, %arg11: memref<512x32xi32, #tpu.tiled<(8,128),[1,1]>, #tpu.memory_space<smem>>, %arg12: memref<1x512xi32, #tpu.tiled<(1,128),[4,1]>, #tpu.memory_space<smem>>, %arg13: memref<2x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>>, %arg14: memref<2x32x4096xf32, #tpu.tiled<(8,128),[128,32,1]>, #tpu.memory_space<vmem>>, %arg15: memref<32x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>>, %arg16: memref<512x10xi32, #tpu.tiled<(8,128),[1,1]>, #tpu.memory_space<vmem>>, %arg17: memref<512x10xf32, #tpu.tiled<(8,128),[1,1]>, #tpu.memory_space<vmem>>, %arg18: memref<512x32xi32, #tpu.tiled<(8,128),[1,1]>, #tpu.memory_space<vmem>>, %arg19: memref<32x512xf32, #tpu.tiled<(8,128),[4,1]>, #tpu.memory_space<vmem>>, %arg20: memref<1x512xi32, #tpu.tiled<(1,128),[4,1]>, #tpu.memory_space<vmem>>, %arg21: memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>> {llo.passthrough_operand}, %arg22: memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>> {llo.passthrough_operand}) attributes {dimension_semantics = [#tpu.dimension_semantics<arbitrary>], iteration_bounds = array<i64: 128>, scalar_prefetch = 0 : i64, scratch_operands = 17 : i64, tpu.core_type = #tpu.core_type<tc>, window_params = [{pipeline_mode = #tpu.pipeline_mode<synchronous>, transform_indices = @transform_0, window_bounds = array<i64: 64, 4096>}, {pipeline_mode = #tpu.pipeline_mode<synchronous>, transform_indices = @transform_1, window_bounds = array<i64: 512, 4096>}, {transform_indices = @transform_2, window_bounds = array<i64: 4, 4096, 256>}, {transform_indices = @transform_3, window_bounds = array<i64: 4, 128, 4096>}, {pipeline_mode = #tpu.pipeline_mode<synchronous>, transform_indices = @transform_4, window_bounds = array<i64: 512, 4096>}]} {
+    %c509_i32 = arith.constant 509 : i32
+    %cst = arith.constant dense<1.000000e+00> : vector<32x128xf32>
+    %cst_0 = arith.constant dense<0.000000e+00> : vector<32x256xf32>
+    %cst_1 = arith.constant dense<32> : vector<512xi32>
+    %cst_2 = arith.constant dense<384> : vector<512x512xi32>
+    %cst_3 = arith.constant dense<7> : vector<512x512xi32>
+    %cst_4 = arith.constant dense<448> : vector<512x512xi32>
+    %cst_5 = arith.constant dense<6> : vector<512x512xi32>
+    %cst_6 = arith.constant dense<480> : vector<512x512xi32>
+    %cst_7 = arith.constant dense<5> : vector<512x512xi32>
+    %cst_8 = arith.constant dense<496> : vector<512x512xi32>
+    %cst_9 = arith.constant dense<504> : vector<512x512xi32>
+    %cst_10 = arith.constant dense<3> : vector<512x512xi32>
+    %cst_11 = arith.constant dense<508> : vector<512x512xi32>
+    %cst_12 = arith.constant dense<510> : vector<512x512xi32>
+    %cst_13 = arith.constant dense<32767> : vector<512x512xi32>
+    %cst_14 = arith.constant dense<511> : vector<512x512xi32>
+    %cst_15 = arith.constant dense<15> : vector<512x512xi32>
+    %cst_16 = arith.constant dense<256> : vector<512x512xi32>
+    %cst_17 = arith.constant dense<128> : vector<512x512xi32>
+    %cst_18 = arith.constant dense<64> : vector<512x512xi32>
+    %cst_19 = arith.constant dense<32> : vector<512x512xi32>
+    %cst_20 = arith.constant dense<16> : vector<512x512xi32>
+    %cst_21 = arith.constant dense<8> : vector<512x512xi32>
+    %cst_22 = arith.constant dense<4> : vector<512x512xi32>
+    %cst_23 = arith.constant dense<2> : vector<512x512xi32>
+    %cst_24 = arith.constant dense<0> : vector<512x512xi32>
+    %cst_25 = arith.constant dense<1> : vector<512x512xi32>
+    %cst_26 = arith.constant dense<0.000000e+00> : vector<512x512xf32>
+    %cst_27 = arith.constant dense<0.000000e+00> : vector<512x4096xf32>
+    %cst_28 = arith.constant dense<1.44269502> : vector<64x10xf32>
+    %cst_29 = arith.constant dense<0xFF800000> : vector<512x64xf32>
+    %cst_30 = arith.constant dense<0> : vector<512x64xi32>
+    %c127_i32 = arith.constant 127 : i32
+    %c3 = arith.constant 3 : index
+    %c2 = arith.constant 2 : index
+    %c1 = arith.constant 1 : index
+    %cst_31 = arith.constant dense<0.000000e+00> : vector<32x4096xf32>
+    %c512_i32 = arith.constant 512 : i32
+    %c384_i32 = arith.constant 384 : i32
+    %c448_i32 = arith.constant 448 : i32
+    %c480_i32 = arith.constant 480 : i32
+    %c496_i32 = arith.constant 496 : i32
+    %c504_i32 = arith.constant 504 : i32
+    %c508_i32 = arith.constant 508 : i32
+    %c510_i32 = arith.constant 510 : i32
+    %c511_i32 = arith.constant 511 : i32
+    %c256_i32 = arith.constant 256 : i32
+    %c128_i32 = arith.constant 128 : i32
+    %c32_i32 = arith.constant 32 : i32
+    %c16_i32 = arith.constant 16 : i32
+    %c7_i32 = arith.constant 7 : i32
+    %c6_i32 = arith.constant 6 : i32
+    %c5_i32 = arith.constant 5 : i32
+    %c4_i32 = arith.constant 4 : i32
+    %c3_i32 = arith.constant 3 : i32
+    %c2_i32 = arith.constant 2 : i32
+    %cst_32 = arith.constant dense<0.000000e+00> : vector<64xf32>
+    %cst_33 = arith.constant dense<-2147483648> : vector<64xi32>
+    %cst_34 = arith.constant dense<0xFF800000> : vector<64xf32>
+    %cst_35 = arith.constant dense<0.000000e+00> : vector<512x64xf32>
+    %c0 = arith.constant 0 : index
+    %c64_i32 = arith.constant 64 : i32
+    %c1_i32 = arith.constant 1 : i32
+    %c8_i32 = arith.constant 8 : i32
+    %c0_i32 = arith.constant 0 : i32
+    %0 = tpu.erase_memref_layout %arg1 : memref<64x4096xbf16, #tpu.tiled<(8,128)(2,1),[32,1]>, #tpu.memory_space<vmem>> -> memref<64x4096xbf16, #tpu.memory_space<vmem>>
+    %1 = tpu.erase_memref_layout %arg2 : memref<512x4096xbf16, #tpu.tiled<(8,128)(2,1),[32,1]>, #tpu.memory_space<vmem>> -> memref<512x4096xbf16, #tpu.memory_space<vmem>>
+    %2 = tpu.erase_memref_layout %arg3 : memref<4x4096x256xbf16, #tpu.tiled<(8,128)(2,1),[1024,2,1]>, #tpu.memory_space<vmem>> -> memref<4x4096x256xbf16, #tpu.memory_space<vmem>>
+    %3 = tpu.erase_memref_layout %arg4 : memref<4x128x4096xbf16, #tpu.tiled<(8,128)(2,1),[512,32,1]>, #tpu.memory_space<vmem>> -> memref<4x128x4096xbf16, #tpu.memory_space<vmem>>
+    %4 = tpu.erase_memref_layout %arg5 : memref<512x4096xbf16, #tpu.tiled<(8,128)(2,1),[32,1]>, #tpu.memory_space<vmem>> -> memref<512x4096xbf16, #tpu.memory_space<vmem>>
+    %5 = tpu.erase_memref_layout %arg6 : memref<512x4096xbf16, #tpu.tiled<(16,128)(2,1),[32,1]>, #tpu.memory_space<vmem>> -> memref<512x4096xbf16, #tpu.memory_space<vmem>>
+    %6 = tpu.erase_memref_layout %arg7 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>> -> memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>
+    %7 = tpu.erase_memref_layout %arg8 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>> -> memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>
+    %8 = tpu.erase_memref_layout %arg9 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>> -> memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>
+    %9 = tpu.erase_memref_layout %arg10 : memref<512x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>> -> memref<512x4096xf32, #tpu.memory_space<vmem>>
+    %10 = tpu.reinterpret_cast %arg11 : memref<512x32xi32, #tpu.tiled<(8,128),[1,1]>, #tpu.memory_space<smem>> -> memref<512x32xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<smem>>
+    %11 = tpu.erase_memref_layout %10 : memref<512x32xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<smem>> -> memref<512x32xi32, #tpu.memory_space<smem>>
+    %12 = tpu.erase_memref_layout %arg12 : memref<1x512xi32, #tpu.tiled<(1,128),[4,1]>, #tpu.memory_space<smem>> -> memref<1x512xi32, #tpu.memory_space<smem>>
+    %13 = tpu.erase_memref_layout %arg13 : memref<2x32x4096xbf16, #tpu.tiled<(16,128)(2,1),[64,32,1]>, #tpu.memory_space<vmem>> -> memref<2x32x4096xbf16, #tpu.memory_space<vmem>>
+    %14 = tpu.erase_memref_layout %arg14 : memref<2x32x4096xf32, #tpu.tiled<(8,128),[128,32,1]>, #tpu.memory_space<vmem>> -> memref<2x32x4096xf32, #tpu.memory_space<vmem>>
+    %15 = tpu.erase_memref_layout %arg15 : memref<32x4096xf32, #tpu.tiled<(8,128),[32,1]>, #tpu.memory_space<vmem>> -> memref<32x4096xf32, #tpu.memory_space<vmem>>
+    %16 = tpu.reinterpret_cast %arg16 : memref<512x10xi32, #tpu.tiled<(8,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<512x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>
+    %17 = tpu.erase_memref_layout %16 : memref<512x10xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<512x10xi32, #tpu.memory_space<vmem>>
+    %18 = tpu.reinterpret_cast %arg17 : memref<512x10xf32, #tpu.tiled<(8,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<512x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>
+    %19 = tpu.erase_memref_layout %18 : memref<512x10xf32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<512x10xf32, #tpu.memory_space<vmem>>
+    %20 = tpu.reinterpret_cast %arg18 : memref<512x32xi32, #tpu.tiled<(8,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<512x32xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>>
+    %21 = tpu.erase_memref_layout %20 : memref<512x32xi32, #tpu.tiled<(1,128),[1,1]>, #tpu.memory_space<vmem>> -> memref<512x32xi32, #tpu.memory_space<vmem>>
+    %22 = tpu.erase_memref_layout %arg19 : memref<32x512xf32, #tpu.tiled<(8,128),[4,1]>, #tpu.memory_space<vmem>> -> memref<32x512xf32, #tpu.memory_space<vmem>>
+    %23 = tpu.erase_memref_layout %arg20 : memref<1x512xi32, #tpu.tiled<(1,128),[4,1]>, #tpu.memory_space<vmem>> -> memref<1x512xi32, #tpu.memory_space<vmem>>
+    %24 = tpu.erase_memref_layout %arg21 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>> -> memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>
+    %25 = tpu.erase_memref_layout %arg22 : memref<!tpu.dma_semaphore, #tpu.tiled<,[]>, #tpu.memory_space<semaphore_mem>> -> memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>
+    %26 = arith.cmpi eq, %arg0, %c0_i32 : i32
+    scf.if %26 {
+      %44 = tpu.device_id : i32
+      %45 = arith.remsi %44, %c8_i32 : i32
+      %46 = arith.muli %45, %c64_i32 : i32
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_routing"}> : () -> ()
+      %47 = tpu.vector_load %1[%c0, %c0] {strides = array<i32>} : memref<512x4096xbf16, #tpu.memory_space<vmem>>, vector<512x4096xbf16>, 
+      %48 = tpu.vector_load %0[%c0, %c0] {strides = array<i32>} : memref<64x4096xbf16, #tpu.memory_space<vmem>>, vector<64x4096xbf16>, 
+      %49 = tpu.matmul %47, %48, %cst_35 {dimension_numbers = #tpu.dot_dimension_numbers<[1], [1], [0], [0], [0, 0, 1, 0], [], []>, transpose_lhs_hint = false} : vector<512x4096xbf16>, vector<64x4096xbf16>, vector<512x64xf32> -> vector<512x64xf32>
+      %50 = tpu.iota {dimensions = array<i32: 0>} : vector<512x64xi32>
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_topk0"}> : () -> ()
+      %51 = vector.multi_reduction <maximumf>, %49, %cst_34 [0] : vector<512x64xf32> to vector<64xf32>
+      %52 = vector.broadcast %51 : vector<64xf32> to vector<512x64xf32>
+      %53 = arith.cmpf oeq, %49, %52 : vector<512x64xf32>
+      %54 = arith.select %53, %50, %cst_30 : vector<512x64xi1>, vector<512x64xi32>
+      %55 = vector.multi_reduction <maxsi>, %54, %cst_33 [0] : vector<512x64xi32> to vector<64xi32>
+      %56 = vector.broadcast %55 : vector<64xi32> to vector<512x64xi32>
+      %57 = arith.cmpi eq, %50, %56 : vector<512x64xi32>
+      %58 = arith.select %57, %cst_29, %49 : vector<512x64xi1>, vector<512x64xf32>
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_topk1"}> : () -> ()
+      %59 = vector.multi_reduction <maximumf>, %58, %cst_34 [0] : vector<512x64xf32> to vector<64xf32>
+      %60 = vector.broadcast %59 : vector<64xf32> to vector<512x64xf32>
+      %61 = arith.cmpf oeq, %58, %60 : vector<512x64xf32>
+      %62 = arith.select %61, %50, %cst_30 : vector<512x64xi1>, vector<512x64xi32>
+      %63 = vector.multi_reduction <maxsi>, %62, %cst_33 [0] : vector<512x64xi32> to vector<64xi32>
+      %64 = vector.broadcast %63 : vector<64xi32> to vector<512x64xi32>
+      %65 = arith.cmpi eq, %50, %64 : vector<512x64xi32>
+      %66 = arith.select %65, %cst_29, %58 : vector<512x64xi1>, vector<512x64xf32>
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_topk2"}> : () -> ()
+      %67 = vector.multi_reduction <maximumf>, %66, %cst_34 [0] : vector<512x64xf32> to vector<64xf32>
+      %68 = vector.broadcast %67 : vector<64xf32> to vector<512x64xf32>
+      %69 = arith.cmpf oeq, %66, %68 : vector<512x64xf32>
+      %70 = arith.select %69, %50, %cst_30 : vector<512x64xi1>, vector<512x64xi32>
+      %71 = vector.multi_reduction <maxsi>, %70, %cst_33 [0] : vector<512x64xi32> to vector<64xi32>
+      %72 = vector.broadcast %71 : vector<64xi32> to vector<512x64xi32>
+      %73 = arith.cmpi eq, %50, %72 : vector<512x64xi32>
+      %74 = arith.select %73, %cst_29, %66 : vector<512x64xi1>, vector<512x64xf32>
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_topk3"}> : () -> ()
+      %75 = vector.multi_reduction <maximumf>, %74, %cst_34 [0] : vector<512x64xf32> to vector<64xf32>
+      %76 = vector.broadcast %75 : vector<64xf32> to vector<512x64xf32>
+      %77 = arith.cmpf oeq, %74, %76 : vector<512x64xf32>
+      %78 = arith.select %77, %50, %cst_30 : vector<512x64xi1>, vector<512x64xi32>
+      %79 = vector.multi_reduction <maxsi>, %78, %cst_33 [0] : vector<512x64xi32> to vector<64xi32>
+      %80 = vector.broadcast %79 : vector<64xi32> to vector<512x64xi32>
+      %81 = arith.cmpi eq, %50, %80 : vector<512x64xi32>
+      %82 = arith.select %81, %cst_29, %74 : vector<512x64xi1>, vector<512x64xf32>
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_topk4"}> : () -> ()
+      %83 = vector.multi_reduction <maximumf>, %82, %cst_34 [0] : vector<512x64xf32> to vector<64xf32>
+      %84 = vector.broadcast %83 : vector<64xf32> to vector<512x64xf32>
+      %85 = arith.cmpf oeq, %82, %84 : vector<512x64xf32>
+      %86 = arith.select %85, %50, %cst_30 : vector<512x64xi1>, vector<512x64xi32>
+      %87 = vector.multi_reduction <maxsi>, %86, %cst_33 [0] : vector<512x64xi32> to vector<64xi32>
+      %88 = vector.broadcast %87 : vector<64xi32> to vector<512x64xi32>
+      %89 = arith.cmpi eq, %50, %88 : vector<512x64xi32>
+      %90 = arith.select %89, %cst_29, %82 : vector<512x64xi1>, vector<512x64xf32>
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_topk5"}> : () -> ()
+      %91 = vector.multi_reduction <maximumf>, %90, %cst_34 [0] : vector<512x64xf32> to vector<64xf32>
+      %92 = vector.broadcast %91 : vector<64xf32> to vector<512x64xf32>
+      %93 = arith.cmpf oeq, %90, %92 : vector<512x64xf32>
+      %94 = arith.select %93, %50, %cst_30 : vector<512x64xi1>, vector<512x64xi32>
+      %95 = vector.multi_reduction <maxsi>, %94, %cst_33 [0] : vector<512x64xi32> to vector<64xi32>
+      %96 = vector.broadcast %95 : vector<64xi32> to vector<512x64xi32>
+      %97 = arith.cmpi eq, %50, %96 : vector<512x64xi32>
+      %98 = arith.select %97, %cst_29, %90 : vector<512x64xi1>, vector<512x64xf32>
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_topk6"}> : () -> ()
+      %99 = vector.multi_reduction <maximumf>, %98, %cst_34 [0] : vector<512x64xf32> to vector<64xf32>
+      %100 = vector.broadcast %99 : vector<64xf32> to vector<512x64xf32>
+      %101 = arith.cmpf oeq, %98, %100 : vector<512x64xf32>
+      %102 = arith.select %101, %50, %cst_30 : vector<512x64xi1>, vector<512x64xi32>
+      %103 = vector.multi_reduction <maxsi>, %102, %cst_33 [0] : vector<512x64xi32> to vector<64xi32>
+      %104 = vector.broadcast %103 : vector<64xi32> to vector<512x64xi32>
+      %105 = arith.cmpi eq, %50, %104 : vector<512x64xi32>
+      %106 = arith.select %105, %cst_29, %98 : vector<512x64xi1>, vector<512x64xf32>
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_topk7"}> : () -> ()
+      %107 = vector.multi_reduction <maximumf>, %106, %cst_34 [0] : vector<512x64xf32> to vector<64xf32>
+      %108 = vector.broadcast %107 : vector<64xf32> to vector<512x64xf32>
+      %109 = arith.cmpf oeq, %106, %108 : vector<512x64xf32>
+      %110 = arith.select %109, %50, %cst_30 : vector<512x64xi1>, vector<512x64xi32>
+      %111 = vector.multi_reduction <maxsi>, %110, %cst_33 [0] : vector<512x64xi32> to vector<64xi32>
+      %112 = vector.broadcast %111 : vector<64xi32> to vector<512x64xi32>
+      %113 = arith.cmpi eq, %50, %112 : vector<512x64xi32>
+      %114 = arith.select %113, %cst_29, %106 : vector<512x64xi1>, vector<512x64xf32>
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_topk8"}> : () -> ()
+      %115 = vector.multi_reduction <maximumf>, %114, %cst_34 [0] : vector<512x64xf32> to vector<64xf32>
+      %116 = vector.broadcast %115 : vector<64xf32> to vector<512x64xf32>
+      %117 = arith.cmpf oeq, %114, %116 : vector<512x64xf32>
+      %118 = arith.select %117, %50, %cst_30 : vector<512x64xi1>, vector<512x64xi32>
+      %119 = vector.multi_reduction <maxsi>, %118, %cst_33 [0] : vector<512x64xi32> to vector<64xi32>
+      %120 = vector.broadcast %119 : vector<64xi32> to vector<512x64xi32>
+      %121 = arith.cmpi eq, %50, %120 : vector<512x64xi32>
+      %122 = arith.select %121, %cst_29, %114 : vector<512x64xi1>, vector<512x64xf32>
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_topk9"}> : () -> ()
+      %123 = vector.multi_reduction <maximumf>, %122, %cst_34 [0] : vector<512x64xf32> to vector<64xf32>
+      %124 = vector.broadcast %123 : vector<64xf32> to vector<512x64xf32>
+      %125 = arith.cmpf oeq, %122, %124 : vector<512x64xf32>
+      %126 = arith.select %125, %50, %cst_30 : vector<512x64xi1>, vector<512x64xi32>
+      %127 = vector.multi_reduction <maxsi>, %126, %cst_33 [0] : vector<512x64xi32> to vector<64xi32>
+      "tpu.trace_stop"() : () -> ()
+      %128 = tpu.reshape %51 : vector<64xf32> -> vector<64x1xf32>
+      %129 = tpu.reshape %59 : vector<64xf32> -> vector<64x1xf32>
+      %130 = tpu.reshape %67 : vector<64xf32> -> vector<64x1xf32>
+      %131 = tpu.reshape %75 : vector<64xf32> -> vector<64x1xf32>
+      %132 = tpu.reshape %83 : vector<64xf32> -> vector<64x1xf32>
+      %133 = tpu.reshape %91 : vector<64xf32> -> vector<64x1xf32>
+      %134 = tpu.reshape %99 : vector<64xf32> -> vector<64x1xf32>
+      %135 = tpu.reshape %107 : vector<64xf32> -> vector<64x1xf32>
+      %136 = tpu.reshape %115 : vector<64xf32> -> vector<64x1xf32>
+      %137 = tpu.reshape %123 : vector<64xf32> -> vector<64x1xf32>
+      %138 = tpu.concatenate %128, %129, %130, %131, %132, %133, %134, %135, %136, %137 in 1 : vector<64x1xf32>, vector<64x1xf32>, vector<64x1xf32>, vector<64x1xf32>, vector<64x1xf32>, vector<64x1xf32>, vector<64x1xf32>, vector<64x1xf32>, vector<64x1xf32>, vector<64x1xf32> -> vector<64x10xf32>
+      %139 = tpu.reshape %55 : vector<64xi32> -> vector<64x1xi32>
+      %140 = tpu.reshape %63 : vector<64xi32> -> vector<64x1xi32>
+      %141 = tpu.reshape %71 : vector<64xi32> -> vector<64x1xi32>
+      %142 = tpu.reshape %79 : vector<64xi32> -> vector<64x1xi32>
+      %143 = tpu.reshape %87 : vector<64xi32> -> vector<64x1xi32>
+      %144 = tpu.reshape %95 : vector<64xi32> -> vector<64x1xi32>
+      %145 = tpu.reshape %103 : vector<64xi32> -> vector<64x1xi32>
+      %146 = tpu.reshape %111 : vector<64xi32> -> vector<64x1xi32>
+      %147 = tpu.reshape %119 : vector<64xi32> -> vector<64x1xi32>
+      %148 = tpu.reshape %127 : vector<64xi32> -> vector<64x1xi32>
+      %149 = tpu.concatenate %139, %140, %141, %142, %143, %144, %145, %146, %147, %148 in 1 : vector<64x1xi32>, vector<64x1xi32>, vector<64x1xi32>, vector<64x1xi32>, vector<64x1xi32>, vector<64x1xi32>, vector<64x1xi32>, vector<64x1xi32>, vector<64x1xi32>, vector<64x1xi32> -> vector<64x10xi32>
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_topk_softmax"}> : () -> ()
+      %150 = vector.extract_strided_slice %138 {offsets = [0, 0], sizes = [64, 1], strides = [1, 1]} : vector<64x10xf32> to vector<64x1xf32>
+      %151 = vector.broadcast %150 : vector<64x1xf32> to vector<64x10xf32>
+      %152 = arith.subf %138, %151 : vector<64x10xf32>
+      %153 = arith.mulf %152, %cst_28 : vector<64x10xf32>
+      %154 = math.exp2 %153 : vector<64x10xf32>
+      %155 = vector.multi_reduction <add>, %154, %cst_32 [1] : vector<64x10xf32> to vector<64xf32>
+      %156 = tpu.reshape %155 : vector<64xf32> -> vector<64x1xf32>
+      %157 = vector.broadcast %156 : vector<64x1xf32> to vector<64x10xf32>
+      %158 = arith.divf %154, %157 : vector<64x10xf32>
+      "tpu.trace_stop"() : () -> ()
+      %159 = arith.index_cast %46 : i32 to index
+      tpu.vector_store %17[%159, %c0], %149 {strides = array<i32>} : memref<512x10xi32, #tpu.memory_space<vmem>>, vector<64x10xi32>, 
+      tpu.vector_store %19[%159, %c0], %158 {strides = array<i32>} : memref<512x10xf32, #tpu.memory_space<vmem>>, vector<64x10xf32>, 
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_ag_local"}> : () -> ()
+      %160 = tpu.vector_load %0[%c0, %c0] {strides = array<i32>} : memref<64x4096xbf16, #tpu.memory_space<vmem>>, vector<64x4096xbf16>, 
+      tpu.vector_store %5[%159, %c0], %160 {strides = array<i32>} : memref<512x4096xbf16, #tpu.memory_space<vmem>>, vector<64x4096xbf16>, 
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_ag_barrier"}> : () -> ()
+      %161 = tpu.sem_barrier : memref<!tpu.semaphore, #tpu.memory_space<semaphore_mem>>
+      tpu.sem_signal %161, %c1_i32 device_id %c0_i32 : memref<!tpu.semaphore, #tpu.memory_space<semaphore_mem>>
+      tpu.sem_signal %161, %c1_i32 device_id %c1_i32 : memref<!tpu.semaphore, #tpu.memory_space<semaphore_mem>>
+      tpu.sem_signal %161, %c1_i32 device_id %c2_i32 : memref<!tpu.semaphore, #tpu.memory_space<semaphore_mem>>
+      tpu.sem_signal %161, %c1_i32 device_id %c3_i32 : memref<!tpu.semaphore, #tpu.memory_space<semaphore_mem>>
+      tpu.sem_signal %161, %c1_i32 device_id %c4_i32 : memref<!tpu.semaphore, #tpu.memory_space<semaphore_mem>>
+      tpu.sem_signal %161, %c1_i32 device_id %c5_i32 : memref<!tpu.semaphore, #tpu.memory_space<semaphore_mem>>
+      tpu.sem_signal %161, %c1_i32 device_id %c6_i32 : memref<!tpu.semaphore, #tpu.memory_space<semaphore_mem>>
+      tpu.sem_signal %161, %c1_i32 device_id %c7_i32 : memref<!tpu.semaphore, #tpu.memory_space<semaphore_mem>>
+      tpu.sem_wait %161, %c8_i32 : memref<!tpu.semaphore, #tpu.memory_space<semaphore_mem>>
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_ag_remote"}> : () -> ()
+      %162 = arith.cmpi ne, %45, %c0_i32 : i32
+      scf.if %162 {
+        %535 = tpu.memref_slice %5[%46, %c0_i32] : memref<512x4096xbf16, #tpu.memory_space<vmem>> -> memref<64x4096xbf16, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%0 : memref<64x4096xbf16, #tpu.memory_space<vmem>>) target(%535 : memref<64x4096xbf16, #tpu.memory_space<vmem>>) source_semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) target_semaphore(%7 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) device_id(%c0_i32)
+        %536 = tpu.memref_slice %17[%46, %c0_i32] : memref<512x10xi32, #tpu.memory_space<vmem>> -> memref<64x10xi32, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%536 : memref<64x10xi32, #tpu.memory_space<vmem>>) target(%536 : memref<64x10xi32, #tpu.memory_space<vmem>>) source_semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) target_semaphore(%8 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) device_id(%c0_i32)
+        %537 = tpu.memref_slice %19[%46, %c0_i32] : memref<512x10xf32, #tpu.memory_space<vmem>> -> memref<64x10xf32, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%537 : memref<64x10xf32, #tpu.memory_space<vmem>>) target(%537 : memref<64x10xf32, #tpu.memory_space<vmem>>) source_semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) target_semaphore(%8 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) device_id(%c0_i32)
+      }
+      %163 = arith.cmpi ne, %45, %c1_i32 : i32
+      scf.if %163 {
+        %535 = tpu.memref_slice %5[%46, %c0_i32] : memref<512x4096xbf16, #tpu.memory_space<vmem>> -> memref<64x4096xbf16, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%0 : memref<64x4096xbf16, #tpu.memory_space<vmem>>) target(%535 : memref<64x4096xbf16, #tpu.memory_space<vmem>>) source_semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) target_semaphore(%7 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) device_id(%c1_i32)
+        %536 = tpu.memref_slice %17[%46, %c0_i32] : memref<512x10xi32, #tpu.memory_space<vmem>> -> memref<64x10xi32, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%536 : memref<64x10xi32, #tpu.memory_space<vmem>>) target(%536 : memref<64x10xi32, #tpu.memory_space<vmem>>) source_semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) target_semaphore(%8 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) device_id(%c1_i32)
+        %537 = tpu.memref_slice %19[%46, %c0_i32] : memref<512x10xf32, #tpu.memory_space<vmem>> -> memref<64x10xf32, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%537 : memref<64x10xf32, #tpu.memory_space<vmem>>) target(%537 : memref<64x10xf32, #tpu.memory_space<vmem>>) source_semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) target_semaphore(%8 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) device_id(%c1_i32)
+      }
+      %164 = arith.cmpi ne, %45, %c2_i32 : i32
+      scf.if %164 {
+        %535 = tpu.memref_slice %5[%46, %c0_i32] : memref<512x4096xbf16, #tpu.memory_space<vmem>> -> memref<64x4096xbf16, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%0 : memref<64x4096xbf16, #tpu.memory_space<vmem>>) target(%535 : memref<64x4096xbf16, #tpu.memory_space<vmem>>) source_semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) target_semaphore(%7 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) device_id(%c2_i32)
+        %536 = tpu.memref_slice %17[%46, %c0_i32] : memref<512x10xi32, #tpu.memory_space<vmem>> -> memref<64x10xi32, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%536 : memref<64x10xi32, #tpu.memory_space<vmem>>) target(%536 : memref<64x10xi32, #tpu.memory_space<vmem>>) source_semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) target_semaphore(%8 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) device_id(%c2_i32)
+        %537 = tpu.memref_slice %19[%46, %c0_i32] : memref<512x10xf32, #tpu.memory_space<vmem>> -> memref<64x10xf32, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%537 : memref<64x10xf32, #tpu.memory_space<vmem>>) target(%537 : memref<64x10xf32, #tpu.memory_space<vmem>>) source_semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) target_semaphore(%8 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) device_id(%c2_i32)
+      }
+      %165 = arith.cmpi ne, %45, %c3_i32 : i32
+      scf.if %165 {
+        %535 = tpu.memref_slice %5[%46, %c0_i32] : memref<512x4096xbf16, #tpu.memory_space<vmem>> -> memref<64x4096xbf16, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%0 : memref<64x4096xbf16, #tpu.memory_space<vmem>>) target(%535 : memref<64x4096xbf16, #tpu.memory_space<vmem>>) source_semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) target_semaphore(%7 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) device_id(%c3_i32)
+        %536 = tpu.memref_slice %17[%46, %c0_i32] : memref<512x10xi32, #tpu.memory_space<vmem>> -> memref<64x10xi32, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%536 : memref<64x10xi32, #tpu.memory_space<vmem>>) target(%536 : memref<64x10xi32, #tpu.memory_space<vmem>>) source_semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) target_semaphore(%8 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) device_id(%c3_i32)
+        %537 = tpu.memref_slice %19[%46, %c0_i32] : memref<512x10xf32, #tpu.memory_space<vmem>> -> memref<64x10xf32, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%537 : memref<64x10xf32, #tpu.memory_space<vmem>>) target(%537 : memref<64x10xf32, #tpu.memory_space<vmem>>) source_semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) target_semaphore(%8 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) device_id(%c3_i32)
+      }
+      %166 = arith.cmpi ne, %45, %c4_i32 : i32
+      scf.if %166 {
+        %535 = tpu.memref_slice %5[%46, %c0_i32] : memref<512x4096xbf16, #tpu.memory_space<vmem>> -> memref<64x4096xbf16, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%0 : memref<64x4096xbf16, #tpu.memory_space<vmem>>) target(%535 : memref<64x4096xbf16, #tpu.memory_space<vmem>>) source_semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) target_semaphore(%7 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) device_id(%c4_i32)
+        %536 = tpu.memref_slice %17[%46, %c0_i32] : memref<512x10xi32, #tpu.memory_space<vmem>> -> memref<64x10xi32, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%536 : memref<64x10xi32, #tpu.memory_space<vmem>>) target(%536 : memref<64x10xi32, #tpu.memory_space<vmem>>) source_semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) target_semaphore(%8 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) device_id(%c4_i32)
+        %537 = tpu.memref_slice %19[%46, %c0_i32] : memref<512x10xf32, #tpu.memory_space<vmem>> -> memref<64x10xf32, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%537 : memref<64x10xf32, #tpu.memory_space<vmem>>) target(%537 : memref<64x10xf32, #tpu.memory_space<vmem>>) source_semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) target_semaphore(%8 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) device_id(%c4_i32)
+      }
+      %167 = arith.cmpi ne, %45, %c5_i32 : i32
+      scf.if %167 {
+        %535 = tpu.memref_slice %5[%46, %c0_i32] : memref<512x4096xbf16, #tpu.memory_space<vmem>> -> memref<64x4096xbf16, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%0 : memref<64x4096xbf16, #tpu.memory_space<vmem>>) target(%535 : memref<64x4096xbf16, #tpu.memory_space<vmem>>) source_semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) target_semaphore(%7 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) device_id(%c5_i32)
+        %536 = tpu.memref_slice %17[%46, %c0_i32] : memref<512x10xi32, #tpu.memory_space<vmem>> -> memref<64x10xi32, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%536 : memref<64x10xi32, #tpu.memory_space<vmem>>) target(%536 : memref<64x10xi32, #tpu.memory_space<vmem>>) source_semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) target_semaphore(%8 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) device_id(%c5_i32)
+        %537 = tpu.memref_slice %19[%46, %c0_i32] : memref<512x10xf32, #tpu.memory_space<vmem>> -> memref<64x10xf32, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%537 : memref<64x10xf32, #tpu.memory_space<vmem>>) target(%537 : memref<64x10xf32, #tpu.memory_space<vmem>>) source_semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) target_semaphore(%8 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) device_id(%c5_i32)
+      }
+      %168 = arith.cmpi ne, %45, %c6_i32 : i32
+      scf.if %168 {
+        %535 = tpu.memref_slice %5[%46, %c0_i32] : memref<512x4096xbf16, #tpu.memory_space<vmem>> -> memref<64x4096xbf16, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%0 : memref<64x4096xbf16, #tpu.memory_space<vmem>>) target(%535 : memref<64x4096xbf16, #tpu.memory_space<vmem>>) source_semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) target_semaphore(%7 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) device_id(%c6_i32)
+        %536 = tpu.memref_slice %17[%46, %c0_i32] : memref<512x10xi32, #tpu.memory_space<vmem>> -> memref<64x10xi32, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%536 : memref<64x10xi32, #tpu.memory_space<vmem>>) target(%536 : memref<64x10xi32, #tpu.memory_space<vmem>>) source_semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) target_semaphore(%8 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) device_id(%c6_i32)
+        %537 = tpu.memref_slice %19[%46, %c0_i32] : memref<512x10xf32, #tpu.memory_space<vmem>> -> memref<64x10xf32, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%537 : memref<64x10xf32, #tpu.memory_space<vmem>>) target(%537 : memref<64x10xf32, #tpu.memory_space<vmem>>) source_semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) target_semaphore(%8 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) device_id(%c6_i32)
+      }
+      %169 = arith.cmpi ne, %45, %c7_i32 : i32
+      scf.if %169 {
+        %535 = tpu.memref_slice %5[%46, %c0_i32] : memref<512x4096xbf16, #tpu.memory_space<vmem>> -> memref<64x4096xbf16, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%0 : memref<64x4096xbf16, #tpu.memory_space<vmem>>) target(%535 : memref<64x4096xbf16, #tpu.memory_space<vmem>>) source_semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) target_semaphore(%7 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) device_id(%c7_i32)
+        %536 = tpu.memref_slice %17[%46, %c0_i32] : memref<512x10xi32, #tpu.memory_space<vmem>> -> memref<64x10xi32, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%536 : memref<64x10xi32, #tpu.memory_space<vmem>>) target(%536 : memref<64x10xi32, #tpu.memory_space<vmem>>) source_semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) target_semaphore(%8 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) device_id(%c7_i32)
+        %537 = tpu.memref_slice %19[%46, %c0_i32] : memref<512x10xf32, #tpu.memory_space<vmem>> -> memref<64x10xf32, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%537 : memref<64x10xf32, #tpu.memory_space<vmem>>) target(%537 : memref<64x10xf32, #tpu.memory_space<vmem>>) source_semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) target_semaphore(%8 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) device_id(%c7_i32)
+      }
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_ag_drain_meta"}> : () -> ()
+      %170 = tpu.memref_slice %17[%c0_i32, %c0_i32] : memref<512x10xi32, #tpu.memory_space<vmem>> -> memref<448x10xi32, #tpu.memory_space<vmem>>
+      tpu.wait_dma2 semaphore(%8 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) src(%170 : memref<448x10xi32, #tpu.memory_space<vmem>>) dst(%170 : memref<448x10xi32, #tpu.memory_space<vmem>>)
+      %171 = tpu.memref_slice %19[%c0_i32, %c0_i32] : memref<512x10xf32, #tpu.memory_space<vmem>> -> memref<448x10xf32, #tpu.memory_space<vmem>>
+      tpu.wait_dma2 semaphore(%8 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) src(%171 : memref<448x10xf32, #tpu.memory_space<vmem>>) dst(%171 : memref<448x10xf32, #tpu.memory_space<vmem>>)
+      "tpu.trace_stop"() : () -> ()
+      tpu.vector_store %9[%c0, %c0], %cst_27 {strides = array<i32>} : memref<512x4096xf32, #tpu.memory_space<vmem>>, vector<512x4096xf32>, 
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_lists"}> : () -> ()
+      %172 = tpu.vector_load %17[%c0, %c0] {strides = array<i32>} : memref<512x10xi32, #tpu.memory_space<vmem>>, vector<512x10xi32>, 
+      %173 = tpu.vector_load %19[%c0, %c0] {strides = array<i32>} : memref<512x10xf32, #tpu.memory_space<vmem>>, vector<512x10xf32>, 
+      %174 = tpu.iota {dimensions = array<i32: 1>} : vector<512x512xi32>
+      %175 = tpu.iota {dimensions = array<i32: 0>} : vector<512x512xi32>
+      %176 = vector.extract_strided_slice %172 {offsets = [0, 0], sizes = [512, 1], strides = [1, 1]} : vector<512x10xi32> to vector<512x1xi32>
+      %177 = tpu.reshape %176 : vector<512x1xi32> -> vector<512xi32>
+      %178 = vector.broadcast %177 : vector<512xi32> to vector<512x512xi32>
+      %179 = arith.cmpi eq, %175, %178 : vector<512x512xi32>
+      %180 = arith.extui %179 : vector<512x512xi1> to vector<512x512xi32>
+      %181 = vector.extract_strided_slice %173 {offsets = [0, 0], sizes = [512, 1], strides = [1, 1]} : vector<512x10xf32> to vector<512x1xf32>
+      %182 = tpu.reshape %181 : vector<512x1xf32> -> vector<512xf32>
+      %183 = vector.broadcast %182 : vector<512xf32> to vector<512x512xf32>
+      %184 = arith.select %179, %183, %cst_26 : vector<512x512xi1>, vector<512x512xf32>
+      %185 = vector.extract_strided_slice %172 {offsets = [0, 1], sizes = [512, 1], strides = [1, 1]} : vector<512x10xi32> to vector<512x1xi32>
+      %186 = tpu.reshape %185 : vector<512x1xi32> -> vector<512xi32>
+      %187 = vector.broadcast %186 : vector<512xi32> to vector<512x512xi32>
+      %188 = arith.cmpi eq, %175, %187 : vector<512x512xi32>
+      %189 = arith.extui %188 : vector<512x512xi1> to vector<512x512xi32>
+      %190 = arith.addi %180, %189 : vector<512x512xi32>
+      %191 = vector.extract_strided_slice %173 {offsets = [0, 1], sizes = [512, 1], strides = [1, 1]} : vector<512x10xf32> to vector<512x1xf32>
+      %192 = tpu.reshape %191 : vector<512x1xf32> -> vector<512xf32>
+      %193 = vector.broadcast %192 : vector<512xf32> to vector<512x512xf32>
+      %194 = arith.select %188, %193, %184 : vector<512x512xi1>, vector<512x512xf32>
+      %195 = vector.extract_strided_slice %172 {offsets = [0, 2], sizes = [512, 1], strides = [1, 1]} : vector<512x10xi32> to vector<512x1xi32>
+      %196 = tpu.reshape %195 : vector<512x1xi32> -> vector<512xi32>
+      %197 = vector.broadcast %196 : vector<512xi32> to vector<512x512xi32>
+      %198 = arith.cmpi eq, %175, %197 : vector<512x512xi32>
+      %199 = arith.extui %198 : vector<512x512xi1> to vector<512x512xi32>
+      %200 = arith.addi %190, %199 : vector<512x512xi32>
+      %201 = vector.extract_strided_slice %173 {offsets = [0, 2], sizes = [512, 1], strides = [1, 1]} : vector<512x10xf32> to vector<512x1xf32>
+      %202 = tpu.reshape %201 : vector<512x1xf32> -> vector<512xf32>
+      %203 = vector.broadcast %202 : vector<512xf32> to vector<512x512xf32>
+      %204 = arith.select %198, %203, %194 : vector<512x512xi1>, vector<512x512xf32>
+      %205 = vector.extract_strided_slice %172 {offsets = [0, 3], sizes = [512, 1], strides = [1, 1]} : vector<512x10xi32> to vector<512x1xi32>
+      %206 = tpu.reshape %205 : vector<512x1xi32> -> vector<512xi32>
+      %207 = vector.broadcast %206 : vector<512xi32> to vector<512x512xi32>
+      %208 = arith.cmpi eq, %175, %207 : vector<512x512xi32>
+      %209 = arith.extui %208 : vector<512x512xi1> to vector<512x512xi32>
+      %210 = arith.addi %200, %209 : vector<512x512xi32>
+      %211 = vector.extract_strided_slice %173 {offsets = [0, 3], sizes = [512, 1], strides = [1, 1]} : vector<512x10xf32> to vector<512x1xf32>
+      %212 = tpu.reshape %211 : vector<512x1xf32> -> vector<512xf32>
+      %213 = vector.broadcast %212 : vector<512xf32> to vector<512x512xf32>
+      %214 = arith.select %208, %213, %204 : vector<512x512xi1>, vector<512x512xf32>
+      %215 = vector.extract_strided_slice %172 {offsets = [0, 4], sizes = [512, 1], strides = [1, 1]} : vector<512x10xi32> to vector<512x1xi32>
+      %216 = tpu.reshape %215 : vector<512x1xi32> -> vector<512xi32>
+      %217 = vector.broadcast %216 : vector<512xi32> to vector<512x512xi32>
+      %218 = arith.cmpi eq, %175, %217 : vector<512x512xi32>
+      %219 = arith.extui %218 : vector<512x512xi1> to vector<512x512xi32>
+      %220 = arith.addi %210, %219 : vector<512x512xi32>
+      %221 = vector.extract_strided_slice %173 {offsets = [0, 4], sizes = [512, 1], strides = [1, 1]} : vector<512x10xf32> to vector<512x1xf32>
+      %222 = tpu.reshape %221 : vector<512x1xf32> -> vector<512xf32>
+      %223 = vector.broadcast %222 : vector<512xf32> to vector<512x512xf32>
+      %224 = arith.select %218, %223, %214 : vector<512x512xi1>, vector<512x512xf32>
+      %225 = vector.extract_strided_slice %172 {offsets = [0, 5], sizes = [512, 1], strides = [1, 1]} : vector<512x10xi32> to vector<512x1xi32>
+      %226 = tpu.reshape %225 : vector<512x1xi32> -> vector<512xi32>
+      %227 = vector.broadcast %226 : vector<512xi32> to vector<512x512xi32>
+      %228 = arith.cmpi eq, %175, %227 : vector<512x512xi32>
+      %229 = arith.extui %228 : vector<512x512xi1> to vector<512x512xi32>
+      %230 = arith.addi %220, %229 : vector<512x512xi32>
+      %231 = vector.extract_strided_slice %173 {offsets = [0, 5], sizes = [512, 1], strides = [1, 1]} : vector<512x10xf32> to vector<512x1xf32>
+      %232 = tpu.reshape %231 : vector<512x1xf32> -> vector<512xf32>
+      %233 = vector.broadcast %232 : vector<512xf32> to vector<512x512xf32>
+      %234 = arith.select %228, %233, %224 : vector<512x512xi1>, vector<512x512xf32>
+      %235 = vector.extract_strided_slice %172 {offsets = [0, 6], sizes = [512, 1], strides = [1, 1]} : vector<512x10xi32> to vector<512x1xi32>
+      %236 = tpu.reshape %235 : vector<512x1xi32> -> vector<512xi32>
+      %237 = vector.broadcast %236 : vector<512xi32> to vector<512x512xi32>
+      %238 = arith.cmpi eq, %175, %237 : vector<512x512xi32>
+      %239 = arith.extui %238 : vector<512x512xi1> to vector<512x512xi32>
+      %240 = arith.addi %230, %239 : vector<512x512xi32>
+      %241 = vector.extract_strided_slice %173 {offsets = [0, 6], sizes = [512, 1], strides = [1, 1]} : vector<512x10xf32> to vector<512x1xf32>
+      %242 = tpu.reshape %241 : vector<512x1xf32> -> vector<512xf32>
+      %243 = vector.broadcast %242 : vector<512xf32> to vector<512x512xf32>
+      %244 = arith.select %238, %243, %234 : vector<512x512xi1>, vector<512x512xf32>
+      %245 = vector.extract_strided_slice %172 {offsets = [0, 7], sizes = [512, 1], strides = [1, 1]} : vector<512x10xi32> to vector<512x1xi32>
+      %246 = tpu.reshape %245 : vector<512x1xi32> -> vector<512xi32>
+      %247 = vector.broadcast %246 : vector<512xi32> to vector<512x512xi32>
+      %248 = arith.cmpi eq, %175, %247 : vector<512x512xi32>
+      %249 = arith.extui %248 : vector<512x512xi1> to vector<512x512xi32>
+      %250 = arith.addi %240, %249 : vector<512x512xi32>
+      %251 = vector.extract_strided_slice %173 {offsets = [0, 7], sizes = [512, 1], strides = [1, 1]} : vector<512x10xf32> to vector<512x1xf32>
+      %252 = tpu.reshape %251 : vector<512x1xf32> -> vector<512xf32>
+      %253 = vector.broadcast %252 : vector<512xf32> to vector<512x512xf32>
+      %254 = arith.select %248, %253, %244 : vector<512x512xi1>, vector<512x512xf32>
+      %255 = vector.extract_strided_slice %172 {offsets = [0, 8], sizes = [512, 1], strides = [1, 1]} : vector<512x10xi32> to vector<512x1xi32>
+      %256 = tpu.reshape %255 : vector<512x1xi32> -> vector<512xi32>
+      %257 = vector.broadcast %256 : vector<512xi32> to vector<512x512xi32>
+      %258 = arith.cmpi eq, %175, %257 : vector<512x512xi32>
+      %259 = arith.extui %258 : vector<512x512xi1> to vector<512x512xi32>
+      %260 = arith.addi %250, %259 : vector<512x512xi32>
+      %261 = vector.extract_strided_slice %173 {offsets = [0, 8], sizes = [512, 1], strides = [1, 1]} : vector<512x10xf32> to vector<512x1xf32>
+      %262 = tpu.reshape %261 : vector<512x1xf32> -> vector<512xf32>
+      %263 = vector.broadcast %262 : vector<512xf32> to vector<512x512xf32>
+      %264 = arith.select %258, %263, %254 : vector<512x512xi1>, vector<512x512xf32>
+      %265 = vector.extract_strided_slice %172 {offsets = [0, 9], sizes = [512, 1], strides = [1, 1]} : vector<512x10xi32> to vector<512x1xi32>
+      %266 = tpu.reshape %265 : vector<512x1xi32> -> vector<512xi32>
+      %267 = vector.broadcast %266 : vector<512xi32> to vector<512x512xi32>
+      %268 = arith.cmpi eq, %175, %267 : vector<512x512xi32>
+      %269 = arith.extui %268 : vector<512x512xi1> to vector<512x512xi32>
+      %270 = arith.addi %260, %269 : vector<512x512xi32>
+      %271 = vector.extract_strided_slice %173 {offsets = [0, 9], sizes = [512, 1], strides = [1, 1]} : vector<512x10xf32> to vector<512x1xf32>
+      %272 = tpu.reshape %271 : vector<512x1xf32> -> vector<512xf32>
+      %273 = vector.broadcast %272 : vector<512xf32> to vector<512x512xf32>
+      %274 = arith.select %268, %273, %264 : vector<512x512xi1>, vector<512x512xf32>
+      %275 = tpu.dynamic_rotate %270 by %c1_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %276 = arith.cmpi sge, %174, %cst_25 : vector<512x512xi32>
+      %277 = arith.select %276, %275, %cst_24 : vector<512x512xi1>, vector<512x512xi32>
+      %278 = arith.addi %270, %277 : vector<512x512xi32>
+      %279 = tpu.dynamic_rotate %278 by %c2_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %280 = arith.cmpi sge, %174, %cst_23 : vector<512x512xi32>
+      %281 = arith.select %280, %279, %cst_24 : vector<512x512xi1>, vector<512x512xi32>
+      %282 = arith.addi %278, %281 : vector<512x512xi32>
+      %283 = tpu.dynamic_rotate %282 by %c4_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %284 = arith.cmpi sge, %174, %cst_22 : vector<512x512xi32>
+      %285 = arith.select %284, %283, %cst_24 : vector<512x512xi1>, vector<512x512xi32>
+      %286 = arith.addi %282, %285 : vector<512x512xi32>
+      %287 = tpu.dynamic_rotate %286 by %c8_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %288 = arith.cmpi sge, %174, %cst_21 : vector<512x512xi32>
+      %289 = arith.select %288, %287, %cst_24 : vector<512x512xi1>, vector<512x512xi32>
+      %290 = arith.addi %286, %289 : vector<512x512xi32>
+      %291 = tpu.dynamic_rotate %290 by %c16_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %292 = arith.cmpi sge, %174, %cst_20 : vector<512x512xi32>
+      %293 = arith.select %292, %291, %cst_24 : vector<512x512xi1>, vector<512x512xi32>
+      %294 = arith.addi %290, %293 : vector<512x512xi32>
+      %295 = tpu.dynamic_rotate %294 by %c32_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %296 = arith.cmpi sge, %174, %cst_19 : vector<512x512xi32>
+      %297 = arith.select %296, %295, %cst_24 : vector<512x512xi1>, vector<512x512xi32>
+      %298 = arith.addi %294, %297 : vector<512x512xi32>
+      %299 = tpu.dynamic_rotate %298 by %c64_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %300 = arith.cmpi sge, %174, %cst_18 : vector<512x512xi32>
+      %301 = arith.select %300, %299, %cst_24 : vector<512x512xi1>, vector<512x512xi32>
+      %302 = arith.addi %298, %301 : vector<512x512xi32>
+      %303 = tpu.dynamic_rotate %302 by %c128_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %304 = arith.cmpi sge, %174, %cst_17 : vector<512x512xi32>
+      %305 = arith.select %304, %303, %cst_24 : vector<512x512xi1>, vector<512x512xi32>
+      %306 = arith.addi %302, %305 : vector<512x512xi32>
+      %307 = tpu.dynamic_rotate %306 by %c256_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %308 = arith.cmpi sge, %174, %cst_16 : vector<512x512xi32>
+      %309 = arith.select %308, %307, %cst_24 : vector<512x512xi1>, vector<512x512xi32>
+      %310 = arith.addi %306, %309 : vector<512x512xi32>
+      %311 = arith.subi %310, %270 : vector<512x512xi32>
+      %312 = vector.extract_strided_slice %310 {offsets = [0, 511], sizes = [512, 1], strides = [1, 1]} : vector<512x512xi32> to vector<512x1xi32>
+      %313 = tpu.reshape %312 : vector<512x1xi32> -> vector<512xi32>
+      %314 = arith.cmpi sgt, %270, %cst_24 : vector<512x512xi32>
+      %315 = arith.subi %174, %311 : vector<512x512xi32>
+      %316 = arith.select %314, %315, %cst_24 : vector<512x512xi1>, vector<512x512xi32>
+      %317 = arith.shli %270, %cst_15 : vector<512x512xi32>
+      %318 = arith.ori %316, %317 : vector<512x512xi32>
+      %319 = tpu.dynamic_rotate %174 by %c511_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %320 = tpu.dynamic_rotate %274 by %c511_i32 dim 1 : vector<512x512xf32>, i32 -> vector<512x512xf32>
+      %321 = tpu.dynamic_rotate %318 by %c511_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %322 = arith.andi %318, %cst_25 : vector<512x512xi32>
+      %323 = arith.shrsi %318, %cst_15 : vector<512x512xi32>
+      %324 = arith.muli %322, %323 : vector<512x512xi32>
+      %325 = arith.andi %321, %cst_25 : vector<512x512xi32>
+      %326 = arith.shrsi %321, %cst_15 : vector<512x512xi32>
+      %327 = arith.muli %325, %326 : vector<512x512xi32>
+      %328 = arith.cmpi eq, %327, %cst_25 : vector<512x512xi32>
+      %329 = arith.cmpi slt, %174, %cst_14 : vector<512x512xi32>
+      %330 = arith.andi %328, %329 : vector<512x512xi1>
+      %331 = arith.select %330, %319, %174 : vector<512x512xi1>, vector<512x512xi32>
+      %332 = arith.select %330, %320, %274 : vector<512x512xi1>, vector<512x512xf32>
+      %333 = arith.cmpi eq, %324, %cst_25 : vector<512x512xi32>
+      %334 = arith.select %333, %cst_24, %323 : vector<512x512xi1>, vector<512x512xi32>
+      %335 = arith.select %330, %cst_25, %334 : vector<512x512xi1>, vector<512x512xi32>
+      %336 = arith.andi %321, %cst_13 : vector<512x512xi32>
+      %337 = arith.subi %336, %cst_25 : vector<512x512xi32>
+      %338 = arith.andi %318, %cst_13 : vector<512x512xi32>
+      %339 = arith.select %330, %337, %338 : vector<512x512xi1>, vector<512x512xi32>
+      %340 = arith.shli %335, %cst_15 : vector<512x512xi32>
+      %341 = arith.ori %339, %340 : vector<512x512xi32>
+      %342 = tpu.dynamic_rotate %331 by %c510_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %343 = tpu.dynamic_rotate %332 by %c510_i32 dim 1 : vector<512x512xf32>, i32 -> vector<512x512xf32>
+      %344 = tpu.dynamic_rotate %341 by %c510_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %345 = arith.shrsi %341, %cst_25 : vector<512x512xi32>
+      %346 = arith.andi %345, %cst_25 : vector<512x512xi32>
+      %347 = arith.shrsi %341, %cst_15 : vector<512x512xi32>
+      %348 = arith.muli %346, %347 : vector<512x512xi32>
+      %349 = arith.shrsi %344, %cst_25 : vector<512x512xi32>
+      %350 = arith.andi %349, %cst_25 : vector<512x512xi32>
+      %351 = arith.shrsi %344, %cst_15 : vector<512x512xi32>
+      %352 = arith.muli %350, %351 : vector<512x512xi32>
+      %353 = arith.cmpi eq, %352, %cst_25 : vector<512x512xi32>
+      %354 = arith.cmpi slt, %174, %cst_12 : vector<512x512xi32>
+      %355 = arith.andi %353, %354 : vector<512x512xi1>
+      %356 = arith.select %355, %342, %331 : vector<512x512xi1>, vector<512x512xi32>
+      %357 = arith.select %355, %343, %332 : vector<512x512xi1>, vector<512x512xf32>
+      %358 = arith.cmpi eq, %348, %cst_25 : vector<512x512xi32>
+      %359 = arith.select %358, %cst_24, %347 : vector<512x512xi1>, vector<512x512xi32>
+      %360 = arith.select %355, %cst_25, %359 : vector<512x512xi1>, vector<512x512xi32>
+      %361 = arith.andi %344, %cst_13 : vector<512x512xi32>
+      %362 = arith.subi %361, %cst_23 : vector<512x512xi32>
+      %363 = arith.andi %341, %cst_13 : vector<512x512xi32>
+      %364 = arith.select %355, %362, %363 : vector<512x512xi1>, vector<512x512xi32>
+      %365 = arith.shli %360, %cst_15 : vector<512x512xi32>
+      %366 = arith.ori %364, %365 : vector<512x512xi32>
+      %367 = tpu.dynamic_rotate %356 by %c508_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %368 = tpu.dynamic_rotate %357 by %c508_i32 dim 1 : vector<512x512xf32>, i32 -> vector<512x512xf32>
+      %369 = tpu.dynamic_rotate %366 by %c508_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %370 = arith.shrsi %366, %cst_23 : vector<512x512xi32>
+      %371 = arith.andi %370, %cst_25 : vector<512x512xi32>
+      %372 = arith.shrsi %366, %cst_15 : vector<512x512xi32>
+      %373 = arith.muli %371, %372 : vector<512x512xi32>
+      %374 = arith.shrsi %369, %cst_23 : vector<512x512xi32>
+      %375 = arith.andi %374, %cst_25 : vector<512x512xi32>
+      %376 = arith.shrsi %369, %cst_15 : vector<512x512xi32>
+      %377 = arith.muli %375, %376 : vector<512x512xi32>
+      %378 = arith.cmpi eq, %377, %cst_25 : vector<512x512xi32>
+      %379 = arith.cmpi slt, %174, %cst_11 : vector<512x512xi32>
+      %380 = arith.andi %378, %379 : vector<512x512xi1>
+      %381 = arith.select %380, %367, %356 : vector<512x512xi1>, vector<512x512xi32>
+      %382 = arith.select %380, %368, %357 : vector<512x512xi1>, vector<512x512xf32>
+      %383 = arith.cmpi eq, %373, %cst_25 : vector<512x512xi32>
+      %384 = arith.select %383, %cst_24, %372 : vector<512x512xi1>, vector<512x512xi32>
+      %385 = arith.select %380, %cst_25, %384 : vector<512x512xi1>, vector<512x512xi32>
+      %386 = arith.andi %369, %cst_13 : vector<512x512xi32>
+      %387 = arith.subi %386, %cst_22 : vector<512x512xi32>
+      %388 = arith.andi %366, %cst_13 : vector<512x512xi32>
+      %389 = arith.select %380, %387, %388 : vector<512x512xi1>, vector<512x512xi32>
+      %390 = arith.shli %385, %cst_15 : vector<512x512xi32>
+      %391 = arith.ori %389, %390 : vector<512x512xi32>
+      %392 = tpu.dynamic_rotate %381 by %c504_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %393 = tpu.dynamic_rotate %382 by %c504_i32 dim 1 : vector<512x512xf32>, i32 -> vector<512x512xf32>
+      %394 = tpu.dynamic_rotate %391 by %c504_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %395 = arith.shrsi %391, %cst_10 : vector<512x512xi32>
+      %396 = arith.andi %395, %cst_25 : vector<512x512xi32>
+      %397 = arith.shrsi %391, %cst_15 : vector<512x512xi32>
+      %398 = arith.muli %396, %397 : vector<512x512xi32>
+      %399 = arith.shrsi %394, %cst_10 : vector<512x512xi32>
+      %400 = arith.andi %399, %cst_25 : vector<512x512xi32>
+      %401 = arith.shrsi %394, %cst_15 : vector<512x512xi32>
+      %402 = arith.muli %400, %401 : vector<512x512xi32>
+      %403 = arith.cmpi eq, %402, %cst_25 : vector<512x512xi32>
+      %404 = arith.cmpi slt, %174, %cst_9 : vector<512x512xi32>
+      %405 = arith.andi %403, %404 : vector<512x512xi1>
+      %406 = arith.select %405, %392, %381 : vector<512x512xi1>, vector<512x512xi32>
+      %407 = arith.select %405, %393, %382 : vector<512x512xi1>, vector<512x512xf32>
+      %408 = arith.cmpi eq, %398, %cst_25 : vector<512x512xi32>
+      %409 = arith.select %408, %cst_24, %397 : vector<512x512xi1>, vector<512x512xi32>
+      %410 = arith.select %405, %cst_25, %409 : vector<512x512xi1>, vector<512x512xi32>
+      %411 = arith.andi %394, %cst_13 : vector<512x512xi32>
+      %412 = arith.subi %411, %cst_21 : vector<512x512xi32>
+      %413 = arith.andi %391, %cst_13 : vector<512x512xi32>
+      %414 = arith.select %405, %412, %413 : vector<512x512xi1>, vector<512x512xi32>
+      %415 = arith.shli %410, %cst_15 : vector<512x512xi32>
+      %416 = arith.ori %414, %415 : vector<512x512xi32>
+      %417 = tpu.dynamic_rotate %406 by %c496_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %418 = tpu.dynamic_rotate %407 by %c496_i32 dim 1 : vector<512x512xf32>, i32 -> vector<512x512xf32>
+      %419 = tpu.dynamic_rotate %416 by %c496_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %420 = arith.shrsi %416, %cst_22 : vector<512x512xi32>
+      %421 = arith.andi %420, %cst_25 : vector<512x512xi32>
+      %422 = arith.shrsi %416, %cst_15 : vector<512x512xi32>
+      %423 = arith.muli %421, %422 : vector<512x512xi32>
+      %424 = arith.shrsi %419, %cst_22 : vector<512x512xi32>
+      %425 = arith.andi %424, %cst_25 : vector<512x512xi32>
+      %426 = arith.shrsi %419, %cst_15 : vector<512x512xi32>
+      %427 = arith.muli %425, %426 : vector<512x512xi32>
+      %428 = arith.cmpi eq, %427, %cst_25 : vector<512x512xi32>
+      %429 = arith.cmpi slt, %174, %cst_8 : vector<512x512xi32>
+      %430 = arith.andi %428, %429 : vector<512x512xi1>
+      %431 = arith.select %430, %417, %406 : vector<512x512xi1>, vector<512x512xi32>
+      %432 = arith.select %430, %418, %407 : vector<512x512xi1>, vector<512x512xf32>
+      %433 = arith.cmpi eq, %423, %cst_25 : vector<512x512xi32>
+      %434 = arith.select %433, %cst_24, %422 : vector<512x512xi1>, vector<512x512xi32>
+      %435 = arith.select %430, %cst_25, %434 : vector<512x512xi1>, vector<512x512xi32>
+      %436 = arith.andi %419, %cst_13 : vector<512x512xi32>
+      %437 = arith.subi %436, %cst_20 : vector<512x512xi32>
+      %438 = arith.andi %416, %cst_13 : vector<512x512xi32>
+      %439 = arith.select %430, %437, %438 : vector<512x512xi1>, vector<512x512xi32>
+      %440 = arith.shli %435, %cst_15 : vector<512x512xi32>
+      %441 = arith.ori %439, %440 : vector<512x512xi32>
+      %442 = tpu.dynamic_rotate %431 by %c480_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %443 = tpu.dynamic_rotate %432 by %c480_i32 dim 1 : vector<512x512xf32>, i32 -> vector<512x512xf32>
+      %444 = tpu.dynamic_rotate %441 by %c480_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %445 = arith.shrsi %441, %cst_7 : vector<512x512xi32>
+      %446 = arith.andi %445, %cst_25 : vector<512x512xi32>
+      %447 = arith.shrsi %441, %cst_15 : vector<512x512xi32>
+      %448 = arith.muli %446, %447 : vector<512x512xi32>
+      %449 = arith.shrsi %444, %cst_7 : vector<512x512xi32>
+      %450 = arith.andi %449, %cst_25 : vector<512x512xi32>
+      %451 = arith.shrsi %444, %cst_15 : vector<512x512xi32>
+      %452 = arith.muli %450, %451 : vector<512x512xi32>
+      %453 = arith.cmpi eq, %452, %cst_25 : vector<512x512xi32>
+      %454 = arith.cmpi slt, %174, %cst_6 : vector<512x512xi32>
+      %455 = arith.andi %453, %454 : vector<512x512xi1>
+      %456 = arith.select %455, %442, %431 : vector<512x512xi1>, vector<512x512xi32>
+      %457 = arith.select %455, %443, %432 : vector<512x512xi1>, vector<512x512xf32>
+      %458 = arith.cmpi eq, %448, %cst_25 : vector<512x512xi32>
+      %459 = arith.select %458, %cst_24, %447 : vector<512x512xi1>, vector<512x512xi32>
+      %460 = arith.select %455, %cst_25, %459 : vector<512x512xi1>, vector<512x512xi32>
+      %461 = arith.andi %444, %cst_13 : vector<512x512xi32>
+      %462 = arith.subi %461, %cst_19 : vector<512x512xi32>
+      %463 = arith.andi %441, %cst_13 : vector<512x512xi32>
+      %464 = arith.select %455, %462, %463 : vector<512x512xi1>, vector<512x512xi32>
+      %465 = arith.shli %460, %cst_15 : vector<512x512xi32>
+      %466 = arith.ori %464, %465 : vector<512x512xi32>
+      %467 = tpu.dynamic_rotate %456 by %c448_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %468 = tpu.dynamic_rotate %457 by %c448_i32 dim 1 : vector<512x512xf32>, i32 -> vector<512x512xf32>
+      %469 = tpu.dynamic_rotate %466 by %c448_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %470 = arith.shrsi %466, %cst_5 : vector<512x512xi32>
+      %471 = arith.andi %470, %cst_25 : vector<512x512xi32>
+      %472 = arith.shrsi %466, %cst_15 : vector<512x512xi32>
+      %473 = arith.muli %471, %472 : vector<512x512xi32>
+      %474 = arith.shrsi %469, %cst_5 : vector<512x512xi32>
+      %475 = arith.andi %474, %cst_25 : vector<512x512xi32>
+      %476 = arith.shrsi %469, %cst_15 : vector<512x512xi32>
+      %477 = arith.muli %475, %476 : vector<512x512xi32>
+      %478 = arith.cmpi eq, %477, %cst_25 : vector<512x512xi32>
+      %479 = arith.cmpi slt, %174, %cst_4 : vector<512x512xi32>
+      %480 = arith.andi %478, %479 : vector<512x512xi1>
+      %481 = arith.select %480, %467, %456 : vector<512x512xi1>, vector<512x512xi32>
+      %482 = arith.select %480, %468, %457 : vector<512x512xi1>, vector<512x512xf32>
+      %483 = arith.cmpi eq, %473, %cst_25 : vector<512x512xi32>
+      %484 = arith.select %483, %cst_24, %472 : vector<512x512xi1>, vector<512x512xi32>
+      %485 = arith.select %480, %cst_25, %484 : vector<512x512xi1>, vector<512x512xi32>
+      %486 = arith.andi %469, %cst_13 : vector<512x512xi32>
+      %487 = arith.subi %486, %cst_18 : vector<512x512xi32>
+      %488 = arith.andi %466, %cst_13 : vector<512x512xi32>
+      %489 = arith.select %480, %487, %488 : vector<512x512xi1>, vector<512x512xi32>
+      %490 = arith.shli %485, %cst_15 : vector<512x512xi32>
+      %491 = arith.ori %489, %490 : vector<512x512xi32>
+      %492 = tpu.dynamic_rotate %481 by %c384_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %493 = tpu.dynamic_rotate %482 by %c384_i32 dim 1 : vector<512x512xf32>, i32 -> vector<512x512xf32>
+      %494 = tpu.dynamic_rotate %491 by %c384_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %495 = arith.shrsi %491, %cst_3 : vector<512x512xi32>
+      %496 = arith.andi %495, %cst_25 : vector<512x512xi32>
+      %497 = arith.shrsi %491, %cst_15 : vector<512x512xi32>
+      %498 = arith.muli %496, %497 : vector<512x512xi32>
+      %499 = arith.shrsi %494, %cst_3 : vector<512x512xi32>
+      %500 = arith.andi %499, %cst_25 : vector<512x512xi32>
+      %501 = arith.shrsi %494, %cst_15 : vector<512x512xi32>
+      %502 = arith.muli %500, %501 : vector<512x512xi32>
+      %503 = arith.cmpi eq, %502, %cst_25 : vector<512x512xi32>
+      %504 = arith.cmpi slt, %174, %cst_2 : vector<512x512xi32>
+      %505 = arith.andi %503, %504 : vector<512x512xi1>
+      %506 = arith.select %505, %492, %481 : vector<512x512xi1>, vector<512x512xi32>
+      %507 = arith.select %505, %493, %482 : vector<512x512xi1>, vector<512x512xf32>
+      %508 = arith.cmpi eq, %498, %cst_25 : vector<512x512xi32>
+      %509 = arith.select %508, %cst_24, %497 : vector<512x512xi1>, vector<512x512xi32>
+      %510 = arith.select %505, %cst_25, %509 : vector<512x512xi1>, vector<512x512xi32>
+      %511 = arith.andi %494, %cst_13 : vector<512x512xi32>
+      %512 = arith.subi %511, %cst_17 : vector<512x512xi32>
+      %513 = arith.andi %491, %cst_13 : vector<512x512xi32>
+      %514 = arith.select %505, %512, %513 : vector<512x512xi1>, vector<512x512xi32>
+      %515 = arith.shli %510, %cst_15 : vector<512x512xi32>
+      %516 = arith.ori %514, %515 : vector<512x512xi32>
+      %517 = tpu.dynamic_rotate %506 by %c256_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %518 = tpu.dynamic_rotate %507 by %c256_i32 dim 1 : vector<512x512xf32>, i32 -> vector<512x512xf32>
+      %519 = tpu.dynamic_rotate %516 by %c256_i32 dim 1 : vector<512x512xi32>, i32 -> vector<512x512xi32>
+      %520 = arith.shrsi %519, %cst_21 : vector<512x512xi32>
+      %521 = arith.andi %520, %cst_25 : vector<512x512xi32>
+      %522 = arith.shrsi %519, %cst_15 : vector<512x512xi32>
+      %523 = arith.muli %521, %522 : vector<512x512xi32>
+      %524 = arith.cmpi eq, %523, %cst_25 : vector<512x512xi32>
+      %525 = arith.cmpi slt, %174, %cst_16 : vector<512x512xi32>
+      %526 = arith.andi %524, %525 : vector<512x512xi1>
+      %527 = arith.select %526, %517, %506 : vector<512x512xi1>, vector<512x512xi32>
+      %528 = arith.select %526, %518, %507 : vector<512x512xi1>, vector<512x512xf32>
+      %529 = vector.extract_strided_slice %527 {offsets = [0, 0], sizes = [512, 32], strides = [1, 1]} : vector<512x512xi32> to vector<512x32xi32>
+      tpu.vector_store %21[%c0, %c0], %529 {strides = array<i32>} : memref<512x32xi32, #tpu.memory_space<vmem>>, vector<512x32xi32>, 
+      %530 = vector.extract_strided_slice %528 {offsets = [0, 0], sizes = [512, 32], strides = [1, 1]} : vector<512x512xf32> to vector<512x32xf32>
+      %531 = tpu.transpose %530, [1, 0] : vector<512x32xf32> -> vector<32x512xf32>
+      tpu.vector_store %22[%c0, %c0], %531 {strides = array<i32>} : memref<32x512xf32, #tpu.memory_space<vmem>>, vector<32x512xf32>, 
+      %532 = arith.minsi %313, %cst_1 : vector<512xi32>
+      %533 = tpu.reshape %532 : vector<512xi32> -> vector<1x512xi32>
+      tpu.vector_store %23[%c0, %c0], %533 {strides = array<i32>} : memref<1x512xi32, #tpu.memory_space<vmem>>, vector<1x512xi32>, 
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_lists_smem"}> : () -> ()
+      tpu.enqueue_dma source(%21 : memref<512x32xi32, #tpu.memory_space<vmem>>) target(%11 : memref<512x32xi32, #tpu.memory_space<smem>>) target_semaphore(%24 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>)
+      tpu.enqueue_dma source(%23 : memref<1x512xi32, #tpu.memory_space<vmem>>) target(%12 : memref<1x512xi32, #tpu.memory_space<smem>>) target_semaphore(%24 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>)
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_ag_drain_tokens"}> : () -> ()
+      %534 = tpu.memref_slice %5[%c0_i32, %c0_i32] : memref<512x4096xbf16, #tpu.memory_space<vmem>> -> memref<448x4096xbf16, #tpu.memory_space<vmem>>
+      tpu.wait_dma2 semaphore(%7 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) src(%534 : memref<448x4096xbf16, #tpu.memory_space<vmem>>) dst(%534 : memref<448x4096xbf16, #tpu.memory_space<vmem>>)
+      tpu.wait_dma2 semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) src(%534 : memref<448x4096xbf16, #tpu.memory_space<vmem>>) dst(%534 : memref<448x4096xbf16, #tpu.memory_space<vmem>>)
+      tpu.wait_dma2 semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) src(%170 : memref<448x10xi32, #tpu.memory_space<vmem>>) dst(%170 : memref<448x10xi32, #tpu.memory_space<vmem>>)
+      tpu.wait_dma2 semaphore(%6 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) src(%171 : memref<448x10xf32, #tpu.memory_space<vmem>>) dst(%171 : memref<448x10xf32, #tpu.memory_space<vmem>>)
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_lists_smem_drain"}> : () -> ()
+      tpu.wait_dma2 semaphore(%24 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) src(%21 : memref<512x32xi32, #tpu.memory_space<vmem>>) dst(%11 : memref<512x32xi32, #tpu.memory_space<smem>>)
+      tpu.wait_dma2 semaphore(%24 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) src(%23 : memref<1x512xi32, #tpu.memory_space<vmem>>) dst(%12 : memref<1x512xi32, #tpu.memory_space<smem>>)
+      "tpu.trace_stop"() : () -> ()
+    }
+    %27 = arith.muli %arg0, %c4_i32 : i32
+    %28 = arith.index_cast %27 : i32 to index
+    %29 = memref.load %12[%c0, %28] : memref<1x512xi32, #tpu.memory_space<smem>>
+    %30 = arith.cmpi sgt, %29, %c0_i32 : i32
+    scf.if %30 {
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_gather"}> : () -> ()
+      scf.for %arg23 = %c0_i32 to %29 step %c1_i32  : i32 {
+        %80 = arith.index_cast %arg23 : i32 to index
+        %81 = memref.load %11[%28, %80] : memref<512x32xi32, #tpu.memory_space<smem>>
+        %82 = tpu.memref_slice %13[%c0_i32, %c0_i32, %c0_i32] : memref<2x32x4096xbf16, #tpu.memory_space<vmem>> -> memref<1x32x4096xbf16, #tpu.memory_space<vmem>>
+        %83 = tpu.memref_squeeze %82 : memref<1x32x4096xbf16, #tpu.memory_space<vmem>> -> memref<32x4096xbf16, #tpu.memory_space<vmem>>
+        %84 = tpu.memref_slice %83[%arg23, %c0_i32] : memref<32x4096xbf16, #tpu.memory_space<vmem>> -> memref<1x4096xbf16, #tpu.memory_space<vmem>>
+        %85 = tpu.memref_slice %5[%81, %c0_i32] : memref<512x4096xbf16, #tpu.memory_space<vmem>> -> memref<1x4096xbf16, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%85 : memref<1x4096xbf16, #tpu.memory_space<vmem>>) target(%84 : memref<1x4096xbf16, #tpu.memory_space<vmem>>) target_semaphore(%25 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>)
+      }
+      scf.for %arg23 = %c0_i32 to %29 step %c1_i32  : i32 {
+        %80 = tpu.memref_slice %13[%c0_i32, %c0_i32, %c0_i32] : memref<2x32x4096xbf16, #tpu.memory_space<vmem>> -> memref<1x32x4096xbf16, #tpu.memory_space<vmem>>
+        %81 = tpu.memref_squeeze %80 : memref<1x32x4096xbf16, #tpu.memory_space<vmem>> -> memref<32x4096xbf16, #tpu.memory_space<vmem>>
+        %82 = tpu.memref_slice %81[%c0_i32, %c0_i32] : memref<32x4096xbf16, #tpu.memory_space<vmem>> -> memref<1x4096xbf16, #tpu.memory_space<vmem>>
+        tpu.wait_dma2 semaphore(%25 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) src(%82 : memref<1x4096xbf16, #tpu.memory_space<vmem>>) dst(%82 : memref<1x4096xbf16, #tpu.memory_space<vmem>>)
+      }
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_gmm1"}> : () -> ()
+      %44 = tpu.memref_slice %13[%c0_i32, %c0_i32, %c0_i32] : memref<2x32x4096xbf16, #tpu.memory_space<vmem>> -> memref<1x32x4096xbf16, #tpu.memory_space<vmem>>
+      %45 = tpu.memref_squeeze %44 : memref<1x32x4096xbf16, #tpu.memory_space<vmem>> -> memref<32x4096xbf16, #tpu.memory_space<vmem>>
+      %46 = tpu.vector_load %45[%c0, %c0] {strides = array<i32>} : memref<32x4096xbf16, #tpu.memory_space<vmem>>, vector<32x4096xbf16>, 
+      %47 = tpu.vector_load %2[%c0, %c0, %c0] {strides = array<i32>} : memref<4x4096x256xbf16, #tpu.memory_space<vmem>>, vector<1x4096x256xbf16>, 
+      %48 = tpu.reshape %47 : vector<1x4096x256xbf16> -> vector<4096x256xbf16>
+      %49 = tpu.matmul %46, %48, %cst_0 {dimension_numbers = #tpu.dot_dimension_numbers<[1], [0], [0], [1], [0, 0, 1, 1], [], []>, transpose_lhs_hint = false} : vector<32x4096xbf16>, vector<4096x256xbf16>, vector<32x256xf32> -> vector<32x256xf32>
+      %50 = vector.extract_strided_slice %49 {offsets = [0, 0], sizes = [32, 128], strides = [1, 1]} : vector<32x256xf32> to vector<32x128xf32>
+      %51 = vector.extract_strided_slice %49 {offsets = [0, 128], sizes = [32, 128], strides = [1, 1]} : vector<32x256xf32> to vector<32x128xf32>
+      %52 = arith.negf %50 : vector<32x128xf32>
+      %53 = math.exp %52 : vector<32x128xf32>
+      %54 = arith.addf %53, %cst : vector<32x128xf32>
+      %55 = arith.divf %cst, %54 : vector<32x128xf32>
+      %56 = arith.mulf %50, %55 : vector<32x128xf32>
+      %57 = arith.mulf %56, %51 : vector<32x128xf32>
+      %58 = tpu.truncf %57 {rounding_mode = #tpu.rounding_mode<to_nearest_even>} : vector<32x128xf32> -> vector<32x128xbf16>
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_gmm2"}> : () -> ()
+      %59 = tpu.vector_load %22[%c0, %c0] {strides = array<i32>} : memref<32x512xf32, #tpu.memory_space<vmem>>, vector<32x512xf32>, 
+      %60 = arith.subi %c512_i32, %27 : i32
+      %61 = arith.remsi %60, %c512_i32 : i32
+      %62 = arith.cmpi ne, %61, %c0_i32 : i32
+      %63 = arith.cmpi slt, %61, %c0_i32 : i32
+      %64 = arith.andi %63, %62 : i1
+      %65 = arith.addi %61, %c512_i32 : i32
+      %66 = arith.select %64, %65, %61 : i32
+      %67 = tpu.dynamic_rotate %59 by %66 dim 1 : vector<32x512xf32>, i32 -> vector<32x512xf32>
+      %68 = vector.extract_strided_slice %67 {offsets = [0, 0], sizes = [32, 1], strides = [1, 1]} : vector<32x512xf32> to vector<32x1xf32>
+      %69 = tpu.vector_load %3[%c0, %c0, %c0] {strides = array<i32>} : memref<4x128x4096xbf16, #tpu.memory_space<vmem>>, vector<1x128x4096xbf16>, 
+      %70 = tpu.reshape %69 : vector<1x128x4096xbf16> -> vector<128x4096xbf16>
+      %71 = tpu.matmul %58, %70, %cst_31 {dimension_numbers = #tpu.dot_dimension_numbers<[1], [0], [0], [1], [0, 0, 1, 1], [], []>, transpose_lhs_hint = false} : vector<32x128xbf16>, vector<128x4096xbf16>, vector<32x4096xf32> -> vector<32x4096xf32>
+      %72 = vector.broadcast %68 : vector<32x1xf32> to vector<32x4096xf32>
+      %73 = arith.mulf %71, %72 : vector<32x4096xf32>
+      %74 = tpu.memref_slice %14[%c0_i32, %c0_i32, %c0_i32] : memref<2x32x4096xf32, #tpu.memory_space<vmem>> -> memref<1x32x4096xf32, #tpu.memory_space<vmem>>
+      %75 = tpu.memref_squeeze %74 : memref<1x32x4096xf32, #tpu.memory_space<vmem>> -> memref<32x4096xf32, #tpu.memory_space<vmem>>
+      tpu.vector_store %75[%c0, %c0], %73 {strides = array<i32>} : memref<32x4096xf32, #tpu.memory_space<vmem>>, vector<32x4096xf32>, 
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_combine"}> : () -> ()
+      scf.for %arg23 = %c0_i32 to %29 step %c1_i32  : i32 {
+        %80 = arith.index_cast %arg23 : i32 to index
+        %81 = memref.load %11[%28, %80] : memref<512x32xi32, #tpu.memory_space<smem>>
+        %82 = tpu.memref_slice %15[%arg23, %c0_i32] : memref<32x4096xf32, #tpu.memory_space<vmem>> -> memref<1x4096xf32, #tpu.memory_space<vmem>>
+        %83 = tpu.memref_slice %9[%81, %c0_i32] : memref<512x4096xf32, #tpu.memory_space<vmem>> -> memref<1x4096xf32, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%83 : memref<1x4096xf32, #tpu.memory_space<vmem>>) target(%82 : memref<1x4096xf32, #tpu.memory_space<vmem>>) target_semaphore(%25 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>)
+      }
+      scf.for %arg23 = %c0_i32 to %29 step %c1_i32  : i32 {
+        %80 = tpu.memref_slice %15[%c0_i32, %c0_i32] : memref<32x4096xf32, #tpu.memory_space<vmem>> -> memref<1x4096xf32, #tpu.memory_space<vmem>>
+        tpu.wait_dma2 semaphore(%25 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) src(%80 : memref<1x4096xf32, #tpu.memory_space<vmem>>) dst(%80 : memref<1x4096xf32, #tpu.memory_space<vmem>>)
+      }
+      %76 = tpu.vector_load %15[%c0, %c0] {strides = array<i32>} : memref<32x4096xf32, #tpu.memory_space<vmem>>, vector<32x4096xf32>, 
+      %77 = tpu.vector_load %14[%c0, %c0, %c0] {strides = array<i32>} : memref<2x32x4096xf32, #tpu.memory_space<vmem>>, vector<1x32x4096xf32>, 
+      %78 = tpu.reshape %77 : vector<1x32x4096xf32> -> vector<32x4096xf32>
+      %79 = arith.addf %76, %78 : vector<32x4096xf32>
+      tpu.vector_store %15[%c0, %c0], %79 {strides = array<i32>} : memref<32x4096xf32, #tpu.memory_space<vmem>>, vector<32x4096xf32>, 
+      scf.for %arg23 = %c0_i32 to %29 step %c1_i32  : i32 {
+        %80 = arith.index_cast %arg23 : i32 to index
+        %81 = memref.load %11[%28, %80] : memref<512x32xi32, #tpu.memory_space<smem>>
+        %82 = tpu.memref_slice %9[%81, %c0_i32] : memref<512x4096xf32, #tpu.memory_space<vmem>> -> memref<1x4096xf32, #tpu.memory_space<vmem>>
+        %83 = tpu.memref_slice %15[%arg23, %c0_i32] : memref<32x4096xf32, #tpu.memory_space<vmem>> -> memref<1x4096xf32, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%83 : memref<1x4096xf32, #tpu.memory_space<vmem>>) target(%82 : memref<1x4096xf32, #tpu.memory_space<vmem>>) target_semaphore(%25 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>)
+      }
+      scf.for %arg23 = %c0_i32 to %29 step %c1_i32  : i32 {
+        %80 = tpu.memref_slice %15[%c0_i32, %c0_i32] : memref<32x4096xf32, #tpu.memory_space<vmem>> -> memref<1x4096xf32, #tpu.memory_space<vmem>>
+        tpu.wait_dma2 semaphore(%25 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) src(%80 : memref<1x4096xf32, #tpu.memory_space<vmem>>) dst(%80 : memref<1x4096xf32, #tpu.memory_space<vmem>>)
+      }
+      "tpu.trace_stop"() : () -> ()
+    }
+    %31 = arith.addi %27, %c1_i32 : i32
+    %32 = arith.index_cast %31 : i32 to index
+    %33 = memref.load %12[%c0, %32] : memref<1x512xi32, #tpu.memory_space<smem>>
+    %34 = arith.cmpi sgt, %33, %c0_i32 : i32
+    scf.if %34 {
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_gather"}> : () -> ()
+      scf.for %arg23 = %c0_i32 to %33 step %c1_i32  : i32 {
+        %80 = arith.index_cast %arg23 : i32 to index
+        %81 = memref.load %11[%32, %80] : memref<512x32xi32, #tpu.memory_space<smem>>
+        %82 = tpu.memref_slice %13[%c1_i32, %c0_i32, %c0_i32] : memref<2x32x4096xbf16, #tpu.memory_space<vmem>> -> memref<1x32x4096xbf16, #tpu.memory_space<vmem>>
+        %83 = tpu.memref_squeeze %82 : memref<1x32x4096xbf16, #tpu.memory_space<vmem>> -> memref<32x4096xbf16, #tpu.memory_space<vmem>>
+        %84 = tpu.memref_slice %83[%arg23, %c0_i32] : memref<32x4096xbf16, #tpu.memory_space<vmem>> -> memref<1x4096xbf16, #tpu.memory_space<vmem>>
+        %85 = tpu.memref_slice %5[%81, %c0_i32] : memref<512x4096xbf16, #tpu.memory_space<vmem>> -> memref<1x4096xbf16, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%85 : memref<1x4096xbf16, #tpu.memory_space<vmem>>) target(%84 : memref<1x4096xbf16, #tpu.memory_space<vmem>>) target_semaphore(%25 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>)
+      }
+      scf.for %arg23 = %c0_i32 to %33 step %c1_i32  : i32 {
+        %80 = tpu.memref_slice %13[%c1_i32, %c0_i32, %c0_i32] : memref<2x32x4096xbf16, #tpu.memory_space<vmem>> -> memref<1x32x4096xbf16, #tpu.memory_space<vmem>>
+        %81 = tpu.memref_squeeze %80 : memref<1x32x4096xbf16, #tpu.memory_space<vmem>> -> memref<32x4096xbf16, #tpu.memory_space<vmem>>
+        %82 = tpu.memref_slice %81[%c0_i32, %c0_i32] : memref<32x4096xbf16, #tpu.memory_space<vmem>> -> memref<1x4096xbf16, #tpu.memory_space<vmem>>
+        tpu.wait_dma2 semaphore(%25 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) src(%82 : memref<1x4096xbf16, #tpu.memory_space<vmem>>) dst(%82 : memref<1x4096xbf16, #tpu.memory_space<vmem>>)
+      }
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_gmm1"}> : () -> ()
+      %44 = tpu.memref_slice %13[%c1_i32, %c0_i32, %c0_i32] : memref<2x32x4096xbf16, #tpu.memory_space<vmem>> -> memref<1x32x4096xbf16, #tpu.memory_space<vmem>>
+      %45 = tpu.memref_squeeze %44 : memref<1x32x4096xbf16, #tpu.memory_space<vmem>> -> memref<32x4096xbf16, #tpu.memory_space<vmem>>
+      %46 = tpu.vector_load %45[%c0, %c0] {strides = array<i32>} : memref<32x4096xbf16, #tpu.memory_space<vmem>>, vector<32x4096xbf16>, 
+      %47 = tpu.vector_load %2[%c1, %c0, %c0] {strides = array<i32>} : memref<4x4096x256xbf16, #tpu.memory_space<vmem>>, vector<1x4096x256xbf16>, 
+      %48 = tpu.reshape %47 : vector<1x4096x256xbf16> -> vector<4096x256xbf16>
+      %49 = tpu.matmul %46, %48, %cst_0 {dimension_numbers = #tpu.dot_dimension_numbers<[1], [0], [0], [1], [0, 0, 1, 1], [], []>, transpose_lhs_hint = false} : vector<32x4096xbf16>, vector<4096x256xbf16>, vector<32x256xf32> -> vector<32x256xf32>
+      %50 = vector.extract_strided_slice %49 {offsets = [0, 0], sizes = [32, 128], strides = [1, 1]} : vector<32x256xf32> to vector<32x128xf32>
+      %51 = vector.extract_strided_slice %49 {offsets = [0, 128], sizes = [32, 128], strides = [1, 1]} : vector<32x256xf32> to vector<32x128xf32>
+      %52 = arith.negf %50 : vector<32x128xf32>
+      %53 = math.exp %52 : vector<32x128xf32>
+      %54 = arith.addf %53, %cst : vector<32x128xf32>
+      %55 = arith.divf %cst, %54 : vector<32x128xf32>
+      %56 = arith.mulf %50, %55 : vector<32x128xf32>
+      %57 = arith.mulf %56, %51 : vector<32x128xf32>
+      %58 = tpu.truncf %57 {rounding_mode = #tpu.rounding_mode<to_nearest_even>} : vector<32x128xf32> -> vector<32x128xbf16>
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_gmm2"}> : () -> ()
+      %59 = tpu.vector_load %22[%c0, %c0] {strides = array<i32>} : memref<32x512xf32, #tpu.memory_space<vmem>>, vector<32x512xf32>, 
+      %60 = arith.subi %c511_i32, %27 : i32
+      %61 = arith.remsi %60, %c512_i32 : i32
+      %62 = arith.cmpi ne, %61, %c0_i32 : i32
+      %63 = arith.cmpi slt, %61, %c0_i32 : i32
+      %64 = arith.andi %63, %62 : i1
+      %65 = arith.addi %61, %c512_i32 : i32
+      %66 = arith.select %64, %65, %61 : i32
+      %67 = tpu.dynamic_rotate %59 by %66 dim 1 : vector<32x512xf32>, i32 -> vector<32x512xf32>
+      %68 = vector.extract_strided_slice %67 {offsets = [0, 0], sizes = [32, 1], strides = [1, 1]} : vector<32x512xf32> to vector<32x1xf32>
+      %69 = tpu.vector_load %3[%c1, %c0, %c0] {strides = array<i32>} : memref<4x128x4096xbf16, #tpu.memory_space<vmem>>, vector<1x128x4096xbf16>, 
+      %70 = tpu.reshape %69 : vector<1x128x4096xbf16> -> vector<128x4096xbf16>
+      %71 = tpu.matmul %58, %70, %cst_31 {dimension_numbers = #tpu.dot_dimension_numbers<[1], [0], [0], [1], [0, 0, 1, 1], [], []>, transpose_lhs_hint = false} : vector<32x128xbf16>, vector<128x4096xbf16>, vector<32x4096xf32> -> vector<32x4096xf32>
+      %72 = vector.broadcast %68 : vector<32x1xf32> to vector<32x4096xf32>
+      %73 = arith.mulf %71, %72 : vector<32x4096xf32>
+      %74 = tpu.memref_slice %14[%c1_i32, %c0_i32, %c0_i32] : memref<2x32x4096xf32, #tpu.memory_space<vmem>> -> memref<1x32x4096xf32, #tpu.memory_space<vmem>>
+      %75 = tpu.memref_squeeze %74 : memref<1x32x4096xf32, #tpu.memory_space<vmem>> -> memref<32x4096xf32, #tpu.memory_space<vmem>>
+      tpu.vector_store %75[%c0, %c0], %73 {strides = array<i32>} : memref<32x4096xf32, #tpu.memory_space<vmem>>, vector<32x4096xf32>, 
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_combine"}> : () -> ()
+      scf.for %arg23 = %c0_i32 to %33 step %c1_i32  : i32 {
+        %80 = arith.index_cast %arg23 : i32 to index
+        %81 = memref.load %11[%32, %80] : memref<512x32xi32, #tpu.memory_space<smem>>
+        %82 = tpu.memref_slice %15[%arg23, %c0_i32] : memref<32x4096xf32, #tpu.memory_space<vmem>> -> memref<1x4096xf32, #tpu.memory_space<vmem>>
+        %83 = tpu.memref_slice %9[%81, %c0_i32] : memref<512x4096xf32, #tpu.memory_space<vmem>> -> memref<1x4096xf32, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%83 : memref<1x4096xf32, #tpu.memory_space<vmem>>) target(%82 : memref<1x4096xf32, #tpu.memory_space<vmem>>) target_semaphore(%25 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>)
+      }
+      scf.for %arg23 = %c0_i32 to %33 step %c1_i32  : i32 {
+        %80 = tpu.memref_slice %15[%c0_i32, %c0_i32] : memref<32x4096xf32, #tpu.memory_space<vmem>> -> memref<1x4096xf32, #tpu.memory_space<vmem>>
+        tpu.wait_dma2 semaphore(%25 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) src(%80 : memref<1x4096xf32, #tpu.memory_space<vmem>>) dst(%80 : memref<1x4096xf32, #tpu.memory_space<vmem>>)
+      }
+      %76 = tpu.vector_load %15[%c0, %c0] {strides = array<i32>} : memref<32x4096xf32, #tpu.memory_space<vmem>>, vector<32x4096xf32>, 
+      %77 = tpu.vector_load %14[%c1, %c0, %c0] {strides = array<i32>} : memref<2x32x4096xf32, #tpu.memory_space<vmem>>, vector<1x32x4096xf32>, 
+      %78 = tpu.reshape %77 : vector<1x32x4096xf32> -> vector<32x4096xf32>
+      %79 = arith.addf %76, %78 : vector<32x4096xf32>
+      tpu.vector_store %15[%c0, %c0], %79 {strides = array<i32>} : memref<32x4096xf32, #tpu.memory_space<vmem>>, vector<32x4096xf32>, 
+      scf.for %arg23 = %c0_i32 to %33 step %c1_i32  : i32 {
+        %80 = arith.index_cast %arg23 : i32 to index
+        %81 = memref.load %11[%32, %80] : memref<512x32xi32, #tpu.memory_space<smem>>
+        %82 = tpu.memref_slice %9[%81, %c0_i32] : memref<512x4096xf32, #tpu.memory_space<vmem>> -> memref<1x4096xf32, #tpu.memory_space<vmem>>
+        %83 = tpu.memref_slice %15[%arg23, %c0_i32] : memref<32x4096xf32, #tpu.memory_space<vmem>> -> memref<1x4096xf32, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%83 : memref<1x4096xf32, #tpu.memory_space<vmem>>) target(%82 : memref<1x4096xf32, #tpu.memory_space<vmem>>) target_semaphore(%25 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>)
+      }
+      scf.for %arg23 = %c0_i32 to %33 step %c1_i32  : i32 {
+        %80 = tpu.memref_slice %15[%c0_i32, %c0_i32] : memref<32x4096xf32, #tpu.memory_space<vmem>> -> memref<1x4096xf32, #tpu.memory_space<vmem>>
+        tpu.wait_dma2 semaphore(%25 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) src(%80 : memref<1x4096xf32, #tpu.memory_space<vmem>>) dst(%80 : memref<1x4096xf32, #tpu.memory_space<vmem>>)
+      }
+      "tpu.trace_stop"() : () -> ()
+    }
+    %35 = arith.addi %27, %c2_i32 : i32
+    %36 = arith.index_cast %35 : i32 to index
+    %37 = memref.load %12[%c0, %36] : memref<1x512xi32, #tpu.memory_space<smem>>
+    %38 = arith.cmpi sgt, %37, %c0_i32 : i32
+    scf.if %38 {
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_gather"}> : () -> ()
+      scf.for %arg23 = %c0_i32 to %37 step %c1_i32  : i32 {
+        %80 = arith.index_cast %arg23 : i32 to index
+        %81 = memref.load %11[%36, %80] : memref<512x32xi32, #tpu.memory_space<smem>>
+        %82 = tpu.memref_slice %13[%c0_i32, %c0_i32, %c0_i32] : memref<2x32x4096xbf16, #tpu.memory_space<vmem>> -> memref<1x32x4096xbf16, #tpu.memory_space<vmem>>
+        %83 = tpu.memref_squeeze %82 : memref<1x32x4096xbf16, #tpu.memory_space<vmem>> -> memref<32x4096xbf16, #tpu.memory_space<vmem>>
+        %84 = tpu.memref_slice %83[%arg23, %c0_i32] : memref<32x4096xbf16, #tpu.memory_space<vmem>> -> memref<1x4096xbf16, #tpu.memory_space<vmem>>
+        %85 = tpu.memref_slice %5[%81, %c0_i32] : memref<512x4096xbf16, #tpu.memory_space<vmem>> -> memref<1x4096xbf16, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%85 : memref<1x4096xbf16, #tpu.memory_space<vmem>>) target(%84 : memref<1x4096xbf16, #tpu.memory_space<vmem>>) target_semaphore(%25 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>)
+      }
+      scf.for %arg23 = %c0_i32 to %37 step %c1_i32  : i32 {
+        %80 = tpu.memref_slice %13[%c0_i32, %c0_i32, %c0_i32] : memref<2x32x4096xbf16, #tpu.memory_space<vmem>> -> memref<1x32x4096xbf16, #tpu.memory_space<vmem>>
+        %81 = tpu.memref_squeeze %80 : memref<1x32x4096xbf16, #tpu.memory_space<vmem>> -> memref<32x4096xbf16, #tpu.memory_space<vmem>>
+        %82 = tpu.memref_slice %81[%c0_i32, %c0_i32] : memref<32x4096xbf16, #tpu.memory_space<vmem>> -> memref<1x4096xbf16, #tpu.memory_space<vmem>>
+        tpu.wait_dma2 semaphore(%25 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) src(%82 : memref<1x4096xbf16, #tpu.memory_space<vmem>>) dst(%82 : memref<1x4096xbf16, #tpu.memory_space<vmem>>)
+      }
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_gmm1"}> : () -> ()
+      %44 = tpu.memref_slice %13[%c0_i32, %c0_i32, %c0_i32] : memref<2x32x4096xbf16, #tpu.memory_space<vmem>> -> memref<1x32x4096xbf16, #tpu.memory_space<vmem>>
+      %45 = tpu.memref_squeeze %44 : memref<1x32x4096xbf16, #tpu.memory_space<vmem>> -> memref<32x4096xbf16, #tpu.memory_space<vmem>>
+      %46 = tpu.vector_load %45[%c0, %c0] {strides = array<i32>} : memref<32x4096xbf16, #tpu.memory_space<vmem>>, vector<32x4096xbf16>, 
+      %47 = tpu.vector_load %2[%c2, %c0, %c0] {strides = array<i32>} : memref<4x4096x256xbf16, #tpu.memory_space<vmem>>, vector<1x4096x256xbf16>, 
+      %48 = tpu.reshape %47 : vector<1x4096x256xbf16> -> vector<4096x256xbf16>
+      %49 = tpu.matmul %46, %48, %cst_0 {dimension_numbers = #tpu.dot_dimension_numbers<[1], [0], [0], [1], [0, 0, 1, 1], [], []>, transpose_lhs_hint = false} : vector<32x4096xbf16>, vector<4096x256xbf16>, vector<32x256xf32> -> vector<32x256xf32>
+      %50 = vector.extract_strided_slice %49 {offsets = [0, 0], sizes = [32, 128], strides = [1, 1]} : vector<32x256xf32> to vector<32x128xf32>
+      %51 = vector.extract_strided_slice %49 {offsets = [0, 128], sizes = [32, 128], strides = [1, 1]} : vector<32x256xf32> to vector<32x128xf32>
+      %52 = arith.negf %50 : vector<32x128xf32>
+      %53 = math.exp %52 : vector<32x128xf32>
+      %54 = arith.addf %53, %cst : vector<32x128xf32>
+      %55 = arith.divf %cst, %54 : vector<32x128xf32>
+      %56 = arith.mulf %50, %55 : vector<32x128xf32>
+      %57 = arith.mulf %56, %51 : vector<32x128xf32>
+      %58 = tpu.truncf %57 {rounding_mode = #tpu.rounding_mode<to_nearest_even>} : vector<32x128xf32> -> vector<32x128xbf16>
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_gmm2"}> : () -> ()
+      %59 = tpu.vector_load %22[%c0, %c0] {strides = array<i32>} : memref<32x512xf32, #tpu.memory_space<vmem>>, vector<32x512xf32>, 
+      %60 = arith.subi %c510_i32, %27 : i32
+      %61 = arith.remsi %60, %c512_i32 : i32
+      %62 = arith.cmpi ne, %61, %c0_i32 : i32
+      %63 = arith.cmpi slt, %61, %c0_i32 : i32
+      %64 = arith.andi %63, %62 : i1
+      %65 = arith.addi %61, %c512_i32 : i32
+      %66 = arith.select %64, %65, %61 : i32
+      %67 = tpu.dynamic_rotate %59 by %66 dim 1 : vector<32x512xf32>, i32 -> vector<32x512xf32>
+      %68 = vector.extract_strided_slice %67 {offsets = [0, 0], sizes = [32, 1], strides = [1, 1]} : vector<32x512xf32> to vector<32x1xf32>
+      %69 = tpu.vector_load %3[%c2, %c0, %c0] {strides = array<i32>} : memref<4x128x4096xbf16, #tpu.memory_space<vmem>>, vector<1x128x4096xbf16>, 
+      %70 = tpu.reshape %69 : vector<1x128x4096xbf16> -> vector<128x4096xbf16>
+      %71 = tpu.matmul %58, %70, %cst_31 {dimension_numbers = #tpu.dot_dimension_numbers<[1], [0], [0], [1], [0, 0, 1, 1], [], []>, transpose_lhs_hint = false} : vector<32x128xbf16>, vector<128x4096xbf16>, vector<32x4096xf32> -> vector<32x4096xf32>
+      %72 = vector.broadcast %68 : vector<32x1xf32> to vector<32x4096xf32>
+      %73 = arith.mulf %71, %72 : vector<32x4096xf32>
+      %74 = tpu.memref_slice %14[%c0_i32, %c0_i32, %c0_i32] : memref<2x32x4096xf32, #tpu.memory_space<vmem>> -> memref<1x32x4096xf32, #tpu.memory_space<vmem>>
+      %75 = tpu.memref_squeeze %74 : memref<1x32x4096xf32, #tpu.memory_space<vmem>> -> memref<32x4096xf32, #tpu.memory_space<vmem>>
+      tpu.vector_store %75[%c0, %c0], %73 {strides = array<i32>} : memref<32x4096xf32, #tpu.memory_space<vmem>>, vector<32x4096xf32>, 
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_combine"}> : () -> ()
+      scf.for %arg23 = %c0_i32 to %37 step %c1_i32  : i32 {
+        %80 = arith.index_cast %arg23 : i32 to index
+        %81 = memref.load %11[%36, %80] : memref<512x32xi32, #tpu.memory_space<smem>>
+        %82 = tpu.memref_slice %15[%arg23, %c0_i32] : memref<32x4096xf32, #tpu.memory_space<vmem>> -> memref<1x4096xf32, #tpu.memory_space<vmem>>
+        %83 = tpu.memref_slice %9[%81, %c0_i32] : memref<512x4096xf32, #tpu.memory_space<vmem>> -> memref<1x4096xf32, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%83 : memref<1x4096xf32, #tpu.memory_space<vmem>>) target(%82 : memref<1x4096xf32, #tpu.memory_space<vmem>>) target_semaphore(%25 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>)
+      }
+      scf.for %arg23 = %c0_i32 to %37 step %c1_i32  : i32 {
+        %80 = tpu.memref_slice %15[%c0_i32, %c0_i32] : memref<32x4096xf32, #tpu.memory_space<vmem>> -> memref<1x4096xf32, #tpu.memory_space<vmem>>
+        tpu.wait_dma2 semaphore(%25 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) src(%80 : memref<1x4096xf32, #tpu.memory_space<vmem>>) dst(%80 : memref<1x4096xf32, #tpu.memory_space<vmem>>)
+      }
+      %76 = tpu.vector_load %15[%c0, %c0] {strides = array<i32>} : memref<32x4096xf32, #tpu.memory_space<vmem>>, vector<32x4096xf32>, 
+      %77 = tpu.vector_load %14[%c0, %c0, %c0] {strides = array<i32>} : memref<2x32x4096xf32, #tpu.memory_space<vmem>>, vector<1x32x4096xf32>, 
+      %78 = tpu.reshape %77 : vector<1x32x4096xf32> -> vector<32x4096xf32>
+      %79 = arith.addf %76, %78 : vector<32x4096xf32>
+      tpu.vector_store %15[%c0, %c0], %79 {strides = array<i32>} : memref<32x4096xf32, #tpu.memory_space<vmem>>, vector<32x4096xf32>, 
+      scf.for %arg23 = %c0_i32 to %37 step %c1_i32  : i32 {
+        %80 = arith.index_cast %arg23 : i32 to index
+        %81 = memref.load %11[%36, %80] : memref<512x32xi32, #tpu.memory_space<smem>>
+        %82 = tpu.memref_slice %9[%81, %c0_i32] : memref<512x4096xf32, #tpu.memory_space<vmem>> -> memref<1x4096xf32, #tpu.memory_space<vmem>>
+        %83 = tpu.memref_slice %15[%arg23, %c0_i32] : memref<32x4096xf32, #tpu.memory_space<vmem>> -> memref<1x4096xf32, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%83 : memref<1x4096xf32, #tpu.memory_space<vmem>>) target(%82 : memref<1x4096xf32, #tpu.memory_space<vmem>>) target_semaphore(%25 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>)
+      }
+      scf.for %arg23 = %c0_i32 to %37 step %c1_i32  : i32 {
+        %80 = tpu.memref_slice %15[%c0_i32, %c0_i32] : memref<32x4096xf32, #tpu.memory_space<vmem>> -> memref<1x4096xf32, #tpu.memory_space<vmem>>
+        tpu.wait_dma2 semaphore(%25 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) src(%80 : memref<1x4096xf32, #tpu.memory_space<vmem>>) dst(%80 : memref<1x4096xf32, #tpu.memory_space<vmem>>)
+      }
+      "tpu.trace_stop"() : () -> ()
+    }
+    %39 = arith.addi %27, %c3_i32 : i32
+    %40 = arith.index_cast %39 : i32 to index
+    %41 = memref.load %12[%c0, %40] : memref<1x512xi32, #tpu.memory_space<smem>>
+    %42 = arith.cmpi sgt, %41, %c0_i32 : i32
+    scf.if %42 {
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_gather"}> : () -> ()
+      scf.for %arg23 = %c0_i32 to %41 step %c1_i32  : i32 {
+        %80 = arith.index_cast %arg23 : i32 to index
+        %81 = memref.load %11[%40, %80] : memref<512x32xi32, #tpu.memory_space<smem>>
+        %82 = tpu.memref_slice %13[%c1_i32, %c0_i32, %c0_i32] : memref<2x32x4096xbf16, #tpu.memory_space<vmem>> -> memref<1x32x4096xbf16, #tpu.memory_space<vmem>>
+        %83 = tpu.memref_squeeze %82 : memref<1x32x4096xbf16, #tpu.memory_space<vmem>> -> memref<32x4096xbf16, #tpu.memory_space<vmem>>
+        %84 = tpu.memref_slice %83[%arg23, %c0_i32] : memref<32x4096xbf16, #tpu.memory_space<vmem>> -> memref<1x4096xbf16, #tpu.memory_space<vmem>>
+        %85 = tpu.memref_slice %5[%81, %c0_i32] : memref<512x4096xbf16, #tpu.memory_space<vmem>> -> memref<1x4096xbf16, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%85 : memref<1x4096xbf16, #tpu.memory_space<vmem>>) target(%84 : memref<1x4096xbf16, #tpu.memory_space<vmem>>) target_semaphore(%25 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>)
+      }
+      scf.for %arg23 = %c0_i32 to %41 step %c1_i32  : i32 {
+        %80 = tpu.memref_slice %13[%c1_i32, %c0_i32, %c0_i32] : memref<2x32x4096xbf16, #tpu.memory_space<vmem>> -> memref<1x32x4096xbf16, #tpu.memory_space<vmem>>
+        %81 = tpu.memref_squeeze %80 : memref<1x32x4096xbf16, #tpu.memory_space<vmem>> -> memref<32x4096xbf16, #tpu.memory_space<vmem>>
+        %82 = tpu.memref_slice %81[%c0_i32, %c0_i32] : memref<32x4096xbf16, #tpu.memory_space<vmem>> -> memref<1x4096xbf16, #tpu.memory_space<vmem>>
+        tpu.wait_dma2 semaphore(%25 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) src(%82 : memref<1x4096xbf16, #tpu.memory_space<vmem>>) dst(%82 : memref<1x4096xbf16, #tpu.memory_space<vmem>>)
+      }
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_gmm1"}> : () -> ()
+      %44 = tpu.memref_slice %13[%c1_i32, %c0_i32, %c0_i32] : memref<2x32x4096xbf16, #tpu.memory_space<vmem>> -> memref<1x32x4096xbf16, #tpu.memory_space<vmem>>
+      %45 = tpu.memref_squeeze %44 : memref<1x32x4096xbf16, #tpu.memory_space<vmem>> -> memref<32x4096xbf16, #tpu.memory_space<vmem>>
+      %46 = tpu.vector_load %45[%c0, %c0] {strides = array<i32>} : memref<32x4096xbf16, #tpu.memory_space<vmem>>, vector<32x4096xbf16>, 
+      %47 = tpu.vector_load %2[%c3, %c0, %c0] {strides = array<i32>} : memref<4x4096x256xbf16, #tpu.memory_space<vmem>>, vector<1x4096x256xbf16>, 
+      %48 = tpu.reshape %47 : vector<1x4096x256xbf16> -> vector<4096x256xbf16>
+      %49 = tpu.matmul %46, %48, %cst_0 {dimension_numbers = #tpu.dot_dimension_numbers<[1], [0], [0], [1], [0, 0, 1, 1], [], []>, transpose_lhs_hint = false} : vector<32x4096xbf16>, vector<4096x256xbf16>, vector<32x256xf32> -> vector<32x256xf32>
+      %50 = vector.extract_strided_slice %49 {offsets = [0, 0], sizes = [32, 128], strides = [1, 1]} : vector<32x256xf32> to vector<32x128xf32>
+      %51 = vector.extract_strided_slice %49 {offsets = [0, 128], sizes = [32, 128], strides = [1, 1]} : vector<32x256xf32> to vector<32x128xf32>
+      %52 = arith.negf %50 : vector<32x128xf32>
+      %53 = math.exp %52 : vector<32x128xf32>
+      %54 = arith.addf %53, %cst : vector<32x128xf32>
+      %55 = arith.divf %cst, %54 : vector<32x128xf32>
+      %56 = arith.mulf %50, %55 : vector<32x128xf32>
+      %57 = arith.mulf %56, %51 : vector<32x128xf32>
+      %58 = tpu.truncf %57 {rounding_mode = #tpu.rounding_mode<to_nearest_even>} : vector<32x128xf32> -> vector<32x128xbf16>
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_gmm2"}> : () -> ()
+      %59 = tpu.vector_load %22[%c0, %c0] {strides = array<i32>} : memref<32x512xf32, #tpu.memory_space<vmem>>, vector<32x512xf32>, 
+      %60 = arith.subi %c509_i32, %27 : i32
+      %61 = arith.remsi %60, %c512_i32 : i32
+      %62 = arith.cmpi ne, %61, %c0_i32 : i32
+      %63 = arith.cmpi slt, %61, %c0_i32 : i32
+      %64 = arith.andi %63, %62 : i1
+      %65 = arith.addi %61, %c512_i32 : i32
+      %66 = arith.select %64, %65, %61 : i32
+      %67 = tpu.dynamic_rotate %59 by %66 dim 1 : vector<32x512xf32>, i32 -> vector<32x512xf32>
+      %68 = vector.extract_strided_slice %67 {offsets = [0, 0], sizes = [32, 1], strides = [1, 1]} : vector<32x512xf32> to vector<32x1xf32>
+      %69 = tpu.vector_load %3[%c3, %c0, %c0] {strides = array<i32>} : memref<4x128x4096xbf16, #tpu.memory_space<vmem>>, vector<1x128x4096xbf16>, 
+      %70 = tpu.reshape %69 : vector<1x128x4096xbf16> -> vector<128x4096xbf16>
+      %71 = tpu.matmul %58, %70, %cst_31 {dimension_numbers = #tpu.dot_dimension_numbers<[1], [0], [0], [1], [0, 0, 1, 1], [], []>, transpose_lhs_hint = false} : vector<32x128xbf16>, vector<128x4096xbf16>, vector<32x4096xf32> -> vector<32x4096xf32>
+      %72 = vector.broadcast %68 : vector<32x1xf32> to vector<32x4096xf32>
+      %73 = arith.mulf %71, %72 : vector<32x4096xf32>
+      %74 = tpu.memref_slice %14[%c1_i32, %c0_i32, %c0_i32] : memref<2x32x4096xf32, #tpu.memory_space<vmem>> -> memref<1x32x4096xf32, #tpu.memory_space<vmem>>
+      %75 = tpu.memref_squeeze %74 : memref<1x32x4096xf32, #tpu.memory_space<vmem>> -> memref<32x4096xf32, #tpu.memory_space<vmem>>
+      tpu.vector_store %75[%c0, %c0], %73 {strides = array<i32>} : memref<32x4096xf32, #tpu.memory_space<vmem>>, vector<32x4096xf32>, 
+      "tpu.trace_stop"() : () -> ()
+      "tpu.trace_start"() <{level = 10 : i32, message = "moe_combine"}> : () -> ()
+      scf.for %arg23 = %c0_i32 to %41 step %c1_i32  : i32 {
+        %80 = arith.index_cast %arg23 : i32 to index
+        %81 = memref.load %11[%40, %80] : memref<512x32xi32, #tpu.memory_space<smem>>
+        %82 = tpu.memref_slice %15[%arg23, %c0_i32] : memref<32x4096xf32, #tpu.memory_space<vmem>> -> memref<1x4096xf32, #tpu.memory_space<vmem>>
+        %83 = tpu.memref_slice %9[%81, %c0_i32] : memref<512x4096xf32, #tpu.memory_space<vmem>> -> memref<1x4096xf32, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%83 : memref<1x4096xf32, #tpu.memory_space<vmem>>) target(%82 : memref<1x4096xf32, #tpu.memory_space<vmem>>) target_semaphore(%25 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>)
+      }
+      scf.for %arg23 = %c0_i32 to %41 step %c1_i32  : i32 {
+        %80 = tpu.memref_slice %15[%c0_i32, %c0_i32] : memref<32x4096xf32, #tpu.memory_space<vmem>> -> memref<1x4096xf32, #tpu.memory_space<vmem>>
+        tpu.wait_dma2 semaphore(%25 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) src(%80 : memref<1x4096xf32, #tpu.memory_space<vmem>>) dst(%80 : memref<1x4096xf32, #tpu.memory_space<vmem>>)
+      }
+      %76 = tpu.vector_load %15[%c0, %c0] {strides = array<i32>} : memref<32x4096xf32, #tpu.memory_space<vmem>>, vector<32x4096xf32>, 
+      %77 = tpu.vector_load %14[%c1, %c0, %c0] {strides = array<i32>} : memref<2x32x4096xf32, #tpu.memory_space<vmem>>, vector<1x32x4096xf32>, 
+      %78 = tpu.reshape %77 : vector<1x32x4096xf32> -> vector<32x4096xf32>
+      %79 = arith.addf %76, %78 : vector<32x4096xf32>
+      tpu.vector_store %15[%c0, %c0], %79 {strides = array<i32>} : memref<32x4096xf32, #tpu.memory_space<vmem>>, vector<32x4096xf32>, 
+      scf.for %arg23 = %c0_i32 to %41 step %c1_i32  : i32 {
+        %80 = arith.index_cast %arg23 : i32 to index
+        %81 = memref.load %11[%40, %80] : memref<512x32xi32, #tpu.memory_space<smem>>
+        %82 = tpu.memref_slice %9[%81, %c0_i32] : memref<512x4096xf32, #tpu.memory_space<vmem>> -> memref<1x4096xf32, #tpu.memory_space<vmem>>
+        %83 = tpu.memref_slice %15[%arg23, %c0_i32] : memref<32x4096xf32, #tpu.memory_space<vmem>> -> memref<1x4096xf32, #tpu.memory_space<vmem>>
+        tpu.enqueue_dma source(%83 : memref<1x4096xf32, #tpu.memory_space<vmem>>) target(%82 : memref<1x4096xf32, #tpu.memory_space<vmem>>) target_semaphore(%25 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>)
+      }
+      scf.for %arg23 = %c0_i32 to %41 step %c1_i32  : i32 {
+        %80 = tpu.memref_slice %15[%c0_i32, %c0_i32] : memref<32x4096xf32, #tpu.memory_space<vmem>> -> memref<1x4096xf32, #tpu.memory_space<vmem>>
+        tpu.wait_dma2 semaphore(%25 : memref<!tpu.dma_semaphore, #tpu.memory_space<semaphore_mem>>) src(%80 : memref<1x4096xf32, #tpu.memory_space<vmem>>) dst(%80 : memref<1x4096xf32, #tpu.memory_space<vmem>>)
+      }
+      "tpu.trace_stop"() : () -> ()
+    }
+    %43 = arith.cmpi eq, %arg0, %c127_i32 : i32
+    scf.if %43 {
+      %44 = tpu.vector_load %9[%c0, %c0] {strides = array<i32>} : memref<512x4096xf32, #tpu.memory_space<vmem>>, vector<512x4096xf32>, 
+      %45 = tpu.truncf %44 {rounding_mode = #tpu.rounding_mode<to_nearest_even>} : vector<512x4096xf32> -> vector<512x4096xbf16>
+      tpu.vector_store %4[%c0, %c0], %45 {strides = array<i32>} : memref<512x4096xbf16, #tpu.memory_space<vmem>>, vector<512x4096xbf16>, 
+    }
+    return
+  }
+  func.func @transform_0(%arg0: i32) -> (i32, i32) {
+    %c0_i32 = arith.constant 0 : i32
+    return %c0_i32, %c0_i32 : i32, i32
+  }
+  func.func @transform_1(%arg0: i32) -> (i32, i32) {
+    %c0_i32 = arith.constant 0 : i32
+    return %c0_i32, %c0_i32 : i32, i32
+  }
+  func.func @transform_2(%arg0: i32) -> (i32, i32, i32) {
+    %c0_i32 = arith.constant 0 : i32
+    return %arg0, %c0_i32, %c0_i32 : i32, i32, i32
+  }
+  func.func @transform_3(%arg0: i32) -> (i32, i32, i32) {
+    %c0_i32 = arith.constant 0 : i32
+    return %arg0, %c0_i32, %c0_i32 : i32, i32, i32
+  }
+  func.func @transform_4(%arg0: i32) -> (i32, i32) {
+    %c0_i32 = arith.constant 0 : i32
+    return %c0_i32, %c0_i32 : i32, i32
+  }
+}

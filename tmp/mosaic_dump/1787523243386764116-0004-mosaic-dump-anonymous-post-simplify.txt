@@ -1,0 +1,5 @@
+module attributes {stable_mosaic.version = 15 : i64} {
+  func.func private @main(%arg0: i32) attributes {dimension_semantics = [#tpu.dimension_semantics<core_parallel>], iteration_bounds = array<i64: 2>, tpu.core_type = #tpu.core_type<sc_scalar_subcore>, window_params = []} {
+    return
+  }
+}
