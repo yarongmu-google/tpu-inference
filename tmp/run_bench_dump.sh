@@ -36,15 +36,18 @@ run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
 unset LIBTPU_INIT_ARGS
 run du -sh tmp/mosaic_dump
 
-# Keep only the passes we actually read (the kernel's own module chain),
-# then compress: raw dumps run to hundreds of MB and blow the git limit.
+# The raw dumps are hundreds of MB. What we actually read is the op
+# histogram per named_scope region (a few KB) plus, if it fits, the last
+# module in the pass chain. Everything else is discarded.
 run bash -c '
-  mkdir -p tmp/mosaic_keep
-  grep -rl "dynamic_rotate\|tpu.matmul\|enqueue_dma" tmp/mosaic_dump \
-    | xargs -r -I{} cp {} tmp/mosaic_keep/
-  tar -czf tmp/mosaic_dump.tgz -C tmp mosaic_keep
-  rm -rf tmp/mosaic_dump tmp/mosaic_keep
-  ls -lh tmp/mosaic_dump.tgz'
+  set -x
+  ls tmp/mosaic_dump | tail -30
+  LAST=$(ls tmp/mosaic_dump/* 2>/dev/null | tail -1)
+  python tmp/dump_histogram.py $LAST > tmp/op_histogram.txt
+  wc -l tmp/op_histogram.txt
+  xz -9 -T0 -c $LAST > tmp/mosaic_last.xz
+  ls -lh tmp/mosaic_last.xz
+  rm -rf tmp/mosaic_dump'
 
 # 2) clean timing run (no dump overhead): v0.2 only - the v1 baseline is
 #    deliberately out of the bring-up loop; it returns for the final
@@ -60,4 +63,4 @@ run bash -c 'tar -czf tmp/xprof.tgz -C tmp xprof && rm -rf tmp/xprof
              ls -lh tmp/xprof.tgz'
 
 echo
-echo "log: tmp/bench_dump.log  dumps: tmp/mosaic_dump.tgz  trace: tmp/xprof.tgz"
+echo "log: tmp/bench_dump.log  hist: tmp/op_histogram.txt  last: tmp/mosaic_last.xz  trace: tmp/xprof.tgz"
