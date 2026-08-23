@@ -34,7 +34,17 @@ export LIBTPU_INIT_ARGS="--xla_mosaic_dump_to=tmp/mosaic_dump"
 run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
     --variants=v02 --iters=3 --warmup=1
 unset LIBTPU_INIT_ARGS
-run ls tmp/mosaic_dump
+run du -sh tmp/mosaic_dump
+
+# Keep only the passes we actually read (the kernel's own module chain),
+# then compress: raw dumps run to hundreds of MB and blow the git limit.
+run bash -c '
+  mkdir -p tmp/mosaic_keep
+  grep -rl "dynamic_rotate\|tpu.matmul\|enqueue_dma" tmp/mosaic_dump \
+    | xargs -r -I{} cp {} tmp/mosaic_keep/
+  tar -czf tmp/mosaic_dump.tgz -C tmp mosaic_keep
+  rm -rf tmp/mosaic_dump tmp/mosaic_keep
+  ls -lh tmp/mosaic_dump.tgz'
 
 # 2) clean timing run (no dump overhead): v0.2 only - the v1 baseline is
 #    deliberately out of the bring-up loop; it returns for the final
@@ -42,5 +52,12 @@ run ls tmp/mosaic_dump
 run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
     --variants=v02 --iters=30 --warmup=5
 
+# 3) per-stage spans: named_scope markers -> device trace. This is what
+#    says WHERE the time goes (prologue vs gather vs gmms vs combine).
+run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
+    --variants=v02 --iters=3 --warmup=1 --profile-dir=tmp/xprof
+run bash -c 'tar -czf tmp/xprof.tgz -C tmp xprof && rm -rf tmp/xprof
+             ls -lh tmp/xprof.tgz'
+
 echo
-echo "log: tmp/bench_dump.log   dumps: tmp/mosaic_dump/"
+echo "log: tmp/bench_dump.log  dumps: tmp/mosaic_dump.tgz  trace: tmp/xprof.tgz"
