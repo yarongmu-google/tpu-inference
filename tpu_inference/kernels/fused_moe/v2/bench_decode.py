@@ -171,7 +171,10 @@ def main() -> None:
             NamedSharding(mesh_v1, P("model", None, None, None)))
         w2_v1 = jax.device_put(w2, NamedSharding(mesh_v1, P("model")))
         tok_v1 = jax.device_put(tokens, NamedSharding(mesh_v1, P("model")))
-        gate_v1 = jax.device_put(gating, NamedSharding(mesh_v1, P("model")))
+        # v1 stages gating into an act-dtype VMEM buffer; f32 gating fails
+        # its DMA lowering (src/dst element type mismatch)
+        gate_v1 = jax.device_put(gating.astype(dtype),
+                                 NamedSharding(mesh_v1, P("model")))
 
         def run_v1() -> jax.Array:
             return fused_ep_moe(
