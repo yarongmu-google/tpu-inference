@@ -30,10 +30,10 @@ run python -c "import tpu_inference.kernels.fused_moe.v2.decode_kernel as m; pri
 # 1) Mosaic pass dump: short run; the dumps include apply-vector-layout
 #    (post-relayout), which the local CPU-side dump cannot see.
 mkdir -p tmp/mosaic_dump
-export XLA_FLAGS="--xla_dump_to=tmp/mosaic_dump"
+export LIBTPU_INIT_ARGS="--xla_mosaic_dump_to=tmp/mosaic_dump"
 run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
     --variants=v02 --iters=3 --warmup=1
-unset XLA_FLAGS
+unset LIBTPU_INIT_ARGS
 run ls tmp/mosaic_dump
 
 # 2) clean timing run (no dump overhead): v0.2 only - the v1 baseline is
