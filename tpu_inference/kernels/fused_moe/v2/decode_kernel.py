@@ -173,6 +173,7 @@ def _decode_moe_kernel(
     act_dtype,
     bd1c: int | None = None,
     bd2c: int | None = None,
+    bcT: int | None = None,
     ablate: str = "none",
 ):
     # `ablate` stubs one stage at a time so wall-clock differences localise
@@ -392,10 +393,21 @@ def _decode_moe_kernel(
 
     if do_combine:
       with jax.named_scope("moe_combine"):
-        # scatter-add as ONE matmul: OHG_T carries the gate weights, so
+        # Scatter-add as ONE matmul: OHG_T carries the gate weights, so
         # this both routes rows home and applies the top-k weighting.
-        acc_vmem[...] = acc_vmem[...] + jnp.dot(
-            ohg_t_block, y_vmem[...], preferred_element_type=jnp.float32)
+        #
+        # CHUNKED over T: a full-width `acc[...] = acc[...] + dot(...)`
+        # emits every load, then every add, then every store - three
+        # phases each far wider than the scheduler's window, so nothing
+        # can overlap. Chunking puts vld + valu + vst work in every
+        # window instead. bcT is the tunable; None = one full-width
+        # expression (the old, unpipelineable form).
+        tc = bcT or t
+        for t0 in range(0, t, tc):
+            rows = pl.ds(t0, tc)
+            acc_vmem[rows, :] = acc_vmem[rows, :] + jnp.dot(
+                ohg_t_block[t0:t0 + tc, :], y_vmem[...],
+                preferred_element_type=jnp.float32)
 
     # ---- last grid step: emit ----
     @pl.when(blk == num_blocks - 1)
@@ -406,8 +418,8 @@ def _decode_moe_kernel(
 @functools.partial(
     jax.jit,
     static_argnames=("mesh", "axis_name", "top_k", "renormalize_topk_logits",
-                     "capacity", "be", "bd1c", "bd2c", "vmem_limit_bytes",
-                     "ablate", "interpret"),
+                     "capacity", "be", "bd1c", "bd2c", "bcT",
+                     "vmem_limit_bytes", "ablate", "interpret"),
 )
 def fused_moe_decode_tp_fused(
     tokens_local: jax.Array,   # [T/P, D]
@@ -423,6 +435,7 @@ def fused_moe_decode_tp_fused(
     be: int = 4,
     bd1c: int | None = None,
     bd2c: int | None = None,
+    bcT: int | None = None,
     vmem_limit_bytes: int = 64 * 1024 * 1024,
     ablate: str = "none",
     interpret=False,
@@ -445,6 +458,7 @@ def fused_moe_decode_tp_fused(
     e, _, i2 = w1_local.shape
     assert e % be == 0, (e, be)
     assert d % (bd1c or d) == 0 and d % (bd2c or d) == 0, (d, bd1c, bd2c)
+    assert t % (bcT or t) == 0, (t, bcT)
     assert router_w.shape == (e, d), (router_w.shape, e, d)
     num_blocks = e // be
 
@@ -509,6 +523,7 @@ def fused_moe_decode_tp_fused(
         act_dtype=tokens_local.dtype,
         bd1c=bd1c,
         bd2c=bd2c,
+        bcT=bcT,
         ablate=ablate,
     )
     out = pl.pallas_call(

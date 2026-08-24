@@ -109,6 +109,9 @@ def main() -> None:
                         help="v2: gmm1 D-contraction sub-tile (0 = whole D)")
     parser.add_argument("--bd2c", type=int, default=0,
                         help="v2: gmm2 D-output sub-tile (0 = whole D)")
+    parser.add_argument("--bct", "--bcT", dest="bcT", type=int, default=0,
+                        help="v2: combine accumulate chunk over T "
+                        "(0 = one full-width expression, unpipelineable)")
     parser.add_argument("--tune", action="store_true",
                         help="sweep v2 kernel params, print the winner "
                         "(ignores the one-off param flags above)")
@@ -198,7 +201,8 @@ def main() -> None:
         w2_l = jax.device_put(w2, NamedSharding(mesh_v2, P(None, "x", None)))
 
         def v2_runner(be: int, cap: int, bd1c: int | None,
-                      bd2c: int | None) -> Callable[[], jax.Array]:
+                      bd2c: int | None,
+                      bcT: int | None = None) -> Callable[[], jax.Array]:
             def fn(tok: jax.Array, w1x: jax.Array, w2x: jax.Array,
                    r: jax.Array) -> jax.Array:
                 w1_flat = w1x.reshape(w1x.shape[0], w1x.shape[1], -1)
@@ -215,6 +219,7 @@ def main() -> None:
                     be=be,
                     bd1c=bd1c,
                     bd2c=bd2c,
+                    bcT=bcT,
                     interpret=args.interpret,
                 )
 
@@ -228,7 +233,8 @@ def main() -> None:
         if "v02" in args.variants:
             variants["v2_tp_inkernel_ag"] = v2_runner(
                 be=args.be, cap=args.capacity,
-                bd1c=args.bd1c or None, bd2c=args.bd2c or None)
+                bd1c=args.bd1c or None, bd2c=args.bd2c or None,
+                bcT=args.bcT or None)
 
     if args.tune:
         if "v1_ep_a2a" in variants:
@@ -256,22 +262,24 @@ def main() -> None:
             if label not in args.variants:
                 continue
             best_us: float | None = None
-            best: tuple[int, int, int | None, int | None] | None = None
+            best: tuple[int, int, int | None, int | None,
+                        int | None] | None = None
 
             def measure(be: int, cap: int, b1: int | None,
-                        b2: int | None) -> None:
+                        b2: int | None, bt: int | None = None) -> None:
                 nonlocal best_us, best
-                tag = f"  be={be} cap={cap} bd1c={b1 or 0} bd2c={b2 or 0}"
+                tag = (f"  be={be} cap={cap} bd1c={b1 or 0} bd2c={b2 or 0} "
+                       f"bcT={bt or 0}")
                 try:
                     us, _ = _time(
-                        v2_runner(be=be, cap=cap, bd1c=b1, bd2c=b2),
+                        v2_runner(be=be, cap=cap, bd1c=b1, bd2c=b2, bcT=bt),
                         iters=args.iters, warmup=args.warmup)
                 except Exception as ex:  # e.g. VMEM oversubscription
                     print(f"{tag}: failed ({type(ex).__name__})")
                     return
                 print(f"{tag}: {us:.1f} us")
                 if best_us is None or us < best_us:
-                    best_us, best = us, (be, cap, b1, b2)
+                    best_us, best = us, (be, cap, b1, b2, bt)
 
             print(f"\n[tune] {label} stage 1: be x capacity")
             for be in be_cands:
@@ -282,13 +290,16 @@ def main() -> None:
                 continue
             print(f"[tune] {label} stage 2: gmm1 D-chunk (bd1c)")
             for b1 in bd_cands:
-                measure(best[0], best[1], b1, best[3])
+                measure(best[0], best[1], b1, best[3], best[4])
             print(f"[tune] {label} stage 3: gmm2 D-chunk (bd2c)")
             for b2 in bd_cands:
-                measure(best[0], best[1], best[2], b2)
-            be, cap, b1, b2 = best
-            print(f"[tune] {label} WINNER: --be={be} "
-                  f"--capacity={cap} --bd1c={b1 or 0} --bd2c={b2 or 0} "
+                measure(best[0], best[1], best[2], b2, best[4])
+            print(f"[tune] {label} stage 4: combine T-chunk (bcT)")
+            for bt in [x for x in (8, 16, 32, 64, 128, 256) if x < t]:
+                measure(best[0], best[1], best[2], best[3], bt)
+            be, cap, b1, b2, bt = best
+            print(f"[tune] {label} WINNER: --be={be} --capacity={cap} "
+                  f"--bd1c={b1 or 0} --bd2c={b2 or 0} --bcT={bt or 0} "
                   f"-> {best_us:.1f} us")
         return
 
