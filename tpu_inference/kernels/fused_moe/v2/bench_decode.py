@@ -245,7 +245,12 @@ def main() -> None:
         print(f"[tune] max expert load = {max_load} -> capacity >= {cap0}")
         be_cands = [x for x in (4, 8, 16) if e % x == 0]
         cap_cands = sorted({cap0, 2 * cap0})
-        bd_cands = [x for x in (512, 1024, 2048) if x < d and d % x == 0]
+        # small chunks matter most: an unchunked contraction emits all the
+        # loads/pushes before any matmul, so nothing interleaves. Include
+        # 128/256 (one and two lane-tiles) - the MXU's diagonal push does
+        # two 128x128 blocks per pass, so K=128 is not a half-empty array.
+        bd_cands = [x for x in (128, 256, 512, 1024, 2048)
+                    if x < d and d % x == 0]
 
         for label in ("v02",):
             if label not in args.variants:

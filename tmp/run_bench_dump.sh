@@ -57,9 +57,12 @@ run bash -c '
   ls tmp/mosaic_dump | tail -30
   LAST=$(ls tmp/mosaic_dump/* 2>/dev/null | tail -1)
   python tmp/dump_histogram.py $LAST > tmp/op_histogram.txt
-  wc -l tmp/op_histogram.txt
-  xz -9 -T0 -c $LAST > tmp/mosaic_last.xz
-  ls -lh tmp/mosaic_last.xz
+  python tmp/llo_timeline.py $LAST --cols 150 > tmp/timeline.txt
+  wc -l tmp/op_histogram.txt tmp/timeline.txt
+  # every pass, not just the last: the progression shows WHERE a cost is
+  # introduced. xz -9 gets the whole chain into a few MB.
+  tar -c tmp/mosaic_dump | xz -9 -T0 > tmp/mosaic_passes.tar.xz
+  ls -lh tmp/mosaic_passes.tar.xz
   rm -rf tmp/mosaic_dump'
 
 # 1b) isolate the window-vs-scratch operand question (small, separate
@@ -78,7 +81,7 @@ run bash -c '
 #    deliberately out of the bring-up loop; it returns for the final
 #    comparison once v0.2 is healthy on hardware.
 run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
-    --variants=v02 --iters=30 --warmup=5
+    --variants=v02 --iters=10 --warmup=3 --tune
 
 # 3) per-stage spans: named_scope markers -> device trace. This is what
 #    says WHERE the time goes (prologue vs gather vs gmms vs combine).
@@ -88,4 +91,4 @@ run bash -c 'tar -czf tmp/xprof.tgz -C tmp xprof && rm -rf tmp/xprof
              ls -lh tmp/xprof.tgz'
 
 echo
-echo "log: tmp/bench_dump.log  hist: tmp/op_histogram.txt  last: tmp/mosaic_last.xz  trace: tmp/xprof.tgz"
+echo "log: tmp/bench_dump.log  hist: tmp/op_histogram.txt  passes: tmp/mosaic_passes.tar.xz  trace: tmp/xprof.tgz"
