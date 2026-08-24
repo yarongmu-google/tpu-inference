@@ -150,9 +150,9 @@ def _decode_moe_kernel(
     w2_hbm,              # [E, I, D]
     out_vmem,            # [T, D] union partials (caller reduce-scatters)
     tokens_full_vmem,    # VMEM [T, D] the gathered union
-    w1_buf,              # VMEM [2, D, 2I] one EXPERT per slot
-    w2_buf,              # VMEM [2, I, D]
-    w_sem,               # DMA(2,) one per weight buffer slot
+    w1_buf,              # VMEM [S, D, 2I] one EXPERT per slot
+    w2_buf,              # VMEM [S, I, D]
+    w_sem,               # DMA(S,) one per weight buffer slot
     send_sem,            # DMA - all outbound remote copies
     recv_sem_tokens,     # DMA - inbound token shards
     recv_sem_meta,       # DMA - inbound top-k idx/weight shards
@@ -167,6 +167,7 @@ def _decode_moe_kernel(
     mesh_axis_names: tuple,
     num_experts: int,
     be: int,
+    w_slots: int,
     capacity: int,
     top_k: int,
     renormalize_topk_logits: bool,
@@ -231,8 +232,13 @@ def _decode_moe_kernel(
     # ---- grid step 0: local routing -> AG ----
     @pl.when(blk == 0)
     def _prefetch_first():
-        # kicked off before any compute so it overlaps routing + the AG
-        _fetch_expert(0, 0)
+        # Fill the pipeline before any compute, so it overlaps routing and
+        # the AG. Depth matters: with only 2 slots the wait for expert e
+        # sits one expert behind its issue, and every wait is a scheduling
+        # barrier - w_slots-1 of lead means the data has long since landed
+        # and the wait is free.
+        for j in range(w_slots - 1):
+            _fetch_expert(j, j)
 
     @pl.when(blk == 0)
     def _prologue():
@@ -366,15 +372,14 @@ def _decode_moe_kernel(
     for le in range(be if do_ffn else 0):
         lo = le * capacity
         e_global = blk * be + le
-        cur, nxt = le % 2, (le + 1) % 2
+        # w_slots divides be, so both slot indices are STATIC
+        cur = le % w_slots
+        ahead = (le + w_slots - 1) % w_slots
 
-        # issue the NEXT expert's weights before waiting on this one, so
-        # the transfer overlaps this expert's FFN. The last expert of a
-        # block prefetches the first of the next block.
         with jax.named_scope("moe_weights_prefetch"):
-            @pl.when(e_global + 1 < num_blocks * be)
-            def _(e_global=e_global, nxt=nxt):
-                _fetch_expert(e_global + 1, nxt)
+            @pl.when(e_global + w_slots - 1 < num_blocks * be)
+            def _(e_global=e_global, ahead=ahead):
+                _fetch_expert(e_global + w_slots - 1, ahead)
 
         with jax.named_scope("moe_weights_wait"):
             _wait_expert(cur)
@@ -427,7 +432,7 @@ def _decode_moe_kernel(
 @functools.partial(
     jax.jit,
     static_argnames=("mesh", "axis_name", "top_k", "renormalize_topk_logits",
-                     "capacity", "be", "bd1c", "bd2c", "bcT",
+                     "capacity", "be", "w_slots", "bd1c", "bd2c", "bcT",
                      "vmem_limit_bytes", "ablate", "interpret"),
 )
 def fused_moe_decode_tp_fused(
@@ -442,6 +447,7 @@ def fused_moe_decode_tp_fused(
     renormalize_topk_logits: bool = True,
     capacity: int = 32,
     be: int = 4,
+    w_slots: int = 4,
     bd1c: int | None = None,
     bd2c: int | None = None,
     bcT: int | None = None,
@@ -466,6 +472,8 @@ def fused_moe_decode_tp_fused(
     t = t_loc * num_devices
     e, _, i2 = w1_local.shape
     assert e % be == 0, (e, be)
+    # w_slots must divide be so the slot indices stay static
+    assert be % w_slots == 0, (be, w_slots)
     assert d % (bd1c or d) == 0 and d % (bd2c or d) == 0, (d, bd1c, bd2c)
     assert t % (bcT or t) == 0, (t, bcT)
     assert router_w.shape == (e, d), (router_w.shape, e, d)
@@ -480,7 +488,7 @@ def fused_moe_decode_tp_fused(
     # which is what lets be be chosen for the gather and the accumulator.
     weight_block = (d * i2 + (i2 // 2) * d) * act
     vmem_need = (
-        2 * weight_block                       # w1_buf + w2_buf, 2 experts
+        w_slots * weight_block                 # w1_buf + w2_buf, S experts
         + t_loc * d * act                      # tokens_local window
         + e * d * router_w.dtype.itemsize      # router_w window
         + t * d * act                          # out window
@@ -492,7 +500,7 @@ def fused_moe_decode_tp_fused(
     assert vmem_need <= vmem_limit_bytes, (
         f"static VMEM need {vmem_need / 2**20:.1f} MiB exceeds "
         f"{vmem_limit_bytes / 2**20:.0f} MiB "
-        f"(weight block {2 * weight_block / 2**20:.1f}, be={be}; "
+        f"(weights {w_slots * weight_block / 2**20:.1f}, be={be}; "
         f"try a smaller be or capacity)")
 
     grid_spec = pltpu.PrefetchScalarGridSpec(
@@ -508,9 +516,9 @@ def fused_moe_decode_tp_fused(
         out_specs=pl.BlockSpec((t, d), lambda i: (0, 0)),
         scratch_shapes=[
             pltpu.VMEM((t, d), tokens_local.dtype),          # tokens_full
-            pltpu.VMEM((2, d, i2), w1_local.dtype),          # w1_buf
-            pltpu.VMEM((2, i2 // 2, d), w2_local.dtype),     # w2_buf
-            pltpu.SemaphoreType.DMA((2,)),                   # w_sem
+            pltpu.VMEM((w_slots, d, i2), w1_local.dtype),    # w1_buf
+            pltpu.VMEM((w_slots, i2 // 2, d), w2_local.dtype),  # w2_buf
+            pltpu.SemaphoreType.DMA((w_slots,)),             # w_sem
             pltpu.SemaphoreType.DMA,                         # send_sem
             pltpu.SemaphoreType.DMA,                         # recv_sem_tokens
             pltpu.SemaphoreType.DMA,                         # recv_sem_meta
@@ -528,6 +536,7 @@ def fused_moe_decode_tp_fused(
         mesh_axis_names=tuple(mesh.axis_names),
         num_experts=e,
         be=be,
+        w_slots=w_slots,
         capacity=capacity,
         top_k=top_k,
         renormalize_topk_logits=renormalize_topk_logits,

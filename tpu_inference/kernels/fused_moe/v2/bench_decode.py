@@ -105,6 +105,9 @@ def main() -> None:
                         help="v2: max rows per expert (overflow drops)")
     parser.add_argument("--be", type=int, default=4,
                         help="v2: experts per grid step (weight-block size)")
+    parser.add_argument("--w-slots", dest="w_slots", type=int, default=4,
+                        help="v2: weight buffer slots (prefetch depth in "
+                        "experts); must divide be")
     parser.add_argument("--bd1c", type=int, default=0,
                         help="v2: gmm1 D-contraction sub-tile (0 = whole D)")
     parser.add_argument("--bd2c", type=int, default=0,
@@ -202,7 +205,8 @@ def main() -> None:
 
         def v2_runner(be: int, cap: int, bd1c: int | None,
                       bd2c: int | None,
-                      bcT: int | None = None) -> Callable[[], jax.Array]:
+                      bcT: int | None = None,
+                      w_slots: int = 4) -> Callable[[], jax.Array]:
             def fn(tok: jax.Array, w1x: jax.Array, w2x: jax.Array,
                    r: jax.Array) -> jax.Array:
                 w1_flat = w1x.reshape(w1x.shape[0], w1x.shape[1], -1)
@@ -217,6 +221,7 @@ def main() -> None:
                     renormalize_topk_logits=True,
                     capacity=cap,
                     be=be,
+                    w_slots=w_slots,
                     bd1c=bd1c,
                     bd2c=bd2c,
                     bcT=bcT,
@@ -234,7 +239,7 @@ def main() -> None:
             variants["v2_tp_inkernel_ag"] = v2_runner(
                 be=args.be, cap=args.capacity,
                 bd1c=args.bd1c or None, bd2c=args.bd2c or None,
-                bcT=args.bcT or None)
+                bcT=args.bcT or None, w_slots=args.w_slots)
 
     if args.tune:
         if "v1_ep_a2a" in variants:
@@ -253,6 +258,9 @@ def main() -> None:
         # it can be chosen for what it DOES scale: accumulator traffic
         # (~1/be) and the gather/combine matmul M (be*C rows per fill).
         be_cands = [x for x in (4, 8, 16, 32, 64) if e % x == 0]
+        # prefetch depth: every wait is a scheduling barrier, so shallow
+        # pipelines pay for the wait even when the data has landed
+        ws_cands = [2, 4, 8]
         cap_cands = sorted({cap0, 2 * cap0})
         # small chunks matter most: an unchunked contraction emits all the
         # loads/pushes before any matmul, so nothing interleaves. Include
@@ -266,23 +274,27 @@ def main() -> None:
                 continue
             best_us: float | None = None
             best: tuple[int, int, int | None, int | None,
-                        int | None] | None = None
+                        int | None, int] | None = None
 
             def measure(be: int, cap: int, b1: int | None,
-                        b2: int | None, bt: int | None = None) -> None:
+                        b2: int | None, bt: int | None = None,
+                        ws: int = 4) -> None:
                 nonlocal best_us, best
+                if be % ws:
+                    return
                 tag = (f"  be={be} cap={cap} bd1c={b1 or 0} bd2c={b2 or 0} "
-                       f"bcT={bt or 0}")
+                       f"bcT={bt or 0} w_slots={ws}")
                 try:
                     us, _ = _time(
-                        v2_runner(be=be, cap=cap, bd1c=b1, bd2c=b2, bcT=bt),
+                        v2_runner(be=be, cap=cap, bd1c=b1, bd2c=b2, bcT=bt,
+                                  w_slots=ws),
                         iters=args.iters, warmup=args.warmup)
                 except Exception as ex:  # e.g. VMEM oversubscription
                     print(f"{tag}: failed ({type(ex).__name__})")
                     return
                 print(f"{tag}: {us:.1f} us")
                 if best_us is None or us < best_us:
-                    best_us, best = us, (be, cap, b1, b2, bt)
+                    best_us, best = us, (be, cap, b1, b2, bt, ws)
 
             print(f"\n[tune] {label} stage 1: be x capacity")
             for be in be_cands:
@@ -293,17 +305,20 @@ def main() -> None:
                 continue
             print(f"[tune] {label} stage 2: gmm1 D-chunk (bd1c)")
             for b1 in bd_cands:
-                measure(best[0], best[1], b1, best[3], best[4])
+                measure(best[0], best[1], b1, best[3], best[4], best[5])
             print(f"[tune] {label} stage 3: gmm2 D-chunk (bd2c)")
             for b2 in bd_cands:
-                measure(best[0], best[1], best[2], b2, best[4])
+                measure(best[0], best[1], best[2], b2, best[4], best[5])
             print(f"[tune] {label} stage 4: combine T-chunk (bcT)")
             for bt in [x for x in (8, 16, 32, 64, 128, 256) if x < t]:
-                measure(best[0], best[1], best[2], best[3], bt)
-            be, cap, b1, b2, bt = best
+                measure(best[0], best[1], best[2], best[3], bt, best[5])
+            print(f"[tune] {label} stage 5: weight prefetch depth (w_slots)")
+            for ws in [x for x in ws_cands if best[0] % x == 0]:
+                measure(best[0], best[1], best[2], best[3], best[4], ws)
+            be, cap, b1, b2, bt, ws = best
             print(f"[tune] {label} WINNER: --be={be} --capacity={cap} "
                   f"--bd1c={b1 or 0} --bd2c={b2 or 0} --bcT={bt or 0} "
-                  f"-> {best_us:.1f} us")
+                  f"--w-slots={ws} -> {best_us:.1f} us")
         return
 
     # sanity: variants agree (loose - bf16, and v2 drops capacity overflow)

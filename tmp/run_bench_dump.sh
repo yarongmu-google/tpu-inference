@@ -93,14 +93,12 @@ run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
     --variants=v1 --iters=10 --warmup=3
 
 run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
-    --variants=v02 --iters=10 --warmup=3
+    --variants=v02 --iters=10 --warmup=3 --tune
 
 # 3) per-stage spans: named_scope markers -> device trace. This is what
 #    says WHERE the time goes (prologue vs gather vs gmms vs combine).
-run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
-    --variants=v02 --iters=3 --warmup=1 --profile-dir=tmp/xprof
-run bash -c 'tar -czf tmp/xprof.tgz -C tmp xprof && rm -rf tmp/xprof
-             ls -lh tmp/xprof.tgz'
+# (xprof removed: the profiler plugin ABI mismatches this libtpu
+#  and segfaults in ProfilerSession::Create)
 
 echo
-echo "log: tmp/bench_dump.log  hist: tmp/op_histogram.txt  passes: tmp/mosaic_passes.tar.xz  trace: tmp/xprof.tgz"
+echo "log: tmp/bench_dump.log  hist: tmp/op_histogram.txt  passes: tmp/mosaic_passes.tar.xz"
