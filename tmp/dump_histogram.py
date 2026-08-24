@@ -12,7 +12,10 @@ import re
 import sys
 
 # "%12 = tpu.matmul ..." / '"tpu.enqueue_dma"(...)' / "  vmatmul ..."
-OP_RE = re.compile(r'"([a-z_][\w.]*\.[\w.]+)"|=\s*([a-z_][\w.]*\.[\w.]+)\s')
+# stores/traces have no SSA result - match bare ops too, or they vanish
+OP_RE = re.compile(r'"([a-z_][\w.]*\.[\w.]+)"'
+                   r'|=\s*([a-z_][\w.]*\.[\w.]+)\s'
+                   r'|^\s+(llo\.[\w.]+)')
 TRACE_RE = re.compile(r'trace_start.*?message\s*=\s*"([^"]+)"')
 
 
@@ -34,8 +37,10 @@ def summarize(path: str) -> None:
                     depth.pop()
                 region = depth[-1] if depth else "<toplevel>"
                 continue
-            for a, b in OP_RE.findall(line):
-                op = a or b
+            for groups in OP_RE.findall(line):
+                op = next((g for g in groups if g), None)
+                if op is None:
+                    continue
                 per_region[region][op] += 1
                 total += 1
 

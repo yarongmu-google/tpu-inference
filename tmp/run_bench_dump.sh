@@ -80,8 +80,18 @@ run bash -c '
 # 2) clean timing run (no dump overhead): v0.2 only - the v1 baseline is
 #    deliberately out of the bring-up loop; it returns for the final
 #    comparison once v0.2 is healthy on hardware.
+# which deeper dump/debug flags does this build accept?
+run python tmp/probe_flags.py
+
+# v1 baseline: same weights-per-token ratio (btc=32, 1.6 GB/device) and the
+# same expert-sum accumulator, so its number says whether ~3.9 ms is bad or
+# just what this shape costs. Separate process so a failure can't take v0.2
+# down with it.
 run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
-    --variants=v02 --iters=10 --warmup=3 --tune
+    --variants=v1 --iters=10 --warmup=3
+
+run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
+    --variants=v02 --iters=10 --warmup=3
 
 # 3) per-stage spans: named_scope markers -> device trace. This is what
 #    says WHERE the time goes (prologue vs gather vs gmms vs combine).

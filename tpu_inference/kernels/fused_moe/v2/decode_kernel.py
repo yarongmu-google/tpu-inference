@@ -173,7 +173,16 @@ def _decode_moe_kernel(
     act_dtype,
     bd1c: int | None = None,
     bd2c: int | None = None,
+    ablate: str = "none",
 ):
+    # `ablate` stubs one stage at a time so wall-clock differences localise
+    # the cost. The profiler segfaults in this environment (PLUGIN_Profiler
+    # ABI mismatch), so differential timing is the only stage-level signal.
+    do_masks = ablate not in ("masks", "weights")
+    do_gather = ablate not in ("gather", "weights")
+    do_ffn = ablate not in ("ffn", "weights")
+    do_combine = ablate not in ("combine", "weights")
+
     blk = pl.program_id(0)
     num_blocks = pl.num_programs(0)
     t, d = tokens_full_vmem.shape
@@ -329,7 +338,8 @@ def _decode_moe_kernel(
         def _():
             _fetch_weights(blk + 1, next_slot)
 
-    with jax.named_scope("moe_masks"):
+    if do_masks:
+      with jax.named_scope("moe_masks"):
         idx_kt = idx_kt_vmem[...]
         idx_tk, w_tk = topk_idx_vmem[...], topk_w_vmem[...]
         ohs, ohg_ts = [], []
@@ -342,8 +352,12 @@ def _decode_moe_kernel(
             ohg_ts.append(ohg_t)
         oh_block = jnp.concatenate(ohs, axis=0)              # [be*C, T]
         ohg_t_block = jnp.concatenate(ohg_ts, axis=1)        # [T, be*C]
+    else:
+        oh_block = jnp.zeros((be * capacity, t), act_dtype)
+        ohg_t_block = jnp.zeros((t, be * capacity), act_dtype)
 
-    with jax.named_scope("moe_gather"):
+    if do_gather:
+      with jax.named_scope("moe_gather"):
         # ONE matmul selects every routed row for all `be` experts; the
         # weight fills amortise across the block.
         x_vmem[...] = jnp.dot(
@@ -354,7 +368,7 @@ def _decode_moe_kernel(
         _wait_weights(slot)
     w1_vmem, w2_vmem = w1_buf.at[slot], w2_buf.at[slot]
 
-    for le in range(be):
+    for le in range(be if do_ffn else 0):
         lo = le * capacity
         with jax.named_scope("moe_gmm1"):
             kc = bd1c or d
@@ -376,7 +390,8 @@ def _decode_moe_kernel(
                     w2_vmem[le, :, n0:n0 + nc],              # [I, nc]
                     preferred_element_type=jnp.float32).astype(act_dtype)
 
-    with jax.named_scope("moe_combine"):
+    if do_combine:
+      with jax.named_scope("moe_combine"):
         # scatter-add as ONE matmul: OHG_T carries the gate weights, so
         # this both routes rows home and applies the top-k weighting.
         acc_vmem[...] = acc_vmem[...] + jnp.dot(
@@ -392,7 +407,7 @@ def _decode_moe_kernel(
     jax.jit,
     static_argnames=("mesh", "axis_name", "top_k", "renormalize_topk_logits",
                      "capacity", "be", "bd1c", "bd2c", "vmem_limit_bytes",
-                     "interpret"),
+                     "ablate", "interpret"),
 )
 def fused_moe_decode_tp_fused(
     tokens_local: jax.Array,   # [T/P, D]
@@ -409,6 +424,7 @@ def fused_moe_decode_tp_fused(
     bd1c: int | None = None,
     bd2c: int | None = None,
     vmem_limit_bytes: int = 64 * 1024 * 1024,
+    ablate: str = "none",
     interpret=False,
 ) -> jax.Array:
     """v0.2: router-fused + topk-first, the all-gather fused INTO the
@@ -493,6 +509,7 @@ def fused_moe_decode_tp_fused(
         act_dtype=tokens_local.dtype,
         bd1c=bd1c,
         bd2c=bd2c,
+        ablate=ablate,
     )
     out = pl.pallas_call(
         kernel,

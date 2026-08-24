@@ -13,7 +13,8 @@ import collections
 import re
 import sys
 
-OP_RE = re.compile(r'=\s*(?:")?(llo\.[\w.]+)')
+# stores have no SSA result; match them as bare leading ops too
+OP_RE = re.compile(r'=\s*(?:")?(llo\.[\w.]+)|^\s+(llo\.[\w.]+)')
 TRACE_RE = re.compile(r'trace_start.*?message\s*=\s*"([^"]+)"')
 
 # op-name fragment -> unit. First match wins, so order matters.
@@ -65,10 +66,11 @@ def main() -> None:
             m = OP_RE.search(line)
             if not m:
                 continue
+            op = m.group(1) or m.group(2)
             region = depth[-1] if depth else "<top>"
             if region_filter and region != region_filter:
                 continue
-            seq.append((region, unit_of(m.group(1))))
+            seq.append((region, unit_of(op)))
 
     if not seq:
         print("no ops matched")
