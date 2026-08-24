@@ -249,7 +249,10 @@ def main() -> None:
         max_load = int(jnp.max(jnp.bincount(top_i.reshape(-1), length=e)))
         cap0 = -(-max_load // 8) * 8
         print(f"[tune] max expert load = {max_load} -> capacity >= {cap0}")
-        be_cands = [x for x in (4, 8, 16) if e % x == 0]
+        # be no longer costs weight VMEM (one expert per buffer slot), so
+        # it can be chosen for what it DOES scale: accumulator traffic
+        # (~1/be) and the gather/combine matmul M (be*C rows per fill).
+        be_cands = [x for x in (4, 8, 16, 32, 64) if e % x == 0]
         cap_cands = sorted({cap0, 2 * cap0})
         # small chunks matter most: an unchunked contraction emits all the
         # loads/pushes before any matmul, so nothing interleaves. Include

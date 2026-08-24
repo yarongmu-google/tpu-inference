@@ -45,10 +45,11 @@ def _reference_moe(tokens, w1, w2, gating, top_k, renormalize):
     return out
 
 
+@pytest.mark.parametrize("be", [4, 8])
 @pytest.mark.parametrize("bd1c,bd2c", [(None, None), (128, 128)],
                          ids=["whole_d_dots", "chunked_dots"])
 @pytest.mark.parametrize("t,d,e,i,k", [(64, 256, 16, 128, 4)])
-def test_decode_kernel_tp_matches_reference(t, d, e, i, k, bd1c, bd2c):
+def test_decode_kernel_tp_matches_reference(t, d, e, i, k, bd1c, bd2c, be):
     """The kernel vs the global-batch reference on 8 simulated devices.
 
     DP-attention serving context: each device holds T/P tokens (attention
@@ -84,7 +85,7 @@ def test_decode_kernel_tp_matches_reference(t, d, e, i, k, bd1c, bd2c):
             top_k=k,
             renormalize_topk_logits=True,
             capacity=t,   # capacity=T: no drops
-            be=4,
+            be=be,
             bd1c=bd1c,
             bd2c=bd2c,
             interpret=True,

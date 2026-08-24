@@ -150,8 +150,8 @@ def _decode_moe_kernel(
     w2_hbm,              # [E, I, D]
     out_vmem,            # [T, D] union partials (caller reduce-scatters)
     tokens_full_vmem,    # VMEM [T, D] the gathered union
-    w1_buf,              # VMEM [2, NE, D, 2I] hand-pipelined weight block
-    w2_buf,              # VMEM [2, NE, I, D]
+    w1_buf,              # VMEM [2, D, 2I] one EXPERT per slot
+    w2_buf,              # VMEM [2, I, D]
     w_sem,               # DMA(2,) one per weight buffer slot
     send_sem,            # DMA - all outbound remote copies
     recv_sem_tokens,     # DMA - inbound token shards
@@ -188,32 +188,35 @@ def _decode_moe_kernel(
     num_blocks = pl.num_programs(0)
     t, d = tokens_full_vmem.shape
 
-    def _fetch_weights(block, slot):
-        """Start the DMA for one expert block into buffer `slot`.
+    def _fetch_expert(e_global, slot):
+        """Start the DMA for ONE expert's weights into buffer `slot`.
 
-        The weights are hand-pipelined rather than left to a BlockSpec
-        because a pipelined window lands bf16 in 8-row tiles, while the
-        MXU push wants 16-row tiles - which costs an unpack/repack of
-        EVERY weight vreg. HBM is untiled, so a DMA we issue ourselves
-        lands them in the scratch tiling the MXU wants.
+        Per-expert rather than per-block for three reasons: a 3.1 MB
+        transfer overlaps a single expert's FFN instead of a 12.6 MB one
+        overlapping a whole block; the buffers hold 2 experts instead of
+        2*be, which is ~4x less VMEM; and that decouples `be` from the
+        weight footprint entirely, so `be` can be chosen for the gather
+        and accumulator instead.
+
+        Hand-rolled rather than left to a BlockSpec because a pipelined
+        window lands bf16 in 8-row tiles while the MXU push wants 16-row
+        tiles - an unpack/repack of every weight vreg. HBM is untiled, so
+        a DMA we issue ourselves lands them in the tiling the MXU wants.
         """
         for src, dst in ((w1_hbm, w1_buf), (w2_hbm, w2_buf)):
             pltpu.make_async_copy(
-                src_ref=src.at[pl.ds(block * be, be)],
+                src_ref=src.at[e_global],
                 dst_ref=dst.at[slot],
                 sem=w_sem.at[slot],
             ).start()
 
-    def _wait_weights(slot):
+    def _wait_expert(slot):
         for src, dst in ((w1_hbm, w1_buf), (w2_hbm, w2_buf)):
             pltpu.make_async_copy(
-                src_ref=src.at[pl.ds(0, be)],
+                src_ref=src.at[0],
                 dst_ref=dst.at[slot],
                 sem=w_sem.at[slot],
             ).wait()
-
-    slot = lax.rem(blk, 2)
-    next_slot = lax.rem(blk + 1, 2)
     # static under shard_map - same axis env as lax.axis_index below
     num_devices = lax.axis_size(axis_name)
 
@@ -229,7 +232,7 @@ def _decode_moe_kernel(
     @pl.when(blk == 0)
     def _prefetch_first():
         # kicked off before any compute so it overlaps routing + the AG
-        _fetch_weights(0, 0)
+        _fetch_expert(0, 0)
 
     @pl.when(blk == 0)
     def _prologue():
@@ -334,11 +337,6 @@ def _decode_moe_kernel(
                     buf.at[pl.ds(0, inbound * t_loc), :],
                     buf.at[pl.ds(0, inbound * t_loc), :], send_sem).wait()
 
-    with jax.named_scope("moe_weights_prefetch"):
-        @pl.when(blk + 1 < num_blocks)
-        def _():
-            _fetch_weights(blk + 1, next_slot)
-
     if do_masks:
       with jax.named_scope("moe_masks"):
         idx_kt = idx_kt_vmem[...]
@@ -365,19 +363,30 @@ def _decode_moe_kernel(
             oh_block, tokens_full_vmem[...],
             preferred_element_type=jnp.float32).astype(act_dtype)
 
-    with jax.named_scope("moe_weights_wait"):
-        _wait_weights(slot)
-    w1_vmem, w2_vmem = w1_buf.at[slot], w2_buf.at[slot]
-
     for le in range(be if do_ffn else 0):
         lo = le * capacity
+        e_global = blk * be + le
+        cur, nxt = le % 2, (le + 1) % 2
+
+        # issue the NEXT expert's weights before waiting on this one, so
+        # the transfer overlaps this expert's FFN. The last expert of a
+        # block prefetches the first of the next block.
+        with jax.named_scope("moe_weights_prefetch"):
+            @pl.when(e_global + 1 < num_blocks * be)
+            def _(e_global=e_global, nxt=nxt):
+                _fetch_expert(e_global + 1, nxt)
+
+        with jax.named_scope("moe_weights_wait"):
+            _wait_expert(cur)
+        w1_vmem, w2_vmem = w1_buf.at[cur], w2_buf.at[cur]
+
         with jax.named_scope("moe_gmm1"):
             kc = bd1c or d
             h = jnp.zeros((capacity, w1_vmem.shape[-1]), jnp.float32)
             for k0 in range(0, d, kc):
                 h = h + jnp.dot(
                     x_vmem[lo:lo + capacity, k0:k0 + kc],    # [C, kc]
-                    w1_vmem[le, k0:k0 + kc, :],              # [kc, 2I]
+                    w1_vmem[k0:k0 + kc, :],                  # [kc, 2I]
                     preferred_element_type=jnp.float32)
             i_half = h.shape[-1] // 2
             gate, up = h[:, :i_half], h[:, i_half:]
@@ -388,7 +397,7 @@ def _decode_moe_kernel(
             for n0 in range(0, d, nc):
                 y_vmem[lo:lo + capacity, n0:n0 + nc] = jnp.dot(
                     a,
-                    w2_vmem[le, :, n0:n0 + nc],              # [I, nc]
+                    w2_vmem[:, n0:n0 + nc],                  # [I, nc]
                     preferred_element_type=jnp.float32).astype(act_dtype)
 
     if do_combine:
@@ -467,9 +476,11 @@ def fused_moe_decode_tp_fused(
     # a backend allocation error. The weight buffers are the two slots we
     # allocate ourselves; the constant-index windows are single-buffered.
     act = jnp.dtype(tokens_local.dtype).itemsize
-    weight_block = be * (d * i2 + (i2 // 2) * d) * act
+    # ONE expert per slot: the weight footprint no longer scales with be,
+    # which is what lets be be chosen for the gather and the accumulator.
+    weight_block = (d * i2 + (i2 // 2) * d) * act
     vmem_need = (
-        2 * weight_block                       # w1_buf + w2_buf, 2 slots
+        2 * weight_block                       # w1_buf + w2_buf, 2 experts
         + t_loc * d * act                      # tokens_local window
         + e * d * router_w.dtype.itemsize      # router_w window
         + t * d * act                          # out window
@@ -497,8 +508,8 @@ def fused_moe_decode_tp_fused(
         out_specs=pl.BlockSpec((t, d), lambda i: (0, 0)),
         scratch_shapes=[
             pltpu.VMEM((t, d), tokens_local.dtype),          # tokens_full
-            pltpu.VMEM((2, be, d, i2), w1_local.dtype),      # w1_buf
-            pltpu.VMEM((2, be, i2 // 2, d), w2_local.dtype),  # w2_buf
+            pltpu.VMEM((2, d, i2), w1_local.dtype),          # w1_buf
+            pltpu.VMEM((2, i2 // 2, d), w2_local.dtype),     # w2_buf
             pltpu.SemaphoreType.DMA((2,)),                   # w_sem
             pltpu.SemaphoreType.DMA,                         # send_sem
             pltpu.SemaphoreType.DMA,                         # recv_sem_tokens
