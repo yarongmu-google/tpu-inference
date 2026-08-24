@@ -1,21 +1,26 @@
 """Decode-specific fused MoE kernel (TP, VMEM-resident tokens).
 
-DESIGN PREMISE: MoE is
-token-isolated - no cross-token state, no KV walk - so a DECODE step's
-entire activation working set is [num_tokens, hidden] (~4 MB at 512x4096
-bf16), which fits VMEM. That flips the regime vs prefill:
+DESIGN PREMISE: MoE is token-isolated - no cross-token state, no KV walk
+- so a DECODE step's entire activation working set is [num_tokens,
+hidden] (~4 MB at 512x4096 bf16), which fits VMEM. That flips the regime
+vs prefill:
 
   decode  (this kernel): tokens stay VMEM-resident for the whole layer;
-      dispatch = per-expert row lists consumed by vector loads (no DMA
-      descriptors); weights stream ONCE per expert (m ~= B*k/E rows each,
-      no reuse possible); the layer is weight-stream-bound and everything
-      else must hide under it.
+      weights stream ONCE per expert (m ~= B*k/E rows each, no reuse
+      possible); the layer is weight-stream-bound and everything else
+      must hide under it.
   prefill (NOT this kernel): activations outgrow VMEM; the right shape is
       expert-sorted HBM gathers with same-expert weight-tile caching (see
       kernels/experimental/fused_moe - gmm_fused_rs).
 
-Follows the ragged_paged_attention v3 convention: versioned dir, regime
-split explicit; a wrapper can dispatch on num_tokens.
+NO DYNAMIC ADDRESSING. Dispatch is expressed as matrix products rather
+than indexed row copies, so no buffer is ever indexed by a data-dependent
+row. That is not a stylistic choice: VMEM is tiled ((16,128) bf16), so a
+dynamic row index is illegal for vector loads AND DMAs alike unless it is
+provably tile-aligned, and every layout that legalises it (3-D shapes,
+flat strided rows) forces the matmul operand through a relayout that
+costs more than the work itself. Selection by matmul keeps every buffer
+2-D and every index static; the MXU absorbs the routing.
 
 Pipeline (single pallas_call, grid = expert blocks; stage names are
 jax.named_scope spans -> hardware trace markers for per-stage xprof):
@@ -27,25 +32,21 @@ jax.named_scope spans -> hardware trace markers for per-stage xprof):
   AG        (grid step 0): VMEM-direct ICI remote copies all-gather the
             token shard + the [T/P, k] top-k results into every peer (3
             static descriptors per peer, no HBM staging), overlapping the
-            first weight-block prefetch. Drains are SPLIT by dependency:
-            the tiny top-k results unblock list building immediately; the
-            token drain waits only where the first gather needs it, so
-            the token transfer hides under the list building.
-  lists     per-expert row lists + gate weights, fully vectorized
-            (lane-compress): one-hot masks from the AG'd [T, k] results
-            -> exclusive lane-cumsum -> butterfly compaction (roll/where,
-            LSB->MSB), landed in SMEM via one bulk copy per table - no
-            scalar pass.
-  gather    per expert: C rows staged from the VMEM-resident union by
-            scalar-indexed dynamic slices (vector loads, zero DMA).
-  gmm1+act  [C, D] @ [D, 2I] -> SwiGLU -> [C, I]
-  gmm2      [C, I] @ [I, D] -> [C, D], rows scaled by gate weights
-  combine   scatter-add into a VMEM accumulator [T, D] (f32)
+            first weight-block prefetch.
+  masks     per grid step: for this step's `be` experts, a one-hot
+            dispatch operator OH[be*C, T] (and its gated transpose) built
+            from the top-k table with lane cumsums - all vector work on
+            [k, T] / [C, T] shapes, no scalar core.
+  gather    X[be*C, D] = OH @ tokens - ONE matmul for the whole block;
+            the fills amortise across all `be` experts.
+  gmm1+act  per expert (static slice of X): [C, D] @ [D, 2I] -> SwiGLU
+  gmm2      [C, I] @ [I, D] -> [C, D]
+  combine   acc += OHG_T @ Y - one matmul; the gate weights ride in OHG_T
   epilogue  accumulator -> output (partial under TP; caller reduce-scatters)
 
 v0 scope: bf16 weights/acts, no shared expert, no in-kernel RS, capacity
-C rows/expert with overflow DROPPED (assert-checked in tests; production
-needs a spill path).
+C rows/expert with overflow DROPPED (tokens whose slot >= C simply have
+no row in OH; production needs a spill path).
 """
 
 import functools
@@ -72,16 +73,16 @@ def _routing(*, logits_et, top_k, renormalize_topk_logits):
             m = jnp.max(logits_et, axis=0, keepdims=True)
             ex = kmath.exp(logits_et - m)
             x = ex / jnp.sum(ex, axis=0, keepdims=True)      # per-token over E
-    iota = lax.broadcasted_iota(jnp.int32, x.shape, 0)       # expert ids [E, T/P]
+    iota = lax.broadcasted_iota(jnp.int32, x.shape, 0)       # expert ids
     weights = []
     indices = []
     for k_id in range(top_k):
         with jax.named_scope(f"moe_topk{k_id}"):
             mx = jnp.max(x, axis=0, keepdims=True)           # [1, T/P]
             win = x == jnp.broadcast_to(mx, x.shape)
-            idx = jnp.max(jnp.where(win, iota, 0), axis=0, keepdims=True)  # [1, T/P]
+            idx = jnp.max(jnp.where(win, iota, 0), axis=0, keepdims=True)
             sel = iota == jnp.broadcast_to(idx, x.shape)
-            weights.append(mx[0])                            # [T]
+            weights.append(mx[0])                            # [T/P]
             indices.append(idx[0])
             if k_id != top_k - 1:
                 x = jnp.where(sel, -jnp.inf, x)
@@ -95,92 +96,63 @@ def _routing(*, logits_et, top_k, renormalize_topk_logits):
     return w, i
 
 
-def _row_wait(flat, dl, sem):
-    """Wait one row-DMA's worth of credits (the ref sizes the wait)."""
-    pltpu.make_async_copy(flat.at[pl.ds(0, dl), :],
-                          flat.at[pl.ds(0, dl), :], sem).wait()
+def _lane_cumsum(x, t):
+    """Inclusive Hillis-Steele prefix sum along the lane axis of [1, T]."""
+    lane = lax.broadcasted_iota(jnp.int32, x.shape, 1)
+    sh = 1
+    while sh < t:
+        x = x + jnp.where(lane >= sh, pltpu.roll(x, shift=sh, axis=1), 0)
+        sh *= 2
+    return x
 
 
-def _chunk(flat, j, rows, stride):
-    """Lane-chunk j of every row: [rows, 128], rows on sublanes.
+def _dispatch_operators(*, idx_kt, w_kt, e, t, capacity, act_dtype):
+    """One expert's dispatch operators, from the top-k table.
 
-    One tpu.strided_load - flat rows j, j+stride, j+2*stride, ... are
-    chunk j of successive tokens, so the operand needs no relayout.
+    Returns (OH[C, T], OHG_T[T, C]): OH[c, t] = 1 iff token t is the c-th
+    token routed to expert e; OHG_T is its transpose scaled by the gate
+    weight, so the combine matmul carries the weighting for free. Both
+    orientations are built directly (never transposed) so each matmul
+    gets its natural operand layout.
     """
-    return flat[pl.ds(j, rows, stride), :]
+    eq = idx_kt == e                                         # [k, T]
+    mask = jnp.max(eq.astype(jnp.int32), axis=0, keepdims=True)     # [1, T]
+    gate = jnp.sum(jnp.where(eq, w_kt, 0.0), axis=0, keepdims=True)  # [1, T]
+    slot = _lane_cumsum(mask, t) - mask                      # exclusive
+    live = mask == 1
 
+    iota_c = lax.broadcasted_iota(jnp.int32, (capacity, t), 0)
+    oh = jnp.where((iota_c == slot) & live, 1.0, 0.0).astype(act_dtype)
 
-def _gather_rows_dma(*, tokens_full_vmem, g_vmem, rows_smem, e, cnt, row_sem,
-                     dl, stride):
-    """Plan A gather: one local VMEM->VMEM row DMA per assigned token.
-
-    Buffers are FLAT [rows * DL, 128]: token row r occupies the DL
-    consecutive flat rows r*DL .. r*DL+DL-1, one per 128-lane chunk of D.
-    Two properties this buys:
-      - r*DL is provably a multiple of the sublane tiling (DL % 16 == 0),
-        so dynamic row offsets pass Mosaic's alignment check - a plain
-        [rows, D] buffer cannot (E2003), for DMAs as well as vector loads.
-      - matmul operands come out by STRIDED load (see _chunk), which lands
-        rows on sublanes with no relayout, unlike a [rows, DL, 128] shape.
-    Pad slots (c >= cnt) are never written and never read back.
-    """
-    def _issue(c, carry):
-        row = rows_smem[e, c]
-        pltpu.make_async_copy(
-            tokens_full_vmem.at[pl.ds(row * stride, dl), :],
-            g_vmem.at[pl.ds(c * stride, dl), :],
-            row_sem).start()
-        return carry
-
-    lax.fori_loop(0, cnt, _issue, 0)
-
-    def _drain(c, carry):
-        _row_wait(g_vmem, dl, row_sem)
-        return carry  # wait size = dl rows (what was transferred)
-
-    lax.fori_loop(0, cnt, _drain, 0)
-
-
-def _to_flat(x, dl, stride, lanes):
-    """[rows, D] -> [rows * stride, 128], padding each row's chunk slots
-    up to stride. Free when stride == dl (the real-shape case)."""
-    rows = x.shape[0]
-    if stride != dl:
-        x = jnp.pad(x, ((0, 0), (0, (stride - dl) * lanes)))
-    return x.reshape(rows * stride, lanes)
+    # transposed operator: T on sublanes, slots on lanes
+    slot_t, live_t, gate_t = slot.T, live.T, gate.T          # [T, 1]
+    iota_c_t = lax.broadcasted_iota(jnp.int32, (t, capacity), 1)
+    ohg_t = jnp.where((iota_c_t == slot_t) & live_t,
+                      gate_t, 0.0).astype(act_dtype)
+    return oh, ohg_t
 
 
 def _decode_moe_kernel(
-    tokens_local_vmem,   # [T/P * DL, L] token shard, FLAT (see _chunk)
-    router_w_vmem,       # [E, D] router weight (upstream [out, in] layout, VMEM)
+    tokens_local_vmem,   # [T/P, D] this device's token shard
+    router_w_vmem,       # [E, D] router weight (upstream [out, in] layout)
     w1_vmem,             # [NE, D, 2I] this grid step's expert block
     w2_vmem,             # [NE, I, D]
-    out_vmem,            # [T * DL, L] union partials (caller reshapes + RS)
-    tokens_full_vmem,    # VMEM [T * DL, L] the gathered union
-    send_sem,           # DMA - all outbound remote copies
-    recv_sem_tokens,    # DMA - inbound token shards
-    recv_sem_meta,      # DMA - inbound top-k idx/weight shards
-    acc_vmem,            # VMEM [T * DL, L] f32 accumulator
-    rows_smem,           # SMEM [E, C] i32 per-expert row lists
-    counts_smem,         # SMEM [1, E] i32
-    gathered_vmem,       # VMEM [2, C * DL, L] staging, ping-pong by parity
-    yout_vmem,           # VMEM [2, C * DL, L] f32 gmm2 out, same ping-pong
-    temp_vmem,           # VMEM [C * DL, L] f32 combine staging (acc rows)
-    topk_idx_vmem,      # VMEM [T, k] i32 - AG'd routing results
-    topk_w_vmem,        # VMEM [T, k] f32
-    rows_vmem,          # VMEM [E, C] i32 - lane-compress output staging
-    gates_t_vmem,       # VMEM [C, E] f32 - TRANSPOSED gate table: static
-                        #   column slice [:, e] gives the [C, 1] per-slot
-                        #   scale the combine needs sublane-resident
-    counts_vmem,        # VMEM [1, E] i32
-    copy_sem,           # DMA semaphore for the vmem->smem table copies
-    row_sem,            # DMA semaphore for gather/combine row DMAs
+    out_vmem,            # [T, D] union partials (caller reduce-scatters)
+    tokens_full_vmem,    # VMEM [T, D] the gathered union
+    send_sem,            # DMA - all outbound remote copies
+    recv_sem_tokens,     # DMA - inbound token shards
+    recv_sem_meta,       # DMA - inbound top-k idx/weight shards
+    acc_vmem,            # VMEM [T, D] f32 accumulator
+    topk_idx_vmem,       # VMEM [T, k] i32 - AG'd routing results
+    topk_w_vmem,         # VMEM [T, k] f32
+    idx_kt_vmem,         # VMEM [k, T] i32 - transposed once, read per step
+    w_kt_vmem,           # VMEM [k, T] f32
+    x_vmem,              # VMEM [be*C, D] gathered rows for this block
+    y_vmem,              # VMEM [be*C, D] expert outputs for this block
     *,
     axis_name: str,
     mesh_axis_names: tuple,
     num_experts: int,
-    dl: int,             # D / 128: valid flat rows per token
-    stride: int,         # flat rows PER token slot (dl padded to 16)
     be: int,
     capacity: int,
     top_k: int,
@@ -191,9 +163,7 @@ def _decode_moe_kernel(
 ):
     blk = pl.program_id(0)
     num_blocks = pl.num_programs(0)
-    lanes = tokens_full_vmem.shape[1]
-    d = dl * lanes
-    t = tokens_full_vmem.shape[0] // stride
+    t, d = tokens_full_vmem.shape
     # static under shard_map - same axis env as lax.axis_index below
     num_devices = lax.axis_size(axis_name)
 
@@ -205,33 +175,30 @@ def _decode_moe_kernel(
             jnp.int32(p) if name == axis_name else lax.axis_index(name)
             for name in mesh_axis_names)
 
-    # ---- grid step 0: local routing -> AG -> list building ----
+    # ---- grid step 0: local routing -> AG ----
     @pl.when(blk == 0)
     def _prologue():
         my_id = lax.axis_index(axis_name)
-        t_loc = tokens_local_vmem.shape[0] // stride
+        t_loc = tokens_local_vmem.shape[0]
         row0 = my_id * t_loc
 
         with jax.named_scope("moe_routing"):
-            logits_et = jnp.zeros((num_experts, t_loc), jnp.float32)
-            for j in range(dl):
-                logits_et = logits_et + lax.dot_general(
-                    router_w_vmem[:, j * lanes:(j + 1) * lanes],   # [E, 128]
-                    _chunk(tokens_local_vmem, j, t_loc, stride),       # [T/P, 128]
-                    dimension_numbers=(((1,), (1,)), ((), ())),
-                    preferred_element_type=jnp.float32,
-                )                           # -> [E, T/P]
+            logits_et = lax.dot_general(
+                router_w_vmem[...],          # [E, D]
+                tokens_local_vmem[...],      # [T/P, D]
+                dimension_numbers=(((1,), (1,)), ((), ())),
+                preferred_element_type=jnp.float32,
+            )                                # -> [E, T/P]
             weights, indices = _routing(
                 logits_et=logits_et,
                 top_k=top_k,
                 renormalize_topk_logits=renormalize_topk_logits,
-            )                              # -> [T/P, k] each
-            topk_idx_vmem[pl.ds(row0, t_loc), :] = indices  # -> [T, k] VMEM
-            topk_w_vmem[pl.ds(row0, t_loc), :] = weights    # -> [T, k] VMEM
+            )                                # -> [T/P, k] each
+            topk_idx_vmem[pl.ds(row0, t_loc), :] = indices
+            topk_w_vmem[pl.ds(row0, t_loc), :] = weights
 
         with jax.named_scope("moe_ag_local"):
-            tokens_full_vmem[pl.ds(row0 * stride, t_loc * stride), :] = (
-                tokens_local_vmem[...])
+            tokens_full_vmem[pl.ds(row0, t_loc), :] = tokens_local_vmem[...]
 
         with jax.named_scope("moe_ag_barrier"):
             # The GLOBAL barrier semaphore (requires collective_id in
@@ -252,7 +219,7 @@ def _decode_moe_kernel(
                 def _send(p=p):
                     for src, dst, rsem in (
                         (tokens_local_vmem,
-                         tokens_full_vmem.at[pl.ds(row0 * stride, t_loc * stride), :],
+                         tokens_full_vmem.at[pl.ds(row0, t_loc), :],
                          recv_sem_tokens),
                         (topk_idx_vmem.at[pl.ds(row0, t_loc), :],
                          topk_idx_vmem.at[pl.ds(row0, t_loc), :],
@@ -276,200 +243,89 @@ def _decode_moe_kernel(
         inbound = num_devices - 1
 
         with jax.named_scope("moe_ag_drain_meta"):
-            # Drain ONLY the top-k arrivals: list building needs them,
-            # not the tokens.
+            # ONLY the top-k arrivals: everything up to the gather matmul
+            # depends on these and not on the (much larger) token shards,
+            # which keep streaming underneath.
             for buf in (topk_idx_vmem, topk_w_vmem):
-                pltpu.make_async_copy(buf.at[pl.ds(0, inbound * t_loc), :],
-                                      buf.at[pl.ds(0, inbound * t_loc), :],
-                                      recv_sem_meta).wait()
+                pltpu.make_async_copy(
+                    buf.at[pl.ds(0, inbound * t_loc), :],
+                    buf.at[pl.ds(0, inbound * t_loc), :],
+                    recv_sem_meta).wait()
 
+        with jax.named_scope("moe_topk_transpose"):
+            # the per-step mask builder reduces over k with T on LANES;
+            # one transpose here beats one per expert per grid step.
+            idx_kt_vmem[...] = topk_idx_vmem[...].T          # [k, T]
+            w_kt_vmem[...] = topk_w_vmem[...].T
         acc_vmem[...] = jnp.zeros_like(acc_vmem)
-        with jax.named_scope("moe_lists"):
-            # Vectorized list building (lane-compress): expert one-hot
-            # masks -> exclusive lane-cumsum -> butterfly compaction, all
-            # roll/where over [E, T] arrays - replaces the former T*k
-            # scalar pass. pltpu.roll(x, s, axis=1) is cyclic with
-            # out[i] = x[i - s]; shifting LEFT by s is roll by t - s with
-            # the wrapped lanes masked off.
-            idx = topk_idx_vmem[...]                     # [T, k] i32
-            wts = topk_w_vmem[...]                       # [T, k] f32
-            lane = lax.broadcasted_iota(jnp.int32, (num_experts, t), 1)
-            expert = lax.broadcasted_iota(jnp.int32, (num_experts, t), 0)
-            m = jnp.zeros((num_experts, t), jnp.int32)
-            gate = jnp.zeros((num_experts, t), jnp.float32)
-            for j in range(top_k):
-                sel = expert == idx[:, j][None, :]       # [E, T] one-hot
-                m = m + sel.astype(jnp.int32)
-                gate = jnp.where(sel, wts[:, j][None, :], gate)
 
-            # inclusive Hillis-Steele cumsum along lanes
-            inc = m
-            sh = 1
-            while sh < t:
-                prev = pltpu.roll(inc, shift=sh, axis=1)  # prev[i] = inc[i-sh]
-                inc = inc + jnp.where(lane >= sh, prev, 0)
-                sh *= 2
-            slot = inc - m                               # exclusive: list slot
-            load = inc[:, t - 1]                         # [E] tokens per expert
-
-            # Butterfly compaction, LSB->MSB: every occupant moves LEFT by
-            # bit r of its ORIGINAL distance in round r. Collision-free:
-            # after round r all remaining distances are multiples of
-            # 2^(r+1), so two occupants cannot land on one lane. dist and
-            # the valid bit travel packed (dv = dist | valid<<15), so each
-            # round rolls 3 arrays (tok, gate, dv).
-            dist = jnp.where(m > 0, lane - slot, 0)
-            dv = dist | (m << 15)
-            tok = lane
-            for r in range((t - 1).bit_length()):
-                sh = 1 << r
-                src_tok = pltpu.roll(tok, shift=t - sh, axis=1)   # x[i+sh]
-                src_gate = pltpu.roll(gate, shift=t - sh, axis=1)
-                src_dv = pltpu.roll(dv, shift=t - sh, axis=1)
-                moving = ((dv >> r) & 1) * (dv >> 15)
-                src_moving = ((src_dv >> r) & 1) * (src_dv >> 15)
-                recv = (src_moving == 1) & (lane < t - sh)
-                tok = jnp.where(recv, src_tok, tok)
-                gate = jnp.where(recv, src_gate, gate)
-                valid = jnp.where(recv, 1,
-                                  jnp.where(moving == 1, 0, dv >> 15))
-                new_dist = jnp.where(recv, (src_dv & 0x7FFF) - sh,
-                                     dv & 0x7FFF)
-                dv = new_dist | (valid << 15)
-
-            rows_vmem[...] = tok[:, :capacity]           # [E, C]
-            # transposed so the combine can take a [C, 1] per-slot scale
-            # as a STATIC column slice (sublane-resident)
-            gates_t_vmem[...] = gate[:, :capacity].T     # [C, E]
-            counts_vmem[...] = jnp.minimum(load, capacity)[None, :]
-
-        with jax.named_scope("moe_lists_smem"):
-            # the gather DMA loop reads rows and the expert loop reads
-            # counts with scalar indices - land them in SMEM.
-            pltpu.make_async_copy(rows_vmem, rows_smem, copy_sem).start()
-            pltpu.make_async_copy(counts_vmem, counts_smem, copy_sem).start()
-
+    # ---- this step's expert block: masks -> gather -> FFN -> combine ----
+    # The token all-gather has been in flight since grid step 0 issued it;
+    # settle it as LATE as possible - after the transpose, the accumulator
+    # zeroing and the first block's mask building, which need only the
+    # top-k tables. The first read of the union is the gather matmul.
+    @pl.when(blk == 0)
+    def _drain_tokens():
+        t_loc = tokens_local_vmem.shape[0]
+        inbound = num_devices - 1
         with jax.named_scope("moe_ag_drain_tokens"):
-            # The token transfer streamed in UNDER the list pass above;
-            # settle it (and the send side, for semaphore hygiene) before
-            # the first gather reads tokens_full_vmem.
             for sem in (recv_sem_tokens, send_sem):
                 pltpu.make_async_copy(
-                    tokens_full_vmem.at[pl.ds(0, inbound * t_loc * stride), :],
-                    tokens_full_vmem.at[pl.ds(0, inbound * t_loc * stride), :],
+                    tokens_full_vmem.at[pl.ds(0, inbound * t_loc), :],
+                    tokens_full_vmem.at[pl.ds(0, inbound * t_loc), :],
                     sem).wait()
+            # send-side hygiene: the top-k sends complete too
             for buf in (topk_idx_vmem, topk_w_vmem):
-                pltpu.make_async_copy(buf.at[pl.ds(0, inbound * t_loc), :],
-                                      buf.at[pl.ds(0, inbound * t_loc), :],
-                                      send_sem).wait()
+                pltpu.make_async_copy(
+                    buf.at[pl.ds(0, inbound * t_loc), :],
+                    buf.at[pl.ds(0, inbound * t_loc), :], send_sem).wait()
 
-        with jax.named_scope("moe_lists_smem_drain"):
-            # The table copies overlapped the token drain above. Waits
-            # must run ONCE (the copies were started once) and must ALL
-            # precede ANY table read: a wait consumes matching bytes from
-            # ANY copy on copy_sem, so only the all-before-any order makes
-            # the anonymity harmless.
-            pltpu.make_async_copy(rows_vmem, rows_smem, copy_sem).wait()
-            pltpu.make_async_copy(counts_vmem, counts_smem, copy_sem).wait()
+    with jax.named_scope("moe_masks"):
+        idx_kt, w_kt = idx_kt_vmem[...], w_kt_vmem[...]
+        ohs, ohg_ts = [], []
+        for le in range(be):
+            oh, ohg_t = _dispatch_operators(
+                idx_kt=idx_kt, w_kt=w_kt, e=blk * be + le, t=t,
+                capacity=capacity, act_dtype=act_dtype)
+            ohs.append(oh)
+            ohg_ts.append(ohg_t)
+        oh_block = jnp.concatenate(ohs, axis=0)              # [be*C, T]
+        ohg_t_block = jnp.concatenate(ohg_ts, axis=1)        # [T, be*C]
 
-    # ---- per expert in this block: gather -> gmm1 -> act -> gmm2 -> add ----
+    with jax.named_scope("moe_gather"):
+        # ONE matmul selects every routed row for all `be` experts; the
+        # weight fills amortise across the block.
+        x_vmem[...] = jnp.dot(
+            oh_block, tokens_full_vmem[...],
+            preferred_element_type=jnp.float32).astype(act_dtype)
+
     for le in range(be):
-        e = blk * be + le
-        cnt = counts_smem[0, e]
+        lo = le * capacity
+        with jax.named_scope("moe_gmm1"):
+            kc = bd1c or d
+            h = jnp.zeros((capacity, w1_vmem.shape[-1]), jnp.float32)
+            for k0 in range(0, d, kc):
+                h = h + jnp.dot(
+                    x_vmem[lo:lo + capacity, k0:k0 + kc],    # [C, kc]
+                    w1_vmem[le, k0:k0 + kc, :],              # [kc, 2I]
+                    preferred_element_type=jnp.float32)
+            i_half = h.shape[-1] // 2
+            gate, up = h[:, :i_half], h[:, i_half:]
+            a = (jax.nn.silu(gate) * up).astype(act_dtype)   # [C, I]
 
-        @pl.when(cnt > 0)
-        def _process(le=le, e=e, cnt=cnt):
-            # Ping-pong staging by expert parity (v1's _x2 idiom): adjacent
-            # experts use disjoint gather/yout buffers, so no WAR/RAW
-            # hazard chains the experts - the scheduler may run expert
-            # le+1's gather (vld) under le's gmms (MXU) under le-1's
-            # combine (VALU) concurrently.
-            g_vmem = gathered_vmem.at[le % 2]  # -> [C * DL, L]
-            y_vmem = yout_vmem.at[le % 2]      # -> [C * DL, L]
+        with jax.named_scope("moe_gmm2"):
+            nc = bd2c or d
+            for n0 in range(0, d, nc):
+                y_vmem[lo:lo + capacity, n0:n0 + nc] = jnp.dot(
+                    a,
+                    w2_vmem[le, :, n0:n0 + nc],              # [I, nc]
+                    preferred_element_type=jnp.float32).astype(act_dtype)
 
-            with jax.named_scope("moe_gather"):
-                _gather_rows_dma(
-                    tokens_full_vmem=tokens_full_vmem, g_vmem=g_vmem,
-                    rows_smem=rows_smem, e=e, cnt=cnt, row_sem=row_sem,
-                    dl=dl, stride=stride)
-
-            with jax.named_scope("moe_gmm1"):
-                # Operands come out of the flat buffer by strided load, so
-                # the natural contraction chunk is one 128-lane group; the
-                # MXU's diagonal push does two 128x128 blocks per pass, so
-                # K=128 is a fast path rather than a half-empty array.
-                kc = bd1c or lanes
-                h = jnp.zeros((capacity, w1_vmem.shape[-1]), jnp.float32)
-                for k0 in range(0, d, kc):
-                    j0 = k0 // lanes
-                    parts = [_chunk(g_vmem, j0 + m, capacity, stride)
-                             for m in range(kc // lanes)]
-                    x = (parts[0] if len(parts) == 1
-                         else jnp.concatenate(parts, axis=1))  # [C, kc]
-                    h = h + jnp.dot(
-                        x,
-                        w1_vmem[le, k0:k0 + kc, :],          # [kc, 2I]
-                        preferred_element_type=jnp.float32)
-                i_half = h.shape[-1] // 2
-                gate, up = h[:, :i_half], h[:, i_half:]
-                a = (jax.nn.silu(gate) * up).astype(act_dtype)   # [C, I]
-
-            with jax.named_scope("moe_gmm2"):
-                # gate folded in HERE, while the rows are still aligned.
-                # e is TRACED (grid-derived), so column e is extracted by
-                # rotating the small [C, E] table (dynamic lane offsets
-                # would need an alignment proof; rolls take traced shifts)
-                # and slicing column 0 statically.
-                gate_col = pltpu.roll(
-                    gates_t_vmem[...],
-                    shift=(num_experts - e) % num_experts,
-                    axis=1)[:, :1]                           # [C, 1] f32
-                nc = bd2c or lanes
-                for n0 in range(0, d, nc):
-                    y = jnp.dot(
-                        a,
-                        w2_vmem[le, :, n0:n0 + nc],          # [I, nc]
-                        preferred_element_type=jnp.float32) * gate_col
-                    # strided STORE back into the flat layout
-                    for m in range(nc // lanes):
-                        y_vmem[pl.ds(n0 // lanes + m, capacity, stride), :] = (
-                            y[:, m * lanes:(m + 1) * lanes])
-
-            with jax.named_scope("moe_combine"):
-                # Scatter-add via DMA staging (dynamic single-row vector
-                # RMW is uncompilable, E2003): stage the cnt live acc rows
-                # into temp slots, one aligned full-block add, write back.
-                # Rows within an expert are distinct (a token appears at
-                # most once per expert), and the drains serialize experts.
-                def _stage(c, carry):
-                    row = rows_smem[e, c]
-                    pltpu.make_async_copy(
-                        acc_vmem.at[pl.ds(row * stride, dl), :],
-                        temp_vmem.at[pl.ds(c * stride, dl), :],
-                        row_sem).start()
-                    return carry
-
-                lax.fori_loop(0, cnt, _stage, 0)
-
-                def _drain(c, carry):
-                    _row_wait(temp_vmem, dl, row_sem)
-                    return carry
-
-                lax.fori_loop(0, cnt, _drain, 0)
-
-                # pad slots: stale temp + garbage y, computed and discarded
-                temp_vmem[...] = temp_vmem[...] + y_vmem[...]
-
-                def _wb(c, carry):
-                    row = rows_smem[e, c]
-                    pltpu.make_async_copy(
-                        temp_vmem.at[pl.ds(c * stride, dl), :],
-                        acc_vmem.at[pl.ds(row * stride, dl), :],
-                        row_sem).start()
-                    return carry
-
-                lax.fori_loop(0, cnt, _wb, 0)
-                lax.fori_loop(0, cnt, _drain, 0)
+    with jax.named_scope("moe_combine"):
+        # scatter-add as ONE matmul: OHG_T carries the gate weights, so
+        # this both routes rows home and applies the top-k weighting.
+        acc_vmem[...] = acc_vmem[...] + jnp.dot(
+            ohg_t_block, y_vmem[...], preferred_element_type=jnp.float32)
 
     # ---- last grid step: emit ----
     @pl.when(blk == num_blocks - 1)
@@ -514,23 +370,10 @@ def fused_moe_decode_tp_fused(
         interpret = pltpu.InterpretParams(dma_execution_mode="on_wait")
     num_devices = mesh.shape[axis_name]
     t_loc, d = tokens_local.shape
-    # D is split as [DL, LANES] wherever a buffer is indexed by a dynamic
-    # ROW: Mosaic tiles the two minormost dims, so this keeps dim 0
-    # untiled and dynamic row offsets legal (E2003 otherwise).
-    lanes = 128
-    assert d % lanes == 0, d
-    dl = d // lanes
-    stride = -(-dl // 16) * 16
     t = t_loc * num_devices
     e, _, i2 = w1_local.shape
     assert e % be == 0, (e, be)
     assert d % (bd1c or d) == 0 and d % (bd2c or d) == 0, (d, bd1c, bd2c)
-    assert (bd1c or lanes) % lanes == 0 and (bd2c or lanes) % lanes == 0, (
-        bd1c, bd2c, lanes)
-    # Each token occupies STRIDE flat rows (dl of them valid). stride is
-    # padded to 16 so r*stride is a provable multiple of the tile height
-    # (16 bf16 / 8 f32) - the whole point of the flat layout. At real
-    # shapes (D=4096 -> dl=32) stride == dl, so the padding is free.
     assert router_w.shape == (e, d), (router_w.shape, e, d)
     num_blocks = e // be
 
@@ -545,12 +388,10 @@ def fused_moe_decode_tp_fused(
         + t_loc * d * act                      # tokens_local window
         + e * d * router_w.dtype.itemsize      # router_w window
         + t * d * act                          # out window
-        + t * d * act                          # tokens_full_vmem
+        + t * d * act                          # tokens_full
         + t * d * 4                            # acc (f32)
-        + 2 * capacity * d * act               # gathered x2
-        + 2 * capacity * d * 4                 # yout x2 (f32)
-        + capacity * d * 4                     # temp (combine staging, f32)
-        + 2 * t * top_k * 4                    # topk idx/w vmem
+        + 2 * be * capacity * d * act          # x + y
+        + 4 * t * top_k * 4                    # topk tables, both layouts
     )
     assert vmem_need <= vmem_limit_bytes, (
         f"static VMEM need {vmem_need / 2**20:.1f} MiB exceeds "
@@ -562,35 +403,24 @@ def fused_moe_decode_tp_fused(
         num_scalar_prefetch=0,
         grid=(num_blocks,),
         in_specs=[
-            pl.BlockSpec((t_loc * stride, lanes), lambda i: (0, 0)),
+            pl.BlockSpec(tokens_local.shape, lambda i: (0, 0)),
             pl.BlockSpec(router_w.shape, lambda i: (0, 0)),
             pl.BlockSpec((be, d, i2), lambda i: (i, 0, 0)),
-            pl.BlockSpec((be, i2 // 2, d),
-                         lambda i: (i, 0, 0)),
+            pl.BlockSpec((be, i2 // 2, d), lambda i: (i, 0, 0)),
         ],
-        out_specs=pl.BlockSpec((t * stride, lanes), lambda i: (0, 0)),
+        out_specs=pl.BlockSpec((t, d), lambda i: (0, 0)),
         scratch_shapes=[
-            pltpu.VMEM((t * stride, lanes),
-                       tokens_local.dtype),                  # tokens_full_vmem
+            pltpu.VMEM((t, d), tokens_local.dtype),          # tokens_full
             pltpu.SemaphoreType.DMA,                         # send_sem
             pltpu.SemaphoreType.DMA,                         # recv_sem_tokens
             pltpu.SemaphoreType.DMA,                         # recv_sem_meta
-            pltpu.VMEM((t * stride, lanes), jnp.float32),    # acc
-            pltpu.SMEM((e, capacity), jnp.int32),            # rows
-            pltpu.SMEM((1, e), jnp.int32),                   # counts
-            pltpu.VMEM((2, capacity * stride, lanes),
-                       tokens_local.dtype),                  # gathered x2
-            pltpu.VMEM((2, capacity * stride, lanes),
-                       jnp.float32),                         # yout x2
-            pltpu.VMEM((capacity * stride, lanes),
-                       jnp.float32),                         # temp (combine)
-            pltpu.VMEM((t, top_k), jnp.int32),               # topk_idx_vmem
-            pltpu.VMEM((t, top_k), jnp.float32),             # topk_w_vmem
-            pltpu.VMEM((e, capacity), jnp.int32),            # rows_vmem
-            pltpu.VMEM((capacity, e), jnp.float32),          # gates_t_vmem
-            pltpu.VMEM((1, e), jnp.int32),                   # counts_vmem
-            pltpu.SemaphoreType.DMA,                         # copy_sem
-            pltpu.SemaphoreType.DMA,                         # row_sem
+            pltpu.VMEM((t, d), jnp.float32),                 # acc
+            pltpu.VMEM((t, top_k), jnp.int32),               # topk_idx
+            pltpu.VMEM((t, top_k), jnp.float32),             # topk_w
+            pltpu.VMEM((top_k, t), jnp.int32),               # idx_kt
+            pltpu.VMEM((top_k, t), jnp.float32),             # w_kt
+            pltpu.VMEM((be * capacity, d), tokens_local.dtype),   # x
+            pltpu.VMEM((be * capacity, d), tokens_local.dtype),   # y
         ],
     )
     kernel = functools.partial(
@@ -598,8 +428,6 @@ def fused_moe_decode_tp_fused(
         axis_name=axis_name,
         mesh_axis_names=tuple(mesh.axis_names),
         num_experts=e,
-        dl=dl,
-        stride=stride,
         be=be,
         capacity=capacity,
         top_k=top_k,
@@ -611,14 +439,11 @@ def fused_moe_decode_tp_fused(
     out = pl.pallas_call(
         kernel,
         grid_spec=grid_spec,
-        out_shape=jax.ShapeDtypeStruct((t * stride, lanes),
-                                      tokens_local.dtype),
+        out_shape=jax.ShapeDtypeStruct((t, d), tokens_local.dtype),
         compiler_params=pltpu.CompilerParams(
             collective_id=13,
             vmem_limit_bytes=vmem_limit_bytes,
         ),
         interpret=interpret,
-    )(_to_flat(tokens_local, dl, stride, lanes), router_w, w1_local, w2_local)
-    # the flat layout is a kernel-internal detail; callers see [T/P, D].
-    out = out.reshape(t, stride * lanes)[:, :d]
+    )(tokens_local, router_w, w1_local, w2_local)
     return lax.psum_scatter(out, axis_name, scatter_dimension=0, tiled=True)
