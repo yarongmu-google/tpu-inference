@@ -62,6 +62,18 @@ run bash -c '
   ls -lh tmp/mosaic_last.xz
   rm -rf tmp/mosaic_dump'
 
+# 1b) isolate the window-vs-scratch operand question (small, separate
+#     module chain so its histogram is unambiguous)
+mkdir -p tmp/mosaic_probe
+LIBTPU_INIT_ARGS="--xla_mosaic_dump_to=tmp/mosaic_probe" \
+  run python tmp/probe_tiling.py
+run bash -c '
+  for f in tmp/mosaic_probe/*post-finalize-llo*; do
+    python tmp/dump_histogram.py "$f"
+  done > tmp/probe_histogram.txt 2>&1
+  grep -c . tmp/probe_histogram.txt
+  rm -rf tmp/mosaic_probe'
+
 # 2) clean timing run (no dump overhead): v0.2 only - the v1 baseline is
 #    deliberately out of the bring-up loop; it returns for the final
 #    comparison once v0.2 is healthy on hardware.
