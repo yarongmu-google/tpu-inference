@@ -146,10 +146,13 @@ def _dispatch_operators(*, idx_kt, idx_tk, w_tk, e, t, capacity,
 def _decode_moe_kernel(
     tokens_local_vmem,   # [T/P, D] this device's token shard
     router_w_vmem,       # [E, D] router weight (upstream [out, in] layout)
-    w1_vmem,             # [NE, D, 2I] this grid step's expert block
-    w2_vmem,             # [NE, I, D]
+    w1_hbm,              # [E, D, 2I] ALL experts, stays in HBM
+    w2_hbm,              # [E, I, D]
     out_vmem,            # [T, D] union partials (caller reduce-scatters)
     tokens_full_vmem,    # VMEM [T, D] the gathered union
+    w1_buf,              # VMEM [2, NE, D, 2I] hand-pipelined weight block
+    w2_buf,              # VMEM [2, NE, I, D]
+    w_sem,               # DMA(2,) one per weight buffer slot
     send_sem,            # DMA - all outbound remote copies
     recv_sem_tokens,     # DMA - inbound token shards
     recv_sem_meta,       # DMA - inbound top-k idx/weight shards
@@ -174,6 +177,33 @@ def _decode_moe_kernel(
     blk = pl.program_id(0)
     num_blocks = pl.num_programs(0)
     t, d = tokens_full_vmem.shape
+
+    def _fetch_weights(block, slot):
+        """Start the DMA for one expert block into buffer `slot`.
+
+        The weights are hand-pipelined rather than left to a BlockSpec
+        because a pipelined window lands bf16 in 8-row tiles, while the
+        MXU push wants 16-row tiles - which costs an unpack/repack of
+        EVERY weight vreg. HBM is untiled, so a DMA we issue ourselves
+        lands them in the scratch tiling the MXU wants.
+        """
+        for src, dst in ((w1_hbm, w1_buf), (w2_hbm, w2_buf)):
+            pltpu.make_async_copy(
+                src_ref=src.at[pl.ds(block * be, be)],
+                dst_ref=dst.at[slot],
+                sem=w_sem.at[slot],
+            ).start()
+
+    def _wait_weights(slot):
+        for src, dst in ((w1_hbm, w1_buf), (w2_hbm, w2_buf)):
+            pltpu.make_async_copy(
+                src_ref=src.at[pl.ds(0, be)],
+                dst_ref=dst.at[slot],
+                sem=w_sem.at[slot],
+            ).wait()
+
+    slot = lax.rem(blk, 2)
+    next_slot = lax.rem(blk + 1, 2)
     # static under shard_map - same axis env as lax.axis_index below
     num_devices = lax.axis_size(axis_name)
 
@@ -186,6 +216,11 @@ def _decode_moe_kernel(
             for name in mesh_axis_names)
 
     # ---- grid step 0: local routing -> AG ----
+    @pl.when(blk == 0)
+    def _prefetch_first():
+        # kicked off before any compute so it overlaps routing + the AG
+        _fetch_weights(0, 0)
+
     @pl.when(blk == 0)
     def _prologue():
         my_id = lax.axis_index(axis_name)
@@ -289,6 +324,11 @@ def _decode_moe_kernel(
                     buf.at[pl.ds(0, inbound * t_loc), :],
                     buf.at[pl.ds(0, inbound * t_loc), :], send_sem).wait()
 
+    with jax.named_scope("moe_weights_prefetch"):
+        @pl.when(blk + 1 < num_blocks)
+        def _():
+            _fetch_weights(blk + 1, next_slot)
+
     with jax.named_scope("moe_masks"):
         idx_kt = idx_kt_vmem[...]
         idx_tk, w_tk = topk_idx_vmem[...], topk_w_vmem[...]
@@ -309,6 +349,10 @@ def _decode_moe_kernel(
         x_vmem[...] = jnp.dot(
             oh_block, tokens_full_vmem[...],
             preferred_element_type=jnp.float32).astype(act_dtype)
+
+    with jax.named_scope("moe_weights_wait"):
+        _wait_weights(slot)
+    w1_vmem, w2_vmem = w1_buf.at[slot], w2_buf.at[slot]
 
     for le in range(be):
         lo = le * capacity
@@ -390,12 +434,12 @@ def fused_moe_decode_tp_fused(
 
     # Static VMEM budget: every window and scratch buffer is a
     # compile-time constant, so fail fast with an itemized sum instead of
-    # a backend allocation error. Weight blocks are double-buffered by the
-    # grid pipeline; the constant-index windows are single-buffered.
+    # a backend allocation error. The weight buffers are the two slots we
+    # allocate ourselves; the constant-index windows are single-buffered.
     act = jnp.dtype(tokens_local.dtype).itemsize
     weight_block = be * (d * i2 + (i2 // 2) * d) * act
     vmem_need = (
-        2 * weight_block                       # w1+w2 stream, double-buffered
+        2 * weight_block                       # w1_buf + w2_buf, 2 slots
         + t_loc * d * act                      # tokens_local window
         + e * d * router_w.dtype.itemsize      # router_w window
         + t * d * act                          # out window
@@ -416,12 +460,16 @@ def fused_moe_decode_tp_fused(
         in_specs=[
             pl.BlockSpec(tokens_local.shape, lambda i: (0, 0)),
             pl.BlockSpec(router_w.shape, lambda i: (0, 0)),
-            pl.BlockSpec((be, d, i2), lambda i: (i, 0, 0)),
-            pl.BlockSpec((be, i2 // 2, d), lambda i: (i, 0, 0)),
+            # weights stay in HBM; the kernel DMAs each block itself
+            pl.BlockSpec(memory_space=pltpu.MemorySpace.HBM),
+            pl.BlockSpec(memory_space=pltpu.MemorySpace.HBM),
         ],
         out_specs=pl.BlockSpec((t, d), lambda i: (0, 0)),
         scratch_shapes=[
             pltpu.VMEM((t, d), tokens_local.dtype),          # tokens_full
+            pltpu.VMEM((2, be, d, i2), w1_local.dtype),      # w1_buf
+            pltpu.VMEM((2, be, i2 // 2, d), w2_local.dtype),  # w2_buf
+            pltpu.SemaphoreType.DMA((2,)),                   # w_sem
             pltpu.SemaphoreType.DMA,                         # send_sem
             pltpu.SemaphoreType.DMA,                         # recv_sem_tokens
             pltpu.SemaphoreType.DMA,                         # recv_sem_meta
@@ -455,5 +503,7 @@ def fused_moe_decode_tp_fused(
             vmem_limit_bytes=vmem_limit_bytes,
         ),
         interpret=interpret,
-    )(tokens_local, router_w, w1_local, w2_local)
+    )(tokens_local, router_w,
+      pltpu.with_memory_space_constraint(w1_local, pltpu.HBM),
+      pltpu.with_memory_space_constraint(w2_local, pltpu.HBM))
     return lax.psum_scatter(out, axis_name, scatter_dimension=0, tiled=True)
