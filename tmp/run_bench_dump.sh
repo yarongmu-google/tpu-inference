@@ -22,6 +22,19 @@ run() {
 export PYTHONPATH=.
 export JAX_PLATFORMS=tpu
 
+# bf16 matmul operands want 16-row tiles; pipelined windows were coming
+# back with 8-row tiles, forcing an unpack/repack of every weight vreg.
+# Ask XLA for the large 2nd-minor layout on 16-bit types - but probe it
+# first: an unknown flag is fatal to every step that follows.
+LAYOUT_FLAG="--xla_tpu_enable_large_2nd_minor_layout_for_x16=true"
+if XLA_FLAGS="$LAYOUT_FLAG" python -c "import jax; jax.numpy.zeros(1)" \
+     >/dev/null 2>&1; then
+  export XLA_FLAGS="${XLA_FLAGS:-} $LAYOUT_FLAG"
+  echo "layout flag: ACCEPTED"
+else
+  echo "layout flag: REJECTED by this build - running without it"
+fi
+
 # provenance + sanity: commit, jax, devices, and WHICH decode_kernel loads
 run git rev-parse --short HEAD
 run python -c "import jax; print(jax.__version__); print(jax.devices())"

@@ -106,26 +106,37 @@ def _lane_cumsum(x, t):
     return x
 
 
-def _dispatch_operators(*, idx_kt, w_kt, e, t, capacity, act_dtype):
+def _dispatch_operators(*, idx_kt, idx_tk, w_tk, e, t, capacity,
+                        act_dtype):
     """One expert's dispatch operators, from the top-k table.
 
     Returns (OH[C, T], OHG_T[T, C]): OH[c, t] = 1 iff token t is the c-th
     token routed to expert e; OHG_T is its transpose scaled by the gate
-    weight, so the combine matmul carries the weighting for free. Both
-    orientations are built directly (never transposed) so each matmul
-    gets its natural operand layout.
+    weight, so the combine matmul carries the weighting for free. Each
+    matmul gets its natural operand layout.
+
+    The two orientations are reduced from the two stored layouts of the
+    top-k table - [k, T] for the lane-major operator, [T, k] for the
+    sublane-major one - so only `slot` (which needs a prefix sum along T,
+    cheap only with T on lanes) is ever transposed.
     """
     eq = idx_kt == e                                         # [k, T]
     mask = jnp.max(eq.astype(jnp.int32), axis=0, keepdims=True)     # [1, T]
-    gate = jnp.sum(jnp.where(eq, w_kt, 0.0), axis=0, keepdims=True)  # [1, T]
     slot = _lane_cumsum(mask, t) - mask                      # exclusive
     live = mask == 1
 
     iota_c = lax.broadcasted_iota(jnp.int32, (capacity, t), 0)
     oh = jnp.where((iota_c == slot) & live, 1.0, 0.0).astype(act_dtype)
 
-    # transposed operator: T on sublanes, slots on lanes
-    slot_t, live_t, gate_t = slot.T, live.T, gate.T          # [T, 1]
+    # transposed operator: T on sublanes, slots on lanes. live/gate come
+    # straight from the [T, k] table (T already on sublanes); only slot
+    # has to cross.
+    eq_t = idx_tk == e                                       # [T, k]
+    live_t = jnp.max(eq_t.astype(jnp.int32), axis=1,
+                     keepdims=True) == 1                     # [T, 1]
+    gate_t = jnp.sum(jnp.where(eq_t, w_tk, 0.0), axis=1,
+                     keepdims=True)                          # [T, 1]
+    slot_t = slot.T                                          # [T, 1]
     iota_c_t = lax.broadcasted_iota(jnp.int32, (t, capacity), 1)
     ohg_t = jnp.where((iota_c_t == slot_t) & live_t,
                       gate_t, 0.0).astype(act_dtype)
@@ -146,7 +157,6 @@ def _decode_moe_kernel(
     topk_idx_vmem,       # VMEM [T, k] i32 - AG'd routing results
     topk_w_vmem,         # VMEM [T, k] f32
     idx_kt_vmem,         # VMEM [k, T] i32 - transposed once, read per step
-    w_kt_vmem,           # VMEM [k, T] f32
     x_vmem,              # VMEM [be*C, D] gathered rows for this block
     y_vmem,              # VMEM [be*C, D] expert outputs for this block
     *,
@@ -256,7 +266,6 @@ def _decode_moe_kernel(
             # the per-step mask builder reduces over k with T on LANES;
             # one transpose here beats one per expert per grid step.
             idx_kt_vmem[...] = topk_idx_vmem[...].T          # [k, T]
-            w_kt_vmem[...] = topk_w_vmem[...].T
         acc_vmem[...] = jnp.zeros_like(acc_vmem)
 
     # ---- this step's expert block: masks -> gather -> FFN -> combine ----
@@ -281,11 +290,13 @@ def _decode_moe_kernel(
                     buf.at[pl.ds(0, inbound * t_loc), :], send_sem).wait()
 
     with jax.named_scope("moe_masks"):
-        idx_kt, w_kt = idx_kt_vmem[...], w_kt_vmem[...]
+        idx_kt = idx_kt_vmem[...]
+        idx_tk, w_tk = topk_idx_vmem[...], topk_w_vmem[...]
         ohs, ohg_ts = [], []
         for le in range(be):
             oh, ohg_t = _dispatch_operators(
-                idx_kt=idx_kt, w_kt=w_kt, e=blk * be + le, t=t,
+                idx_kt=idx_kt, idx_tk=idx_tk, w_tk=w_tk,
+                e=blk * be + le, t=t,
                 capacity=capacity, act_dtype=act_dtype)
             ohs.append(oh)
             ohg_ts.append(ohg_t)
@@ -391,7 +402,7 @@ def fused_moe_decode_tp_fused(
         + t * d * act                          # tokens_full
         + t * d * 4                            # acc (f32)
         + 2 * be * capacity * d * act          # x + y
-        + 4 * t * top_k * 4                    # topk tables, both layouts
+        + 3 * t * top_k * 4                    # topk tables, both layouts
     )
     assert vmem_need <= vmem_limit_bytes, (
         f"static VMEM need {vmem_need / 2**20:.1f} MiB exceeds "
@@ -418,7 +429,6 @@ def fused_moe_decode_tp_fused(
             pltpu.VMEM((t, top_k), jnp.int32),               # topk_idx
             pltpu.VMEM((t, top_k), jnp.float32),             # topk_w
             pltpu.VMEM((top_k, t), jnp.int32),               # idx_kt
-            pltpu.VMEM((top_k, t), jnp.float32),             # w_kt
             pltpu.VMEM((be * capacity, d), tokens_local.dtype),   # x
             pltpu.VMEM((be * capacity, d), tokens_local.dtype),   # y
         ],
