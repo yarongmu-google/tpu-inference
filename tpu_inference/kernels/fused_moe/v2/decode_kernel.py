@@ -158,9 +158,9 @@ def _decode_moe_kernel(
     topk_idx_vmem,       # VMEM [T, k] i32 - AG'd routing results
     topk_w_vmem,         # VMEM [T, k] f32
     idx_kt_vmem,         # VMEM [k, T] i32 - transposed once, read per step
-    x_vmem,              # VMEM [bg, be*C, D] gathered rows for the group
+    x_vmem,              # VMEM [be*C, D] gathered rows for this block
     y_vmem,              # VMEM [bg, be*C, D] expert outputs for the group
-    ohg_vmem,            # VMEM [T, bg*be*C] combine operator for the group
+    ohg_vmem,            # VMEM [bg, T, be*C] combine operators, per slot
     *,
     axis_name: str,
     mesh_axis_names: tuple,
@@ -309,52 +309,48 @@ def _decode_moe_kernel(
                     buf.at[pl.ds(0, inbound * t_loc), :], send_sem).wait()
 
     # ---- expert GROUP: bg consecutive grid steps share one dispatch ----
-    # masks/gather run once per group (first step), combine once per group
-    # (last step). Weight windows stay be-sized, so the group amortises
-    # the per-call costs - the accumulator read-modify-write and the
-    # gather's stationary-operand fills - without growing the weight
-    # VMEM footprint (the 64 MiB wall that closed the big-be avenue).
+    # masks/gather stay PER STEP (small phases the scheduler can
+    # interleave - a per-group build was measured slower: a 24k-op
+    # single-unit wall at every group head with the MXU idle). Only the
+    # COMBINE is grouped: each step parks its outputs in a group slot,
+    # and the group's last step folds all of them into the accumulator
+    # with ONE read-modify-write per T-chunk, cutting that traffic
+    # bg-fold. Weight windows stay be-sized throughout.
     pos = lax.rem(blk, bg)               # step's position within its group
-    gc = bg * be * capacity              # gathered rows per group
 
-    if do_masks or do_gather:
-        @pl.when(pos == 0)
-        def _group_dispatch():
-            if do_masks:
-                with jax.named_scope("moe_masks"):
-                    idx_kt = idx_kt_vmem[...]
-                    idx_tk = topk_idx_vmem[...]
-                    w_tk = topk_w_vmem[...]
-                    e0 = (blk - pos) * be    # first expert of the group
-                    ohs, ohg_ts = [], []
-                    for j in range(bg * be):
-                        oh, ohg_t = _dispatch_operators(
-                            idx_kt=idx_kt, idx_tk=idx_tk, w_tk=w_tk,
-                            e=e0 + j, t=t,
-                            capacity=capacity, act_dtype=act_dtype)
-                        ohs.append(oh)
-                        ohg_ts.append(ohg_t)
-                    oh_block = jnp.concatenate(ohs, axis=0)          # [gc, T]
-                    ohg_vmem[...] = jnp.concatenate(ohg_ts, axis=1)  # [T, gc]
-            else:
-                oh_block = jnp.zeros((gc, t), act_dtype)
-                ohg_vmem[...] = jnp.zeros((t, gc), act_dtype)
-
-            if do_gather:
-                with jax.named_scope("moe_gather"):
-                    # ONE matmul selects every routed row for the whole
-                    # group; the stationary-operand fills amortise across
-                    # bg*be experts. The reshape only splits MAJOR dims -
-                    # no lane/sublane movement.
-                    x_vmem[...] = jnp.dot(
-                        oh_block, tokens_full_vmem[...],
-                        preferred_element_type=jnp.float32,
-                    ).astype(act_dtype).reshape(bg, be * capacity, d)
+    if do_masks:
+      with jax.named_scope("moe_masks"):
+        idx_kt = idx_kt_vmem[...]
+        idx_tk, w_tk = topk_idx_vmem[...], topk_w_vmem[...]
+        ohs, ohg_ts = [], []
+        for le in range(be):
+            oh, ohg_t = _dispatch_operators(
+                idx_kt=idx_kt, idx_tk=idx_tk, w_tk=w_tk,
+                e=blk * be + le, t=t,
+                capacity=capacity, act_dtype=act_dtype)
+            ohs.append(oh)
+            ohg_ts.append(ohg_t)
+        oh_block = jnp.concatenate(ohs, axis=0)              # [be*C, T]
+        ohg_t_block = jnp.concatenate(ohg_ts, axis=1)        # [T, be*C]
+    else:
+        oh_block = jnp.zeros((be * capacity, t), act_dtype)
+        ohg_t_block = jnp.zeros((t, be * capacity), act_dtype)
 
     # dynamic LEADING index on >=2D scratch is the v1 idiom (.at[sem_id]);
     # only the tiled minor dims must stay statically sliced
-    x_step = x_vmem.at[pos]
     y_step = y_vmem.at[pos]
+    ohg_step = ohg_vmem.at[pos]
+    with jax.named_scope("moe_ohg_park"):
+        ohg_step[...] = ohg_t_block
+
+    if do_gather:
+      with jax.named_scope("moe_gather"):
+        # ONE matmul selects every routed row for all `be` experts; the
+        # weight fills amortise across the block.
+        x_vmem[...] = jnp.dot(
+            oh_block, tokens_full_vmem[...],
+            preferred_element_type=jnp.float32).astype(act_dtype)
+    x_step = x_vmem
 
     for le in range(be if do_ffn else 0):
         lo = le * capacity
@@ -381,11 +377,12 @@ def _decode_moe_kernel(
     if do_combine:
         @pl.when(pos == bg - 1)
         def _group_combine():
-            # Scatter-add as ONE matmul: OHG_T carries the gate weights,
-            # so this both routes rows home and applies the top-k
-            # weighting. Once per GROUP: the acc read-modify-write is
-            # per-call, so groups cut that traffic bg-fold. The y flatten
-            # merges MAJOR dims only - a layout no-op.
+            # Scatter-add as matmuls: OHG_T carries the gate weights, so
+            # this both routes rows home and applies the top-k weighting.
+            # Once per GROUP, with the bg partial products summed in
+            # REGISTERS (static p, unrolled - like gmm1's h) so the
+            # accumulator sees ONE read-modify-write per T-chunk per
+            # group instead of one per grid step.
             #
             # CHUNKED over T: a full-width `acc[...] = acc[...] + dot(...)`
             # emits every load, then every add, then every store - three
@@ -394,14 +391,15 @@ def _decode_moe_kernel(
             # every window instead. bcT is the tunable; None = one
             # full-width expression (the old, unpipelineable form).
             with jax.named_scope("moe_combine"):
-                y_group = y_vmem[...].reshape(gc, d)
-                ohg_t_block = ohg_vmem[...]
                 tc = bcT or t
                 for t0 in range(0, t, tc):
                     rows = pl.ds(t0, tc)
-                    acc_vmem[rows, :] = acc_vmem[rows, :] + jnp.dot(
-                        ohg_t_block[t0:t0 + tc, :], y_group,
-                        preferred_element_type=jnp.float32)
+                    part = jnp.zeros((tc, d), jnp.float32)
+                    for p in range(bg):
+                        part = part + jnp.dot(
+                            ohg_vmem[p, t0:t0 + tc, :], y_vmem[p],
+                            preferred_element_type=jnp.float32)
+                    acc_vmem[rows, :] = acc_vmem[rows, :] + part
 
     # ---- last grid step: emit ----
     @pl.when(blk == num_blocks - 1)
@@ -483,8 +481,8 @@ def fused_moe_decode_tp_fused(
         + t * d * act                          # out window
         + t * d * act                          # tokens_full
         + t * d * 4                            # acc (f32)
-        + 2 * bg * be * capacity * d * act     # x + y, one group's worth
-        + t * bg * be * capacity * act         # ohg, the combine operator
+        + (1 + bg) * be * capacity * d * act   # x + the group's y slots
+        + bg * t * be * capacity * act         # ohg, per-slot operators
         + 3 * t * top_k * 4                    # topk tables, both layouts
     )
     assert vmem_need <= vmem_limit_bytes, (
@@ -512,9 +510,9 @@ def fused_moe_decode_tp_fused(
             pltpu.VMEM((t, top_k), jnp.int32),               # topk_idx
             pltpu.VMEM((t, top_k), jnp.float32),             # topk_w
             pltpu.VMEM((top_k, t), jnp.int32),               # idx_kt
-            pltpu.VMEM((bg, be * capacity, d), tokens_local.dtype),  # x
+            pltpu.VMEM((be * capacity, d), tokens_local.dtype),      # x
             pltpu.VMEM((bg, be * capacity, d), tokens_local.dtype),  # y
-            pltpu.VMEM((t, bg * be * capacity), tokens_local.dtype),  # ohg
+            pltpu.VMEM((bg, t, be * capacity), tokens_local.dtype),  # ohg
         ],
     )
     kernel = functools.partial(

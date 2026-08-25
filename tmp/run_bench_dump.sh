@@ -41,7 +41,8 @@ run python -c "import tpu_inference.kernels.fused_moe.v2.decode_kernel as m; pri
 # HYPOTHESIS config, not the defaults - otherwise the histogram/timeline
 # never reflect the change being measured and cannot be compared against
 # tmp/baseline/. Override per run: DUMP_FLAGS="--bg=8" ./tmp/run_bench_dump.sh
-DUMP_FLAGS="${DUMP_FLAGS:---bg=4 --capacity=24}"
+# bg=2 is the deepest group KNOWN to fit VMEM; the tuner still tries 4/8
+DUMP_FLAGS="${DUMP_FLAGS:---bg=2 --capacity=24}"
 echo "DUMP_FLAGS: $DUMP_FLAGS"
 
 mkdir -p tmp/mosaic_dump
