@@ -1,0 +1,32 @@
+tmp/mosaic_dump/1787628396162677542-0019-mosaic-dump-anonymous-post-finalize-llo.txt
+71400 ops, 476 ops/column, 150 columns
+
+   MXU |                   #######                                #####       #   #      ##  #      ##  ##     ##  ##    ##########                           |    6144 ( 8.6%)
+  VALU |##### ##################################   ############## ################# ########## ######################    ##############       ############## #|   47637 (66.7%)
+   XLU |                         ############  #   ########## ##                                                                                              |    1534 ( 2.1%)
+   EUP |                                    #                                 #           #          #          #                                             |      48 ( 0.1%)
+  LDST |    ###                             ########            ###    ##     ##  ###     #  ###     #   ##     ##  ######            #########            ###|   15986 (22.4%)
+   DMA |                                      #                                                                                                               |       9 ( 0.0%)
+SCALAR |    #                                 ##   #  #  #  #                                                                             #                   |      42 ( 0.1%)
+       |0   1                    234567 89012 34   5            6      7      8   9       0   1      2   3      4   5                     6                   |
+
+regions (marker, name, first op index):
+  0  <top>                    @0
+  1  moe_routing              @2135
+  2  moe_topk0                @12183
+  3  moe_topk1                @12696
+  4  moe_topk2                @13208
+  5  moe_topk3                @13720
+  6  moe_topk4                @14232
+  7  moe_topk5                @14744
+  8  moe_topk6                @15256
+  9  moe_topk7                @15768
+  0  moe_topk8                @16280
+  1  moe_topk9                @16792
+  3  moe_ag_barrier           @18503
+  4  moe_ag_drain_meta        @18570
+  5  moe_ag_drain_tokens      @20757
+  6  moe_gather               @26720
+  7  moe_gmm1                 @30304
+  8  moe_gmm2                 @33728
+  5  moe_combine              @51682

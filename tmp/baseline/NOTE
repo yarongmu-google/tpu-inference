@@ -1,0 +1,13 @@
+Baseline run for hypothesis testing. Future runs overwrite tmp/*; diff
+them against this directory.
+
+commit   a1b3b0dd1 (fused_moe/v2: restore pipelined weight windows)
+config   defaults: be=4 capacity=32; tuned winner below
+timing   v2_tp_inkernel_ag 3629.2 us (defaults)
+         tuned 3444.1 us: --be=4 --capacity=24 --bd1c=256 --bd2c=128 --bcT=128
+         v1_ep_a2a 2668.4 us
+shape    devices=8 T=512 D=4096 E=512 I=1024 k=10 bf16
+notes    weight path = automatic pipelined windows (grid pipeline double
+         buffering); per-step op budget from op_histogram.txt: gmm1 16.1k,
+         combine 12.0k, gmm2 10.1k, masks 6.2k, gather 5.2k (x128 steps).
+         ~2 ops/cycle bundle density; issue-bound, not DMA-bound.

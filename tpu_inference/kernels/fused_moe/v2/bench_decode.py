@@ -112,6 +112,10 @@ def main() -> None:
     parser.add_argument("--bct", "--bcT", dest="bcT", type=int, default=0,
                         help="v2: combine accumulate chunk over T "
                         "(0 = one full-width expression, unpipelineable)")
+    parser.add_argument("--vmem-mb", dest="vmem_mb", type=int, default=64,
+                        help="v2: VMEM budget handed to the kernel; larger "
+                        "values admit larger be (fewer grid steps, less "
+                        "accumulator traffic) until the backend rejects it")
     parser.add_argument("--tune", action="store_true",
                         help="sweep v2 kernel params, print the winner "
                         "(ignores the one-off param flags above)")
@@ -202,7 +206,8 @@ def main() -> None:
 
         def v2_runner(be: int, cap: int, bd1c: int | None,
                       bd2c: int | None,
-                      bcT: int | None = None) -> Callable[[], jax.Array]:
+                      bcT: int | None = None,
+                      vmem_mb: int | None = None) -> Callable[[], jax.Array]:
             def fn(tok: jax.Array, w1x: jax.Array, w2x: jax.Array,
                    r: jax.Array) -> jax.Array:
                 w1_flat = w1x.reshape(w1x.shape[0], w1x.shape[1], -1)
@@ -220,6 +225,7 @@ def main() -> None:
                     bd1c=bd1c,
                     bd2c=bd2c,
                     bcT=bcT,
+                    vmem_limit_bytes=(vmem_mb or args.vmem_mb) * 2**20,
                     interpret=args.interpret,
                 )
 
@@ -250,10 +256,12 @@ def main() -> None:
         cap0 = -(-max_load // 8) * 8
         print(f"[tune] max expert load = {max_load} -> capacity >= {cap0}")
         # be scales the double-buffered weight windows (2*be experts of
-        # VMEM), so large values fail the budget assert and are reported
-        # as such; it also scales accumulator traffic (~1/be) and the
-        # gather/combine matmul M (be*C rows per fill).
+        # VMEM), so larger be needs a larger VMEM budget - sweep both
+        # together and let the budget assert / backend reject what does
+        # not fit. be is what shrinks the per-BLOCK costs (masks, gather,
+        # accumulator RMW all scale with the number of grid steps).
         be_cands = [x for x in (4, 8, 16, 32, 64) if e % x == 0]
+        vm_cands = sorted({args.vmem_mb, 110})
         cap_cands = sorted({cap0, 2 * cap0})
         # small chunks matter most: an unchunked contraction emits all the
         # loads/pushes before any matmul, so nothing interleaves. Include
@@ -267,44 +275,48 @@ def main() -> None:
                 continue
             best_us: float | None = None
             best: tuple[int, int, int | None, int | None,
-                        int | None] | None = None
+                        int | None, int] | None = None
 
             def measure(be: int, cap: int, b1: int | None,
-                        b2: int | None, bt: int | None = None) -> None:
+                        b2: int | None, bt: int | None = None,
+                        vm: int | None = None) -> None:
                 nonlocal best_us, best
+                vm = vm or args.vmem_mb
                 tag = (f"  be={be} cap={cap} bd1c={b1 or 0} bd2c={b2 or 0} "
-                       f"bcT={bt or 0}")
+                       f"bcT={bt or 0} vmem={vm}M")
                 try:
                     us, _ = _time(
-                        v2_runner(be=be, cap=cap, bd1c=b1, bd2c=b2, bcT=bt),
+                        v2_runner(be=be, cap=cap, bd1c=b1, bd2c=b2, bcT=bt,
+                                  vmem_mb=vm),
                         iters=args.iters, warmup=args.warmup)
                 except Exception as ex:  # e.g. VMEM oversubscription
                     print(f"{tag}: failed ({type(ex).__name__})")
                     return
                 print(f"{tag}: {us:.1f} us")
                 if best_us is None or us < best_us:
-                    best_us, best = us, (be, cap, b1, b2, bt)
+                    best_us, best = us, (be, cap, b1, b2, bt, vm)
 
-            print(f"\n[tune] {label} stage 1: be x capacity")
+            print(f"\n[tune] {label} stage 1: be x capacity x vmem")
             for be in be_cands:
                 for cap in cap_cands:
-                    measure(be, cap, None, None)
+                    for vm in vm_cands:
+                        measure(be, cap, None, None, vm=vm)
             if best is None:
                 print(f"[tune] {label}: every stage-1 config failed")
                 continue
             print(f"[tune] {label} stage 2: gmm1 D-chunk (bd1c)")
             for b1 in bd_cands:
-                measure(best[0], best[1], b1, best[3], best[4])
+                measure(best[0], best[1], b1, best[3], best[4], best[5])
             print(f"[tune] {label} stage 3: gmm2 D-chunk (bd2c)")
             for b2 in bd_cands:
-                measure(best[0], best[1], best[2], b2, best[4])
+                measure(best[0], best[1], best[2], b2, best[4], best[5])
             print(f"[tune] {label} stage 4: combine T-chunk (bcT)")
             for bt in [x for x in (8, 16, 32, 64, 128, 256) if x < t]:
-                measure(best[0], best[1], best[2], best[3], bt)
-            be, cap, b1, b2, bt = best
+                measure(best[0], best[1], best[2], best[3], bt, best[5])
+            be, cap, b1, b2, bt, vm = best
             print(f"[tune] {label} WINNER: --be={be} --capacity={cap} "
                   f"--bd1c={b1 or 0} --bd2c={b2 or 0} --bcT={bt or 0} "
-                  f"-> {best_us:.1f} us")
+                  f"--vmem-mb={vm} -> {best_us:.1f} us")
         return
 
     # sanity: variants agree (loose - bf16, and v2 drops capacity overflow)
