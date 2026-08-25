@@ -1,0 +1,48 @@
+
+===== tmp/mosaic_probe/1787628421634022153-0019-mosaic-dump-anonymous-post-finalize-llo.txt
+total ops: 4827
+
+-- probe_matmul: 4312 ops
+         1152  llo.vbitcast
+         1152  llo.vunpack
+          576  llo.vector_load
+          576  llo.vpack
+          256  llo.vmatprep.subr
+          256  llo.vlatchi
+          128  llo.vmatres
+          128  llo.vadd.f32
+           32  llo.vmatprep.mubr
+           32  llo.vmatmul.mubr
+           16  llo.vdwg
+            8  llo.vector_store
+
+-- <toplevel>: 515 ops
+          515  llo.constant
+
+===== tmp/mosaic_probe/1787628421779936963-0019-mosaic-dump-anonymous-post-finalize-llo.txt
+total ops: 5853
+
+-- probe_copy: 3584 ops
+         1024  llo.vbitcast
+         1024  llo.vunpack
+          512  llo.vector_load
+          512  llo.vpack
+          512  llo.vector_store
+
+-- probe_matmul: 1752 ops
+          576  llo.vector_load
+          256  llo.vmatprep.subr
+          256  llo.vlatchi
+          128  llo.vbitcast
+          128  llo.vunpack
+          128  llo.vmatres
+          128  llo.vadd.f32
+           64  llo.vpack
+           32  llo.vmatprep.mubr
+           32  llo.vmatmul.mubr
+           16  llo.vdwg
+            8  llo.vector_store
+
+-- <toplevel>: 517 ops
+          516  llo.constant
+            1  llo.seq.s32
