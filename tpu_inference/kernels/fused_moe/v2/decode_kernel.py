@@ -145,7 +145,8 @@ def _dispatch_operators(*, idx_kt, idx_tk, w_tk, e, t, capacity,
 
 def _decode_moe_kernel(
     tokens_local_vmem,   # [T/P, D] this device's token shard
-    router_w_vmem,       # [E, D] router weight (upstream [out, in] layout)
+    router_w_vmem,       # [E, D] router weight, or [T/P, E] logits when
+                         # not router_fused (upstream [out, in] layout)
     w1_vmem,             # [NE, D, 2I] this grid step's expert block
     w2_vmem,             # [NE, I, D]
     out_vmem,            # [T, D] union partials (caller reduce-scatters)
@@ -170,6 +171,7 @@ def _decode_moe_kernel(
     top_k: int,
     renormalize_topk_logits: bool,
     act_dtype,
+    router_fused: bool = True,
     bd1c: int | None = None,
     bd2c: int | None = None,
     bcT: int | None = None,
@@ -205,12 +207,17 @@ def _decode_moe_kernel(
         row0 = my_id * t_loc
 
         with jax.named_scope("moe_routing"):
-            logits_et = lax.dot_general(
-                router_w_vmem[...],          # [E, D]
-                tokens_local_vmem[...],      # [T/P, D]
-                dimension_numbers=(((1,), (1,)), ((), ())),
-                preferred_element_type=jnp.float32,
-            )                                # -> [E, T/P]
+            if router_fused:
+                logits_et = lax.dot_general(
+                    router_w_vmem[...],      # [E, D]
+                    tokens_local_vmem[...],  # [T/P, D]
+                    dimension_numbers=(((1,), (1,)), ((), ())),
+                    preferred_element_type=jnp.float32,
+                )                            # -> [E, T/P]
+            else:
+                # serving path: the router ran upstream, the second input
+                # is its logits [T/P, E]; one f32 transpose to [E, T/P]
+                logits_et = router_w_vmem[...].astype(jnp.float32).T
             weights, indices = _routing(
                 logits_et=logits_et,
                 top_k=top_k,
@@ -412,8 +419,10 @@ def fused_moe_decode_tp_fused(
     tokens_local: jax.Array,   # [T/P, D]
     w1_local: jax.Array,       # [E, D, 2*I/P]
     w2_local: jax.Array,       # [E, I/P, D]
-    router_w: jax.Array,       # [E, D] router weight, replicated
+    router_w: jax.Array | None = None,   # [E, D] router weight, replicated
     *,
+    gating_local: jax.Array | None = None,  # [T/P, E] logits, if the
+                                            # router already ran upstream
     mesh: jax.sharding.Mesh,
     axis_name: str,
     top_k: int,
@@ -447,7 +456,16 @@ def fused_moe_decode_tp_fused(
     assert e % be == 0, (e, be)
     assert d % (bd1c or d) == 0 and d % (bd2c or d) == 0, (d, bd1c, bd2c)
     assert t % (bcT or t) == 0, (t, bcT)
-    assert router_w.shape == (e, d), (router_w.shape, e, d)
+    router_fused = router_w is not None
+    assert router_fused != (gating_local is not None), \
+        "pass exactly one of router_w / gating_local"
+    if router_fused:
+        assert router_w.shape == (e, d), (router_w.shape, e, d)
+        route_in = router_w
+    else:
+        assert gating_local.shape == (t_loc, e), (gating_local.shape,
+                                                  t_loc, e)
+        route_in = gating_local
     num_blocks = e // be
     # groups of bg grid steps share one dispatch/combine
     assert num_blocks % bg == 0, (num_blocks, bg)
@@ -461,7 +479,7 @@ def fused_moe_decode_tp_fused(
     vmem_need = (
         2 * weight_block                       # w1+w2 stream, double-buffered
         + t_loc * d * act                      # tokens_local window
-        + e * d * router_w.dtype.itemsize      # router_w window
+        + route_in.size * route_in.dtype.itemsize  # router_w / gating window
         + t * d * act                          # out window
         + t * d * act                          # tokens_full
         + t * d * 4                            # acc (f32)
@@ -480,7 +498,7 @@ def fused_moe_decode_tp_fused(
         grid=(num_blocks,),
         in_specs=[
             pl.BlockSpec(tokens_local.shape, lambda i: (0, 0)),
-            pl.BlockSpec(router_w.shape, lambda i: (0, 0)),
+            pl.BlockSpec(route_in.shape, lambda i: (0, 0)),
             pl.BlockSpec((be, d, i2), lambda i: (i, 0, 0)),
             pl.BlockSpec((be, i2 // 2, d), lambda i: (i, 0, 0)),
         ],
@@ -510,6 +528,7 @@ def fused_moe_decode_tp_fused(
         top_k=top_k,
         renormalize_topk_logits=renormalize_topk_logits,
         act_dtype=tokens_local.dtype,
+        router_fused=router_fused,
         bd1c=bd1c,
         bd2c=bd2c,
         bcT=bcT,
@@ -524,5 +543,53 @@ def fused_moe_decode_tp_fused(
             vmem_limit_bytes=vmem_limit_bytes,
         ),
         interpret=interpret,
-    )(tokens_local, router_w, w1_local, w2_local)
+    )(tokens_local, route_in, w1_local, w2_local)
     return lax.psum_scatter(out, axis_name, scatter_dimension=0, tiled=True)
+
+
+def fused_moe_decode_tp_serving(
+    hidden_states: jax.Array,  # [T, D] rows sharded over axis_name
+    gating_output: jax.Array,  # [T, E] router logits, same sharding
+    w1: jax.Array,             # [E, D, 2I] sharded on the last axis
+    w2: jax.Array,             # [E, I, D] sharded on the middle axis
+    *,
+    mesh: jax.sharding.Mesh,
+    axis_name: str,
+    top_k: int,
+    renormalize_topk_logits: bool,
+    capacity: int,
+    be: int = 4,
+    bg: int = 1,
+    interpret: bool = False,
+) -> jax.Array:
+    """Serving entry: the router already ran upstream, so the kernel gets
+    its logits instead of the router weight. shard_map over the ONE mesh
+    axis that carries both the token shards and the weight shards (TP-MoE
+    under data-parallel attention)."""
+
+    def fn(tok: jax.Array, gate: jax.Array, w1x: jax.Array,
+           w2x: jax.Array) -> jax.Array:
+        return fused_moe_decode_tp_fused(
+            tok,
+            w1x,
+            w2x,
+            gating_local=gate,
+            mesh=mesh,
+            axis_name=axis_name,
+            top_k=top_k,
+            renormalize_topk_logits=renormalize_topk_logits,
+            capacity=capacity,
+            be=be,
+            bg=bg,
+            interpret=interpret,
+        )
+
+    P = jax.sharding.PartitionSpec
+    return jax.shard_map(
+        fn,
+        mesh=mesh,
+        in_specs=(P(axis_name, None), P(axis_name, None),
+                  P(None, None, axis_name), P(None, axis_name, None)),
+        out_specs=P(axis_name, None),
+        check_vma=False,
+    )(hidden_states, gating_output, w1, w2)

@@ -13,8 +13,8 @@ import pytest
 from jax.sharding import Mesh
 from jax.sharding import PartitionSpec as P
 
-from tpu_inference.kernels.fused_moe.v2.decode_kernel import \
-    fused_moe_decode_tp_fused
+from tpu_inference.kernels.fused_moe.v2.decode_kernel import (
+    fused_moe_decode_tp_fused, fused_moe_decode_tp_serving)
 
 P_DEV = 8
 
@@ -99,6 +99,41 @@ def test_decode_kernel_tp_matches_reference(t, d, e, i, k, bd1c, bd2c,
                   P(None, "x", None), P(None, None)),
         out_specs=P("x", None), check_vma=False,
     ))(tokens, w1, w2, router_w)
+    want = _reference_moe(tokens, w1.reshape(e, d, 2 * i), w2, gating, k,
+                          renormalize=True)
+    np.testing.assert_allclose(np.asarray(got), np.asarray(want),
+                               rtol=2e-2, atol=2e-2)
+
+
+@pytest.mark.parametrize("t,d,e,i,k", [(64, 256, 16, 128, 4)])
+def test_decode_kernel_tp_serving_gating_in(t, d, e, i, k):
+    """The serving entry: precomputed router logits (gating_local path),
+    shard_map done by the wrapper, weights in the serving arrangement
+    (each 2I/P chunk of w1 holds that shard's gate|up pair)."""
+    _skip_unless_devices(P_DEV)
+    rng = np.random.default_rng(0)
+    tokens = jnp.asarray(rng.standard_normal((t, d)), jnp.float32)
+    w1 = jnp.asarray(rng.standard_normal((e, d, 2, i)) * 0.02, jnp.float32)
+    w2 = jnp.asarray(rng.standard_normal((e, i, d)) * 0.02, jnp.float32)
+    router_w = jnp.asarray(rng.standard_normal((e, d)) * 0.1, jnp.float32)
+    gating = tokens @ router_w.T                             # [T, E]
+    mesh = Mesh(np.array(jax.devices()[:P_DEV]), ("x",))
+    p = P_DEV
+    # serving weight arrangement: sharding the last axis into P chunks
+    # must hand each shard its own [gate_p | up_p] pair
+    w1_serving = jnp.transpose(
+        w1.reshape(e, d, 2, p, i // p),
+        (0, 1, 3, 2, 4)).reshape(e, d, 2 * i)
+
+    got = jax.jit(lambda tok, g, a, b: fused_moe_decode_tp_serving(
+        tok, g, a, b,
+        mesh=mesh,
+        axis_name="x",
+        top_k=k,
+        renormalize_topk_logits=True,
+        capacity=t,   # capacity=T: no drops
+        interpret=True,
+    ))(tokens, gating, w1_serving, w2)
     want = _reference_moe(tokens, w1.reshape(e, d, 2 * i), w2, gating, k,
                           renormalize=True)
     np.testing.assert_allclose(np.asarray(got), np.asarray(want),

@@ -22,7 +22,10 @@ from vllm.model_executor.layers.fused_moe import RoutedExperts
 
 from tpu_inference import envs
 from tpu_inference.kernels.fused_moe.v1.kernel import fused_ep_moe
+from tpu_inference.kernels.fused_moe.v2.decode_kernel import \
+    fused_moe_decode_tp_serving
 from tpu_inference.layers.common.fused_moe_gmm import fused_moe_func
+from tpu_inference.layers.common.sharding import ShardingAxisName
 from tpu_inference.logger import init_logger
 from tpu_inference.utils import to_jax_dtype
 
@@ -69,6 +72,48 @@ class MoEBackend(Enum):
     def fused_moe_backends(cls):
         """Returns those backends that use fused weights"""
         return {cls.FUSED_MOE, cls.GMM_EP, cls.GMM_TP}
+
+
+# batches above this stay on the GMM path (the decode kernel keeps the
+# whole token batch VMEM-resident)
+_TP_DECODE_MAX_TOKENS = 1024
+
+
+def _tp_decode_kernel_axis(*, mesh, x, gating_output, weights, activation,
+                           scoring_fn):
+    """The single mesh axis carrying BOTH the token shards and the weight
+    shards (TP-MoE under data-parallel attention), or None when this call
+    cannot use the TP decode kernel and must stay on the GMM path."""
+    if not isinstance(gating_output, jax.Array):
+        return None
+    if activation != "silu" or scoring_fn != "softmax":
+        return None
+    if (weights.w13_weight_scale is not None
+            or weights.w2_weight_scale is not None
+            or weights.w13_bias is not None or weights.w2_bias is not None):
+        return None
+    if x.ndim != 2 or weights.w13_weight.ndim != 3:
+        return None
+    t, d = x.shape
+    e, dw, _ = weights.w13_weight.shape
+    if dw != d:  # padded hidden size - the kernel has no trim path
+        return None
+    if gating_output.shape != (t, e) or e % 4:
+        return None
+    axes = [a for a in mesh.axis_names if mesh.shape[a] > 1]
+    if len(axes) != 1:
+        return None
+    ax = axes[0]
+
+    def _names(v):
+        return (v, ) if isinstance(v, str) else tuple(v)
+
+    if (ax not in _names(ShardingAxisName.ATTN_DATA)
+            or ax not in _names(ShardingAxisName.MLP_TENSOR)):
+        return None
+    if t % mesh.shape[ax] or t > _TP_DECODE_MAX_TOKENS:
+        return None
+    return ax
 
 
 def moe_apply(
@@ -148,6 +193,38 @@ def moe_apply(
                 all_gather_fp8 = (bool(activation_dtype)
                                   and to_jax_dtype(activation_dtype)
                                   == jnp.float8_e4m3fn)
+
+                tp_decode_axis = None
+                if (envs.USE_MOE_TP_DECODE_KERNEL
+                        and moe_backend == MoEBackend.GMM_TP):
+                    tp_decode_axis = _tp_decode_kernel_axis(
+                        mesh=mesh, x=x, gating_output=gating_output,
+                        weights=weights, activation=activation,
+                        scoring_fn=layer.scoring_func)
+                if tp_decode_axis is not None:
+                    # NB: capacity-based dispatch - rows routed beyond
+                    # `capacity` per expert are DROPPED. Acceptable for
+                    # performance evaluation, not for accuracy runs.
+                    logger.warning_once(
+                        "[MoE]: using the TP decode kernel "
+                        "(capacity-based dispatch)")
+                    t, _ = x.shape
+                    e = weights.w13_weight.shape[0]
+                    # 2x the average expert load, rounded up to 8 rows
+                    cap = min(t, max(16, -(-2 * t * layer.top_k //
+                                           (e * 8)) * 8))
+                    output = fused_moe_decode_tp_serving(
+                        hidden_states=x,
+                        gating_output=gating_output,
+                        w1=weights.w13_weight,
+                        w2=weights.w2_weight,
+                        mesh=mesh,
+                        axis_name=tp_decode_axis,
+                        top_k=layer.top_k,
+                        renormalize_topk_logits=layer.renormalize,
+                        capacity=cap,
+                    )
+                    return output
 
                 output = fused_moe_func(
                     hidden_states=x,
