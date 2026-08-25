@@ -22,20 +22,13 @@ run() {
 export PYTHONPATH=.
 export JAX_PLATFORMS=tpu
 
-# bf16 matmul operands want 16-row tiles; pipelined windows were coming
-# back with 8-row tiles, forcing an unpack/repack of every weight vreg.
-# Ask XLA for the large 2nd-minor layout on 16-bit types - but probe it
-# first: an unknown flag is fatal to every step that follows.
-LAYOUT_FLAG="--xla_tpu_enable_large_2nd_minor_layout_for_x16=true"
-if LIBTPU_INIT_ARGS="$LAYOUT_FLAG" python -c "import jax; jax.numpy.zeros(1)" \
-     >/dev/null 2>&1; then
-  export LIBTPU_BASE_ARGS="$LAYOUT_FLAG"
-  echo "layout flag: ACCEPTED (LIBTPU_INIT_ARGS)"
-else
-  LIBTPU_BASE_ARGS=""
-  echo "layout flag: REJECTED by this build - running without it"
-fi
-export LIBTPU_INIT_ARGS="$LIBTPU_BASE_ARGS"
+# No layout flag: xla_tpu_enable_large_2nd_minor_layout_for_x16 is an
+# opt-in for PRE-v7 generations only - on this target the large 2nd-minor
+# (16,128) layout for 16-bit types is already XLA's default (see
+# jax/_src/pallas/mosaic/tpu_info.py get_sublane_tiling), so setting it
+# is a no-op. The (8,128)-tiled pipelined windows are Mosaic's own
+# memref inference for window buffers, which no XLA flag reaches.
+unset LIBTPU_INIT_ARGS
 
 # provenance + sanity: commit, jax, devices, and WHICH decode_kernel loads
 run git rev-parse --short HEAD
@@ -45,10 +38,10 @@ run python -c "import tpu_inference.kernels.fused_moe.v2.decode_kernel as m; pri
 # 1) Mosaic pass dump: short run; the dumps include apply-vector-layout
 #    (post-relayout), which the local CPU-side dump cannot see.
 mkdir -p tmp/mosaic_dump
-export LIBTPU_INIT_ARGS="$LIBTPU_BASE_ARGS --xla_mosaic_dump_to=tmp/mosaic_dump"
+export LIBTPU_INIT_ARGS="--xla_mosaic_dump_to=tmp/mosaic_dump"
 run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
     --variants=v02 --iters=3 --warmup=1
-export LIBTPU_INIT_ARGS="$LIBTPU_BASE_ARGS"
+unset LIBTPU_INIT_ARGS
 run du -sh tmp/mosaic_dump
 
 # The raw dumps are hundreds of MB. What we actually read is the op
@@ -70,7 +63,7 @@ run bash -c '
 # 1b) isolate the window-vs-scratch operand question (small, separate
 #     module chain so its histogram is unambiguous)
 mkdir -p tmp/mosaic_probe
-LIBTPU_INIT_ARGS="$LIBTPU_BASE_ARGS --xla_mosaic_dump_to=tmp/mosaic_probe" \
+LIBTPU_INIT_ARGS="--xla_mosaic_dump_to=tmp/mosaic_probe" \
   run python tmp/probe_tiling.py
 run bash -c '
   for f in tmp/mosaic_probe/*post-finalize-llo*; do
