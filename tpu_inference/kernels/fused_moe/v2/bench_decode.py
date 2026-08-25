@@ -290,7 +290,8 @@ def main() -> None:
                                   vmem_mb=vm),
                         iters=args.iters, warmup=args.warmup)
                 except Exception as ex:  # e.g. VMEM oversubscription
-                    print(f"{tag}: failed ({type(ex).__name__})")
+                    msg = str(ex).splitlines()[0][:140] if str(ex) else ""
+                    print(f"{tag}: failed ({type(ex).__name__}: {msg})")
                     return
                 print(f"{tag}: {us:.1f} us")
                 if best_us is None or us < best_us:

@@ -85,7 +85,12 @@ run python tmp/probe_flags.py
 run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
     --variants=v1 --iters=10 --warmup=3
 
-run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
+# Scoped-VMEM ceiling raised to 128 MiB for the tune sweep: the default
+# (~64 MiB) is what rejected be=8 at vmem-mb=110, not our budget assert
+# and not necessarily the physical VMEM. If the hardware really is 64 MiB
+# the be=8 rows will fail again - now with the backend's own message.
+LIBTPU_INIT_ARGS="--xla_tpu_scoped_vmem_limit_kib=131072" \
+  run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
     --variants=v02 --iters=10 --warmup=3 --tune
 
 # 3) per-stage spans: named_scope markers -> device trace. This is what
