@@ -37,10 +37,17 @@ run python -c "import tpu_inference.kernels.fused_moe.v2.decode_kernel as m; pri
 
 # 1) Mosaic pass dump: short run; the dumps include apply-vector-layout
 #    (post-relayout), which the local CPU-side dump cannot see.
+# DUMP_FLAGS = the config under test. The dump must capture the
+# HYPOTHESIS config, not the defaults - otherwise the histogram/timeline
+# never reflect the change being measured and cannot be compared against
+# tmp/baseline/. Override per run: DUMP_FLAGS="--bg=8" ./tmp/run_bench_dump.sh
+DUMP_FLAGS="${DUMP_FLAGS:---bg=4 --capacity=24}"
+echo "DUMP_FLAGS: $DUMP_FLAGS"
+
 mkdir -p tmp/mosaic_dump
 export LIBTPU_INIT_ARGS="--xla_mosaic_dump_to=tmp/mosaic_dump"
 run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
-    --variants=v02 --iters=3 --warmup=1
+    --variants=v02 --iters=3 --warmup=1 $DUMP_FLAGS
 unset LIBTPU_INIT_ARGS
 run du -sh tmp/mosaic_dump
 
@@ -85,12 +92,10 @@ run python tmp/probe_flags.py
 run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
     --variants=v1 --iters=10 --warmup=3
 
-# Scoped-VMEM ceiling raised to 128 MiB for the tune sweep: the default
-# (~64 MiB) is what rejected be=8 at vmem-mb=110, not our budget assert
-# and not necessarily the physical VMEM. If the hardware really is 64 MiB
-# the be=8 rows will fail again - now with the backend's own message.
-LIBTPU_INIT_ARGS="--xla_tpu_scoped_vmem_limit_kib=131072" \
-  run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
+# (No scoped-VMEM flag: the backend reported "Used 78.61M of 63.94M vmem"
+#  with the ceiling raised - 64 MiB is the PHYSICAL capacity, so weight
+#  windows beyond be=4 are impossible and bg is the amortization lever.)
+run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
     --variants=v02 --iters=10 --warmup=3 --tune
 
 # 3) per-stage spans: named_scope markers -> device trace. This is what

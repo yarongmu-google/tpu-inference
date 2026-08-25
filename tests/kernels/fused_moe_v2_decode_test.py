@@ -45,11 +45,12 @@ def _reference_moe(tokens, w1, w2, gating, top_k, renormalize):
     return out
 
 
-@pytest.mark.parametrize("be", [4, 8])
+@pytest.mark.parametrize("be,bg", [(4, 1), (8, 1), (4, 2), (2, 4)])
 @pytest.mark.parametrize("bd1c,bd2c", [(None, None), (128, 128)],
                          ids=["whole_d_dots", "chunked_dots"])
 @pytest.mark.parametrize("t,d,e,i,k", [(64, 256, 16, 128, 4)])
-def test_decode_kernel_tp_matches_reference(t, d, e, i, k, bd1c, bd2c, be):
+def test_decode_kernel_tp_matches_reference(t, d, e, i, k, bd1c, bd2c,
+                                            be, bg):
     """The kernel vs the global-batch reference on 8 simulated devices.
 
     DP-attention serving context: each device holds T/P tokens (attention
@@ -86,6 +87,7 @@ def test_decode_kernel_tp_matches_reference(t, d, e, i, k, bd1c, bd2c, be):
             renormalize_topk_logits=True,
             capacity=t,   # capacity=T: no drops
             be=be,
+            bg=bg,
             bd1c=bd1c,
             bd2c=bd2c,
             interpret=True,
@@ -103,11 +105,12 @@ def test_decode_kernel_tp_matches_reference(t, d, e, i, k, bd1c, bd2c, be):
                                rtol=2e-2, atol=2e-2)
 
 
+@pytest.mark.parametrize("bg", [1, 2])
 @pytest.mark.parametrize("bd1c,bd2c", [(None, None), (128, 128)],
                          ids=["whole_d_dots", "chunked_dots"])
 @pytest.mark.parametrize("t,d,e,i,k", [(64, 256, 16, 128, 4)])
 def test_decode_kernel_tp_fused_lowers_for_tpu_on_cpu(t, d, e, i, k,
-                                                      bd1c, bd2c):
+                                                      bd1c, bd2c, bg):
     """Mosaic gate, hardware-free: cross-platform lowering via an abstract
     8-device TPU7x mesh runs the full Pallas->Mosaic pipeline (layout
     inference, dialect verification) over the whole kernel - the fused
@@ -139,6 +142,7 @@ def test_decode_kernel_tp_fused_lowers_for_tpu_on_cpu(t, d, e, i, k,
         renormalize_topk_logits=True,
         capacity=t,
         be=4,
+        bg=bg,
         bd1c=bd1c,
         bd2c=bd2c,
         interpret=False,
