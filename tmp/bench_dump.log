@@ -1,6 +1,6 @@
 
 + git rev-parse --short HEAD
-ca787d8eba
+bc3f91600c
 + exit=0
 
 + python -c import jax; print(jax.__version__); print(jax.devices())
@@ -9,31 +9,31 @@ ca787d8eba
 + exit=0
 
 + python -c import tpu_inference.kernels.fused_moe.v2.decode_kernel as m; print(m.__file__)
-WARNING 08-24 20:55:13 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 08-24 21:19:18 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-24 20:55:16 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-24 20:55:16 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-24 20:55:16 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-24 21:19:21 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-24 21:19:21 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-24 21:19:22 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 /home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py
 + exit=0
 
 + python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=3 --warmup=1
-WARNING 08-24 20:55:19 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 08-24 21:19:24 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-24 20:55:22 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-24 20:55:22 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-24 20:55:22 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-24 21:19:27 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-24 21:19:27 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-24 21:19:28 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
 
 variant                              min us  median us
-v2_tp_inkernel_ag                    3570.4     3595.8
+v2_tp_inkernel_ag                    3624.9     3626.9
 + exit=0
 
 + du -sh tmp/mosaic_dump
@@ -54,41 +54,41 @@ v2_tp_inkernel_ag                    3570.4     3595.8
   rm -rf tmp/mosaic_dump
 + ls tmp/mosaic_dump
 + tail -30
-1787630205624656698-0002-mosaic-dump-anonymous-post-mosaic-module-infer-memref-layout.txt
-1787630205624656698-0003-mosaic-dump-anonymous-post-simplify.txt
-1787630205624656698-0004-mosaic-dump-anonymous-post-mosaic-module-canonicalize-operations.txt
-1787630205624656698-0005-mosaic-dump-anonymous-post-mosaic-module-canonicalize-memory-space.txt
-1787630205624656698-0006-mosaic-dump-anonymous-post-tiling-propagation.txt
-1787630205624656698-0007-mosaic-dump-anonymous-post-mosaic-module-logical-to-physical-device-id.txt
-1787630205624656698-0008-mosaic-dump-anonymous-post-mosaic-module-lower-to-mlo.txt
-1787630205624656698-0009-mosaic-dump-anonymous-sparsecore-module-post-emit-scs.txt
-1787630205626228360-0000-mosaic-dump-anonymous-post-deserialization.txt
-1787630205739604444-0000-mosaic-dump-anonymous-post-deserialization.txt
-1787630205745946074-0000-mosaic-dump-anonymous-post-deserialization.txt
-1787630205749218689-0001-mosaic-dump-anonymous-original.txt
-1787630205749218689-0002-mosaic-dump-anonymous-post-infer-memref-layout.txt
-1787630205749218689-0003-mosaic-dump-anonymous-post-infer-memref-layout-simplify.txt
-1787630205749218689-0004-mosaic-dump-anonymous-post-infer-memref-space.txt
-1787630205749218689-0005-mosaic-dump-anonymous-post-canonicalize-memory-space.txt
-1787630205749218689-0006-mosaic-dump-anonymous-post-canonicalize-operations.txt
-1787630205749218689-0007-mosaic-dump-anonymous-post-pre-canon-optimization.txt
-1787630205749218689-0008-mosaic-dump-anonymous-post-canonicalize-mosaic.txt
-1787630205749218689-0009-mosaic-dump-anonymous-post-canonicalize-mosaic-simplify.txt
-1787630205749218689-0010-mosaic-dump-anonymous-post-tiling-propagation.txt
-1787630205749218689-0011-mosaic-dump-anonymous-post-infer-vector-layout.txt
-1787630205749218689-0012-mosaic-dump-anonymous-post-relayout-insertion.txt
-1787630205749218689-0013-mosaic-dump-anonymous-post-apply-vector-layout.txt
-1787630205749218689-0014-mosaic-dump-anonymous-post-apply-vector-layout-simplify.txt
-1787630205749218689-0015-mosaic-dump-anonymous-post-logical-to-physical-device-id.txt
-1787630205749218689-0016-mosaic-dump-anonymous-post-late-loop-unroll.txt
-1787630205749218689-0017-mosaic-dump-anonymous-post-lower-to-llo.txt
-1787630205749218689-0018-mosaic-dump-anonymous-post-eliminate-llo-extensions.txt
-1787630205749218689-0019-mosaic-dump-anonymous-post-finalize-llo.txt
-++ ls tmp/mosaic_dump/1787630205571022591-0000-mosaic-dump-anonymous-post-deserialization.txt tmp/mosaic_dump/1787630205586881811-0000-mosaic-dump-anonymous-post-serialization.txt tmp/mosaic_dump/1787630205590757302-0000-mosaic-dump-anonymous-sparsecore-module-original.txt tmp/mosaic_dump/1787630205590757302-0001-mosaic-dump-anonymous-mosaic-module-original.txt tmp/mosaic_dump/1787630205590757302-0002-mosaic-dump-anonymous-post-mosaic-module-infer-memref-layout.txt tmp/mosaic_dump/1787630205590757302-0003-mosaic-dump-anonymous-post-simplify.txt tmp/mosaic_dump/1787630205590757302-0004-mosaic-dump-anonymous-post-mosaic-module-canonicalize-operations.txt tmp/mosaic_dump/1787630205590757302-0005-mosaic-dump-anonymous-post-mosaic-module-canonicalize-memory-space.txt tmp/mosaic_dump/1787630205590757302-0006-mosaic-dump-anonymous-post-tiling-propagation.txt tmp/mosaic_dump/1787630205590757302-0007-mosaic-dump-anonymous-post-mosaic-module-logical-to-physical-device-id.txt tmp/mosaic_dump/1787630205590757302-0008-mosaic-dump-anonymous-post-mosaic-module-lower-to-mlo.txt tmp/mosaic_dump/1787630205590757302-0009-mosaic-dump-anonymous-sparsecore-module-post-emit-scs.txt tmp/mosaic_dump/1787630205592757526-0000-mosaic-dump-anonymous-post-deserialization.txt tmp/mosaic_dump/1787630205621891112-0000-mosaic-dump-anonymous-post-serialization.txt tmp/mosaic_dump/1787630205624656698-0000-mosaic-dump-anonymous-sparsecore-module-original.txt tmp/mosaic_dump/1787630205624656698-0001-mosaic-dump-anonymous-mosaic-module-original.txt tmp/mosaic_dump/1787630205624656698-0002-mosaic-dump-anonymous-post-mosaic-module-infer-memref-layout.txt tmp/mosaic_dump/1787630205624656698-0003-mosaic-dump-anonymous-post-simplify.txt tmp/mosaic_dump/1787630205624656698-0004-mosaic-dump-anonymous-post-mosaic-module-canonicalize-operations.txt tmp/mosaic_dump/1787630205624656698-0005-mosaic-dump-anonymous-post-mosaic-module-canonicalize-memory-space.txt tmp/mosaic_dump/1787630205624656698-0006-mosaic-dump-anonymous-post-tiling-propagation.txt tmp/mosaic_dump/1787630205624656698-0007-mosaic-dump-anonymous-post-mosaic-module-logical-to-physical-device-id.txt tmp/mosaic_dump/1787630205624656698-0008-mosaic-dump-anonymous-post-mosaic-module-lower-to-mlo.txt tmp/mosaic_dump/1787630205624656698-0009-mosaic-dump-anonymous-sparsecore-module-post-emit-scs.txt tmp/mosaic_dump/1787630205626228360-0000-mosaic-dump-anonymous-post-deserialization.txt tmp/mosaic_dump/1787630205739604444-0000-mosaic-dump-anonymous-post-deserialization.txt tmp/mosaic_dump/1787630205745946074-0000-mosaic-dump-anonymous-post-deserialization.txt tmp/mosaic_dump/1787630205749218689-0001-mosaic-dump-anonymous-original.txt tmp/mosaic_dump/1787630205749218689-0002-mosaic-dump-anonymous-post-infer-memref-layout.txt tmp/mosaic_dump/1787630205749218689-0003-mosaic-dump-anonymous-post-infer-memref-layout-simplify.txt tmp/mosaic_dump/1787630205749218689-0004-mosaic-dump-anonymous-post-infer-memref-space.txt tmp/mosaic_dump/1787630205749218689-0005-mosaic-dump-anonymous-post-canonicalize-memory-space.txt tmp/mosaic_dump/1787630205749218689-0006-mosaic-dump-anonymous-post-canonicalize-operations.txt tmp/mosaic_dump/1787630205749218689-0007-mosaic-dump-anonymous-post-pre-canon-optimization.txt tmp/mosaic_dump/1787630205749218689-0008-mosaic-dump-anonymous-post-canonicalize-mosaic.txt tmp/mosaic_dump/1787630205749218689-0009-mosaic-dump-anonymous-post-canonicalize-mosaic-simplify.txt tmp/mosaic_dump/1787630205749218689-0010-mosaic-dump-anonymous-post-tiling-propagation.txt tmp/mosaic_dump/1787630205749218689-0011-mosaic-dump-anonymous-post-infer-vector-layout.txt tmp/mosaic_dump/1787630205749218689-0012-mosaic-dump-anonymous-post-relayout-insertion.txt tmp/mosaic_dump/1787630205749218689-0013-mosaic-dump-anonymous-post-apply-vector-layout.txt tmp/mosaic_dump/1787630205749218689-0014-mosaic-dump-anonymous-post-apply-vector-layout-simplify.txt tmp/mosaic_dump/1787630205749218689-0015-mosaic-dump-anonymous-post-logical-to-physical-device-id.txt tmp/mosaic_dump/1787630205749218689-0016-mosaic-dump-anonymous-post-late-loop-unroll.txt tmp/mosaic_dump/1787630205749218689-0017-mosaic-dump-anonymous-post-lower-to-llo.txt tmp/mosaic_dump/1787630205749218689-0018-mosaic-dump-anonymous-post-eliminate-llo-extensions.txt tmp/mosaic_dump/1787630205749218689-0019-mosaic-dump-anonymous-post-finalize-llo.txt
+1787631651106265965-0002-mosaic-dump-anonymous-post-mosaic-module-infer-memref-layout.txt
+1787631651106265965-0003-mosaic-dump-anonymous-post-simplify.txt
+1787631651106265965-0004-mosaic-dump-anonymous-post-mosaic-module-canonicalize-operations.txt
+1787631651106265965-0005-mosaic-dump-anonymous-post-mosaic-module-canonicalize-memory-space.txt
+1787631651106265965-0006-mosaic-dump-anonymous-post-tiling-propagation.txt
+1787631651106265965-0007-mosaic-dump-anonymous-post-mosaic-module-logical-to-physical-device-id.txt
+1787631651106265965-0008-mosaic-dump-anonymous-post-mosaic-module-lower-to-mlo.txt
+1787631651106265965-0009-mosaic-dump-anonymous-sparsecore-module-post-emit-scs.txt
+1787631651107803906-0000-mosaic-dump-anonymous-post-deserialization.txt
+1787631651230697365-0000-mosaic-dump-anonymous-post-deserialization.txt
+1787631651237578777-0000-mosaic-dump-anonymous-post-deserialization.txt
+1787631651240894989-0001-mosaic-dump-anonymous-original.txt
+1787631651240894989-0002-mosaic-dump-anonymous-post-infer-memref-layout.txt
+1787631651240894989-0003-mosaic-dump-anonymous-post-infer-memref-layout-simplify.txt
+1787631651240894989-0004-mosaic-dump-anonymous-post-infer-memref-space.txt
+1787631651240894989-0005-mosaic-dump-anonymous-post-canonicalize-memory-space.txt
+1787631651240894989-0006-mosaic-dump-anonymous-post-canonicalize-operations.txt
+1787631651240894989-0007-mosaic-dump-anonymous-post-pre-canon-optimization.txt
+1787631651240894989-0008-mosaic-dump-anonymous-post-canonicalize-mosaic.txt
+1787631651240894989-0009-mosaic-dump-anonymous-post-canonicalize-mosaic-simplify.txt
+1787631651240894989-0010-mosaic-dump-anonymous-post-tiling-propagation.txt
+1787631651240894989-0011-mosaic-dump-anonymous-post-infer-vector-layout.txt
+1787631651240894989-0012-mosaic-dump-anonymous-post-relayout-insertion.txt
+1787631651240894989-0013-mosaic-dump-anonymous-post-apply-vector-layout.txt
+1787631651240894989-0014-mosaic-dump-anonymous-post-apply-vector-layout-simplify.txt
+1787631651240894989-0015-mosaic-dump-anonymous-post-logical-to-physical-device-id.txt
+1787631651240894989-0016-mosaic-dump-anonymous-post-late-loop-unroll.txt
+1787631651240894989-0017-mosaic-dump-anonymous-post-lower-to-llo.txt
+1787631651240894989-0018-mosaic-dump-anonymous-post-eliminate-llo-extensions.txt
+1787631651240894989-0019-mosaic-dump-anonymous-post-finalize-llo.txt
+++ ls tmp/mosaic_dump/1787631651053867407-0000-mosaic-dump-anonymous-post-deserialization.txt tmp/mosaic_dump/1787631651070273881-0000-mosaic-dump-anonymous-post-serialization.txt tmp/mosaic_dump/1787631651073733351-0000-mosaic-dump-anonymous-sparsecore-module-original.txt tmp/mosaic_dump/1787631651073733351-0001-mosaic-dump-anonymous-mosaic-module-original.txt tmp/mosaic_dump/1787631651073733351-0002-mosaic-dump-anonymous-post-mosaic-module-infer-memref-layout.txt tmp/mosaic_dump/1787631651073733351-0003-mosaic-dump-anonymous-post-simplify.txt tmp/mosaic_dump/1787631651073733351-0004-mosaic-dump-anonymous-post-mosaic-module-canonicalize-operations.txt tmp/mosaic_dump/1787631651073733351-0005-mosaic-dump-anonymous-post-mosaic-module-canonicalize-memory-space.txt tmp/mosaic_dump/1787631651073733351-0006-mosaic-dump-anonymous-post-tiling-propagation.txt tmp/mosaic_dump/1787631651073733351-0007-mosaic-dump-anonymous-post-mosaic-module-logical-to-physical-device-id.txt tmp/mosaic_dump/1787631651073733351-0008-mosaic-dump-anonymous-post-mosaic-module-lower-to-mlo.txt tmp/mosaic_dump/1787631651073733351-0009-mosaic-dump-anonymous-sparsecore-module-post-emit-scs.txt tmp/mosaic_dump/1787631651075496891-0000-mosaic-dump-anonymous-post-deserialization.txt tmp/mosaic_dump/1787631651103547208-0000-mosaic-dump-anonymous-post-serialization.txt tmp/mosaic_dump/1787631651106265965-0000-mosaic-dump-anonymous-sparsecore-module-original.txt tmp/mosaic_dump/1787631651106265965-0001-mosaic-dump-anonymous-mosaic-module-original.txt tmp/mosaic_dump/1787631651106265965-0002-mosaic-dump-anonymous-post-mosaic-module-infer-memref-layout.txt tmp/mosaic_dump/1787631651106265965-0003-mosaic-dump-anonymous-post-simplify.txt tmp/mosaic_dump/1787631651106265965-0004-mosaic-dump-anonymous-post-mosaic-module-canonicalize-operations.txt tmp/mosaic_dump/1787631651106265965-0005-mosaic-dump-anonymous-post-mosaic-module-canonicalize-memory-space.txt tmp/mosaic_dump/1787631651106265965-0006-mosaic-dump-anonymous-post-tiling-propagation.txt tmp/mosaic_dump/1787631651106265965-0007-mosaic-dump-anonymous-post-mosaic-module-logical-to-physical-device-id.txt tmp/mosaic_dump/1787631651106265965-0008-mosaic-dump-anonymous-post-mosaic-module-lower-to-mlo.txt tmp/mosaic_dump/1787631651106265965-0009-mosaic-dump-anonymous-sparsecore-module-post-emit-scs.txt tmp/mosaic_dump/1787631651107803906-0000-mosaic-dump-anonymous-post-deserialization.txt tmp/mosaic_dump/1787631651230697365-0000-mosaic-dump-anonymous-post-deserialization.txt tmp/mosaic_dump/1787631651237578777-0000-mosaic-dump-anonymous-post-deserialization.txt tmp/mosaic_dump/1787631651240894989-0001-mosaic-dump-anonymous-original.txt tmp/mosaic_dump/1787631651240894989-0002-mosaic-dump-anonymous-post-infer-memref-layout.txt tmp/mosaic_dump/1787631651240894989-0003-mosaic-dump-anonymous-post-infer-memref-layout-simplify.txt tmp/mosaic_dump/1787631651240894989-0004-mosaic-dump-anonymous-post-infer-memref-space.txt tmp/mosaic_dump/1787631651240894989-0005-mosaic-dump-anonymous-post-canonicalize-memory-space.txt tmp/mosaic_dump/1787631651240894989-0006-mosaic-dump-anonymous-post-canonicalize-operations.txt tmp/mosaic_dump/1787631651240894989-0007-mosaic-dump-anonymous-post-pre-canon-optimization.txt tmp/mosaic_dump/1787631651240894989-0008-mosaic-dump-anonymous-post-canonicalize-mosaic.txt tmp/mosaic_dump/1787631651240894989-0009-mosaic-dump-anonymous-post-canonicalize-mosaic-simplify.txt tmp/mosaic_dump/1787631651240894989-0010-mosaic-dump-anonymous-post-tiling-propagation.txt tmp/mosaic_dump/1787631651240894989-0011-mosaic-dump-anonymous-post-infer-vector-layout.txt tmp/mosaic_dump/1787631651240894989-0012-mosaic-dump-anonymous-post-relayout-insertion.txt tmp/mosaic_dump/1787631651240894989-0013-mosaic-dump-anonymous-post-apply-vector-layout.txt tmp/mosaic_dump/1787631651240894989-0014-mosaic-dump-anonymous-post-apply-vector-layout-simplify.txt tmp/mosaic_dump/1787631651240894989-0015-mosaic-dump-anonymous-post-logical-to-physical-device-id.txt tmp/mosaic_dump/1787631651240894989-0016-mosaic-dump-anonymous-post-late-loop-unroll.txt tmp/mosaic_dump/1787631651240894989-0017-mosaic-dump-anonymous-post-lower-to-llo.txt tmp/mosaic_dump/1787631651240894989-0018-mosaic-dump-anonymous-post-eliminate-llo-extensions.txt tmp/mosaic_dump/1787631651240894989-0019-mosaic-dump-anonymous-post-finalize-llo.txt
 ++ tail -1
-+ LAST=tmp/mosaic_dump/1787630205749218689-0019-mosaic-dump-anonymous-post-finalize-llo.txt
-+ python tmp/dump_histogram.py tmp/mosaic_dump/1787630205749218689-0019-mosaic-dump-anonymous-post-finalize-llo.txt
-+ python tmp/llo_timeline.py tmp/mosaic_dump/1787630205749218689-0019-mosaic-dump-anonymous-post-finalize-llo.txt --cols 150
++ LAST=tmp/mosaic_dump/1787631651240894989-0019-mosaic-dump-anonymous-post-finalize-llo.txt
++ python tmp/dump_histogram.py tmp/mosaic_dump/1787631651240894989-0019-mosaic-dump-anonymous-post-finalize-llo.txt
++ python tmp/llo_timeline.py tmp/mosaic_dump/1787631651240894989-0019-mosaic-dump-anonymous-post-finalize-llo.txt --cols 150
 + wc -l tmp/op_histogram.txt tmp/timeline.txt
  257 tmp/op_histogram.txt
   32 tmp/timeline.txt
@@ -96,7 +96,7 @@ v2_tp_inkernel_ag                    3570.4     3595.8
 + tar -c tmp/mosaic_dump
 + xz -9 -T0
 + ls -lh tmp/mosaic_passes.tar.xz
--rw-rw-r-- 1 ymu_google_com ymu_google_com 1.3M Aug 24 20:57 tmp/mosaic_passes.tar.xz
+-rw-rw-r-- 1 ymu_google_com ymu_google_com 1.3M Aug 24 21:21 tmp/mosaic_passes.tar.xz
 + rm -rf tmp/mosaic_dump
 + exit=0
 
@@ -146,76 +146,76 @@ rerun under the dump flag and compare vunpack/vpack counts in the probe_matmul r
 + exit=0
 
 + python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v1 --iters=10 --warmup=3
-WARNING 08-24 20:57:53 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 08-24 21:21:58 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-24 20:57:57 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-24 20:57:57 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-24 20:57:57 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-24 21:22:02 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-24 21:22:02 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-24 21:22:02 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
-WARNING 08-24 20:59:19 [tuned_block_sizes.py:423] [Fused MOE kernel] using default block sizes for key: (4096, 1024, 512, 10, 2, 2, 512, 8): (64, 512, 1024, 2048, 32, 512, 1024, 2048)
+WARNING 08-24 21:23:25 [tuned_block_sizes.py:423] [Fused MOE kernel] using default block sizes for key: (4096, 1024, 512, 10, 2, 2, 512, 8): (64, 512, 1024, 2048, 32, 512, 1024, 2048)
 
 variant                              min us  median us
-v1_ep_a2a                            2665.9     2687.7
+v1_ep_a2a                            2660.9     2702.0
 + exit=0
 
 + python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=10 --warmup=3 --tune
-WARNING 08-24 20:59:32 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 08-24 21:23:38 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-24 20:59:36 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-24 20:59:36 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-24 20:59:36 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-24 21:23:41 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-24 21:23:41 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-24 21:23:41 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
 [tune] max expert load = 21 -> capacity >= 24
 
 [tune] v02 stage 1: be x capacity x vmem
-  be=4 cap=24 bd1c=0 bd2c=0 bcT=0 vmem=64M: 3564.2 us
-  be=4 cap=24 bd1c=0 bd2c=0 bcT=0 vmem=110M: 3565.2 us
-  be=4 cap=48 bd1c=0 bd2c=0 bcT=0 vmem=64M: 3618.1 us
-  be=4 cap=48 bd1c=0 bd2c=0 bcT=0 vmem=110M: 3607.9 us
-  be=8 cap=24 bd1c=0 bd2c=0 bcT=0 vmem=64M: failed (AssertionError)
-  be=8 cap=24 bd1c=0 bd2c=0 bcT=0 vmem=110M: failed (JaxRuntimeError)
-  be=8 cap=48 bd1c=0 bd2c=0 bcT=0 vmem=64M: failed (AssertionError)
-  be=8 cap=48 bd1c=0 bd2c=0 bcT=0 vmem=110M: failed (JaxRuntimeError)
-  be=16 cap=24 bd1c=0 bd2c=0 bcT=0 vmem=64M: failed (AssertionError)
-  be=16 cap=24 bd1c=0 bd2c=0 bcT=0 vmem=110M: failed (AssertionError)
-  be=16 cap=48 bd1c=0 bd2c=0 bcT=0 vmem=64M: failed (AssertionError)
-  be=16 cap=48 bd1c=0 bd2c=0 bcT=0 vmem=110M: failed (AssertionError)
-  be=32 cap=24 bd1c=0 bd2c=0 bcT=0 vmem=64M: failed (AssertionError)
-  be=32 cap=24 bd1c=0 bd2c=0 bcT=0 vmem=110M: failed (AssertionError)
-  be=32 cap=48 bd1c=0 bd2c=0 bcT=0 vmem=64M: failed (AssertionError)
-  be=32 cap=48 bd1c=0 bd2c=0 bcT=0 vmem=110M: failed (AssertionError)
-  be=64 cap=24 bd1c=0 bd2c=0 bcT=0 vmem=64M: failed (AssertionError)
-  be=64 cap=24 bd1c=0 bd2c=0 bcT=0 vmem=110M: failed (AssertionError)
-  be=64 cap=48 bd1c=0 bd2c=0 bcT=0 vmem=64M: failed (AssertionError)
-  be=64 cap=48 bd1c=0 bd2c=0 bcT=0 vmem=110M: failed (AssertionError)
+  be=4 cap=24 bd1c=0 bd2c=0 bcT=0 vmem=64M: 3586.7 us
+  be=4 cap=24 bd1c=0 bd2c=0 bcT=0 vmem=110M: 3566.5 us
+  be=4 cap=48 bd1c=0 bd2c=0 bcT=0 vmem=64M: 3628.2 us
+  be=4 cap=48 bd1c=0 bd2c=0 bcT=0 vmem=110M: 3617.3 us
+  be=8 cap=24 bd1c=0 bd2c=0 bcT=0 vmem=64M: failed (AssertionError: static VMEM need 71.6 MiB exceeds 64 MiB (weight block 48.0, be=8; try a smaller be or capacity))
+  be=8 cap=24 bd1c=0 bd2c=0 bcT=0 vmem=110M: failed (JaxRuntimeError: RESOURCE_EXHAUSTED: XLA:TPU compile permanent error. Ran out of memory in memory space vmem. Used 78.61M of 63.94M vmem. Exceeded vmem capac)
+  be=8 cap=48 bd1c=0 bd2c=0 bcT=0 vmem=64M: failed (AssertionError: static VMEM need 74.6 MiB exceeds 64 MiB (weight block 48.0, be=8; try a smaller be or capacity))
+  be=8 cap=48 bd1c=0 bd2c=0 bcT=0 vmem=110M: failed (JaxRuntimeError: RESOURCE_EXHAUSTED: XLA:TPU compile permanent error. Ran out of memory in memory space vmem. Used 79.36M of 63.94M vmem. Exceeded vmem capac)
+  be=16 cap=24 bd1c=0 bd2c=0 bcT=0 vmem=64M: failed (AssertionError: static VMEM need 122.6 MiB exceeds 64 MiB (weight block 96.0, be=16; try a smaller be or capacity))
+  be=16 cap=24 bd1c=0 bd2c=0 bcT=0 vmem=110M: failed (AssertionError: static VMEM need 122.6 MiB exceeds 110 MiB (weight block 96.0, be=16; try a smaller be or capacity))
+  be=16 cap=48 bd1c=0 bd2c=0 bcT=0 vmem=64M: failed (AssertionError: static VMEM need 128.6 MiB exceeds 64 MiB (weight block 96.0, be=16; try a smaller be or capacity))
+  be=16 cap=48 bd1c=0 bd2c=0 bcT=0 vmem=110M: failed (AssertionError: static VMEM need 128.6 MiB exceeds 110 MiB (weight block 96.0, be=16; try a smaller be or capacity))
+  be=32 cap=24 bd1c=0 bd2c=0 bcT=0 vmem=64M: failed (AssertionError: static VMEM need 224.6 MiB exceeds 64 MiB (weight block 192.0, be=32; try a smaller be or capacity))
+  be=32 cap=24 bd1c=0 bd2c=0 bcT=0 vmem=110M: failed (AssertionError: static VMEM need 224.6 MiB exceeds 110 MiB (weight block 192.0, be=32; try a smaller be or capacity))
+  be=32 cap=48 bd1c=0 bd2c=0 bcT=0 vmem=64M: failed (AssertionError: static VMEM need 236.6 MiB exceeds 64 MiB (weight block 192.0, be=32; try a smaller be or capacity))
+  be=32 cap=48 bd1c=0 bd2c=0 bcT=0 vmem=110M: failed (AssertionError: static VMEM need 236.6 MiB exceeds 110 MiB (weight block 192.0, be=32; try a smaller be or capacity))
+  be=64 cap=24 bd1c=0 bd2c=0 bcT=0 vmem=64M: failed (AssertionError: static VMEM need 428.6 MiB exceeds 64 MiB (weight block 384.0, be=64; try a smaller be or capacity))
+  be=64 cap=24 bd1c=0 bd2c=0 bcT=0 vmem=110M: failed (AssertionError: static VMEM need 428.6 MiB exceeds 110 MiB (weight block 384.0, be=64; try a smaller be or capacity))
+  be=64 cap=48 bd1c=0 bd2c=0 bcT=0 vmem=64M: failed (AssertionError: static VMEM need 452.6 MiB exceeds 64 MiB (weight block 384.0, be=64; try a smaller be or capacity))
+  be=64 cap=48 bd1c=0 bd2c=0 bcT=0 vmem=110M: failed (AssertionError: static VMEM need 452.6 MiB exceeds 110 MiB (weight block 384.0, be=64; try a smaller be or capacity))
 [tune] v02 stage 2: gmm1 D-chunk (bd1c)
-  be=4 cap=24 bd1c=128 bd2c=0 bcT=0 vmem=64M: 3570.6 us
-  be=4 cap=24 bd1c=256 bd2c=0 bcT=0 vmem=64M: 3575.2 us
-  be=4 cap=24 bd1c=512 bd2c=0 bcT=0 vmem=64M: 3551.9 us
-  be=4 cap=24 bd1c=1024 bd2c=0 bcT=0 vmem=64M: 3544.5 us
-  be=4 cap=24 bd1c=2048 bd2c=0 bcT=0 vmem=64M: 3583.4 us
+  be=4 cap=24 bd1c=128 bd2c=0 bcT=0 vmem=110M: 3555.8 us
+  be=4 cap=24 bd1c=256 bd2c=0 bcT=0 vmem=110M: 3572.3 us
+  be=4 cap=24 bd1c=512 bd2c=0 bcT=0 vmem=110M: 3547.9 us
+  be=4 cap=24 bd1c=1024 bd2c=0 bcT=0 vmem=110M: 3551.8 us
+  be=4 cap=24 bd1c=2048 bd2c=0 bcT=0 vmem=110M: 3558.6 us
 [tune] v02 stage 3: gmm2 D-chunk (bd2c)
-  be=4 cap=24 bd1c=1024 bd2c=128 bcT=0 vmem=64M: 3456.2 us
-  be=4 cap=24 bd1c=1024 bd2c=256 bcT=0 vmem=64M: 3562.1 us
-  be=4 cap=24 bd1c=1024 bd2c=512 bcT=0 vmem=64M: 3552.9 us
-  be=4 cap=24 bd1c=1024 bd2c=1024 bcT=0 vmem=64M: 3568.4 us
-  be=4 cap=24 bd1c=1024 bd2c=2048 bcT=0 vmem=64M: 3595.1 us
+  be=4 cap=24 bd1c=512 bd2c=128 bcT=0 vmem=110M: 3481.7 us
+  be=4 cap=24 bd1c=512 bd2c=256 bcT=0 vmem=110M: 3553.1 us
+  be=4 cap=24 bd1c=512 bd2c=512 bcT=0 vmem=110M: 3558.5 us
+  be=4 cap=24 bd1c=512 bd2c=1024 bcT=0 vmem=110M: 3564.0 us
+  be=4 cap=24 bd1c=512 bd2c=2048 bcT=0 vmem=110M: 3588.7 us
 [tune] v02 stage 4: combine T-chunk (bcT)
-  be=4 cap=24 bd1c=1024 bd2c=128 bcT=8 vmem=64M: 4131.9 us
-  be=4 cap=24 bd1c=1024 bd2c=128 bcT=16 vmem=64M: 3736.2 us
-  be=4 cap=24 bd1c=1024 bd2c=128 bcT=32 vmem=64M: 3643.7 us
-  be=4 cap=24 bd1c=1024 bd2c=128 bcT=64 vmem=64M: 3453.1 us
-  be=4 cap=24 bd1c=1024 bd2c=128 bcT=128 vmem=64M: 3447.1 us
-  be=4 cap=24 bd1c=1024 bd2c=128 bcT=256 vmem=64M: 3433.5 us
-[tune] v02 WINNER: --be=4 --capacity=24 --bd1c=1024 --bd2c=128 --bcT=256 --vmem-mb=64 -> 3433.5 us
+  be=4 cap=24 bd1c=512 bd2c=128 bcT=8 vmem=110M: 4139.6 us
+  be=4 cap=24 bd1c=512 bd2c=128 bcT=16 vmem=110M: 3758.8 us
+  be=4 cap=24 bd1c=512 bd2c=128 bcT=32 vmem=110M: 3658.4 us
+  be=4 cap=24 bd1c=512 bd2c=128 bcT=64 vmem=110M: 3451.5 us
+  be=4 cap=24 bd1c=512 bd2c=128 bcT=128 vmem=110M: 3454.0 us
+  be=4 cap=24 bd1c=512 bd2c=128 bcT=256 vmem=110M: 3467.5 us
+[tune] v02 WINNER: --be=4 --capacity=24 --bd1c=512 --bd2c=128 --bcT=64 --vmem-mb=110 -> 3451.5 us
 + exit=0
 
 log: tmp/bench_dump.log  hist: tmp/op_histogram.txt  passes: tmp/mosaic_passes.tar.xz
