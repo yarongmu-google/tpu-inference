@@ -78,9 +78,9 @@ def test_decode_kernel_tp_matches_reference(t, d, e, i, k, bd1c, bd2c,
         w1_flat = w1_l.reshape(w1_l.shape[0], w1_l.shape[1], -1)
         return fused_moe_decode_tp_fused(
             tok_l,
+            r_l,          # router weight, replicated
             w1_flat,
             w2_l,
-            r_l,          # router_w, replicated
             mesh=mesh,
             axis_name="x",
             top_k=k,
@@ -185,11 +185,11 @@ def test_decode_kernel_tp_fused_lowers_for_tpu_on_cpu(t, d, e, i, k,
     with mesh_lib.use_abstract_mesh(amesh):
         sfn = jax.jit(jax.shard_map(
             fn, mesh=amesh,
-            in_specs=(P("x", None), P(None, None, None),
-                      P(None, None, None), P(None, None)),
+            in_specs=(P("x", None), P(None, None),
+                      P(None, None, None), P(None, None, None)),
             out_specs=P("x", None), check_vma=False))
         exported = jax.export.export(sfn, platforms=["tpu"])(
-            tokens, w1_l, w2_l, router_w)
+            tokens, router_w, w1_l, w2_l)
     assert len(exported.mlir_module_serialized) > 0
 
 

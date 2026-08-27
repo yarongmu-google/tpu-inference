@@ -217,9 +217,9 @@ def main() -> None:
                 w1_flat = w1x.reshape(w1x.shape[0], w1x.shape[1], -1)
                 return fused_moe_decode_tp_fused(
                     tok,
+                    r,            # router weight, replicated
                     w1_flat,
                     w2x,
-                    r,            # router_w, replicated
                     mesh=mesh_v2,
                     axis_name="x",
                     top_k=k,
