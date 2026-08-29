@@ -71,34 +71,33 @@ run bash -c '
   ls -lh tmp/mosaic_passes.tar.xz
   rm -rf tmp/mosaic_dump'
 
-# 1b) isolate the window-vs-scratch operand question (small, separate
-#     module chain so its histogram is unambiguous)
-mkdir -p tmp/mosaic_probe
-LIBTPU_INIT_ARGS="--xla_mosaic_dump_to=tmp/mosaic_probe" \
-  run python tmp/probe_tiling.py
-run bash -c '
-  for f in tmp/mosaic_probe/*post-finalize-llo*; do
-    python tmp/dump_histogram.py "$f"
-  done > tmp/probe_histogram.txt 2>&1
-  grep -c . tmp/probe_histogram.txt
-  rm -rf tmp/mosaic_probe'
+# ---- ANSWERED probes, commented out to keep the loop fast. Uncomment
+# ---- to re-measure; results recorded inline.
 
-# 2) clean timing run (no dump overhead): v0.2 only - the v1 baseline is
-#    deliberately out of the bring-up loop; it returns for the final
-#    comparison once v0.2 is healthy on hardware.
-# which deeper dump/debug flags does this build accept?
-run python tmp/probe_flags.py
+# 1b) window-vs-scratch operand question. ANSWERED: scratch operand is
+#     cheaper (1,744 vs 4,304 ops) - and moot since the manual ring.
+# mkdir -p tmp/mosaic_probe
+# LIBTPU_INIT_ARGS="--xla_mosaic_dump_to=tmp/mosaic_probe" \
+#   run python tmp/probe_tiling.py
+# run bash -c '
+#   for f in tmp/mosaic_probe/*post-finalize-llo*; do
+#     python tmp/dump_histogram.py "$f"
+#   done > tmp/probe_histogram.txt 2>&1
+#   grep -c . tmp/probe_histogram.txt
+#   rm -rf tmp/mosaic_probe'
 
-# v1 baseline: same weights-per-token ratio (btc=32, 1.6 GB/device) and the
-# same expert-sum accumulator, so its number says whether ~3.9 ms is bad or
-# just what this shape costs. Separate process so a failure can't take v0.2
-# down with it.
-run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
-    --variants=v1 --iters=10 --warmup=3
+# 2) which deeper dump/debug flags does this build accept?
+#    ANSWERED: LIBTPU_INIT_ARGS takes log_recorder/scoped_vmem/large_2nd
+#    _minor; all llo/asm dump flags rejected; XLA_FLAGS rejects almost all.
+# run python tmp/probe_flags.py
 
-# Weight-stream bandwidth probe: single-flow vs split-descriptor manual
-# DMA vs the window pipeline's known 494 GB/s (from ablate=weights).
-run python tmp/probe_wbw.py
+# v1 baseline. ANSWERED (2026-08-29): 2682.4 us min / 2745.9 median.
+# run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
+#     --variants=v1 --iters=10 --warmup=3
+
+# Weight-stream bandwidth probe. ANSWERED (2026-08-29): manual ring
+# 2150-2220 GB/s regardless of split; window pipeline 494; spec 3207.
+# run python tmp/probe_wbw.py
 
 # ICI/D2D topology probe (all 56 device pairs, ppermute ping-pong latency +
 # 1 GiB unidirectional bandwidth). ~5-10 min and its numbers change only
