@@ -41,8 +41,11 @@ run python -c "import tpu_inference.kernels.fused_moe.v2.decode_kernel as m; pri
 # HYPOTHESIS config, not the defaults - otherwise the histogram/timeline
 # never reflect the change being measured and cannot be compared against
 # tmp/baseline/. Override per run: DUMP_FLAGS="--bg=8" ./tmp/run_bench_dump.sh
-# bg=2 is the deepest group KNOWN to fit VMEM; the tuner still tries 4/8
-DUMP_FLAGS="${DUMP_FLAGS:---bg=2 --capacity=24}"
+# bg=2 is the deepest group KNOWN to fit VMEM; the tuner still tries 4/8.
+# capacity=32 = act-tile-aligned rows (bf16 sublane tile is 16; the old
+# 24 came from the tuner's f32-quantum floor and misaligns every expert
+# row block) and makes be*capacity = 128, one whole lane tile for ohg.
+DUMP_FLAGS="${DUMP_FLAGS:---bg=2 --capacity=32}"
 echo "DUMP_FLAGS: $DUMP_FLAGS"
 
 mkdir -p tmp/mosaic_dump
@@ -101,7 +104,7 @@ run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
 for a in none masks gather ffn combine weights; do
   run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
       --variants=v02 --iters=10 --warmup=3 \
-      --bg=2 --capacity=24 --ablate=$a
+      --bg=2 --capacity=32 --ablate=$a
 done
 
 # (No scoped-VMEM flag: the backend reported "Used 78.61M of 63.94M vmem"

@@ -262,10 +262,16 @@ def main() -> None:
                   f"{v1_us:.1f} us")
         if not v2_selected:
             return
-        # capacity floor from the actual routing
+        # capacity floor from the actual routing, rounded to the ACT
+        # dtype's sublane tile (bf16: 16) - not f32's 8: x/y hold
+        # capacity-row expert blocks in act dtype, so a capacity off the
+        # act tile leaves every block's rows sublane-misaligned (relayout
+        # glue on each FFN read/write), and a 16-multiple also makes
+        # be*capacity whole lane tiles for the ohg lane dim (be=4 -> 128).
         top_i = jax.lax.top_k(jax.nn.softmax(gating, axis=-1), k)[1]
         max_load = int(jnp.max(jnp.bincount(top_i.reshape(-1), length=e)))
-        cap0 = -(-max_load // 8) * 8
+        sublane = 32 // jnp.dtype(dtype).itemsize
+        cap0 = -(-max_load // sublane) * sublane
         print(f"[tune] max expert load = {max_load} -> capacity >= {cap0}")
         # be scales the double-buffered weight windows (2*be experts of
         # VMEM; be=8 is already past the 64 MiB physical VMEM). bg groups
