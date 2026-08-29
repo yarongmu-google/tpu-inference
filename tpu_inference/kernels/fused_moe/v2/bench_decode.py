@@ -120,6 +120,12 @@ def main() -> None:
                         help="v2: VMEM budget handed to the kernel; larger "
                         "values admit larger be (fewer grid steps, less "
                         "accumulator traffic) until the backend rejects it")
+    parser.add_argument("--ablate", type=str, default="none",
+                        choices=["none", "masks", "gather", "ffn",
+                                 "combine", "weights"],
+                        help="v2: statically stub one stage (output is "
+                        "WRONG); wall-clock differences vs none are the "
+                        "per-stage costs - the profiler substitute")
     parser.add_argument("--tune", action="store_true",
                         help="sweep v2 kernel params, print the winner "
                         "(ignores the one-off param flags above)")
@@ -231,6 +237,7 @@ def main() -> None:
                     bd2c=bd2c,
                     bcT=bcT,
                     vmem_limit_bytes=args.vmem_mb * 2**20,
+                    ablate=args.ablate,
                     interpret=args.interpret,
                 )
 

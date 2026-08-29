@@ -93,6 +93,17 @@ run python tmp/probe_flags.py
 run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
     --variants=v1 --iters=10 --warmup=3
 
+# Ablate ladder: differential timing as the profiler substitute. Each
+# row stubs ONE stage (output wrong on purpose); (none - X) = stage X's
+# true wall-clock share. Discriminates VALU-paced vs DMA/overhead-paced:
+# if ablate=weights still runs ~3ms with only the weight windows
+# streaming, the vector side was never the clock.
+for a in none masks gather ffn combine weights; do
+  run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
+      --variants=v02 --iters=10 --warmup=3 \
+      --bg=2 --capacity=24 --ablate=$a
+done
+
 # (No scoped-VMEM flag: the backend reported "Used 78.61M of 63.94M vmem"
 #  with the ceiling raised - 64 MiB is the PHYSICAL capacity, so weight
 #  windows beyond be=4 are impossible and bg is the amortization lever.)
