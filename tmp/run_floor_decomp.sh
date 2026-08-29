@@ -41,5 +41,33 @@ for a in none ag all; do
       --variants=v02 --iters=10 --warmup=3 $FLAGS --ablate=$a
 done
 
+# ---- the ~2.3ms unaccounted remainder (2026-08-29 decomp: all=2772 but
+# harness 354 + RS 53 + AG 29 + routing ~0). Hypothesis: XLA inserts a
+# per-call HBM copy/layout-conversion of the 1.5 GiB weight operands
+# before the kernel - invisible to Mosaic dumps, unchanged by every
+# kernel-internal change, and matching v1's identical ~2ms
+# bench-vs-profiler envelope. Discriminators:
+# (a) weight-size scaling: E=64 is 8x fewer weight bytes - if
+#     ablate=all scales with E, it is a weight-bytes copy.
+for ex in 64 128 256; do
+  run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
+      --variants=v02 --iters=10 --warmup=3 --experts=$ex $FLAGS --ablate=all
+done
+# (b) the XLA (not Mosaic) HLO of the ablate=all program: grep for big
+#     copies/converts of the f16 weight shapes.
+rm -rf tmp/xla_dump && mkdir -p tmp/xla_dump
+XLA_FLAGS="--xla_dump_to=tmp/xla_dump --xla_dump_hlo_as_text" \
+  run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
+      --variants=v02 --iters=2 --warmup=1 $FLAGS --ablate=all
+run bash -c '
+  ls tmp/xla_dump | wc -l
+  grep -l "512,4096,256" tmp/xla_dump/*after_optimizations*.txt 2>/dev/null | head -3
+  for f in tmp/xla_dump/*after_optimizations*.txt; do
+    grep -nE "copy|bitcast-convert|transpose" "$f" | grep -E "512,4096|4096,256|128,4096" | head -20
+  done 2>/dev/null | head -40
+  tar -c tmp/xla_dump | xz -9 -T0 > tmp/xla_dump.tar.xz
+  ls -lh tmp/xla_dump.tar.xz
+  rm -rf tmp/xla_dump'
+
 echo
 echo "log: tmp/floor_decomp.log"
