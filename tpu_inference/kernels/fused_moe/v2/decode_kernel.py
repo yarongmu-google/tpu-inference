@@ -169,12 +169,13 @@ def _mask_operators(
 
 
 def _decode_moe_kernel(
-    tokens_local_vmem,   # [T/P, D] this device's token shard
-    router_w_vmem,       # [E, D] router weight, or [T/P, E] logits when
-                         # not router_fused (upstream [out, in] layout)
+    tokens_local_hbm,    # HBM [T/P, D] this device's token shard
+    route_in_hbm,        # HBM [E, D] router weight, or [T/P, E] logits
+                         # when not router_fused (upstream [out, in])
     w1_hbm,              # HBM [E, D, 2I] - streamed via the blocked fetch
     w2_hbm,              # HBM [E, I, D]
-    out_vmem,            # [T, D] union partials (caller reduce-scatters)
+    out_hbm,             # HBM [T, D] union partials (caller
+                         # reduce-scatters) - DMA'd once from out_stage
     tokens_full_vmem,    # VMEM [T, D] the gathered union
     send_sem,            # DMA - all outbound remote copies
     recv_sem_tokens,     # DMA - inbound token shards
@@ -188,10 +189,16 @@ def _decode_moe_kernel(
     y_vmem,              # VMEM [bg, be*C, D] expert outputs for the group
     ohg_vmem,            # VMEM [2*bg, T, be*C] combine operators - a ring
                          # written one step AHEAD of its group's combine
-    w1_bufs,             # VMEM [2, be, D, 2I] weight fetch double buffer:
-                         # parity slots like x: slot k%2 read at step k
-    w2_bufs,             # VMEM [2, be, I, D]
-    w_sems,              # DMA [2, 2] - [buffer slot, tensor (w1/w2)]
+    b_w1_x2_vmem,          # VMEM [2, bd1c, 2I] - x2 buffer holding ONE
+                         # w1 tile per bw1_sem_id (v1's b_w1_x2_vmem)
+    b_w2_x2_vmem,          # VMEM [2, I, D] - x2 buffer, one w2 tile each
+    local_sems,          # DMA (2, 5): 2 x [b_gating_sem, b_w1_sem,
+                         # b_w2_sem, b_tokens_sem, b_output_sem] (v1's
+                         # layout; index 3 is his b_w3_sem - our w1
+                         # fuses w1+w3, so it carries the token fetch)
+    tokens_local_vmem,   # VMEM [T/P, D] prologue-fetched copy
+    router_w_vmem,       # VMEM route_in-shaped prologue-fetched copy
+    out_stage_vmem,      # VMEM [T, D] act-dtype staging for the output
     *,
     axis_name: str,
     mesh_axis_names: tuple,
@@ -214,7 +221,7 @@ def _decode_moe_kernel(
     # NB: under dispatch-ahead, attribution shifts by one block - step k
     # prices FFN(k) + dispatch(k+1); totals per kernel are unaffected.
     # ablate=weights = all compute stubbed with the blocked weight fetch still
-    # streaming: the ring's in-situ bandwidth. ablate=all additionally
+    # streaming: the stream's in-situ bandwidth. ablate=all additionally
     # stubs the weight fetch itself AND the dispatch park - the bare per-step
     # floor (grid machinery + branches + prologue). (weights - all) =
     # what the stream truly costs; measured 2026-08-29: weights was
@@ -258,6 +265,7 @@ def _decode_moe_kernel(
     # visible at tiny num_blocks). Accepted in exchange for keeping the
     # steady state branch-free; fence the tail park with
     # pl.when(block_id < num_blocks - 1) if that trade ever flips.
+    first_expert = block_id * be
     next_first_expert = (block_id + 1) * be
 
     # ---- one function per pipeline action (v1's convention) ----
@@ -283,28 +291,106 @@ def _decode_moe_kernel(
                                 device_id_type=pl.DeviceIdType.MESH)
         pl.semaphore_wait(barrier_sem, num_devices)
 
-    def fetch_weights(block, slot, *, wait=False):
-        """STEP 0 (DMA): stream expert block `block` - w1 [be, D, 2I]
-        and w2 [be, I, D] slabs, each as ONE contiguous descriptor into
-        buffer slot `slot` (v1's paired start/wait fetch shape).
+    # ---- weight tile chain (v1 expert_ffn's rolling discipline) ----
+    # ONE tile in flight behind ONE tile computing, always: at each
+    # consumption position, START the next tile in the chain, WAIT only
+    # the current tile, compute on it, move on. The chain order is the
+    # consumption order - per expert: nd1 w1 row-chunks [bd1c, 2I]
+    # (contiguous rows), then the whole w2 [I, D] (1 tile) - threaded
+    # across experts AND across grid steps (the cross-expert seam v1's
+    # TODO wanted: the x2 buffers are indifferent to expert
+    # boundaries). Per-tensor x2 buffers a la v1's b_b_w1_x2_vmem;
+    # bw_sem_id is STATIC per position ((j*nd1 + c) % 2 for w1,
+    # j % 2 for w2) and stays consistent across steps because be is
+    # even (asserted by the entry).
+    w1_tile_rows = bd1c or hidden_size   # fetch granularity == bd1c
+    nd1 = hidden_size // w1_tile_rows
 
-        One flat descriptor is the fastest-known fetch: a be-expert slab
-        is a single maximal contiguous run (2258 GB/s standalone on one
-        device). NB measured in situ 2026-08-29: ablate=weights was
-        UNCHANGED vs the window pipeline (3247 vs 3266 us) - the kernel
-        floor is NOT fetch-mechanism-bound; suspects are the per-step
-        floor (ablate=all) and 8-device concurrency (probe wpair_8dev).
-        Callers fence out-of-range prefetches (OOB DMA reads are fatal);
-        the fence keeps start/wait counts balanced by construction."""
-        for hbm, bufs, s in ((w1_hbm, w1_bufs, 0), (w2_hbm, w2_bufs, 1)):
-            cp = pltpu.make_async_copy(
-                src_ref=hbm.at[pl.ds(block * be, be)],
-                dst_ref=bufs.at[slot],
-                sem=w_sems.at[slot, s])
-            if wait:
-                cp.wait()
-            else:
-                cp.start()
+    def start_fetch_bw1(e_global, c, bw1_sem_id):
+        """Start ONE w1 tile - expert e_global (traced ok), rows
+        [c*bd1c : +bd1c], all 2I columns: one contiguous run into the
+        x2 buffer at bw_sem_id (v1's start_fetch_bw1 shape)."""
+        pltpu.make_async_copy(
+            src_ref=w1_hbm.at[e_global,
+                              pl.ds(c * w1_tile_rows, w1_tile_rows), :],
+            dst_ref=b_w1_x2_vmem.at[bw1_sem_id],
+            sem=local_sems.at[bw1_sem_id, 1]).start()
+
+    def start_fetch_bw2(e_global, bw2_sem_id):
+        """Start ONE w2 tile - expert e_global's whole [I, D], one
+        contiguous 1 MiB run (column-sliced w2 would be strided; gmm2's
+        bd2c chunking is a COMPUTE knob, not a fetch knob)."""
+        pltpu.make_async_copy(
+            src_ref=w2_hbm.at[e_global],
+            dst_ref=b_w2_x2_vmem.at[bw2_sem_id],
+            sem=local_sems.at[bw2_sem_id, 2]).start()
+
+    def wait_fetch_bw1(bw1_sem_id):
+        """Wait ONE w1 tile, at its first reader (v1's wait_fetch_bw1:
+        dummy refs only size the wait; their address is meaningless)."""
+        pltpu.make_async_copy(
+            src_ref=w1_hbm.at[0, pl.ds(0, w1_tile_rows), :],
+            dst_ref=b_w1_x2_vmem.at[bw1_sem_id],
+            sem=local_sems.at[bw1_sem_id, 1]).wait()
+
+    def wait_fetch_bw2(bw2_sem_id):
+        """Wait ONE w2 tile, at its first reader."""
+        pltpu.make_async_copy(
+            src_ref=w2_hbm.at[0],
+            dst_ref=b_w2_x2_vmem.at[bw2_sem_id],
+            sem=local_sems.at[bw2_sem_id, 2]).wait()
+
+    def start_fetch_next_bw(local_e_id: int, c: int):
+        """v1's start_fetch_next_bw, w1 and w2 as CONCURRENT streams:
+        w1 tiles chain among themselves (position c starts tile c+1);
+        the LAST w1 tile position starts the NEXT expert's w1 head AND
+        its w2 together - both tensors stream side by side on their
+        own sems, so expert j+1's w2 is in flight under all of its
+        gmm1 and is waited only after the activation. The next-expert
+        start crosses into the next grid step's block at j == be-1
+        (fenced at the last step; OOB DMA reads are fatal -
+        bw_sem_id 0 is exact there since be*nd1 and be are even).
+        (Expert 0's two heads are started by the prologue.)"""
+        if c + 1 < nd1:
+            start_fetch_bw1(first_expert + local_e_id, c + 1,
+                           (local_e_id * nd1 + c + 1) % 2)
+        elif local_e_id + 1 < be:
+            start_fetch_bw1(first_expert + local_e_id + 1, 0,
+                           ((local_e_id + 1) * nd1) % 2)
+            start_fetch_bw2(first_expert + local_e_id + 1,
+                           (local_e_id + 1) % 2)
+        else:
+            @pl.when(block_id + 1 < num_blocks)
+            def _seam():
+                start_fetch_bw1(next_first_expert, 0, 0)
+                start_fetch_bw2(next_first_expert, 0)
+
+    # PROLOGUE 0 (DMA): the once-per-kernel inputs, one start/wait pair
+    # per tensor (v1's start_fetch_b_gating / wait_fetch_b_gating
+    # shape). These used to be Pallas windows with a CONSTANT index
+    # map, which Mosaic pipelines in `synchronous` mode - per-step
+    # machinery for per-kernel constants (the ablate=all floor). As
+    # plain HBM refs the harness has nothing to do between steps.
+
+    def start_fetch_b_tokens():
+        pltpu.make_async_copy(
+            src_ref=tokens_local_hbm, dst_ref=tokens_local_vmem,
+            sem=local_sems.at[0, 3]).start()
+
+    def wait_fetch_b_tokens():
+        pltpu.make_async_copy(
+            src_ref=tokens_local_hbm, dst_ref=tokens_local_vmem,
+            sem=local_sems.at[0, 3]).wait()
+
+    def start_fetch_b_gating():
+        pltpu.make_async_copy(
+            src_ref=route_in_hbm, dst_ref=router_w_vmem,
+            sem=local_sems.at[0, 0]).start()
+
+    def wait_fetch_b_gating():
+        pltpu.make_async_copy(
+            src_ref=route_in_hbm, dst_ref=router_w_vmem,
+            sem=local_sems.at[0, 0]).wait()
 
     def compute_routing(row0):
         """PROLOGUE 1 (grid step 0): router logits -> top-k.
@@ -337,17 +423,17 @@ def _decode_moe_kernel(
     def start_ag(my_id, row0):
         """PROLOGUE 2 (grid step 0): start the VMEM-direct all-gather.
 
-        Local: tokens_local [T/P, D] -> tokens_full[row0:row0+T/P].
-        Then a global barrier, then 3 remote copies per peer (token
-        shard, topk_idx rows, topk_w rows) straight into each peer's
-        VMEM - no HBM staging; the raw gating never exists outside the
-        kernel. Returns with the copies IN FLIGHT."""
+        Local: tokens_local [T/P, D] -> tokens_full[row0:row0+T/P],
+        then 3 remote copies per peer (token shard, topk_idx rows,
+        topk_w rows) straight into each peer's VMEM - no HBM staging;
+        the raw gating never exists outside the kernel. Returns with
+        the copies IN FLIGHT. Caller MUST have passed sync_barrier()
+        first: no peer VMEM may be written before its owner enters the
+        kernel (the barrier is hoisted into the prologue so it overlaps
+        the input fetches)."""
         with jax.named_scope("moe_ag_local"):
             tokens_full_vmem[pl.ds(row0, num_local_tokens), :] = (
                 tokens_local_vmem[...])
-
-        with jax.named_scope("moe_ag_barrier"):
-            sync_barrier()
 
         with jax.named_scope("moe_ag_remote"):
             for peer in range(num_devices):
@@ -411,13 +497,14 @@ def _decode_moe_kernel(
                     buf.at[inbound_rows, :], send_sem).wait()
 
     def init_dispatch_tables():
-        """PROLOGUE 4: idx_kt [k, T] = topk_idx.T (one transpose here
-        beats one per expert per grid step) and zero acc [T, D] f32."""
+        """PROLOGUE 4: idx_kt [k, T] = topk_idx.T - one transpose here
+        beats one per expert per grid step. (acc is zeroed separately,
+        BEFORE the meta wait: it needs no data, so it fills the ICI
+        arrival latency instead of following it.)"""
         with jax.named_scope("moe_topk_transpose"):
             # the per-step mask builder reduces over k with T on LANES;
             # one transpose here beats one per expert per grid step.
             idx_kt_vmem[...] = topk_idx_vmem[...].T          # [k, T]
-        acc_vmem[...] = jnp.zeros_like(acc_vmem)
 
     def build_dispatch(first_expert):
         """STEP 1 fill form (VALU + XLU, unskewed): per-expert dispatch
@@ -491,22 +578,25 @@ def _decode_moe_kernel(
             ohg_vmem.at[ohg_slot][...] = jnp.concatenate(
                 [ohg_t for _, ohg_t in pieces], axis=1)      # [T, be*C]
 
-    def expert_gmm1_mxu(local_e_id: int, x_step, w1_step):
-        """STEP 4a (MXU): gmm1 for ONE expert - rows
-        [local_e_id*C : +C] of x_step [be*C, D] @ w1_step [be, D, 2I]
-        (this step's buffer slot, dynamic leading slot bound by the
-        caller). Returns gate_up [C, 2I] f32. bd1c chunks the
-        contraction."""
+    def expert_gmm1_mxu(local_e_id: int, x_step):
+        """STEP 4a (MXU): gmm1 for ONE expert, tile by tile: for each
+        w1 row-chunk c - start the following tile, wait tile c, then
+        rows [local_e_id*C : +C] of x_step [be*C, D] sliced to
+        [C, bd1c] @ w1 tile [bd1c, 2I]. bd1c is BOTH the fetch and
+        contraction granularity. Returns gate_up [C, 2I] f32."""
         rows = slice(local_e_id * capacity,
                      (local_e_id + 1) * capacity)
         with jax.named_scope("moe_gmm1"):
-            k_chunk = bd1c or hidden_size
             gate_up = jnp.zeros((capacity, w1_hbm.shape[-1]),
                                 jnp.float32)                 # [C, 2I]
-            for k0 in range(0, hidden_size, k_chunk):
+            for c in range(nd1):
+                start_fetch_next_bw(local_e_id, c)
+                bw1_sem_id = (local_e_id * nd1 + c) % 2
+                wait_fetch_bw1(bw1_sem_id)
+                k0 = c * w1_tile_rows
                 gate_up = gate_up + jnp.dot(
-                    x_step[rows, k0:k0 + k_chunk],           # [C, k_chunk]
-                    w1_step[local_e_id, k0:k0 + k_chunk, :], # [k_chunk, 2I]
+                    x_step[rows, k0:k0 + w1_tile_rows],      # [C, bd1c]
+                    b_w1_x2_vmem[bw1_sem_id],                     # [bd1c, 2I]
                     preferred_element_type=jnp.float32)
             return gate_up
 
@@ -521,19 +611,23 @@ def _decode_moe_kernel(
                                 gate_up[:, inter_size:],
                                 "silu").astype(act_dtype)
 
-    def expert_gmm2_mxu(local_e_id: int, act_out, y_step, w2_step):
-        """STEP 4c (MXU): gmm2 for ONE expert - act_out [C, I] @
-        w2_step [be, I, D] (this step's buffer slot) -> rows
-        [local_e_id*C : +C] of y_step [be*C, D]. bd2c chunks the
-        output."""
+    def expert_gmm2_mxu(local_e_id: int, act_out, y_step):
+        """STEP 4c (MXU): gmm2 for ONE expert - wait this expert's w2
+        [I, D] (started back at the PREVIOUS expert's last w1-tile
+        position, so it streamed under all of gmm1 + act), then
+        act_out [C, I] @ w2 -> rows [local_e_id*C : +C] of y_step
+        [be*C, D]. bd2c chunks the output (compute-only knob; the w2
+        fetch is one tile)."""
         rows = slice(local_e_id * capacity,
                      (local_e_id + 1) * capacity)
         with jax.named_scope("moe_gmm2"):
+            bw2_sem_id = local_e_id % 2
+            wait_fetch_bw2(bw2_sem_id)
             n_chunk = bd2c or hidden_size
             for n0 in range(0, hidden_size, n_chunk):
                 y_step[rows, n0:n0 + n_chunk] = jnp.dot(
                     act_out,
-                    w2_step[local_e_id, :, n0:n0 + n_chunk], # [I, n_chunk]
+                    b_w2_x2_vmem[bw2_sem_id, :, n0:n0 + n_chunk], # [I, n_chunk]
                     preferred_element_type=jnp.float32).astype(act_dtype)
 
     def combine_group():
@@ -567,10 +661,28 @@ def _decode_moe_kernel(
                         preferred_element_type=jnp.float32)
                 acc_vmem[rows, :] = acc_vmem[rows, :] + partial_sum
 
+    def start_send_bo():
+        """v1's start_send_bo: ONE DMA out_stage -> out HBM."""
+        pltpu.make_async_copy(
+            src_ref=out_stage_vmem, dst_ref=out_hbm,
+            sem=local_sems.at[0, 4]).start()
+
+    def wait_send_bo():
+        pltpu.make_async_copy(
+            src_ref=out_stage_vmem, dst_ref=out_hbm,
+            sem=local_sems.at[0, 4]).wait()
+
     def emit_output():
-        """EPILOGUE (last grid step): out [T, D] = acc, in act dtype.
-        Partial sums under TP - the caller reduce-scatters."""
-        out_vmem[...] = acc_vmem[...].astype(out_vmem.dtype)
+        """EPILOGUE (last grid step): out_stage [T, D] = acc in act
+        dtype, then ONE DMA out_stage -> out HBM, waited before exit.
+        The wait is legitimately terminal: it is the kernel's last
+        instruction, the kernel may not exit with the copy in flight,
+        and out's only consumer (the caller's reduce-scatter) is
+        outside. Nothing in-kernel ever reads out back - acc and every
+        cross-step buffer stay resident in VMEM scratch."""
+        out_stage_vmem[...] = acc_vmem[...].astype(out_stage_vmem.dtype)
+        start_send_bo()
+        wait_send_bo()
 
     # ---- driver ----
 
@@ -580,15 +692,28 @@ def _decode_moe_kernel(
     # tables while the token shards keep streaming underneath.
     @pl.when(block_id == 0)
     def _prologue():
-        # block 0's weight slab streams UNDER the routing matmul and the
-        # all-gather (the window pipeline serialized this first fill
-        # ahead of the kernel body).
+        # DMA starts first (weight slab 12 MiB, inputs 4.5 MiB), then
+        # the one prologue action that needs NO data - the global
+        # barrier - runs under them; the input wait sits at first use
+        # (the routing matmul reads both buffers). The barrier being
+        # done also means start_ag's remote sends fire the moment
+        # routing finishes. Block 0's weight slab keeps streaming under
+        # routing + AG.
         if do_weights:
-            fetch_weights(0, 0)
+            # both streams' heads; the chain carries them from here
+            start_fetch_bw1(0, 0, 0)
+            start_fetch_bw2(0, 0)
+        start_fetch_b_tokens()
+        start_fetch_b_gating()
+        with jax.named_scope("moe_ag_barrier"):
+            sync_barrier()
+        wait_fetch_b_tokens()
+        wait_fetch_b_gating()
         my_id = lax.axis_index(axis_name)
         row0 = my_id * num_local_tokens
         compute_routing(row0)
         start_ag(my_id, row0)
+        acc_vmem[...] = jnp.zeros_like(acc_vmem)   # data-free, pre-wait
         wait_ag_meta()
         init_dispatch_tables()
 
@@ -606,19 +731,6 @@ def _decode_moe_kernel(
                 build_dispatch(0) if do_masks else zero_pieces(),
                 x_slot=0, ohg_slot=0)
 
-    # ---- blocked weight fetch: start next block's fetch (probe order: start,
-    # THEN wait this block's slab, just before its first reader). The
-    # pl.when fence suppresses the one out-of-range prefetch at the last
-    # step; the wait is unfenced - its slab was fetched a step earlier.
-    # Both sit BEFORE the F/A/B/C emission block, so the steady-state
-    # compute stays one basic block.
-    if do_weights:
-        @pl.when(block_id + 1 < num_blocks)
-        def _prefetch_weights():
-            fetch_weights(block_id + 1, x_nxt)
-
-        fetch_weights(block_id, x_par, wait=True)
-
     # ---- steady state: F(k) interleaved with the skewed A/B/C dispatch
     # of step k+1. ONE basic block - no pl.when: branches are scheduler
     # barriers. Emission column j carries MXU (F) + VALU (A, C) + XLU (B)
@@ -635,11 +747,17 @@ def _decode_moe_kernel(
     a_out, b_out, pieces = {}, {}, []
     for j in range(be + 2):
         if do_ffn and j < be:
-            gate_up = expert_gmm1_mxu(j, x_vmem.at[x_par],
-                                      w1_bufs.at[x_par])     # F(k, e_j)
+            gate_up = expert_gmm1_mxu(j, x_vmem.at[x_par])   # F(k, e_j)
             act_out = expert_act_eup(gate_up)
-            expert_gmm2_mxu(j, act_out, y_vmem.at[group_pos],
-                            w2_bufs.at[x_par])
+            expert_gmm2_mxu(j, act_out, y_vmem.at[group_pos])
+        elif do_weights and j < be:
+            # stream-only ablation (weights/ffn): drive the SAME tile
+            # chain, minus the matmuls - the honest stream measurement
+            # and the start/wait balance in one
+            for c in range(nd1):
+                start_fetch_next_bw(j, c)
+                wait_fetch_bw1((j * nd1 + c) % 2)
+            wait_fetch_bw2(j % 2)
         if do_masks:
             if j < be:
                 a_out[j] = dispatch_phase_a_valu(            # A(k+1, e_j)
@@ -727,20 +845,24 @@ def fused_moe_decode_tp_fused(
     num_blocks = num_experts // be
     # groups of bg grid steps share one dispatch/combine
     assert num_blocks % bg == 0, (num_blocks, bg)
+    # weight bw_sem_id is static per chain position and consistent
+    # across steps only when be is even
+    assert be % 2 == 0, be
 
-    # Static VMEM budget: every window and scratch buffer is a
-    # compile-time constant, so fail fast with an itemized sum instead of
-    # a backend allocation error. The weight double buffers hold 2 slots (same
-    # bytes the window pipeline's double-buffer used to take); the
-    # constant-index windows are single-buffered.
+    # Static VMEM budget: every scratch buffer is a compile-time
+    # constant, so fail fast with an itemized sum instead of a backend
+    # allocation error. NO Pallas windows remain (all IO is HBM refs +
+    # manual DMA - synchronous-mode windows were the per-step floor);
+    # weights stream through per-tensor x2 buffers (one bd1c
+    # row-chunk of w1, one whole w2), not per-block slabs.
     act_bytes = jnp.dtype(tokens_local.dtype).itemsize
-    weight_block = be * (hidden_size * inter2
-                         + (inter2 // 2) * hidden_size) * act_bytes
+    weight_block = ((bd1c or hidden_size) * inter2
+                    + (inter2 // 2) * hidden_size) * act_bytes
     vmem_need = (
-        2 * weight_block                     # w1+w2 fetch double buffers
-        + num_local_tokens * hidden_size * act_bytes   # tokens_local window
-        + route_in.size * route_in.dtype.itemsize  # router_w/gating window
-        + num_tokens * hidden_size * act_bytes         # out window
+        2 * weight_block                     # w1+w2 x2 buffers
+        + num_local_tokens * hidden_size * act_bytes   # tokens_local copy
+        + route_in.size * route_in.dtype.itemsize  # router_w/gating copy
+        + num_tokens * hidden_size * act_bytes         # out staging
         + num_tokens * hidden_size * act_bytes         # tokens_full
         + num_tokens * hidden_size * 4                 # acc (f32)
         + (2 + bg) * be * capacity * hidden_size * act_bytes  # x(2) + y
@@ -758,15 +880,19 @@ def fused_moe_decode_tp_fused(
         num_scalar_prefetch=0,
         grid=(num_blocks,),
         in_specs=[
-            pl.BlockSpec(tokens_local.shape, lambda i: (0, 0)),
-            pl.BlockSpec(route_in.shape, lambda i: (0, 0)),
-            # weights stay in HBM; the kernel streams them itself
-            # (manual blocked fetch, one contiguous descriptor per slab -
-            # see fetch_weights for the measured story)
+            # EVERYTHING in HBM, all movement manual (v1's structure).
+            # A constant-index-map window is pipelined by Mosaic in
+            # `synchronous` mode - per-step harness machinery that
+            # measured 2777us/kernel (ablate=all) for buffers that are
+            # per-kernel constants. The weights stream via the blocked
+            # fetch (see fetch_weights); tokens/route are fetched once
+            # in the prologue; out is DMA'd once in the epilogue.
+            pl.BlockSpec(memory_space=pltpu.MemorySpace.HBM),
+            pl.BlockSpec(memory_space=pltpu.MemorySpace.HBM),
             pl.BlockSpec(memory_space=pltpu.MemorySpace.HBM),
             pl.BlockSpec(memory_space=pltpu.MemorySpace.HBM),
         ],
-        out_specs=pl.BlockSpec((num_tokens, hidden_size), lambda i: (0, 0)),
+        out_specs=pl.BlockSpec(memory_space=pltpu.MemorySpace.HBM),
         scratch_shapes=[
             pltpu.VMEM((num_tokens, hidden_size),
                        tokens_local.dtype),                  # tokens_full
@@ -783,11 +909,16 @@ def fused_moe_decode_tp_fused(
                        tokens_local.dtype),                  # y
             pltpu.VMEM((2 * bg, num_tokens, be * capacity),
                        tokens_local.dtype),                  # ohg ring
-            pltpu.VMEM((2, be, hidden_size, inter2),
-                       w1_local.dtype),                      # w1 bufs
-            pltpu.VMEM((2, be, inter2 // 2, hidden_size),
-                       w2_local.dtype),                      # w2 bufs
-            pltpu.SemaphoreType.DMA((2, 2)),                 # w_sems
+            pltpu.VMEM((2, bd1c or hidden_size, inter2),
+                       w1_local.dtype),                      # b_w1_x2_vmem
+            pltpu.VMEM((2, inter2 // 2, hidden_size),
+                       w2_local.dtype),                      # b_w2_x2_vmem
+            pltpu.SemaphoreType.DMA((2, 5)),                 # local_sems
+            pltpu.VMEM(tokens_local.shape,
+                       tokens_local.dtype),                  # tokens copy
+            pltpu.VMEM(route_in.shape, route_in.dtype),      # route copy
+            pltpu.VMEM((num_tokens, hidden_size),
+                       tokens_local.dtype),                  # out staging
         ],
     )
     kernel = functools.partial(
@@ -817,9 +948,11 @@ def fused_moe_decode_tp_fused(
             vmem_limit_bytes=vmem_limit_bytes,
         ),
         interpret=interpret,
-    )(tokens_local, route_in,
-      # pin the streamed weights in HBM (v1's idiom): without the
-      # constraint XLA may try to stage the operands into VMEM
+    )(
+      # pin every operand in HBM (v1's idiom): without the constraint
+      # XLA may try to stage operands into VMEM
+      pltpu.with_memory_space_constraint(tokens_local, pltpu.HBM),
+      pltpu.with_memory_space_constraint(route_in, pltpu.HBM),
       pltpu.with_memory_space_constraint(w1_local, pltpu.HBM),
       pltpu.with_memory_space_constraint(w2_local, pltpu.HBM))
     return lax.psum_scatter(out, axis_name, scatter_dimension=0, tiled=True)
