@@ -71,11 +71,33 @@ run bash -c '
   ls -lh tmp/mosaic_passes.tar.xz
   rm -rf tmp/mosaic_dump'
 
+# 1a) SECOND dump: the ablate=all floor config. Measured 2026-08-29:
+# 2777us = 78% of the whole kernel with an EMPTY step body (no weight
+# fetch, no masks/gather/ffn/combine, no park) - ~21.7us/step of
+# per-step machinery. Its op stream IS the floor; prime suspect is the
+# 13.4k-op unscoped block (2048 vload/vpack/vbitcast/vunpack + 3072
+# vstore = 12 MiB/step of VALU shuffling, IDENTICAL in the window-era
+# baseline dump) - this dump says whether it survives with everything
+# stubbed.
+mkdir -p tmp/mosaic_dump
+export LIBTPU_INIT_ARGS="--xla_mosaic_dump_to=tmp/mosaic_dump"
+run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
+    --variants=v02 --iters=3 --warmup=1 --bg=2 --capacity=32 --ablate=all
+unset LIBTPU_INIT_ARGS
+run bash -c '
+  LAST=$(ls tmp/mosaic_dump/* 2>/dev/null | tail -1)
+  python tmp/dump_histogram.py $LAST > tmp/op_histogram_all.txt
+  python tmp/llo_timeline.py $LAST --cols 150 > tmp/timeline_all.txt
+  wc -l tmp/op_histogram_all.txt tmp/timeline_all.txt
+  tar -c tmp/mosaic_dump | xz -9 -T0 > tmp/mosaic_passes_all.tar.xz
+  ls -lh tmp/mosaic_passes_all.tar.xz
+  rm -rf tmp/mosaic_dump'
+
 # ---- ANSWERED probes, commented out to keep the loop fast. Uncomment
 # ---- to re-measure; results recorded inline.
 
 # 1b) window-vs-scratch operand question. ANSWERED: scratch operand is
-#     cheaper (1,744 vs 4,304 ops) - and moot since the manual ring.
+#     cheaper (1,744 vs 4,304 ops) - and moot since the manual blocked fetch.
 # mkdir -p tmp/mosaic_probe
 # LIBTPU_INIT_ARGS="--xla_mosaic_dump_to=tmp/mosaic_probe" \
 #   run python tmp/probe_tiling.py
@@ -96,11 +118,13 @@ run bash -c '
 #     --variants=v1 --iters=10 --warmup=3
 
 # Weight-stream bandwidth probe. Single-device ANSWERED (2026-08-29):
-# manual ring 2150-2300 GB/s regardless of split; window pipeline 494;
+# manual blocked fetch 2150-2300 GB/s regardless of split; window pipeline 494;
 # spec 3207. RE-ENABLED for the new concurrent question: the in-kernel
-# ring measured 494 UNCHANGED from the window pipeline, and the kernel
-# runs on all 8 devices while the probe ran on 1 - manual1x8dev says
-# whether full-machine concurrency is the derate.
+# fetch measured 494 UNCHANGED from the window pipeline, and the kernel
+# runs on all 8 devices while the probe ran on 1. wpair_1dev/8dev
+# stream the ACTUAL w1+w2 pair (1.5 GiB) through the production blocked-
+# fetch structure, solo vs all devices at once - the 8dev time compares 1:1
+# against the kernel's (ablate=weights - ablate=all).
 run python tmp/probe_wbw.py
 
 # ICI/D2D topology probe (all 56 device pairs, ppermute ping-pong latency +
@@ -112,11 +136,11 @@ fi
 
 # Ablate ladder: differential timing as the profiler substitute. Each
 # row stubs ONE stage (output wrong on purpose); (none - X) = stage X's
-# true wall-clock share. ablate=weights = all compute stubbed, ring
-# still streaming (measured 2026-08-29: 3247us, UNCHANGED from the
-# window pipeline's 3266 despite the standalone ring probing 4.6x
+# true wall-clock share. ablate=weights = all compute stubbed, weight
+# fetch still streaming (measured 2026-08-29: 3247us, UNCHANGED from the
+# window pipeline's 3266 despite the standalone blocked fetch probing 4.6x
 # faster - the stream is NOT the floor). ablate=all additionally stubs
-# the ring and dispatch park: the bare per-step floor. (weights - all)
+# the weight fetch and dispatch park: the bare per-step floor. (weights - all)
 # = the stream's true in-situ cost.
 for a in none masks gather ffn combine weights all; do
   run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
