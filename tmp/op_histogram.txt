@@ -1,6 +1,6 @@
 
-===== tmp/mosaic_dump/1788022427337314966-0019-mosaic-dump-anonymous-post-finalize-llo.txt
-total ops: 98539
+===== tmp/mosaic_dump/1788029742138496396-0019-mosaic-dump-anonymous-post-finalize-llo.txt
+total ops: 83210
 
 -- moe_combine: 18025 ops
          6144  llo.vadd.f32
@@ -17,33 +17,22 @@ total ops: 98539
             2  llo.smul.u32
             1  llo.ssub.s32
 
--- moe_gmm1: 15943 ops
-         4096  llo.vbitcast
-         4096  llo.vunpack
-         2304  llo.vector_load
-         2048  llo.vpack
-         1024  llo.vmatprep.subr
-         1024  llo.vlatchi
-          512  llo.vmatres
-          512  llo.vadd.f32
-          128  llo.vmatprep.mubr
-          128  llo.vmatmul.mubr
-           64  llo.vdwg
-            6  llo.saddr_scaled
-            1  llo.smul.u32
-
--- <toplevel>: 13415 ops
+-- <toplevel>: 13454 ops
          3072  llo.vector_store
-         2137  llo.constant
+         2136  llo.constant
          2048  llo.vector_load
          2048  llo.vpack
          2048  llo.vbitcast
          2048  llo.vunpack
+           17  llo.smul.u32
+           16  llo.saddr_scaled
+            6  llo.sadd.s32
             4  llo.srem.s32
-            4  llo.sadd.s32
+            4  llo.enqueue_dma
             3  llo.seq.s32
-            2  llo.smul.u32
+            2  llo.dma_done
             1  llo.logical_device_id
+            1  llo.slt.s32
 
 -- moe_routing: 11922 ops
          2304  llo.vbitcast
@@ -103,15 +92,25 @@ total ops: 98539
             2  llo.saddr_scaled
             1  llo.smul.u32
 
--- moe_gmm2: 10054 ops
-         2048  llo.vbitcast
-         2048  llo.vunpack
-         1280  llo.vpack
+-- moe_gmm1: 5703 ops
+         2304  llo.vector_load
+         1024  llo.vmatprep.subr
+         1024  llo.vlatchi
+          512  llo.vmatres
+          512  llo.vadd.f32
+          128  llo.vmatprep.mubr
+          128  llo.vmatmul.mubr
+           64  llo.vdwg
+            6  llo.saddr_scaled
+            1  llo.smul.u32
+
+-- moe_gmm2: 4934 ops
          1024  llo.vector_load
          1024  llo.vmatprep.subr
          1024  llo.vlatchi
           512  llo.vmatres
           512  llo.vadd.f32
+          256  llo.vpack
           256  llo.vector_store
           128  llo.vmatprep.mubr
           128  llo.vmatmul.mubr
@@ -252,11 +251,11 @@ total ops: 98539
             8  llo.vadd.xlane.f32
             8  llo.vrecip.f32
 
--- moe_ag_remote: 72 ops
+-- moe_ag_remote: 64 ops
            24  llo.core_index
            24  llo.enqueue_dma
-           16  llo.smul.u32
             8  llo.sne.s32
+            8  llo.smul.u32
 
 -- moe_ag_barrier: 20 ops
             8  llo.core_index
