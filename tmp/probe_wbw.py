@@ -87,10 +87,48 @@ def build(be: int, nsplit: int):
     )
 
 
+def run_concurrent(w_np: np.ndarray) -> None:
+    """The same manual1 ring on ALL devices at once (shard_map, one
+    local array per device). The single-device numbers said 2258 GB/s
+    while the kernel - which runs on 8 devices - saw 494: if per-device
+    bandwidth collapses here, full-machine concurrency (shared HBM or
+    fabric contention) is the derate, not the kernel."""
+    devs = jax.devices()
+    p = len(devs)
+    if p < 2:
+        print("concurrent: skipped (1 device)")
+        return
+    mesh = jax.sharding.Mesh(np.array(devs), ("x",))
+    spec = jax.sharding.PartitionSpec("x", None, None)
+    sharding = jax.sharding.NamedSharding(mesh, spec)
+    w_all = jax.make_array_from_callback(
+        (p * E, D, I2), sharding, lambda idx: w_np)  # same 1 GiB per device
+    fn = jax.jit(jax.shard_map(
+        build(be=4, nsplit=1), mesh=mesh, in_specs=spec,
+        out_specs=jax.sharding.PartitionSpec("x", None), check_vma=False))
+    per_dev_bytes = E * D * I2 * 2
+    try:
+        jax.block_until_ready(fn(w_all))
+    except Exception as ex:
+        print(f"concurrent: failed ({type(ex).__name__}: "
+              f"{str(ex).splitlines()[0][:90]})")
+        return
+    ts = []
+    for _ in range(10):
+        t0 = time.perf_counter()
+        jax.block_until_ready(fn(w_all))
+        ts.append(time.perf_counter() - t0)
+    t = min(ts)
+    print(f"manual1x{p}dev: {t * 1e6:8.1f} us   "
+          f"{per_dev_bytes / t / 1e9:7.1f} GB/s per device   "
+          f"({per_dev_bytes * p / t / 1e9:.0f} aggregate, "
+          f"median {statistics.median(ts) * 1e6:.1f} us)")
+
+
 def main() -> None:
-    w = jnp.asarray(
+    w_np = np.asarray(
         np.random.default_rng(0).standard_normal((E, D, I2)), jnp.bfloat16)
-    w = jax.device_put(w, jax.devices()[0])
+    w = jax.device_put(jnp.asarray(w_np), jax.devices()[0])
     total_bytes = w.size * 2
     print(f"array: {total_bytes / 2**30:.2f} GiB  ({E}x{D}x{I2} bf16)")
     for name, be, nsplit in (("manual1", 4, 1), ("manual2", 4, 2),
@@ -112,6 +150,7 @@ def main() -> None:
         print(f"{name:>10}: {t * 1e6:8.1f} us   "
               f"{total_bytes / t / 1e9:7.1f} GB/s   "
               f"(median {statistics.median(ts) * 1e6:.1f} us)")
+    run_concurrent(w_np)
 
 
 if __name__ == "__main__":

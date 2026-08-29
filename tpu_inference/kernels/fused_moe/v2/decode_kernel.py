@@ -213,13 +213,21 @@ def _decode_moe_kernel(
     # ABI mismatch), so differential timing is the only stage-level signal.
     # NB: under dispatch-ahead, attribution shifts by one block - step k
     # prices FFN(k) + dispatch(k+1); totals per kernel are unaffected.
-    # The weight fetch ring is NEVER ablated (starts and waits must stay
-    # paired), so ablate=weights = all compute stubbed with the ring still
-    # streaming: it measures the manual ring's in-situ bandwidth.
-    do_masks = ablate not in ("masks", "weights")
-    do_gather = ablate not in ("gather", "weights")
-    do_ffn = ablate not in ("ffn", "weights")
-    do_combine = ablate not in ("combine", "weights")
+    # ablate=weights = all compute stubbed with the fetch ring still
+    # streaming: the ring's in-situ bandwidth. ablate=all additionally
+    # stubs the ring itself AND the dispatch park - the bare per-step
+    # floor (grid machinery + branches + prologue). (weights - all) =
+    # what the stream truly costs; measured 2026-08-29: weights was
+    # UNCHANGED window->ring (3266 -> 3247), so the floor, not the
+    # stream, is the prime suspect. Static Python gates - `ablate` is a
+    # static kwarg, so stubbed stages never enter the trace and DMA
+    # start/wait pairing holds trivially.
+    do_masks = ablate not in ("masks", "weights", "all")
+    do_gather = ablate not in ("gather", "weights", "all")
+    do_ffn = ablate not in ("ffn", "weights", "all")
+    do_combine = ablate not in ("combine", "weights", "all")
+    do_weights = ablate != "all"
+    do_park = ablate != "all"
 
     block_id = pl.program_id(0)          # which expert block (grid step)
     num_blocks = pl.num_programs(0)
@@ -280,12 +288,14 @@ def _decode_moe_kernel(
         and w2 [be, I, D] slabs, each as ONE contiguous descriptor into
         ring slot `slot` (v1's paired start/wait fetch shape).
 
-        One flat descriptor is the point: the DMA access-size law prices
-        a descriptor by its inner contiguous run, and a be-expert slab is
-        a single maximal run (measured 2179 GB/s vs the window pipeline's
-        strided copies at 494 - the 4.4x this ring exists for). Callers
-        fence out-of-range prefetches (OOB DMA reads are fatal); the
-        fence keeps start/wait counts balanced by construction."""
+        One flat descriptor is the fastest-known fetch: a be-expert slab
+        is a single maximal contiguous run (2258 GB/s standalone on one
+        device). NB measured in situ 2026-08-29: ablate=weights was
+        UNCHANGED vs the window pipeline (3247 vs 3266 us) - the kernel
+        floor is NOT fetch-mechanism-bound; suspects are the per-step
+        floor (ablate=all) and 8-device concurrency (probe manual1x8dev).
+        Callers fence out-of-range prefetches (OOB DMA reads are fatal);
+        the fence keeps start/wait counts balanced by construction."""
         for hbm, ring, s in ((w1_hbm, w1_ring, 0), (w2_hbm, w2_ring, 1)):
             cp = pltpu.make_async_copy(
                 src_ref=hbm.at[pl.ds(block * be, be)],
@@ -573,7 +583,8 @@ def _decode_moe_kernel(
         # block 0's weight slab streams UNDER the routing matmul and the
         # all-gather (the window pipeline serialized this first fill
         # ahead of the kernel body).
-        fetch_weights(0, 0)
+        if do_weights:
+            fetch_weights(0, 0)
         my_id = lax.axis_index(axis_name)
         row0 = my_id * num_local_tokens
         compute_routing(row0)
@@ -588,11 +599,12 @@ def _decode_moe_kernel(
     # ---- FILL stage (grid step 0 only): no predecessor built x[0] and
     # ohg[0], so step 0 builds its own dispatch, unskewed. Runs AFTER
     # _settle_tokens: the gather is the first tokens_full reader.
-    @pl.when(block_id == 0)
-    def _dispatch_first():
-        park_dispatch_mxu(
-            build_dispatch(0) if do_masks else zero_pieces(),
-            x_slot=0, ohg_slot=0)
+    if do_park:
+        @pl.when(block_id == 0)
+        def _dispatch_first():
+            park_dispatch_mxu(
+                build_dispatch(0) if do_masks else zero_pieces(),
+                x_slot=0, ohg_slot=0)
 
     # ---- weight ring: start next block's fetch (probe order: start,
     # THEN wait this block's slab, just before its first reader). The
@@ -600,11 +612,12 @@ def _decode_moe_kernel(
     # step; the wait is unfenced - its slab was fetched a step earlier.
     # Both sit BEFORE the F/A/B/C emission block, so the steady-state
     # compute stays one basic block.
-    @pl.when(block_id + 1 < num_blocks)
-    def _prefetch_weights():
-        fetch_weights(block_id + 1, x_nxt)
+    if do_weights:
+        @pl.when(block_id + 1 < num_blocks)
+        def _prefetch_weights():
+            fetch_weights(block_id + 1, x_nxt)
 
-    fetch_weights(block_id, x_par, wait=True)
+        fetch_weights(block_id, x_par, wait=True)
 
     # ---- steady state: F(k) interleaved with the skewed A/B/C dispatch
     # of step k+1. ONE basic block - no pl.when: branches are scheduler
@@ -637,8 +650,9 @@ def _decode_moe_kernel(
             if 2 <= j <= be + 1:
                 pieces.append(dispatch_phase_c_valu(         # C(k+1, e_j-2)
                     a_out[j - 2], b_out[j - 2]))
-    park_dispatch_mxu(pieces if do_masks else zero_pieces(),
-                      x_slot=x_nxt, ohg_slot=ohg_next_slot)
+    if do_park:
+        park_dispatch_mxu(pieces if do_masks else zero_pieces(),
+                          x_slot=x_nxt, ohg_slot=ohg_next_slot)
 
     if do_combine:
         @pl.when(group_pos == bg - 1)
@@ -745,9 +759,9 @@ def fused_moe_decode_tp_fused(
         in_specs=[
             pl.BlockSpec(tokens_local.shape, lambda i: (0, 0)),
             pl.BlockSpec(route_in.shape, lambda i: (0, 0)),
-            # weights stay in HBM; the kernel streams them itself (manual
-            # fetch ring) - the window pipeline's generated copies ran at
-            # 494 GB/s vs 2179 for one contiguous descriptor per slab
+            # weights stay in HBM; the kernel streams them itself
+            # (manual fetch ring, one contiguous descriptor per slab -
+            # see fetch_weights for the measured story)
             pl.BlockSpec(memory_space=pltpu.MemorySpace.HBM),
             pl.BlockSpec(memory_space=pltpu.MemorySpace.HBM),
         ],

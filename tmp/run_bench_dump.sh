@@ -95,9 +95,13 @@ run bash -c '
 # run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
 #     --variants=v1 --iters=10 --warmup=3
 
-# Weight-stream bandwidth probe. ANSWERED (2026-08-29): manual ring
-# 2150-2220 GB/s regardless of split; window pipeline 494; spec 3207.
-# run python tmp/probe_wbw.py
+# Weight-stream bandwidth probe. Single-device ANSWERED (2026-08-29):
+# manual ring 2150-2300 GB/s regardless of split; window pipeline 494;
+# spec 3207. RE-ENABLED for the new concurrent question: the in-kernel
+# ring measured 494 UNCHANGED from the window pipeline, and the kernel
+# runs on all 8 devices while the probe ran on 1 - manual1x8dev says
+# whether full-machine concurrency is the derate.
+run python tmp/probe_wbw.py
 
 # ICI/D2D topology probe (all 56 device pairs, ppermute ping-pong latency +
 # 1 GiB unidirectional bandwidth). ~5-10 min and its numbers change only
@@ -108,11 +112,13 @@ fi
 
 # Ablate ladder: differential timing as the profiler substitute. Each
 # row stubs ONE stage (output wrong on purpose); (none - X) = stage X's
-# true wall-clock share. ablate=weights = all compute stubbed with the
-# manual weight ring still streaming - it measures the ring's in-situ
-# bandwidth (probe ceiling 2179 GB/s = ~0.74ms for the 1.5 GiB; the old
-# window pipeline did 494 GB/s = 3.27ms).
-for a in none masks gather ffn combine weights; do
+# true wall-clock share. ablate=weights = all compute stubbed, ring
+# still streaming (measured 2026-08-29: 3247us, UNCHANGED from the
+# window pipeline's 3266 despite the standalone ring probing 4.6x
+# faster - the stream is NOT the floor). ablate=all additionally stubs
+# the ring and dispatch park: the bare per-step floor. (weights - all)
+# = the stream's true in-situ cost.
+for a in none masks gather ffn combine weights all; do
   run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
       --variants=v02 --iters=10 --warmup=3 \
       --bg=2 --capacity=32 --ablate=$a

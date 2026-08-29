@@ -122,10 +122,12 @@ def main() -> None:
                         "accumulator traffic) until the backend rejects it")
     parser.add_argument("--ablate", type=str, default="none",
                         choices=["none", "masks", "gather", "ffn",
-                                 "combine", "weights"],
+                                 "combine", "weights", "all"],
                         help="v2: statically stub one stage (output is "
                         "WRONG); wall-clock differences vs none are the "
-                        "per-stage costs - the profiler substitute")
+                        "per-stage costs - the profiler substitute. "
+                        "'all' stubs every stage INCLUDING the weight "
+                        "fetch ring: the bare per-step floor")
     parser.add_argument("--tune", action="store_true",
                         help="sweep v2 kernel params, print the winner "
                         "(ignores the one-off param flags above)")
