@@ -214,7 +214,8 @@ def main() -> None:
 
         variants["v1_ep_a2a"] = run_v1
 
-    v2_selected = "v02" in args.variants
+    # env rows need the mesh + token shards but not the kernel
+    v2_selected = "v02" in args.variants or "env" in args.variants
     if v2_selected:
         tok_l = jax.device_put(tokens, NamedSharding(mesh_v2, P("x", None)))
         w_r = jax.device_put(router_w, NamedSharding(mesh_v2, P(None, None)))

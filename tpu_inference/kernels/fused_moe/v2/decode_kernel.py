@@ -976,7 +976,9 @@ def fused_moe_decode_tp_fused(
         out_shape=jax.ShapeDtypeStruct((num_tokens, hidden_size),
                                    tokens_local.dtype),
         compiler_params=pltpu.CompilerParams(
-            collective_id=13,
+            # ablate=ag removes the barrier, and Mosaic rejects a
+            # collective_id without one
+            **({} if ablate == "ag" else {"collective_id": 13}),
             vmem_limit_bytes=vmem_limit_bytes,
         ),
         interpret=interpret,
