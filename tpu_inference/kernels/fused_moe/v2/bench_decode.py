@@ -216,8 +216,18 @@ def main() -> None:
     if v2_selected:
         tok_l = jax.device_put(tokens, NamedSharding(mesh_v2, P("x", None)))
         w_r = jax.device_put(router_w, NamedSharding(mesh_v2, P(None, None)))
+        # Pre-flatten OUTSIDE jit, with columns permuted so device k's
+        # contiguous 2I/P-column shard is its own (gate | up) pair.
+        # The old in-shard reshape ([E,D,2,I/P] -> [E,D,2I/P]) forced
+        # XLA to materialize a layout-conversion COPY of the WHOLE w1
+        # EVERY call - measured as the "fixed floor": ~480us + weight
+        # bytes at ~660 GB/s (2.3ms at E=512), confirmed by the HLO
+        # (%copy.1 bf16[512,4096,2,1024]) and by ablate=all scaling
+        # linearly in E (775/1074/1634/2821us at E=64/128/256/512).
+        w1_perm = w1.reshape(e, d, 2, p, i // p).transpose(
+            0, 1, 3, 2, 4).reshape(e, d, 2 * i)
         w1_l = jax.device_put(
-            w1, NamedSharding(mesh_v2, P(None, None, None, "x")))
+            w1_perm, NamedSharding(mesh_v2, P(None, None, "x")))
         w2_l = jax.device_put(w2, NamedSharding(mesh_v2, P(None, "x", None)))
 
         def v2_runner(be: int, cap: int, bd1c: int | None,
@@ -226,11 +236,12 @@ def main() -> None:
                       bg: int = 1) -> Callable[[], jax.Array]:
             def fn(tok: jax.Array, w1x: jax.Array, w2x: jax.Array,
                    r: jax.Array) -> jax.Array:
-                w1_flat = w1x.reshape(w1x.shape[0], w1x.shape[1], -1)
+                # no reshape here: anything reshaping a weight inside
+                # the jitted fn re-materializes the tensor per call
                 return fused_moe_decode_tp_fused(
                     tok,
                     r,            # router weight, replicated
-                    w1_flat,
+                    w1x,
                     w2x,
                     mesh=mesh_v2,
                     axis_name="x",
@@ -249,7 +260,7 @@ def main() -> None:
 
             jitted = jax.jit(jax.shard_map(
                 fn, mesh=mesh_v2,
-                in_specs=(P("x", None), P(None, None, None, "x"),
+                in_specs=(P("x", None), P(None, None, "x"),
                           P(None, "x", None), P(None, None)),
                 out_specs=P("x", None), check_vma=False))
             return lambda: jitted(tok_l, w1_l, w2_l, w_r)
