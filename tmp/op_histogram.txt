@@ -1,8 +1,8 @@
 
-===== tmp/mosaic_dump/1787671279452372497-0019-mosaic-dump-anonymous-post-finalize-llo.txt
-total ops: 87354
+===== tmp/mosaic_dump/1787973750761803339-0019-mosaic-dump-anonymous-post-finalize-llo.txt
+total ops: 98017
 
--- moe_combine: 18085 ops
+-- moe_combine: 18090 ops
          6144  llo.vadd.f32
          4096  llo.vmatres
          2496  llo.vector_load
@@ -15,38 +15,39 @@ total ops: 87354
            64  llo.vselect
            32  llo.vdwg
             4  llo.saddr_scaled
+            2  llo.srem.s32
+            2  llo.smul.u32
+            1  llo.ssub.s32
 
--- moe_gmm1: 16481 ops
+-- moe_gmm1: 16391 ops
          4480  llo.vbitcast
          4096  llo.vunpack
          2304  llo.vector_load
-         2056  llo.vpack
+         2048  llo.vpack
          1024  llo.vmatprep.subr
          1024  llo.vlatchi
           512  llo.vmatres
-          396  llo.vadd.f32
+          384  llo.vadd.f32
           128  llo.vmatprep.mubr
           128  llo.vmatmul.mubr
           128  llo.vrot.slane
            64  llo.vdwg
            64  llo.vselect
-           36  llo.vmul.f32
-           12  llo.vneg.f32
-           12  llo.vexp.f32
-           12  llo.vrecip.f32
-            5  llo.saddr_scaled
+            6  llo.saddr_scaled
+            1  llo.smul.u32
 
--- <toplevel>: 13409 ops
+-- <toplevel>: 13417 ops
          3072  llo.vector_store
-         2138  llo.constant
+         2139  llo.constant
          2048  llo.vector_load
          2048  llo.vpack
          2048  llo.vbitcast
          2048  llo.vunpack
+            4  llo.srem.s32
+            4  llo.sadd.s32
             3  llo.seq.s32
-            2  llo.srem.s32
+            2  llo.smul.u32
             1  llo.logical_device_id
-            1  llo.smul.u32
 
 -- moe_routing: 11922 ops
          2304  llo.vbitcast
@@ -67,7 +68,32 @@ total ops: 87354
             2  llo.saddr_scaled
             1  llo.vslaneid
 
--- moe_gmm2: 10503 ops
+-- moe_masks: 11595 ops
+         3808  llo.vselect
+         2272  llo.vcmp.eq.s32
+          608  llo.vmand
+          512  llo.vmax.xlane.s32
+          512  llo.vadd.xlane.f32
+          512  llo.vxpose
+          512  llo.vxpose.result
+          512  llo.vsetperm
+          512  llo.vperm
+          512  llo.vpermres
+          320  llo.vpack
+          296  llo.vadd.s32
+          272  llo.vector_load
+          224  llo.vrot.lane
+           72  llo.vcmp.ge.s32
+           32  llo.vmax.s32
+           32  llo.vmax.slane.s32
+           32  llo.vsub.s32
+           32  llo.vslreplicate
+            4  llo.saddr_scaled
+            4  llo.stov
+            2  llo.vxlaneid
+            1  llo.vslaneid
+
+-- moe_gmm2: 10502 ops
          2432  llo.vbitcast
          2048  llo.vunpack
          1280  llo.vpack
@@ -83,46 +109,23 @@ total ops: 87354
            64  llo.vdwg
            64  llo.vselect
             6  llo.saddr_scaled
-            1  llo.smul.u32
 
--- moe_masks: 6246 ops
-         2016  llo.vselect
-         1136  llo.vcmp.eq.s32
-          304  llo.vmand
-          256  llo.vmax.xlane.s32
-          256  llo.vadd.xlane.f32
-          256  llo.vxpose
-          256  llo.vxpose.result
-          256  llo.vsetperm
-          256  llo.vperm
-          256  llo.vpermres
-          216  llo.vbitcast
-          208  llo.vrot.lane
-          160  llo.vpack
-          149  llo.vadd.s32
-          136  llo.vector_load
-           36  llo.vcmp.ge.s32
-           16  llo.vmax.s32
-           16  llo.vmax.slane.s32
-           16  llo.vsub.s32
-           16  llo.vslreplicate
-           16  llo.vrot.slane
-            4  llo.stov
-            3  llo.saddr_scaled
-            3  llo.sadd.s32
+-- moe_gather: 8947 ops
+         2048  llo.vector_load
+         1536  llo.vmatres
+         1536  llo.vadd.f32
+         1024  llo.vmatprep.subr
+         1024  llo.vlatchi
+          384  llo.vmatprep.mubr
+          384  llo.vmatmul.mubr
+          384  llo.vpack
+          384  llo.vector_store
+          112  llo.vbitcast
+           64  llo.vdwg
+           32  llo.vrot.slane
+           32  llo.vselect
+            2  llo.saddr_scaled
             1  llo.smul.u32
-
--- moe_gather: 4384 ops
-         1024  llo.vector_load
-          768  llo.vmatres
-          768  llo.vadd.f32
-          512  llo.vmatprep.subr
-          512  llo.vlatchi
-          192  llo.vmatprep.mubr
-          192  llo.vmatmul.mubr
-          192  llo.vpack
-          192  llo.vector_store
-           32  llo.vdwg
 
 -- moe_ag_local: 899 ops
           256  llo.vbitcast
@@ -133,6 +136,14 @@ total ops: 87354
             1  llo.sfloordiv.s32
             1  llo.smul.u32
             1  llo.saddr_scaled
+
+-- moe_ohg_park: 771 ops
+          320  llo.vbitcast
+          192  llo.vrot.lane
+          192  llo.vselect
+           64  llo.vector_store_masked
+            2  llo.saddr_scaled
+            1  llo.smul.u32
 
 -- moe_topk0: 512 ops
           256  llo.vselect
@@ -242,16 +253,19 @@ total ops: 87354
             8  llo.vadd.xlane.f32
             8  llo.vrecip.f32
 
+-- moe_act: 92 ops
+           36  llo.vmul.f32
+           12  llo.vneg.f32
+           12  llo.vexp.f32
+           12  llo.vadd.f32
+           12  llo.vrecip.f32
+            8  llo.vpack
+
 -- moe_ag_remote: 72 ops
            24  llo.core_index
            24  llo.enqueue_dma
            16  llo.smul.u32
             8  llo.sne.s32
-
--- moe_ohg_park: 34 ops
-           32  llo.vector_store_masked
-            1  llo.smul.u32
-            1  llo.saddr_scaled
 
 -- moe_ag_barrier: 20 ops
             8  llo.core_index
