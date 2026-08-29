@@ -100,11 +100,19 @@ run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
 # DMA vs the window pipeline's known 494 GB/s (from ablate=weights).
 run python tmp/probe_wbw.py
 
+# ICI/D2D topology probe (all 56 device pairs, ppermute ping-pong latency +
+# 1 GiB unidirectional bandwidth). ~5-10 min and its numbers change only
+# with the machine, so it is opt-in: RUN_TOPO=1 ./tmp/run_bench_dump.sh
+if [ "${RUN_TOPO:-0}" = "1" ]; then
+  run python tmp/topo.py
+fi
+
 # Ablate ladder: differential timing as the profiler substitute. Each
 # row stubs ONE stage (output wrong on purpose); (none - X) = stage X's
-# true wall-clock share. Discriminates VALU-paced vs DMA/overhead-paced:
-# if ablate=weights still runs ~3ms with only the weight windows
-# streaming, the vector side was never the clock.
+# true wall-clock share. ablate=weights = all compute stubbed with the
+# manual weight ring still streaming - it measures the ring's in-situ
+# bandwidth (probe ceiling 2179 GB/s = ~0.74ms for the 1.5 GiB; the old
+# window pipeline did 494 GB/s = 3.27ms).
 for a in none masks gather ffn combine weights; do
   run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
       --variants=v02 --iters=10 --warmup=3 \

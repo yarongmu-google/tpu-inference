@@ -249,7 +249,13 @@ def main() -> None:
             return lambda: jitted(tok_l, w1_l, w2_l, w_r)
 
         if "v02" in args.variants:
-            variants["v2_tp_inkernel_ag"] = v2_runner(
+            # An ablated row stubs one stage (output wrong on purpose) - tag
+            # the name so a differential-timing row is never mistaken for a
+            # real measurement of the kernel.
+            v2_name = "v2_tp_inkernel_ag"
+            if args.ablate != "none":
+                v2_name += f"[ablate={args.ablate}]"
+            variants[v2_name] = v2_runner(
                 be=args.be, cap=args.capacity,
                 bd1c=args.bd1c or None, bd2c=args.bd2c or None,
                 bcT=args.bcT or None, bg=args.bg)
