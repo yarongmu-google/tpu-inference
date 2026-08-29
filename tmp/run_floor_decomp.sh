@@ -27,7 +27,7 @@ export PYTHONPATH=.
 export JAX_PLATFORMS=tpu
 unset LIBTPU_INIT_ARGS
 
-FLAGS="${FLAGS:---be=8 --bg=4 --capacity=32 --bd2c=1024 --wbuf=4}"
+FLAGS="${FLAGS:---be=4 --bg=4 --capacity=32 --bd2c=1024}"
 echo "FLAGS: $FLAGS"
 
 run git rev-parse --short HEAD
