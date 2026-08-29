@@ -168,27 +168,6 @@ def _mask_operators(
     return oh, ohg_t
 
 
-def _dispatch_operators(
-    *,
-    topk_idx_kt: jax.Array,   # [k, T] i32
-    topk_idx_tk: jax.Array,   # [T, k] i32
-    topk_w_tk: jax.Array,     # [T, k] f32
-    expert_id,                # scalar (may be traced)
-    num_tokens: int,
-    capacity: int,
-    act_dtype,
-) -> tuple[jax.Array, jax.Array]:  # (OH [C, T], OHG_T [T, C])
-    """The three phases composed, for one expert -> (OH, OHG_T)."""
-    routed_mask, live_t, gate_t = _mask_membership(
-        topk_idx_kt=topk_idx_kt, topk_idx_tk=topk_idx_tk,
-        topk_w_tk=topk_w_tk, expert_id=expert_id)
-    slot, slot_t = _mask_slots(routed_mask, num_tokens)
-    return _mask_operators(
-        routed_mask=routed_mask, live_t=live_t, gate_t=gate_t,
-        slot=slot, slot_t=slot_t, num_tokens=num_tokens,
-        capacity=capacity, act_dtype=act_dtype)
-
-
 def _decode_moe_kernel(
     tokens_local_vmem,   # [T/P, D] this device's token shard
     router_w_vmem,       # [E, D] router weight, or [T/P, E] logits when
@@ -204,9 +183,11 @@ def _decode_moe_kernel(
     topk_idx_vmem,       # VMEM [T, k] i32 - AG'd routing results
     topk_w_vmem,         # VMEM [T, k] f32
     idx_kt_vmem,         # VMEM [k, T] i32 - transposed once, read per step
-    x_vmem,              # VMEM [be*C, D] gathered rows for this block
+    x_vmem,              # VMEM [2, be*C, D] gathered rows, parity slots:
+                         # slot k%2 read at step k, slot (k+1)%2 built
     y_vmem,              # VMEM [bg, be*C, D] expert outputs for the group
-    ohg_vmem,            # VMEM [bg, T, be*C] combine operators, per slot
+    ohg_vmem,            # VMEM [2*bg, T, be*C] combine operators - a ring
+                         # written one step AHEAD of its group's combine
     *,
     axis_name: str,
     mesh_axis_names: tuple,
@@ -226,6 +207,8 @@ def _decode_moe_kernel(
     # `ablate` stubs one stage at a time so wall-clock differences localise
     # the cost. The profiler segfaults in this environment (PLUGIN_Profiler
     # ABI mismatch), so differential timing is the only stage-level signal.
+    # NB: under dispatch-ahead, attribution shifts by one block - step k
+    # prices FFN(k) + dispatch(k+1); totals per kernel are unaffected.
     do_masks = ablate not in ("masks", "weights")
     do_gather = ablate not in ("gather", "weights")
     do_ffn = ablate not in ("ffn", "weights")
@@ -239,6 +222,28 @@ def _decode_moe_kernel(
     num_local_tokens = tokens_local_vmem.shape[0]            # T/P
     inbound = num_devices - 1
     group_pos = lax.rem(block_id, bg)    # step's position within its group
+
+    # ---- DISPATCH-AHEAD pipeline indices ----
+    # Each step builds the NEXT step's dispatch (masks depend only on the
+    # prologue's routing tables), so its VALU/XLU work can fill the FFN's
+    # MXU-latency stalls. x is a parity double buffer; ohg is a ring.
+    # 2*bg ring slots make writer and readers collision-free by
+    # construction (bg+1 suffices: reuse at m+bg vs last read m+bg-1;
+    # 2*bg makes rem cheap for power-of-two bg, the tuned cases - shrink
+    # to bg+1 if VMEM gets tight).
+    x_par = lax.rem(block_id, 2)         # x slot CONSUMED this step
+    x_nxt = lax.rem(block_id + 1, 2)     # x slot BUILT this step
+    ohg_ring = 2 * bg
+    ohg_next_slot = lax.rem(block_id + 1, ohg_ring)
+    # the LAST step builds a never-read dispatch for expert ids >= E:
+    # expert_id is comparison-only, so out-of-range ids give all-false
+    # masks - AND its park still runs the zero-operand [be*C, T] @ [T, D]
+    # gather into the dead slot. That is one phantom dispatch+gather per
+    # kernel invocation (1/num_blocks of the total; noise at E/be >> 1,
+    # visible at tiny num_blocks). Accepted in exchange for keeping the
+    # steady state branch-free; fence the tail park with
+    # pl.when(block_id < num_blocks - 1) if that trade ever flips.
+    next_first_expert = (block_id + 1) * be
 
     # ---- one function per pipeline action (v1's convention) ----
 
@@ -377,71 +382,111 @@ def _decode_moe_kernel(
         acc_vmem[...] = jnp.zeros_like(acc_vmem)
 
     def build_dispatch(first_expert):
-        """STEP 1 (VALU + XLU): dispatch operators for experts
-        first_expert..first_expert+be-1. Reads the top-k tables
-        (idx_kt [k, T], topk_idx [T, k], topk_w [T, k]); returns
-        OH [be*C, T] and OHG_T [T, be*C] in act dtype. Per expert this
-        is the three unit phases _mask_membership -> _mask_slots ->
-        _mask_operators, independent across experts (what the pipelined
-        driver exploits)."""
+        """STEP 1 fill form (VALU + XLU, unskewed): per-expert dispatch
+        pieces for experts first_expert..first_expert+be-1. Used only at
+        grid step 0, which has no predecessor to build its slots (there
+        is nothing to overlap with yet). Returns
+        [(OH [C, T], OHG_T [T, C])] * be in act dtype."""
         with jax.named_scope("moe_masks"):
-            topk_idx_kt = idx_kt_vmem[...]                   # [k, T]
-            topk_idx_tk = topk_idx_vmem[...]                 # [T, k]
-            topk_w_tk = topk_w_vmem[...]                     # [T, k]
-            ohs, ohg_ts = [], []
+            tables = (idx_kt_vmem[...],                      # [k, T]
+                      topk_idx_vmem[...],                    # [T, k]
+                      topk_w_vmem[...])                      # [T, k]
+            pieces = []
             for local_e_id in range(be):
-                oh, ohg_t = _dispatch_operators(
-                    topk_idx_kt=topk_idx_kt,
-                    topk_idx_tk=topk_idx_tk,
-                    topk_w_tk=topk_w_tk,
-                    expert_id=first_expert + local_e_id,
-                    num_tokens=num_tokens,
-                    capacity=capacity,
-                    act_dtype=act_dtype)
-                ohs.append(oh)
-                ohg_ts.append(ohg_t)
-            return (jnp.concatenate(ohs, axis=0),      # [be*C, T]
-                    jnp.concatenate(ohg_ts, axis=1))   # [T, be*C]
+                membership = dispatch_phase_a_valu(
+                    first_expert + local_e_id, tables)
+                slots = dispatch_phase_b_xlu(membership)
+                pieces.append(dispatch_phase_c_valu(membership, slots))
+            return pieces
 
-    def park_ohg(ohg_t_block, slot):
-        """STEP 2: park OHG_T [T, be*C] in ohg[slot] for the group
-        combine. Dynamic LEADING index is the v1 .at[sem_id] idiom; only
-        the tiled minor dims must stay static."""
+    def dispatch_phase_a_valu(expert_id, tables):
+        """STEP 1a (VALU): membership of ONE next-step expert - table
+        compares + reductions. tables = (idx_kt [k, T], topk_idx [T, k],
+        topk_w [T, k]), loaded once per step by the caller. Returns
+        (routed_mask [1, T], live_t [T, 1], gate_t [T, 1])."""
+        topk_idx_kt, topk_idx_tk, topk_w_tk = tables
+        with jax.named_scope("moe_masks"):
+            return _mask_membership(
+                topk_idx_kt=topk_idx_kt,
+                topk_idx_tk=topk_idx_tk,
+                topk_w_tk=topk_w_tk,
+                expert_id=expert_id)
+
+    def dispatch_phase_b_xlu(membership):
+        """STEP 1b (XLU): the lane prefix-sum + transpose for ONE
+        next-step expert. Returns (slot [1, T], slot_t [T, 1])."""
+        with jax.named_scope("moe_masks"):
+            return _mask_slots(membership[0], num_tokens)
+
+    def dispatch_phase_c_valu(membership, slots):
+        """STEP 1c (VALU): the one-hot operator selects for ONE
+        next-step expert. Returns (OH [C, T], OHG_T [T, C])."""
+        routed_mask, live_t, gate_t = membership
+        slot, slot_t = slots
+        with jax.named_scope("moe_masks"):
+            return _mask_operators(
+                routed_mask=routed_mask, live_t=live_t, gate_t=gate_t,
+                slot=slot, slot_t=slot_t, num_tokens=num_tokens,
+                capacity=capacity, act_dtype=act_dtype)
+
+    def zero_pieces():
+        """Ablate stub: the piece structure with zero operators."""
+        return [(jnp.zeros((capacity, num_tokens), act_dtype),
+                 jnp.zeros((num_tokens, capacity), act_dtype))] * be
+
+    def park_dispatch_mxu(pieces, x_slot, ohg_slot):
+        """STEP 1d (MXU + vst): finish a step's dispatch from its pieces.
+        gather: x[x_slot] [be*C, D] = concat(OH) [be*C, T] @ tokens_full
+        [T, D] - ONE matmul, the stationary-operand fills amortise across
+        the whole block. park: ohg[ohg_slot] [T, be*C] = concat(OHG_T)
+        for that step's group combine. Dynamic LEADING slot indices are
+        the v1 .at[sem_id] idiom; tiled minor dims stay static."""
+        if do_gather:
+            with jax.named_scope("moe_gather"):
+                oh_block = jnp.concatenate(
+                    [oh for oh, _ in pieces], axis=0)        # [be*C, T]
+                x_vmem.at[x_slot][...] = jnp.dot(
+                    oh_block, tokens_full_vmem[...],
+                    preferred_element_type=jnp.float32,
+                ).astype(act_dtype)                          # [be*C, D]
         with jax.named_scope("moe_ohg_park"):
-            ohg_vmem.at[slot][...] = ohg_t_block
+            ohg_vmem.at[ohg_slot][...] = jnp.concatenate(
+                [ohg_t for _, ohg_t in pieces], axis=1)      # [T, be*C]
 
-    def gather_rows(oh_block):
-        """STEP 3 (MXU): x [be*C, D] = OH [be*C, T] @ tokens_full [T, D]
-        - ONE matmul selects every routed row for the whole block, so
-        the stationary-operand fills amortise across all be experts."""
-        with jax.named_scope("moe_gather"):
-            x_vmem[...] = jnp.dot(
-                oh_block, tokens_full_vmem[...],
-                preferred_element_type=jnp.float32,
-            ).astype(act_dtype)                              # [be*C, D]
-
-    def expert_ffn(local_e_id: int, y_step):
-        """STEP 4 (MXU, per expert local_e_id of the block): rows
-        [local_e_id*C : (local_e_id+1)*C] of x through the FFN -
-        gmm1 [C, D] @ [D, 2I] -> SwiGLU -> [C, I], then
-        gmm2 [C, I] @ [I, D] -> the same rows of y_step [be*C, D].
-        bd1c chunks gmm1's contraction, bd2c chunks gmm2's output."""
-        row_lo = local_e_id * capacity
-        rows = slice(row_lo, row_lo + capacity)
+    def expert_gmm1_mxu(local_e_id: int, x_step):
+        """STEP 4a (MXU): gmm1 for ONE expert - rows
+        [local_e_id*C : +C] of x_step [be*C, D] @ w1 [D, 2I].
+        Returns gate_up [C, 2I] f32. bd1c chunks the contraction."""
+        rows = slice(local_e_id * capacity,
+                     (local_e_id + 1) * capacity)
         with jax.named_scope("moe_gmm1"):
             k_chunk = bd1c or hidden_size
             gate_up = jnp.zeros((capacity, w1_vmem.shape[-1]),
                                 jnp.float32)                 # [C, 2I]
             for k0 in range(0, hidden_size, k_chunk):
                 gate_up = gate_up + jnp.dot(
-                    x_vmem[rows, k0:k0 + k_chunk],           # [C, k_chunk]
+                    x_step[rows, k0:k0 + k_chunk],           # [C, k_chunk]
                     w1_vmem[local_e_id, k0:k0 + k_chunk, :], # [k_chunk, 2I]
                     preferred_element_type=jnp.float32)
-            inter_size = gate_up.shape[-1] // 2              # I
-            act_out = apply_act_fn(gate_up[:, :inter_size],
-                                   gate_up[:, inter_size:],
-                                   "silu").astype(act_dtype)  # [C, I]
+            return gate_up
 
+    def expert_act_eup(gate_up):
+        """STEP 4b (EUP): SwiGLU - silu(gate) * up, exp2 + reciprocal on
+        the transcendental unit. Own trace scope so its cost is visible
+        (gates the F sub-skew decision). gate_up [C, 2I] f32 ->
+        act_out [C, I] act dtype."""
+        with jax.named_scope("moe_act"):
+            inter_size = gate_up.shape[-1] // 2              # I
+            return apply_act_fn(gate_up[:, :inter_size],
+                                gate_up[:, inter_size:],
+                                "silu").astype(act_dtype)
+
+    def expert_gmm2_mxu(local_e_id: int, act_out, y_step):
+        """STEP 4c (MXU): gmm2 for ONE expert - act_out [C, I] @ w2
+        [I, D] -> rows [local_e_id*C : +C] of y_step [be*C, D].
+        bd2c chunks the output."""
+        rows = slice(local_e_id * capacity,
+                     (local_e_id + 1) * capacity)
         with jax.named_scope("moe_gmm2"):
             n_chunk = bd2c or hidden_size
             for n0 in range(0, hidden_size, n_chunk):
@@ -452,7 +497,8 @@ def _decode_moe_kernel(
 
     def combine_group():
         """STEP 5 (group end): acc [T, D] f32 += sum over the group's bg
-        slots of OHG_T(p) [T, be*C] @ y(p) [be*C, D].
+        steps of OHG_T(p) [T, be*C] @ y(p) [be*C, D], with each step's
+        OHG_T read from its ring slot (written one step ahead).
 
         Scatter-add as matmuls: OHG_T carries the gate weights, so
         this both routes rows home and applies the top-k weighting. Once
@@ -468,13 +514,15 @@ def _decode_moe_kernel(
         (the old, unpipelineable form)."""
         with jax.named_scope("moe_combine"):
             t_chunk = bcT or num_tokens
+            first_of_group = block_id - (bg - 1)
             for t0 in range(0, num_tokens, t_chunk):
                 rows = pl.ds(t0, t_chunk)
                 partial_sum = jnp.zeros((t_chunk, hidden_size), jnp.float32)
-                for slot_id in range(bg):
+                for p_idx in range(bg):
+                    ring_slot = lax.rem(first_of_group + p_idx, ohg_ring)
                     partial_sum = partial_sum + jnp.dot(
-                        ohg_vmem[slot_id, t0:t0 + t_chunk, :],
-                        y_vmem[slot_id],
+                        ohg_vmem[ring_slot, t0:t0 + t_chunk, :],
+                        y_vmem[p_idx],
                         preferred_element_type=jnp.float32)
                 acc_vmem[rows, :] = acc_vmem[rows, :] + partial_sum
 
@@ -502,19 +550,46 @@ def _decode_moe_kernel(
     def _settle_tokens():
         wait_ag_tokens()
 
-    # ---- this step's expert block: masks -> gather -> FFN -> combine ----
+    # ---- FILL stage (grid step 0 only): no predecessor built x[0] and
+    # ohg[0], so step 0 builds its own dispatch, unskewed. Runs AFTER
+    # _settle_tokens: the gather is the first tokens_full reader.
+    @pl.when(block_id == 0)
+    def _dispatch_first():
+        park_dispatch_mxu(
+            build_dispatch(0) if do_masks else zero_pieces(),
+            x_slot=0, ohg_slot=0)
+
+    # ---- steady state: F(k) interleaved with the skewed A/B/C dispatch
+    # of step k+1. ONE basic block - no pl.when: branches are scheduler
+    # barriers. Emission column j carries MXU (F) + VALU (A, C) + XLU (B)
+    # work from up to four distinct (step, expert) indices, so the
+    # in-order machine can issue mask work into the FFN's MXU stalls.
+    # (F stays contiguous per expert here; the F sub-skew - gmm1(j) /
+    # act(j-1) / gmm2(j-2) - is a separate change gated on the moe_act
+    # segment's measured size.)
     if do_masks:
-        oh_block, ohg_t_block = build_dispatch(block_id * be)
-    else:
-        oh_block = jnp.zeros((be * capacity, num_tokens), act_dtype)
-        ohg_t_block = jnp.zeros((num_tokens, be * capacity), act_dtype)
-    park_ohg(ohg_t_block, group_pos)
-
-    if do_gather:
-        gather_rows(oh_block)
-
-    for local_e_id in range(be if do_ffn else 0):
-        expert_ffn(local_e_id, y_vmem.at[group_pos])
+        with jax.named_scope("moe_masks"):
+            tables = (idx_kt_vmem[...],                      # [k, T]
+                      topk_idx_vmem[...],                    # [T, k]
+                      topk_w_vmem[...])                      # [T, k]
+    a_out, b_out, pieces = {}, {}, []
+    for j in range(be + 2):
+        if do_ffn and j < be:
+            gate_up = expert_gmm1_mxu(j, x_vmem.at[x_par])   # F(k, e_j)
+            act_out = expert_act_eup(gate_up)
+            expert_gmm2_mxu(j, act_out, y_vmem.at[group_pos])
+        if do_masks:
+            if j < be:
+                a_out[j] = dispatch_phase_a_valu(            # A(k+1, e_j)
+                    next_first_expert + j, tables)
+            if 1 <= j <= be:
+                b_out[j - 1] = dispatch_phase_b_xlu(         # B(k+1, e_j-1)
+                    a_out[j - 1])
+            if 2 <= j <= be + 1:
+                pieces.append(dispatch_phase_c_valu(         # C(k+1, e_j-2)
+                    a_out[j - 2], b_out[j - 2]))
+    park_dispatch_mxu(pieces if do_masks else zero_pieces(),
+                      x_slot=x_nxt, ohg_slot=ohg_next_slot)
 
     if do_combine:
         @pl.when(group_pos == bg - 1)
@@ -601,14 +676,15 @@ def fused_moe_decode_tp_fused(
         + num_tokens * hidden_size * act_bytes         # out window
         + num_tokens * hidden_size * act_bytes         # tokens_full
         + num_tokens * hidden_size * 4                 # acc (f32)
-        + (1 + bg) * be * capacity * hidden_size * act_bytes  # x + y slots
-        + bg * num_tokens * be * capacity * act_bytes  # ohg, per-slot ops
+        + (2 + bg) * be * capacity * hidden_size * act_bytes  # x(2) + y
+        + 2 * bg * num_tokens * be * capacity * act_bytes  # ohg ring
         + 3 * num_tokens * top_k * 4           # topk tables, both layouts
     )
     assert vmem_need <= vmem_limit_bytes, (
         f"static VMEM need {vmem_need / 2**20:.1f} MiB exceeds "
         f"{vmem_limit_bytes / 2**20:.0f} MiB "
-        f"(weight block {2 * weight_block / 2**20:.1f}, be={be}, bg={bg}; "
+        f"(weight block {2 * weight_block / 2**20:.1f}, be={be}, bg={bg} "
+        f"with 2x x-parity and 2*bg ohg-ring slots; "
         f"try a smaller be, bg or capacity)")
 
     grid_spec = pltpu.PrefetchScalarGridSpec(
@@ -632,12 +708,12 @@ def fused_moe_decode_tp_fused(
             pltpu.VMEM((num_tokens, top_k), jnp.int32),      # topk_idx
             pltpu.VMEM((num_tokens, top_k), jnp.float32),    # topk_w
             pltpu.VMEM((top_k, num_tokens), jnp.int32),      # idx_kt
-            pltpu.VMEM((be * capacity, hidden_size),
-                       tokens_local.dtype),                  # x
+            pltpu.VMEM((2, be * capacity, hidden_size),
+                       tokens_local.dtype),                  # x, parity
             pltpu.VMEM((bg, be * capacity, hidden_size),
                        tokens_local.dtype),                  # y
-            pltpu.VMEM((bg, num_tokens, be * capacity),
-                       tokens_local.dtype),                  # ohg
+            pltpu.VMEM((2 * bg, num_tokens, be * capacity),
+                       tokens_local.dtype),                  # ohg ring
         ],
     )
     kernel = functools.partial(
@@ -694,7 +770,11 @@ def fused_moe_decode_tp_serving(
 
     TRACE-time only: this Python stages the shard_map -> pallas_call ->
     psum_scatter chain into the compiled program; nothing here executes
-    on the host at serving time."""
+    on the host at serving time.
+
+    Keep renormalize_topk_logits=True where the model allows: it is also
+    a perf choice - the kernel then pays O(k) transcendentals per token
+    in the prologue instead of an O(E)-wide softmax."""
 
     # the fused entry's positional order IS the shard_map operand order,
     # so binding the static config is all it takes
