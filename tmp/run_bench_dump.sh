@@ -96,6 +96,10 @@ run python tmp/probe_flags.py
 run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
     --variants=v1 --iters=10 --warmup=3
 
+# Weight-stream bandwidth probe: single-flow vs split-descriptor manual
+# DMA vs the window pipeline's known 494 GB/s (from ablate=weights).
+run python tmp/probe_wbw.py
+
 # Ablate ladder: differential timing as the profiler substitute. Each
 # row stubs ONE stage (output wrong on purpose); (none - X) = stage X's
 # true wall-clock share. Discriminates VALU-paced vs DMA/overhead-paced:
