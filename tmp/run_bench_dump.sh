@@ -144,6 +144,14 @@ if [ "${RUN_TOPO:-0}" = "1" ]; then
   run python tmp/topo.py
 fi
 
+# Envelope decomposition: what the measurement itself costs with ZERO
+# kernel. dispatch_only = jit + shard_map + 8-dev launch + host sync;
+# envelope_rs adds the exit reduce-scatter. (rows - envelope) = true
+# in-kernel time; v1's 800us-profiler-vs-2682-bench gap says the
+# envelope is ~1.9ms on his number too.
+run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
+    --variants=env --iters=10 --warmup=3
+
 # Ablate ladder: differential timing as the profiler substitute. Each
 # row stubs ONE stage (output wrong on purpose); (none - X) = stage X's
 # true wall-clock share. ablate=weights = all compute stubbed, weight
@@ -152,7 +160,7 @@ fi
 # faster - the stream is NOT the floor). ablate=all additionally stubs
 # the weight fetch and dispatch park: the bare per-step floor. (weights - all)
 # = the stream's true in-situ cost.
-for a in none masks gather ffn combine weights all; do
+for a in none masks gather ffn combine weights routing ag all; do
   run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
       --variants=v02 --iters=10 --warmup=3 \
       $DUMP_FLAGS --ablate=$a

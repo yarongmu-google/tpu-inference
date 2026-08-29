@@ -116,23 +116,29 @@ def main() -> None:
     parser.add_argument("--bct", "--bcT", dest="bcT", type=int, default=0,
                         help="v2: combine accumulate chunk over T "
                         "(0 = one full-width expression, unpipelineable)")
+    parser.add_argument("--wbuf", type=int, default=2,
+                        help="v2: weight-stream lookahead buffers per "
+                        "tensor (wbuf-1 tiles in flight; be %% wbuf == 0)")
     parser.add_argument("--vmem-mb", dest="vmem_mb", type=int, default=64,
                         help="v2: VMEM budget handed to the kernel; larger "
                         "values admit larger be (fewer grid steps, less "
                         "accumulator traffic) until the backend rejects it")
     parser.add_argument("--ablate", type=str, default="none",
                         choices=["none", "masks", "gather", "ffn",
-                                 "combine", "weights", "all"],
+                                 "combine", "weights", "routing", "ag",
+                                 "all"],
                         help="v2: statically stub one stage (output is "
                         "WRONG); wall-clock differences vs none are the "
                         "per-stage costs - the profiler substitute. "
-                        "'all' stubs every stage INCLUDING the weight "
-                        "fetch ring: the bare per-step floor")
+                        "routing/ag stub the prologue's router and "
+                        "all-gather (fixed per-call cost); 'all' stubs "
+                        "every per-step stage AND the weight stream")
     parser.add_argument("--tune", action="store_true",
                         help="sweep v2 kernel params, print the winner "
                         "(ignores the one-off param flags above)")
     parser.add_argument("--variants", type=str, default="v1,v02",
-                        help="comma list from {v1, v02}")
+                        help="comma list from {v1, v02, env} - env "
+                        "adds harness-only and harness+RS rows")
     parser.add_argument("--iters", type=int, default=30)
     parser.add_argument("--warmup", type=int, default=5)
     parser.add_argument("--profile-dir", type=str, default="",
@@ -219,7 +225,8 @@ def main() -> None:
         def v2_runner(be: int, cap: int, bd1c: int | None,
                       bd2c: int | None,
                       bcT: int | None = None,
-                      bg: int = 1) -> Callable[[], jax.Array]:
+                      bg: int = 1,
+                      wbuf: int = 2) -> Callable[[], jax.Array]:
             def fn(tok: jax.Array, w1x: jax.Array, w2x: jax.Array,
                    r: jax.Array) -> jax.Array:
                 w1_flat = w1x.reshape(w1x.shape[0], w1x.shape[1], -1)
@@ -238,6 +245,7 @@ def main() -> None:
                     bd1c=bd1c,
                     bd2c=bd2c,
                     bcT=bcT,
+                    wbuf=wbuf,
                     vmem_limit_bytes=args.vmem_mb * 2**20,
                     ablate=args.ablate,
                     interpret=args.interpret,
@@ -260,7 +268,30 @@ def main() -> None:
             variants[v2_name] = v2_runner(
                 be=args.be, cap=args.capacity,
                 bd1c=args.bd1c or None, bd2c=args.bd2c or None,
-                bcT=args.bcT or None, bg=args.bg)
+                bcT=args.bcT or None, bg=args.bg, wbuf=args.wbuf)
+
+        if "env" in args.variants:
+            # envelope decomposition: what does the measurement itself
+            # cost with ZERO kernel? dispatch = jit + shard_map + 8-dev
+            # launch + host sync; envelope adds the exit reduce-scatter.
+            # (envelope - dispatch) = RS share; (ablate rows - envelope)
+            # = true in-kernel time.
+            def disp_fn(tok: jax.Array) -> jax.Array:
+                return tok
+
+            def env_fn(tok: jax.Array) -> jax.Array:
+                full = jnp.tile(tok, (p, 1))         # [T, D] partials
+                return jax.lax.psum_scatter(
+                    full, "x", scatter_dimension=0, tiled=True)
+
+            disp_jit = jax.jit(jax.shard_map(
+                disp_fn, mesh=mesh_v2, in_specs=P("x", None),
+                out_specs=P("x", None), check_vma=False))
+            env_jit = jax.jit(jax.shard_map(
+                env_fn, mesh=mesh_v2, in_specs=P("x", None),
+                out_specs=P("x", None), check_vma=False))
+            variants["v2_dispatch_only"] = lambda: disp_jit(tok_l)
+            variants["v2_envelope_rs"] = lambda: env_jit(tok_l)
 
     if args.tune:
         if "v1_ep_a2a" in variants:
@@ -305,14 +336,14 @@ def main() -> None:
 
             def measure(be: int, cap: int, b1: int | None,
                         b2: int | None, bt: int | None = None,
-                        bg: int = 1) -> None:
+                        bg: int = 1, wbuf: int = 2) -> None:
                 nonlocal best_us, best
                 tag = (f"  be={be} bg={bg} cap={cap} bd1c={b1 or 0} "
-                       f"bd2c={b2 or 0} bcT={bt or 0}")
+                       f"bd2c={b2 or 0} bcT={bt or 0} wbuf={wbuf}")
                 try:
                     us, _ = _time(
                         v2_runner(be=be, cap=cap, bd1c=b1, bd2c=b2, bcT=bt,
-                                  bg=bg),
+                                  bg=bg, wbuf=wbuf),
                         iters=args.iters, warmup=args.warmup)
                 except Exception as ex:  # e.g. VMEM oversubscription
                     msg = str(ex).splitlines()[0][:140] if str(ex) else ""
@@ -320,7 +351,7 @@ def main() -> None:
                     return
                 print(f"{tag}: {us:.1f} us")
                 if best_us is None or us < best_us:
-                    best_us, best = us, (be, cap, b1, b2, bt, bg)
+                    best_us, best = us, (be, cap, b1, b2, bt, bg, wbuf)
 
             print(f"\n[tune] {label} stage 1: be x bg x capacity")
             for be in be_cands:
@@ -330,19 +361,27 @@ def main() -> None:
             if best is None:
                 print(f"[tune] {label}: every stage-1 config failed")
                 continue
-            print(f"[tune] {label} stage 2: gmm1 D-chunk (bd1c)")
+            print(f"[tune] {label} stage 2: weight lookahead (wbuf)")
+            for wb in (2, 4, 8):
+                if best[0] % wb == 0:
+                    measure(best[0], best[1], best[2], best[3], best[4],
+                            best[5], wbuf=wb)
+            print(f"[tune] {label} stage 3: gmm1 D-chunk (bd1c)")
             for b1 in bd_cands:
-                measure(best[0], best[1], b1, best[3], best[4], best[5])
-            print(f"[tune] {label} stage 3: gmm2 D-chunk (bd2c)")
+                measure(best[0], best[1], b1, best[3], best[4], best[5],
+                        best[6])
+            print(f"[tune] {label} stage 4: gmm2 D-chunk (bd2c)")
             for b2 in bd_cands:
-                measure(best[0], best[1], best[2], b2, best[4], best[5])
-            print(f"[tune] {label} stage 4: combine T-chunk (bcT)")
+                measure(best[0], best[1], best[2], b2, best[4], best[5],
+                        best[6])
+            print(f"[tune] {label} stage 5: combine T-chunk (bcT)")
             for bt in [x for x in (8, 16, 32, 64, 128, 256) if x < t]:
-                measure(best[0], best[1], best[2], best[3], bt, best[5])
-            be, cap, b1, b2, bt, bg = best
+                measure(best[0], best[1], best[2], best[3], bt, best[5],
+                        best[6])
+            be, cap, b1, b2, bt, bg, wbuf = best
             print(f"[tune] {label} WINNER: --be={be} --bg={bg} "
                   f"--capacity={cap} --bd1c={b1 or 0} --bd2c={b2 or 0} "
-                  f"--bcT={bt or 0} -> {best_us:.1f} us")
+                  f"--bcT={bt or 0} --wbuf={wbuf} -> {best_us:.1f} us")
         return
 
     # sanity: variants agree (loose - bf16, and v2 drops capacity overflow)

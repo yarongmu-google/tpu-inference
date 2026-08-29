@@ -189,10 +189,11 @@ def _decode_moe_kernel(
     y_vmem,              # VMEM [bg, be*C, D] expert outputs for the group
     ohg_vmem,            # VMEM [2*bg, T, be*C] combine operators - a ring
                          # written one step AHEAD of its group's combine
-    b_w1_x2_vmem,          # VMEM [2, bd1c, 2I] - x2 buffer holding ONE
-                         # w1 tile per bw1_sem_id (v1's b_w1_x2_vmem)
-    b_w2_x2_vmem,          # VMEM [2, I, D] - x2 buffer, one w2 tile each
-    local_sems,          # DMA (2, 5): 2 x [b_gating_sem, b_w1_sem,
+    b_w1_x2_vmem,        # VMEM [wbuf, bd1c, 2I] - ONE w1 tile per
+                         # bw1_sem_id (v1's b_w1_x2_vmem; wbuf=2 is his
+                         # x2, wbuf=4 is his triple-buffer TODO +1)
+    b_w2_x2_vmem,        # VMEM [wbuf, I, D] - one w2 tile each
+    local_sems,          # DMA (wbuf, 5): wbuf x [b_gating_sem, b_w1_sem,
                          # b_w2_sem, b_tokens_sem, b_output_sem] (v1's
                          # layout; index 3 is his b_w3_sem - our w1
                          # fuses w1+w3, so it carries the token fetch)
@@ -213,6 +214,7 @@ def _decode_moe_kernel(
     bd1c: int | None = None,
     bd2c: int | None = None,
     bcT: int | None = None,
+    wbuf: int = 2,
     ablate: str = "none",
 ):
     # `ablate` stubs one stage at a time so wall-clock differences localise
@@ -235,6 +237,13 @@ def _decode_moe_kernel(
     do_combine = ablate not in ("combine", "weights", "all")
     do_weights = ablate != "all"
     do_park = ablate != "all"
+    # routing/ag rows decompose the FIXED per-call cost (the 2.8ms
+    # ablate=all floor is once-per-invocation, not per-step): routing
+    # stubs the router matmul + topk (masks then read garbage tables);
+    # ag stubs the barrier + remote sends + drains (peer rows stay
+    # uninitialized). Timing-only, like every other row.
+    do_routing = ablate != "routing"
+    do_ag = ablate != "ag"
 
     block_id = pl.program_id(0)          # which expert block (grid step)
     num_blocks = pl.num_programs(0)
@@ -292,17 +301,19 @@ def _decode_moe_kernel(
         pl.semaphore_wait(barrier_sem, num_devices)
 
     # ---- weight tile chain (v1 expert_ffn's rolling discipline) ----
-    # ONE tile in flight behind ONE tile computing, always: at each
-    # consumption position, START the next tile in the chain, WAIT only
-    # the current tile, compute on it, move on. The chain order is the
-    # consumption order - per expert: nd1 w1 row-chunks [bd1c, 2I]
-    # (contiguous rows), then the whole w2 [I, D] (1 tile) - threaded
-    # across experts AND across grid steps (the cross-expert seam v1's
-    # TODO wanted: the x2 buffers are indifferent to expert
-    # boundaries). Per-tensor x2 buffers a la v1's b_b_w1_x2_vmem;
-    # bw_sem_id is STATIC per position ((j*nd1 + c) % 2 for w1,
-    # j % 2 for w2) and stays consistent across steps because be is
-    # even (asserted by the entry).
+    # wbuf-1 tiles in flight behind one tile computing: at each
+    # consumption position, START the tile wbuf-1 positions ahead, WAIT
+    # only the current tile, compute on it, move on. wbuf=2 is v1's x2
+    # double buffer; wbuf=4 is his TODO's "triple buffering could
+    # resolve this" taken one further (measured: one expert of
+    # lookahead stalls - per-expert fetch ~1.5us > per-expert gmm1
+    # ~1us). w1 and w2 are independent self-chained streams on their
+    # own sems: w1 by tile index (nd1 row-chunks [bd1c, 2I] per
+    # expert), w2 by expert index (whole [I, D], 1 tile), both
+    # crossing expert AND grid-step boundaries (the cross-expert seam
+    # v1's TODO wanted). bw_sem_id is STATIC per position
+    # ((j*nd1 + c) % wbuf for w1, j % wbuf for w2) and stays
+    # consistent across steps because be % wbuf == 0 (asserted).
     w1_tile_rows = bd1c or hidden_size   # fetch granularity == bd1c
     nd1 = hidden_size // w1_tile_rows
 
@@ -341,29 +352,38 @@ def _decode_moe_kernel(
             sem=local_sems.at[bw2_sem_id, 2]).wait()
 
     def start_fetch_next_bw(local_e_id: int, c: int):
-        """v1's start_fetch_next_bw, w1 and w2 as CONCURRENT streams:
-        w1 tiles chain among themselves (position c starts tile c+1);
-        the LAST w1 tile position starts the NEXT expert's w1 head AND
-        its w2 together - both tensors stream side by side on their
-        own sems, so expert j+1's w2 is in flight under all of its
-        gmm1 and is waited only after the activation. The next-expert
-        start crosses into the next grid step's block at j == be-1
-        (fenced at the last step; OOB DMA reads are fatal -
-        bw_sem_id 0 is exact there since be*nd1 and be are even).
-        (Expert 0's two heads are started by the prologue.)"""
-        if c + 1 < nd1:
-            start_fetch_bw1(first_expert + local_e_id, c + 1,
-                           (local_e_id * nd1 + c + 1) % 2)
-        elif local_e_id + 1 < be:
-            start_fetch_bw1(first_expert + local_e_id + 1, 0,
-                           ((local_e_id + 1) * nd1) % 2)
-            start_fetch_bw2(first_expert + local_e_id + 1,
-                           (local_e_id + 1) % 2)
+        """v1's start_fetch_next_bw, w1 and w2 as CONCURRENT
+        self-chained streams with wbuf-1 positions of lookahead: w1
+        position q = j*nd1 + c starts w1 tile q + wbuf-1; each
+        expert's LAST w1 tile position also starts w2 for expert
+        j + wbuf-1 (so a w2 is in flight for wbuf-1 experts before
+        its gmm2 waits it). Starts that run past this step's block
+        cross into the next block's experts, fenced at the last step
+        (OOB DMA reads are fatal). Cross-step sem ids stay exact
+        because be % wbuf == 0. (The first wbuf-1 tiles of each
+        stream are started by the prologue.)"""
+        q_next = local_e_id * nd1 + c + (wbuf - 1)
+        if q_next < be * nd1:
+            start_fetch_bw1(first_expert + q_next // nd1, q_next % nd1,
+                            q_next % wbuf)
         else:
+            q_over = q_next - be * nd1
+
             @pl.when(block_id + 1 < num_blocks)
-            def _seam():
-                start_fetch_bw1(next_first_expert, 0, 0)
-                start_fetch_bw2(next_first_expert, 0)
+            def _seam_w1():
+                start_fetch_bw1(next_first_expert + q_over // nd1,
+                                q_over % nd1, q_over % wbuf)
+        if c == nd1 - 1:
+            e_next = local_e_id + (wbuf - 1)
+            if e_next < be:
+                start_fetch_bw2(first_expert + e_next, e_next % wbuf)
+            else:
+                e_over = e_next - be
+
+                @pl.when(block_id + 1 < num_blocks)
+                def _seam_w2():
+                    start_fetch_bw2(next_first_expert + e_over,
+                                    e_over % wbuf)
 
     # PROLOGUE 0 (DMA): the once-per-kernel inputs, one start/wait pair
     # per tensor (v1's start_fetch_b_gating / wait_fetch_b_gating
@@ -435,6 +455,8 @@ def _decode_moe_kernel(
             tokens_full_vmem[pl.ds(row0, num_local_tokens), :] = (
                 tokens_local_vmem[...])
 
+        if not do_ag:
+            return
         with jax.named_scope("moe_ag_remote"):
             for peer in range(num_devices):
                 @pl.when(peer != my_id)
@@ -591,7 +613,7 @@ def _decode_moe_kernel(
                                 jnp.float32)                 # [C, 2I]
             for c in range(nd1):
                 start_fetch_next_bw(local_e_id, c)
-                bw1_sem_id = (local_e_id * nd1 + c) % 2
+                bw1_sem_id = (local_e_id * nd1 + c) % wbuf
                 wait_fetch_bw1(bw1_sem_id)
                 k0 = c * w1_tile_rows
                 gate_up = gate_up + jnp.dot(
@@ -621,7 +643,7 @@ def _decode_moe_kernel(
         rows = slice(local_e_id * capacity,
                      (local_e_id + 1) * capacity)
         with jax.named_scope("moe_gmm2"):
-            bw2_sem_id = local_e_id % 2
+            bw2_sem_id = local_e_id % wbuf
             wait_fetch_bw2(bw2_sem_id)
             n_chunk = bd2c or hidden_size
             for n0 in range(0, hidden_size, n_chunk):
@@ -700,26 +722,33 @@ def _decode_moe_kernel(
         # routing finishes. Block 0's weight slab keeps streaming under
         # routing + AG.
         if do_weights:
-            # both streams' heads; the chain carries them from here
-            start_fetch_bw1(0, 0, 0)
-            start_fetch_bw2(0, 0)
+            # first wbuf-1 tiles of each stream; the chain carries
+            # them from here (lookahead depth = wbuf - 1)
+            for q in range(wbuf - 1):
+                start_fetch_bw1(q // nd1, q % nd1, q % wbuf)
+            for e in range(wbuf - 1):
+                start_fetch_bw2(e, e % wbuf)
         start_fetch_b_tokens()
         start_fetch_b_gating()
-        with jax.named_scope("moe_ag_barrier"):
-            sync_barrier()
+        if do_ag:
+            with jax.named_scope("moe_ag_barrier"):
+                sync_barrier()
         wait_fetch_b_tokens()
         wait_fetch_b_gating()
         my_id = lax.axis_index(axis_name)
         row0 = my_id * num_local_tokens
-        compute_routing(row0)
+        if do_routing:
+            compute_routing(row0)
         start_ag(my_id, row0)
         acc_vmem[...] = jnp.zeros_like(acc_vmem)   # data-free, pre-wait
-        wait_ag_meta()
+        if do_ag:
+            wait_ag_meta()
         init_dispatch_tables()
 
     @pl.when(block_id == 0)
     def _settle_tokens():
-        wait_ag_tokens()
+        if do_ag:
+            wait_ag_tokens()
 
     # ---- FILL stage (grid step 0 only): no predecessor built x[0] and
     # ohg[0], so step 0 builds its own dispatch, unskewed. Runs AFTER
@@ -756,8 +785,8 @@ def _decode_moe_kernel(
             # and the start/wait balance in one
             for c in range(nd1):
                 start_fetch_next_bw(j, c)
-                wait_fetch_bw1((j * nd1 + c) % 2)
-            wait_fetch_bw2(j % 2)
+                wait_fetch_bw1((j * nd1 + c) % wbuf)
+            wait_fetch_bw2(j % wbuf)
         if do_masks:
             if j < be:
                 a_out[j] = dispatch_phase_a_valu(            # A(k+1, e_j)
@@ -787,8 +816,8 @@ def _decode_moe_kernel(
     jax.jit,
     static_argnames=("router_fused", "mesh", "axis_name", "top_k",
                      "renormalize_topk_logits", "capacity", "be", "bg",
-                     "bd1c", "bd2c", "bcT", "vmem_limit_bytes", "ablate",
-                     "interpret"),
+                     "bd1c", "bd2c", "bcT", "wbuf", "vmem_limit_bytes",
+                     "ablate", "interpret"),
 )
 def fused_moe_decode_tp_fused(
     tokens_local: jax.Array,   # [T/P, D]
@@ -808,6 +837,7 @@ def fused_moe_decode_tp_fused(
     bd1c: int | None = None,
     bd2c: int | None = None,
     bcT: int | None = None,
+    wbuf: int = 2,
     vmem_limit_bytes: int = 64 * 1024 * 1024,
     ablate: str = "none",
     interpret=False,
@@ -845,9 +875,10 @@ def fused_moe_decode_tp_fused(
     num_blocks = num_experts // be
     # groups of bg grid steps share one dispatch/combine
     assert num_blocks % bg == 0, (num_blocks, bg)
-    # weight bw_sem_id is static per chain position and consistent
-    # across steps only when be is even
-    assert be % 2 == 0, be
+    # weight bw_sem_ids are static per chain position and stay exact
+    # across grid-step seams only when be % wbuf == 0; the prologue
+    # must fit its wbuf-1 head starts inside block 0
+    assert wbuf >= 2 and be % wbuf == 0, (be, wbuf)
 
     # Static VMEM budget: every scratch buffer is a compile-time
     # constant, so fail fast with an itemized sum instead of a backend
@@ -859,7 +890,7 @@ def fused_moe_decode_tp_fused(
     weight_block = ((bd1c or hidden_size) * inter2
                     + (inter2 // 2) * hidden_size) * act_bytes
     vmem_need = (
-        2 * weight_block                     # w1+w2 x2 buffers
+        wbuf * weight_block                  # w1+w2 tile buffers
         + num_local_tokens * hidden_size * act_bytes   # tokens_local copy
         + route_in.size * route_in.dtype.itemsize  # router_w/gating copy
         + num_tokens * hidden_size * act_bytes         # out staging
@@ -909,11 +940,11 @@ def fused_moe_decode_tp_fused(
                        tokens_local.dtype),                  # y
             pltpu.VMEM((2 * bg, num_tokens, be * capacity),
                        tokens_local.dtype),                  # ohg ring
-            pltpu.VMEM((2, bd1c or hidden_size, inter2),
+            pltpu.VMEM((wbuf, bd1c or hidden_size, inter2),
                        w1_local.dtype),                      # b_w1_x2_vmem
-            pltpu.VMEM((2, inter2 // 2, hidden_size),
+            pltpu.VMEM((wbuf, inter2 // 2, hidden_size),
                        w2_local.dtype),                      # b_w2_x2_vmem
-            pltpu.SemaphoreType.DMA((2, 5)),                 # local_sems
+            pltpu.SemaphoreType.DMA((wbuf, 5)),              # local_sems
             pltpu.VMEM(tokens_local.shape,
                        tokens_local.dtype),                  # tokens copy
             pltpu.VMEM(route_in.shape, route_in.dtype),      # route copy
@@ -936,6 +967,7 @@ def fused_moe_decode_tp_fused(
         bd1c=bd1c,
         bd2c=bd2c,
         bcT=bcT,
+        wbuf=wbuf,
         ablate=ablate,
     )
     out = pl.pallas_call(
