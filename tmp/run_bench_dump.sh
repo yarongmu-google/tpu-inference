@@ -127,6 +127,11 @@ run bash -c '
 # against the kernel's (ablate=weights - ablate=all).
 run python tmp/probe_wbw.py
 
+# Per-step floor probe: empty-body kernels with the decode kernel's
+# window structure vs pure-HBM refs, 128 vs 64 steps. Decomposes the
+# 21.7us/step ablate=all floor into window machinery vs grid overhead.
+run python tmp/probe_floor.py
+
 # ICI/D2D topology probe (all 56 device pairs, ppermute ping-pong latency +
 # 1 GiB unidirectional bandwidth). ~5-10 min and its numbers change only
 # with the machine, so it is opt-in: RUN_TOPO=1 ./tmp/run_bench_dump.sh
