@@ -1,73 +1,163 @@
 FLAGS: --be=8 --bg=4 --capacity=32 --bd2c=1024 --wbuf=4
 
 + git rev-parse --short HEAD
-035d631c63
+611b10c953
 + exit=0
 
 + python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=env --iters=10 --warmup=3
-WARNING 08-29 16:05:19 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 08-29 16:23:29 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-29 16:05:23 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-29 16:05:23 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-29 16:05:23 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-29 16:23:32 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-29 16:23:32 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-29 16:23:32 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
 max|v2_envelope_rs - v2_dispatch_only| = 1.256e+01
 
 variant                              min us  median us
-v2_dispatch_only                      354.4      381.2
-v2_envelope_rs                        407.6      420.6
+v2_dispatch_only                      409.5      453.4
+v2_envelope_rs                        438.8      472.5
 + exit=0
 
 + python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=10 --warmup=3 --be=8 --bg=4 --capacity=32 --bd2c=1024 --wbuf=4 --ablate=none
-WARNING 08-29 16:06:51 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 08-29 16:25:00 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-29 16:06:54 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-29 16:06:54 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-29 16:06:54 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-29 16:25:03 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-29 16:25:03 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-29 16:25:04 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
 
 variant                              min us  median us
-v2_tp_inkernel_ag                    3720.8     3784.3
+v2_tp_inkernel_ag                    3714.8     3741.8
 + exit=0
 
 + python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=10 --warmup=3 --be=8 --bg=4 --capacity=32 --bd2c=1024 --wbuf=4 --ablate=ag
-WARNING 08-29 16:08:25 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 08-29 16:26:35 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-29 16:08:29 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-29 16:08:29 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-29 16:08:29 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-29 16:26:38 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-29 16:26:38 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-29 16:26:38 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
 
 variant                              min us  median us
-v2_tp_inkernel_ag[ablate=ag]         3692.2     3715.0
+v2_tp_inkernel_ag[ablate=ag]         3682.6     3698.5
 + exit=0
 
 + python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=10 --warmup=3 --be=8 --bg=4 --capacity=32 --bd2c=1024 --wbuf=4 --ablate=all
-WARNING 08-29 16:10:00 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 08-29 16:28:11 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-29 16:10:04 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-29 16:10:04 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-29 16:10:04 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-29 16:28:14 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-29 16:28:14 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-29 16:28:14 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
 
 variant                              min us  median us
-v2_tp_inkernel_ag[ablate=all]        2771.8     2796.6
+v2_tp_inkernel_ag[ablate=all]        2754.0     2779.9
++ exit=0
+
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=10 --warmup=3 --experts=64 --be=8 --bg=4 --capacity=32 --bd2c=1024 --wbuf=4 --ablate=all
+WARNING 08-29 16:29:42 [tpu_platform.py:447] Pin memory is not supported on TPU.
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+INFO 08-29 16:29:46 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-29 16:29:46 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-29 16:29:46 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+devices=8  T=512 (64/chip)  D=4096  E=64  I=1024  k=10  dtype=bfloat16
+weights/device = 192 MiB
+
+variant                              min us  median us
+v2_tp_inkernel_ag[ablate=all]         775.1      808.2
++ exit=0
+
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=10 --warmup=3 --experts=128 --be=8 --bg=4 --capacity=32 --bd2c=1024 --wbuf=4 --ablate=all
+WARNING 08-29 16:30:05 [tpu_platform.py:447] Pin memory is not supported on TPU.
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+INFO 08-29 16:30:09 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-29 16:30:09 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-29 16:30:09 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+devices=8  T=512 (64/chip)  D=4096  E=128  I=1024  k=10  dtype=bfloat16
+weights/device = 384 MiB
+
+variant                              min us  median us
+v2_tp_inkernel_ag[ablate=all]        1073.9     1092.1
++ exit=0
+
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=10 --warmup=3 --experts=256 --be=8 --bg=4 --capacity=32 --bd2c=1024 --wbuf=4 --ablate=all
+WARNING 08-29 16:30:38 [tpu_platform.py:447] Pin memory is not supported on TPU.
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+INFO 08-29 16:30:42 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-29 16:30:42 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-29 16:30:42 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+devices=8  T=512 (64/chip)  D=4096  E=256  I=1024  k=10  dtype=bfloat16
+weights/device = 768 MiB
+
+variant                              min us  median us
+v2_tp_inkernel_ag[ablate=all]        1634.1     1658.7
++ exit=0
+
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=2 --warmup=1 --be=8 --bg=4 --capacity=32 --bd2c=1024 --wbuf=4 --ablate=all
+WARNING 08-29 16:31:30 [tpu_platform.py:447] Pin memory is not supported on TPU.
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+INFO 08-29 16:31:34 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-29 16:31:34 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-29 16:31:34 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
+weights/device = 1536 MiB
+
+variant                              min us  median us
+v2_tp_inkernel_ag[ablate=all]        2820.8     2838.6
++ exit=0
+
++ bash -c 
+  ls tmp/xla_dump | wc -l
+  grep -l "512,4096,256" tmp/xla_dump/*after_optimizations*.txt 2>/dev/null | head -3
+  for f in tmp/xla_dump/*after_optimizations*.txt; do
+    grep -nE "copy|bitcast-convert|transpose" "$f" | grep -E "512,4096|4096,256|128,4096" | head -20
+  done 2>/dev/null | head -40
+  tar -c tmp/xla_dump | xz -9 -T0 > tmp/xla_dump.tar.xz
+  ls -lh tmp/xla_dump.tar.xz
+  rm -rf tmp/xla_dump
+127
+tmp/xla_dump/module_0024.jit_fn.cl_963683785.after_optimizations-buffer-assignment-values.txt
+tmp/xla_dump/module_0024.jit_fn.cl_963683785.after_optimizations-buffer-assignment.txt
+tmp/xla_dump/module_0024.jit_fn.cl_963683785.after_optimizations-memory-usage-report.txt
+16: from instruction: %copy.1 = bf16[512,4096]{1,0:T(8,128)(2,1)} copy(%args_0_.1), backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"31037851"}],"used_scoped_memory_configs":[],"aliasing_operands":{"lists":[]}}
+3: value: <1 copy.1 @0> (size=4194304,offset=0): bf16[512,4096]{1,0:T(8,128)(2,1)}
+5:  ROOT %copy.1 = bf16[512,4096]{1,0:T(8,128)(2,1)} copy(%args_0_.1), backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"31037851"}],"used_scoped_memory_configs":[],"aliasing_operands":{"lists":[]}}
+5:  ROOT %copy.1 = bf16[512,4096]{1,0:T(8,128)(2,1)} copy(%args_0_.1), backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"31037851"}],"used_scoped_memory_configs":[],"aliasing_operands":{"lists":[]}}
+5:  ROOT %copy.1 = bf16[512,4096]{1,0:T(8,128)(2,1)} copy(%args_0_.1), backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"31037851"}],"used_scoped_memory_configs":[]}
+16: from instruction: %copy.1 = bf16[512,4096,2,1024]{3,2,1,0:T(2,128)(2,1)} copy(%args_0_.1), backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"31876711"}],"used_scoped_memory_configs":[],"aliasing_operands":{"lists":[]}}
+3: value: <1 copy.1 @0> (size=8589934592,offset=0): bf16[512,4096,2,1024]{3,2,1,0:T(2,128)(2,1)}
+5:  ROOT %copy.1 = bf16[512,4096,2,1024]{3,2,1,0:T(2,128)(2,1)} copy(%args_0_.1), backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"31876711"}],"used_scoped_memory_configs":[],"aliasing_operands":{"lists":[]}}
+5:  ROOT %copy.1 = bf16[512,4096,2,1024]{3,2,1,0:T(2,128)(2,1)} copy(%args_0_.1), backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"31876711"}],"used_scoped_memory_configs":[],"aliasing_operands":{"lists":[]}}
+5:  ROOT %copy.1 = bf16[512,4096,2,1024]{3,2,1,0:T(2,128)(2,1)} copy(%args_0_.1), backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"31876711"}],"used_scoped_memory_configs":[]}
+-rw-rw-r-- 1 ymu_google_com ymu_google_com 50K Aug 29 16:33 tmp/xla_dump.tar.xz
 + exit=0
 
 log: tmp/floor_decomp.log
