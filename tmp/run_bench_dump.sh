@@ -35,17 +35,22 @@ run git rev-parse --short HEAD
 run python -c "import jax; print(jax.__version__); print(jax.devices())"
 run python -c "import tpu_inference.kernels.fused_moe.v2.decode_kernel as m; print(m.__file__)"
 
+# 0) TUNE FIRST: every block size - be/bg/capacity AND the weight-fetch
+#    grain bd1c (+ bd2c, bcT) - is swept before anything else, and the
+#    dumps + ablate ladder below all run at the WINNER config, not at a
+#    stale hand-picked one. (64 MiB is the PHYSICAL VMEM capacity; the
+#    tuner's failed rows are the ones that exceed it.)
+run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
+    --variants=v02 --iters=10 --warmup=3 --tune
+TUNED_FLAGS=$(grep -o 'WINNER: .* ->' "$LOG" | tail -1 \
+              | sed 's/WINNER: //; s/ ->//')
+echo "TUNED_FLAGS: $TUNED_FLAGS"
+
 # 1) Mosaic pass dump: short run; the dumps include apply-vector-layout
 #    (post-relayout), which the local CPU-side dump cannot see.
-# DUMP_FLAGS = the config under test. The dump must capture the
-# HYPOTHESIS config, not the defaults - otherwise the histogram/timeline
-# never reflect the change being measured and cannot be compared against
-# tmp/baseline/. Override per run: DUMP_FLAGS="--bg=8" ./tmp/run_bench_dump.sh
-# bg=2 is the deepest group KNOWN to fit VMEM; the tuner still tries 4/8.
-# capacity=32 = act-tile-aligned rows (bf16 sublane tile is 16; the old
-# 24 came from the tuner's f32-quantum floor and misaligns every expert
-# row block) and makes be*capacity = 128, one whole lane tile for ohg.
-DUMP_FLAGS="${DUMP_FLAGS:---bg=2 --capacity=32}"
+# DUMP_FLAGS = the config under test: the TUNED WINNER unless overridden
+# for a specific hypothesis (DUMP_FLAGS="--bg=8 ..." ./tmp/run_bench_dump.sh).
+DUMP_FLAGS="${DUMP_FLAGS:-$TUNED_FLAGS}"
 echo "DUMP_FLAGS: $DUMP_FLAGS"
 
 mkdir -p tmp/mosaic_dump
@@ -82,7 +87,7 @@ run bash -c '
 mkdir -p tmp/mosaic_dump
 export LIBTPU_INIT_ARGS="--xla_mosaic_dump_to=tmp/mosaic_dump"
 run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
-    --variants=v02 --iters=3 --warmup=1 --bg=2 --capacity=32 --ablate=all
+    --variants=v02 --iters=3 --warmup=1 $DUMP_FLAGS --ablate=all
 unset LIBTPU_INIT_ARGS
 run bash -c '
   LAST=$(ls tmp/mosaic_dump/* 2>/dev/null | tail -1)
@@ -150,14 +155,9 @@ fi
 for a in none masks gather ffn combine weights all; do
   run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
       --variants=v02 --iters=10 --warmup=3 \
-      --bg=2 --capacity=32 --ablate=$a
+      $DUMP_FLAGS --ablate=$a
 done
 
-# (No scoped-VMEM flag: the backend reported "Used 78.61M of 63.94M vmem"
-#  with the ceiling raised - 64 MiB is the PHYSICAL capacity, so weight
-#  windows beyond be=4 are impossible and bg is the amortization lever.)
-run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
-    --variants=v02 --iters=10 --warmup=3 --tune
 
 # 3) per-stage spans: named_scope markers -> device trace. This is what
 #    says WHERE the time goes (prologue vs gather vs gmms vs combine).
