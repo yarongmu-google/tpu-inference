@@ -16,6 +16,10 @@ across parallel DMAs. All ~500 -> the target number itself is wrong for
 this part; rethink the floor.
 
     python tmp/probe_wbw.py            # on the TPU VM
+
+2026-08-30: run_pair now also runs the E4M3 pair (768 MiB) after the
+bf16 pair - the fp8-kernel floor constant. Expect ~equal GB/s, ~half
+the wall time (byte-denominated DMA law).
 """
 
 import functools
@@ -124,7 +128,7 @@ def _kernel_pair(w1_hbm, w2_hbm, o_ref, w1_bufs, w2_bufs, sems, *, be: int):
                       + w2_bufs[slot, 0, 0:8, 0:128].astype(jnp.float32))
 
 
-def build_pair(be: int):
+def build_pair(be: int, dtype=jnp.bfloat16):
     return pl.pallas_call(
         functools.partial(_kernel_pair, be=be),
         grid=(E // be,),
@@ -133,8 +137,8 @@ def build_pair(be: int):
         out_specs=pl.BlockSpec((8, 128), lambda i: (0, 0)),
         out_shape=jax.ShapeDtypeStruct((8, 128), jnp.float32),
         scratch_shapes=[
-            pltpu.VMEM((2, be, D, I2), jnp.bfloat16),        # w1 bufs
-            pltpu.VMEM((2, be, IP, D), jnp.bfloat16),        # w2 bufs
+            pltpu.VMEM((2, be, D, I2), dtype),               # w1 bufs
+            pltpu.VMEM((2, be, IP, D), dtype),               # w2 bufs
             pltpu.SemaphoreType.DMA((2, 2)),
         ],
         compiler_params=pltpu.CompilerParams(
@@ -160,12 +164,12 @@ def run_pair(w1_np: np.ndarray, w2_np: np.ndarray) -> None:
     normalization. If per-device bandwidth collapses only in the
     concurrent row, full-machine concurrency (shared HBM or fabric) is
     the derate, not the kernel."""
-    per_dev_bytes = (w1_np.size + w2_np.size) * 2
+    per_dev_bytes = w1_np.nbytes + w2_np.nbytes
     print(f"weight pair: {per_dev_bytes / 2**30:.2f} GiB per device "
-          f"(w1 {E}x{D}x{I2} + w2 {E}x{IP}x{D} bf16)")
+          f"(w1 {E}x{D}x{I2} + w2 {E}x{IP}x{D} {w1_np.dtype})")
 
     dev0 = jax.devices()[0]
-    fn1 = jax.jit(build_pair(be=4))
+    fn1 = jax.jit(build_pair(be=4, dtype=w1_np.dtype))
     try:
         t, med = _timed(fn1, jax.device_put(jnp.asarray(w1_np), dev0),
                         jax.device_put(jnp.asarray(w2_np), dev0))
@@ -189,7 +193,7 @@ def run_pair(w1_np: np.ndarray, w2_np: np.ndarray) -> None:
         (p * E, IP, D), jax.sharding.NamedSharding(mesh, P("x", None, None)),
         lambda idx: w2_np)
     fn8 = jax.jit(jax.shard_map(
-        build_pair(be=4), mesh=mesh,
+        build_pair(be=4, dtype=w1_np.dtype), mesh=mesh,
         in_specs=(P("x", None, None), P("x", None, None)),
         out_specs=P("x", None), check_vma=False))
     try:
@@ -230,6 +234,15 @@ def main() -> None:
               f"{total_bytes / t / 1e9:7.1f} GB/s   "
               f"(median {statistics.median(ts) * 1e6:.1f} us)")
     run_pair(w_np, w2_np)
+
+    # fp8 pair: the fp8-kernel floor constant (qwen35_fp8 proposal sec
+    # 8.1). The DMA access-size law is byte-denominated (512 B unit box
+    # is [packing, 128] ELEMENTS), so the fp8 pair (768 MiB) should run
+    # at the SAME GB/s as bf16 = ~half the time; a bandwidth deviation
+    # here IS a finding and re-prices the whole fp8 plan.
+    w1_f8 = np.asarray(w_np, jnp.float8_e4m3fn)   # values irrelevant
+    w2_f8 = np.asarray(w2_np, jnp.float8_e4m3fn)
+    run_pair(w1_f8, w2_f8)
 
 
 if __name__ == "__main__":
