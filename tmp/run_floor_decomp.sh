@@ -69,6 +69,24 @@ run bash -c '
   ls -lh tmp/xla_dump.tar.xz
   rm -rf tmp/xla_dump'
 
+# v1 XLA-copy audit: the same trap check that caught our 2.3ms - dump
+# v1's compiled program and grep for weight-shaped copy/reshape ops
+# between its parameters and the custom call. Clean output here + the
+# device-only profile below = the "did we really halve v1" verdict.
+rm -rf tmp/xla_dump_v1 && mkdir -p tmp/xla_dump_v1
+XLA_FLAGS="--xla_dump_to=tmp/xla_dump_v1 --xla_dump_hlo_as_text" \
+  run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
+      --variants=v1 --iters=2 --warmup=1
+run bash -c '
+  for f in tmp/xla_dump_v1/*jit*.after_optimizations.txt; do
+    echo "== $(basename $f)"
+    grep -nE "%(copy|reshape|transpose)" "$f" \
+      | grep -E "512,2,4096|2,4096,1024|512,1024,4096|4096,1024" | head -10
+  done
+  tar -c tmp/xla_dump_v1 | xz -9 -T0 > tmp/xla_dump_v1.tar.xz
+  ls -lh tmp/xla_dump_v1.tar.xz
+  rm -rf tmp/xla_dump_v1'
+
 # Device-only profile (the stacked_rpa recipe: python tracer off,
 # device tracer 2, parsed from TensorCore pids): kernel-only numbers
 # for v1 AND v2 in one shot - the measurement that would have caught
