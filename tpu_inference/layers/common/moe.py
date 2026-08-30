@@ -208,6 +208,19 @@ def moe_apply(
                     logger.warning_once(
                         "[MoE]: using the TP decode kernel "
                         "(capacity-based dispatch)")
+                    # Input contract log: any dtype/shape here that the
+                    # kernel must transform (reshape/transpose/cast of a
+                    # weight) would run INSIDE the serving jit - i.e.
+                    # per layer per step. If these lines ever show a
+                    # shape needing a transform, fix the weight layout
+                    # at load time, never in the traced path.
+                    logger.warning_once(
+                        "[MoE] TP decode kernel inputs: x %s %s, gating "
+                        "%s %s, w13 %s %s, w2 %s %s, axis=%s",
+                        x.shape, x.dtype, gating_output.shape,
+                        gating_output.dtype, weights.w13_weight.shape,
+                        weights.w13_weight.dtype, weights.w2_weight.shape,
+                        weights.w2_weight.dtype, tp_decode_axis)
                     t, _ = x.shape
                     e = weights.w13_weight.shape[0]
                     # 2x the average expert load, rounded up to 8 rows
