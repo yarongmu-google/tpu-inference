@@ -125,15 +125,17 @@ def _lane_cumsum(
 # EXECUTION UNIT so the driver can software-pipeline them across experts
 # (phase j of expert e is independent of phase j of expert e'):
 #   _mask_membership  VALU   compares + reductions over the top-k table
-#   _mask_slots       XLU    lane prefix-sum (rolls) + the one transpose
-#   _mask_operators   VALU   the iota==slot select storms
-# Composed in order they equal the old single-function builder:
-# OH[c, t] = 1 iff token t is the c-th token routed to expert e; OHG_T is
-# its transpose scaled by the gate weight, so the combine matmul carries
-# the weighting for free. The two orientations are reduced from the two
-# stored layouts of the top-k table - [k, T] for the lane-major operator,
-# [T, k] for the sublane-major one - so only `slot` (which needs a prefix
-# sum along T, cheap only with T on lanes) ever crosses.
+#   _mask_slots       XLU    lane prefix-sum (rolls) - NO transpose
+#   _mask_operators   VALU   the iota==slot select storms ([C, T] side)
+# OH[c, t] = 1 iff token t is the c-th token routed to expert e; OHG_T
+# is its transpose scaled by the gate weight, so the combine matmul
+# carries the weighting for free. `slot` needs a prefix sum along T,
+# cheap only with T on lanes, so it is built [1, T]; its [T, 1] dual -
+# needed only by the OHG build - crosses orientations via ONE batched
+# [be, T] -> [T, be] transpose per grid step at PARK time, never per
+# expert (the per-expert slot.T lowered as ~128 padded 128x128 vxpose
+# blocks each - measured as a 215 us exposure on the fp8 bring-up, and
+# wasted power under bf16 where the weight stream hid it).
 
 
 def _mask_membership(
@@ -159,61 +161,47 @@ def _mask_membership(
 
 
 def _mask_slots(routed_mask: jax.Array,
-                num_tokens: int,
-                transpose: bool = True) -> tuple[jax.Array, jax.Array]:
-    """XLU phase: exclusive prefix sum -> per-token slot, both layouts.
+                num_tokens: int) -> jax.Array:
+    """XLU phase: exclusive prefix sum -> per-token slot [1, T] i32.
 
-    Returns (slot [1, T] i32, slot_t [T, 1] i32 or None).
-
-    transpose=False (fp8 path): skip the per-expert [1,T] -> [T,1]
-    transpose. Measured (2026-08-30 fp8 run, moe_masks histogram): the
-    per-expert slot.T lowers as ~128 wasteful 128x128-block vxpose ops
-    (512 vxpose + 512 vperm chains PER STEP at be=4) and was the bulk
-    of the 215 us masks exposure once fp8 halved the MXU shadow that
-    used to hide it. The fp8 caller batches all be slot rows into ONE
-    [be, T] -> [T, be] transpose per step at park time instead."""
-    slot = _lane_cumsum(routed_mask, num_tokens) - routed_mask   # [1, T]
-    slot_t = slot.T if transpose else None                       # [T, 1]
-    return slot, slot_t
+    NO per-expert transpose here. Measured (2026-08-30 fp8 run,
+    moe_masks histogram): the old per-expert slot.T lowered as ~128
+    wasteful 128x128-block vxpose ops each (512 vxpose + 512 vperm
+    chains PER STEP at be=4) - the bulk of a 215 us masks exposure
+    once fp8 halved the MXU shadow that used to hide it (and pure
+    wasted power under bf16, where it hid). The park batches all be
+    slot rows into ONE [be, T] -> [T, be] transpose per step."""
+    return _lane_cumsum(routed_mask, num_tokens) - routed_mask   # [1, T]
 
 
 def _mask_operators(
     *,
     routed_mask: jax.Array,   # [1, T] i32 0/1
-    live_t: jax.Array,        # [T, 1] bool
-    gate_t: jax.Array,        # [T, 1] f32
     slot: jax.Array,          # [1, T] i32
-    slot_t: jax.Array,        # [T, 1] i32
     num_tokens: int,
     capacity: int,
     act_dtype,
     oh_dtype=None,            # fp8 path: e4m3 (0/1 is exact in e4m3)
     s_row: jax.Array | None = None,   # fp8 path: [1, T] f32 token scales
 ) -> tuple[jax.Array, ...]:
-    """VALU phase: expand slots into the one-hot operators.
+    """VALU phase: expand slots into the lane-major operators.
 
-    Returns (OH [C, T], OHG_T [T, C]) - plus, on the fp8 path,
-    s_x [C, 1] f32: the gathered per-slot token scales, produced by
-    summing the OHS operator over lanes (each row holds at most one
-    nonzero, so the sum IS the select - exact, no transpose needed)."""
+    Returns (OH [C, T],) - plus, on the fp8 path, s_x [C, 1] f32: the
+    gathered per-slot token scales, produced by summing the OHS
+    operator over lanes (each row holds at most one nonzero, so the
+    sum IS the select - exact, no transpose needed). The [T, C]
+    combine operator OHG_T is built at PARK time from the step's
+    batched slot transpose (see _mask_slots)."""
     live = routed_mask == 1
     slot_iota = lax.broadcasted_iota(jnp.int32, (capacity, num_tokens), 0)
     oh_hit = (slot_iota == slot) & live
     oh = jnp.where(oh_hit, 1.0, 0.0).astype(oh_dtype or act_dtype)
-    if s_row is not None:
-        ohs = jnp.where(
-            oh_hit, jnp.broadcast_to(s_row, (capacity, num_tokens)), 0.0)
-        s_x = jnp.sum(ohs, axis=1, keepdims=True)        # [C, 1] exact
-        if slot_t is None:
-            # fp8 path: OHG deferred to park, where all be slot rows
-            # get ONE batched transpose (see _mask_slots)
-            return oh, s_x
-    slot_iota_t = lax.broadcasted_iota(jnp.int32, (num_tokens, capacity), 1)
-    ohg_t = jnp.where((slot_iota_t == slot_t) & live_t,
-                      gate_t, 0.0).astype(act_dtype)
     if s_row is None:
-        return oh, ohg_t
-    return oh, ohg_t, s_x
+        return (oh,)
+    ohs = jnp.where(
+        oh_hit, jnp.broadcast_to(s_row, (capacity, num_tokens)), 0.0)
+    s_x = jnp.sum(ohs, axis=1, keepdims=True)            # [C, 1] exact
+    return oh, s_x
 
 
 def _decode_moe_kernel(
@@ -685,45 +673,39 @@ def _decode_moe_kernel(
                 expert_id=expert_id)
 
     def dispatch_phase_b_xlu(membership):
-        """STEP 1b (XLU): the lane prefix-sum (+ transpose, bf16 only)
-        for ONE next-step expert. fp8 skips the per-expert transpose -
-        the measured masks hog - in favor of park's batched one.
-        Returns (slot [1, T], slot_t [T, 1] or None)."""
+        """STEP 1b (XLU): the lane prefix-sum for ONE next-step expert
+        (NO per-expert transpose - the measured masks hog; park does
+        one batched [be, T].T per step). Returns slot [1, T]."""
         with jax.named_scope("moe_masks"):
-            return _mask_slots(membership[0], num_tokens,
-                               transpose=not fp8)
+            return _mask_slots(membership[0], num_tokens)
 
     def dispatch_phase_c_valu(membership, slots):
-        """STEP 1c (VALU): the one-hot operator selects for ONE
-        next-step expert. bf16: (OH [C, T], OHG_T [T, C]). fp8:
-        (OH e4m3, s_x [C, 1], gate_t, live_t, slot) - the OHG build is
-        DEFERRED to park so all be slot rows share one batched
-        transpose (the per-expert slot.T was the measured masks hog)."""
+        """STEP 1c (VALU): the lane-major operator selects for ONE
+        next-step expert. Returns (OH, s_x_or_None, gate_t, live_t,
+        slot); the [T, C] OHG build is DEFERRED to park so all be slot
+        rows share one batched transpose (the per-expert slot.T was
+        the measured masks hog - wasted power even where it hid)."""
         routed_mask, live_t, gate_t = membership
-        slot, slot_t = slots
+        slot = slots
         with jax.named_scope("moe_masks"):
             out = _mask_operators(
-                routed_mask=routed_mask, live_t=live_t, gate_t=gate_t,
-                slot=slot, slot_t=slot_t, num_tokens=num_tokens,
+                routed_mask=routed_mask, slot=slot,
+                num_tokens=num_tokens,
                 capacity=capacity, act_dtype=act_dtype,
                 oh_dtype=qdtype if fp8 else None,
                 s_row=s_row_vmem[...] if fp8 else None)
-            if fp8:
-                oh, s_x = out
-                return (oh, s_x, gate_t, live_t, slot)
-            return out
+            s_x = out[1] if fp8 else None
+            return (out[0], s_x, gate_t, live_t, slot)
 
     def zero_pieces():
         """Ablate stub: the piece structure with zero operators."""
-        if fp8:
-            return [(jnp.zeros((capacity, num_tokens), qdtype),
-                     jnp.zeros((capacity, 1), jnp.float32),
-                     jnp.zeros((num_tokens, 1), jnp.float32),   # gate_t
-                     jnp.zeros((num_tokens, 1), jnp.bool_),     # live_t
-                     jnp.zeros((1, num_tokens), jnp.int32))     # slot
-                    ] * be
-        return [(jnp.zeros((capacity, num_tokens), act_dtype),
-                 jnp.zeros((num_tokens, capacity), act_dtype))] * be
+        oh_dt = qdtype if fp8 else act_dtype
+        return [(jnp.zeros((capacity, num_tokens), oh_dt),
+                 jnp.zeros((capacity, 1), jnp.float32) if fp8 else None,
+                 jnp.zeros((num_tokens, 1), jnp.float32),   # gate_t
+                 jnp.zeros((num_tokens, 1), jnp.bool_),     # live_t
+                 jnp.zeros((1, num_tokens), jnp.int32))     # slot
+                ] * be
 
     def park_dispatch_mxu(pieces, x_slot, ohg_slot):
         """STEP 1d (MXU + vst): finish a step's dispatch from its pieces.
@@ -749,29 +731,27 @@ def _decode_moe_kernel(
             with jax.named_scope("moe_sx_park"):
                 s_x_vmem.at[x_slot][...] = jnp.concatenate(
                     [p[1] for p in pieces], axis=0)          # [be*C, 1]
-            with jax.named_scope("moe_ohg_park"):
-                # deferred OHG build: ONE batched [be, T] -> [T, be]
-                # transpose for the whole step (vs be per-expert
-                # [1,T] -> [T,1] transposes, each lowering as ~128
-                # padded 128x128 vxpose blocks - the measured 215 us
-                # masks exposure). Then the [T, C] one-hot selects,
-                # here at park where the gather matmul overlaps them.
-                slots_t = jnp.concatenate(
-                    [p[4] for p in pieces], axis=0).T        # [T, be]
-                slot_iota_t = lax.broadcasted_iota(
-                    jnp.int32, (num_tokens, capacity), 1)
-                ohg_cols = []
-                for j, p in enumerate(pieces):
-                    _, _, gate_t, live_t, _ = p
-                    ohg_cols.append(jnp.where(
-                        (slot_iota_t == slots_t[:, j:j + 1]) & live_t,
-                        gate_t, 0.0).astype(act_dtype))      # [T, C]
-                ohg_vmem.at[ohg_slot][...] = jnp.concatenate(
-                    ohg_cols, axis=1)                        # [T, be*C]
-            return
         with jax.named_scope("moe_ohg_park"):
+            # deferred OHG build (BOTH dtypes): ONE batched
+            # [be, T] -> [T, be] transpose for the whole step - the
+            # old per-expert [1,T] -> [T,1] transposes each lowered
+            # as ~128 padded 128x128 vxpose blocks (512 vxpose + 512
+            # vperm chains per step at be=4; the measured 215 us fp8
+            # masks exposure, and pure wasted power under bf16 where
+            # the stream hid it). Then the [T, C] one-hot selects,
+            # here at park where the gather matmul overlaps them.
+            slots_t = jnp.concatenate(
+                [p[4] for p in pieces], axis=0).T            # [T, be]
+            slot_iota_t = lax.broadcasted_iota(
+                jnp.int32, (num_tokens, capacity), 1)
+            ohg_cols = []
+            for j, p in enumerate(pieces):
+                _, _, gate_t, live_t, _ = p
+                ohg_cols.append(jnp.where(
+                    (slot_iota_t == slots_t[:, j:j + 1]) & live_t,
+                    gate_t, 0.0).astype(act_dtype))          # [T, C]
             ohg_vmem.at[ohg_slot][...] = jnp.concatenate(
-                [p[1] for p in pieces], axis=1)              # [T, be*C]
+                ohg_cols, axis=1)                            # [T, be*C]
 
     def expert_gmm1_mxu(local_e_id: int, x_step, w1_step):
         """STEP 4a (MXU): gmm1 for ONE expert - rows
