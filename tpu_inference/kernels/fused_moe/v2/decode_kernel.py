@@ -193,11 +193,25 @@ def _mask_operators(
     combine operator OHG_T is built at PARK time from the step's
     batched slot transpose (see _mask_slots)."""
     live = routed_mask == 1
-    slot_iota = lax.broadcasted_iota(jnp.int32, (capacity, num_tokens), 0)
-    oh_hit = (slot_iota == slot) & live
-    oh = jnp.where(oh_hit, 1.0, 0.0).astype(oh_dtype or act_dtype)
+    # 16-BIT STORM (2026-08-30): the operator builds are the kernel's
+    # VALU bound (E x 3 operators x C x T ~= 25M elements/dispatch,
+    # ~19k vreg-ops/step at 32-bit width - measured VALU ~560 us >
+    # MXU ~350). Slot values are bounded by T (< 32767), so the iota
+    # compares and the one-hot selects run at 16-bit lane width - half
+    # the vregs, half the VALU issue. The i32 -> i16 iota cast is
+    # constant-folded at trace time (no runtime op); the select
+    # produces act-dtype values directly, which for bf16 is the same
+    # rounding as the old select-f32-then-cast (bitwise-checked).
+    slot16 = slot.astype(jnp.int16)                      # values <= T
+    slot_iota = lax.broadcasted_iota(
+        jnp.int32, (capacity, num_tokens), 0).astype(jnp.int16)
+    oh_hit = (slot_iota == slot16) & live
+    one = jnp.asarray(1.0, act_dtype)
+    oh = jnp.where(oh_hit, one,
+                   jnp.zeros((), act_dtype)).astype(oh_dtype or act_dtype)
     if s_row is None:
         return (oh,)
+    # OHS stays f32-wide: the gathered scales feed the f32 dequant
     ohs = jnp.where(
         oh_hit, jnp.broadcast_to(s_row, (capacity, num_tokens)), 0.0)
     s_x = jnp.sum(ohs, axis=1, keepdims=True)            # [C, 1] exact
@@ -740,16 +754,25 @@ def _decode_moe_kernel(
             # masks exposure, and pure wasted power under bf16 where
             # the stream hid it). Then the [T, C] one-hot selects,
             # here at park where the gather matmul overlaps them.
+            # 16-bit storm here too (see _mask_operators): i16 slots
+            # make the batched transpose a b16 XLU op (TBL 101 vs 127,
+            # half the vregs) and the compares half-width; the gate is
+            # rounded to act dtype BEFORE the select - identical
+            # per-element result to select-f32-then-cast (bitwise-
+            # checked), at half the select width for bf16.
             slots_t = jnp.concatenate(
-                [p[4] for p in pieces], axis=0).T            # [T, be]
+                [p[4] for p in pieces],
+                axis=0).astype(jnp.int16).T                  # [T, be]
             slot_iota_t = lax.broadcasted_iota(
-                jnp.int32, (num_tokens, capacity), 1)
+                jnp.int32, (num_tokens, capacity), 1).astype(jnp.int16)
             ohg_cols = []
             for j, p in enumerate(pieces):
                 _, _, gate_t, live_t, _ = p
+                gate16 = gate_t.astype(act_dtype)            # [T, 1]
                 ohg_cols.append(jnp.where(
                     (slot_iota_t == slots_t[:, j:j + 1]) & live_t,
-                    gate_t, 0.0).astype(act_dtype))          # [T, C]
+                    jnp.broadcast_to(gate16, (num_tokens, capacity)),
+                    jnp.zeros((), act_dtype)))               # [T, C]
             ohg_vmem.at[ohg_slot][...] = jnp.concatenate(
                 ohg_cols, axis=1)                            # [T, be*C]
 
