@@ -8,6 +8,10 @@
 #   ablate=all - (harness + RS)   = prologue + whatever remains
 #
 # Runs at the last tuned winner; override: FLAGS="..." ./tmp/run_floor_decomp.sh
+#
+# Run in the PROF env (jax 0.11.1 + matched libtpu) so the profiler
+# works: conda activate prof && ./tmp/run_floor_decomp.sh
+# Afterwards everything in tmp/ is push-sized: git add tmp/ && commit.
 
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -91,16 +95,26 @@ run bash -c '
 # device tracer 2, parsed from TensorCore pids): kernel-only numbers
 # for v1 AND v2 in one shot - the measurement that would have caught
 # the XLA reshape copy on day one.
+# pre-clean: start_trace appends session dirs, and the parser globs
+# EVERY *.trace.json.gz under the dir - stale traces from an earlier
+# (or crashed) run would pollute the parse
+rm -rf tmp/moe_xprof tmp/moe_xprof.tar.xz
 run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
     --variants=v1,v02 --iters=5 --warmup=2 $FLAGS \
     --profile-dir=tmp/moe_xprof
 # raw traces are too big to push - the parsed TC/SC rows above are the
-# result; the tarball keeps the evidence pushable
+# result; the tarball keeps the evidence pushable. (If the profiler
+# segfaulted - wrong jax/libtpu pairing, run in the prof env - there is
+# no dir and this block just says so.)
 run bash -c '
-  du -sh tmp/moe_xprof
-  tar -c tmp/moe_xprof | xz -9 -T0 > tmp/moe_xprof.tar.xz
-  ls -lh tmp/moe_xprof.tar.xz
-  rm -rf tmp/moe_xprof'
+  if [ -d tmp/moe_xprof ]; then
+    du -sh tmp/moe_xprof
+    tar -c tmp/moe_xprof | xz -9 -T0 > tmp/moe_xprof.tar.xz
+    ls -lh tmp/moe_xprof.tar.xz
+    rm -rf tmp/moe_xprof
+  else
+    echo "no traces captured (profiler unavailable in this env?)"
+  fi'
 
 echo
 echo "log: tmp/floor_decomp.log"
