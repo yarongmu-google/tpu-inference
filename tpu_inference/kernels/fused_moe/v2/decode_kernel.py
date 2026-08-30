@@ -393,8 +393,20 @@ def _decode_moe_kernel(
                 top_k=top_k,
                 renormalize_topk_logits=renormalize_topk_logits,
             )                                # -> [T/P, k] each
-            topk_idx_vmem[pl.ds(row0, num_local_tokens), :] = topk_indices
-            topk_w_vmem[pl.ds(row0, num_local_tokens), :] = topk_weights
+            if padded_rows != num_local_tokens:
+                # pad the block to the sublane tile so the store (and
+                # later the sends) are tile-aligned SIZES. Phantom rows
+                # carry idx=-1 (matches no expert - they self-mask out
+                # of dispatch) and weight 0.
+                gap = padded_rows - num_local_tokens
+                topk_indices = jnp.concatenate(
+                    [topk_indices,
+                     jnp.full((gap, top_k), -1, jnp.int32)], axis=0)
+                topk_weights = jnp.concatenate(
+                    [topk_weights,
+                     jnp.zeros((gap, top_k), jnp.float32)], axis=0)
+            topk_idx_vmem[pl.ds(row0, padded_rows), :] = topk_indices
+            topk_w_vmem[pl.ds(row0, padded_rows), :] = topk_weights
 
     def start_ag(my_id, row0):
         """PROLOGUE 2 (grid step 0): start the VMEM-direct all-gather.
@@ -408,8 +420,12 @@ def _decode_moe_kernel(
         kernel (the barrier is hoisted into the prologue so it overlaps
         the input fetches)."""
         with jax.named_scope("moe_ag_local"):
-            tokens_full_vmem[pl.ds(row0, num_local_tokens), :] = (
-                tokens_local_vmem[...])
+            block = tokens_local_vmem[...]
+            if padded_rows != num_local_tokens:
+                block = jnp.pad(
+                    block,
+                    ((0, padded_rows - num_local_tokens), (0, 0)))
+            tokens_full_vmem[pl.ds(row0, padded_rows), :] = block
 
         if not do_ag:
             return
@@ -417,9 +433,9 @@ def _decode_moe_kernel(
             for peer in range(num_devices):
                 @pl.when(peer != my_id)
                 def _send(peer=peer):
-                    rows = pl.ds(row0, num_local_tokens)
+                    rows = pl.ds(row0, padded_rows)
                     for src, dst, rsem in (
-                        (tokens_local_vmem,
+                        (tokens_full_vmem.at[rows, :],
                          tokens_full_vmem.at[rows, :],
                          recv_sem_tokens),
                         (topk_idx_vmem.at[rows, :],
@@ -450,7 +466,7 @@ def _decode_moe_kernel(
             # ONLY the top-k arrivals: everything up to the gather matmul
             # depends on these and not on the (much larger) token shards,
             # which keep streaming underneath.
-            inbound_rows = pl.ds(0, inbound * num_local_tokens)
+            inbound_rows = pl.ds(0, inbound * padded_rows)
             for buf in (topk_idx_vmem, topk_w_vmem):
                 pltpu.make_async_copy(
                     buf.at[inbound_rows, :],
@@ -462,7 +478,7 @@ def _decode_moe_kernel(
         [T, D] token arrivals + send-side hygiene. The first reader of
         tokens_full is the gather matmul."""
         with jax.named_scope("moe_ag_drain_tokens"):
-            inbound_rows = pl.ds(0, inbound * num_local_tokens)
+            inbound_rows = pl.ds(0, inbound * padded_rows)
             for sem in (recv_sem_tokens, send_sem):
                 pltpu.make_async_copy(
                     tokens_full_vmem.at[inbound_rows, :],
@@ -506,27 +522,16 @@ def _decode_moe_kernel(
         """STEP 1a (VALU): membership of ONE next-step expert - table
         compares + reductions. tables = (idx_kt [k, T], topk_idx [T, k],
         topk_w [T, k]), loaded once per step by the caller. Phantom pad
-        rows (row blocks padded to the sublane tile) are masked out of
-        membership here - their topk entries are uninitialized VMEM.
-        Returns (routed_mask [1, T], live_t [T, 1], gate_t [T, 1])."""
+        rows self-mask: routing stores idx=-1 there, which matches no
+        expert id. Returns (routed_mask [1, T], live_t [T, 1],
+        gate_t [T, 1])."""
         topk_idx_kt, topk_idx_tk, topk_w_tk = tables
         with jax.named_scope("moe_masks"):
-            routed_mask, live_t, gate_t = _mask_membership(
+            return _mask_membership(
                 topk_idx_kt=topk_idx_kt,
                 topk_idx_tk=topk_idx_tk,
                 topk_w_tk=topk_w_tk,
                 expert_id=expert_id)
-            if padded_rows != num_local_tokens:
-                lane_pos = lax.broadcasted_iota(
-                    jnp.int32, (1, num_tokens), 1)
-                routed_mask = routed_mask * (
-                    lax.rem(lane_pos, padded_rows)
-                    < num_local_tokens).astype(routed_mask.dtype)
-                sub_pos = lax.broadcasted_iota(
-                    jnp.int32, (num_tokens, 1), 0)
-                live_t = live_t & (
-                    lax.rem(sub_pos, padded_rows) < num_local_tokens)
-            return routed_mask, live_t, gate_t
 
     def dispatch_phase_b_xlu(membership):
         """STEP 1b (XLU): the lane prefix-sum + transpose for ONE
@@ -690,16 +695,6 @@ def _decode_moe_kernel(
             start_fetch_bw(0, 0)   # block 0 streams under routing + AG
         start_fetch_b_tokens()
         start_fetch_b_gating()
-        if padded_rows != num_local_tokens:
-            # phantom pad rows must be REAL zeros: the gather multiplies
-            # them by zeroed mask columns and 0 * garbage(NaN/inf) = NaN.
-            # Static per-device slices; placed BEFORE the barrier so no
-            # peer's remote write can race the zeroing.
-            gap = padded_rows - num_local_tokens
-            for peer in range(num_devices):
-                pad0 = peer * padded_rows + num_local_tokens
-                tokens_full_vmem[pl.ds(pad0, gap), :] = jnp.zeros(
-                    (gap, hidden_size), tokens_full_vmem.dtype)
         if do_ag:
             with jax.named_scope("moe_ag_barrier"):
                 sync_barrier()
