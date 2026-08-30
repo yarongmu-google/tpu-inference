@@ -581,17 +581,21 @@ def _decode_moe_kernel(
                                 "silu").astype(act_dtype)
 
     def expert_gmm2_mxu(local_e_id: int, act_out, y_step, w2_step):
-        """STEP 4c (MXU): gmm2 for ONE expert - act_out [C, I] @
-        w2_step [be, I, D] (this step's slab) -> rows
-        [local_e_id*C : +C] of y_step [be*C, D]. bd2c chunks the
+        """STEP 4c (MXU): gmm2 for ONE expert - act_out [C, Ipad]
+        sliced to w2's UNPADDED rows @ w2_step [be, I, D] (this step's
+        slab) -> rows [local_e_id*C : +C] of y_step [be*C, D]. Serving
+        pads w13's per-shard intermediate to 128 but leaves w2 at the
+        real I (30B: 96 vs 128); the pad columns of act_out are exact
+        zeros (silu(0)*0), so the slice drops nothing. bd2c chunks the
         output."""
         rows = slice(local_e_id * capacity,
                      (local_e_id + 1) * capacity)
+        i_w2 = w2_hbm.shape[1]           # unpadded per-shard I
         with jax.named_scope("moe_gmm2"):
             n_chunk = bd2c or hidden_size
             for n0 in range(0, hidden_size, n_chunk):
                 y_step[rows, n0:n0 + n_chunk] = jnp.dot(
-                    act_out,
+                    act_out[:, :i_w2],
                     w2_step[local_e_id, :, n0:n0 + n_chunk], # [I, n_chunk]
                     preferred_element_type=jnp.float32).astype(act_dtype)
 
@@ -802,6 +806,10 @@ def fused_moe_decode_tp_fused(
     num_local_tokens, hidden_size = tokens_local.shape       # T/P, D
     num_tokens = num_local_tokens * num_devices              # T
     num_experts, _, inter2 = w1_local.shape                  # E, _, 2*I/P
+    # serving pads w13's per-shard I to 128 but not w2's (30B: w13 gives
+    # 128/projection, w2 has 96 rows) - w2 buffers size from w2 itself
+    i_w2 = w2_local.shape[1]
+    assert i_w2 <= inter2 // 2, (w2_local.shape, inter2)
     assert num_experts % be == 0, (num_experts, be)
     assert (hidden_size % (bd1c or hidden_size) == 0
             and hidden_size % (bd2c or hidden_size) == 0), (
@@ -825,7 +833,7 @@ def fused_moe_decode_tp_fused(
     # (waited once per step, keeping the emission one basic block).
     act_bytes = jnp.dtype(tokens_local.dtype).itemsize
     weight_block = be * (hidden_size * inter2
-                         + (inter2 // 2) * hidden_size) * act_bytes
+                         + i_w2 * hidden_size) * act_bytes
     vmem_need = (
         2 * weight_block                     # w1+w2 slab x2 buffers
         + num_local_tokens * hidden_size * act_bytes   # tokens_local copy
@@ -879,7 +887,7 @@ def fused_moe_decode_tp_fused(
                        tokens_local.dtype),                  # ohg ring
             pltpu.VMEM((2, be, hidden_size, inter2),
                        w1_local.dtype),                      # b_w1_x2_vmem
-            pltpu.VMEM((2, be, inter2 // 2, hidden_size),
+            pltpu.VMEM((2, be, i_w2, hidden_size),
                        w2_local.dtype),                      # b_w2_x2_vmem
             pltpu.SemaphoreType.DMA((2, 5)),                 # local_sems
             pltpu.VMEM(tokens_local.shape,
