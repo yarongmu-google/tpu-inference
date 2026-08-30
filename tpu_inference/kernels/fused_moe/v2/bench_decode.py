@@ -243,6 +243,11 @@ def main() -> None:
     parser.add_argument("--tune", action="store_true",
                         help="sweep v2 kernel params, print the winner "
                         "(ignores the one-off param flags above)")
+    parser.add_argument("--wdtype", type=str, default="bf16",
+                        choices=("bf16", "fp8"),
+                        help="v2 weight dtype: fp8 = e4m3 weights + "
+                        "per-channel f32 scales (the w8a8 path; v1 "
+                        "stays bf16 - its fp8 wiring is separate)")
     parser.add_argument("--variants", type=str, default="v1,v02",
                         help="comma list from {v1, v02, env} - env "
                         "adds harness-only and harness+RS rows")
@@ -336,16 +341,50 @@ def main() -> None:
         # linearly in E (775/1074/1634/2821us at E=64/128/256/512).
         w1_perm = w1.reshape(e, d, 2, p, i // p).transpose(
             0, 1, 3, 2, 4).reshape(e, d, 2 * i)
-        w1_l = jax.device_put(
-            w1_perm, NamedSharding(mesh_v2, P(None, None, "x")))
-        w2_l = jax.device_put(w2, NamedSharding(mesh_v2, P(None, "x", None)))
+        fp8 = args.wdtype == "fp8"
+        if fp8:
+            # per-channel e4m3 (the serving default requant contract):
+            # one f32 scale per output channel over the whole
+            # contraction; clip at 448 (e4m3 has no Inf)
+            def _qpc(w, axis):
+                wf = w.astype(jnp.float32)
+                amax = jnp.max(jnp.abs(wf), axis=axis, keepdims=True)
+                s = amax / 448.0
+                q = jnp.clip(wf / s, -448.0, 448.0).astype(
+                    jnp.float8_e4m3fn)
+                return q, s.astype(jnp.float32)
+
+            w1_q, w1_s = _qpc(w1_perm, 1)         # [E,1,2I] scale
+            w2_q, w2_s = _qpc(w2, 1)              # [E,1,D] scale
+            w1_l = jax.device_put(
+                w1_q, NamedSharding(mesh_v2, P(None, None, "x")))
+            w2_l = jax.device_put(
+                w2_q, NamedSharding(mesh_v2, P(None, "x", None)))
+            w1s_l = jax.device_put(
+                w1_s.reshape(e, -1),
+                NamedSharding(mesh_v2, P(None, "x")))     # [E, 2I]
+            w2s_l = jax.device_put(
+                w2_s.reshape(e, -1),
+                NamedSharding(mesh_v2, P(None, None)))    # [E, D] repl
+            per_dev_weight_bytes = (w1_l.nbytes + w2_l.nbytes) // p
+            print(f"v2 weights: e4m3 + per-channel scales -> "
+                  f"{per_dev_weight_bytes / 2**20:.0f} MiB/device "
+                  f"(+ scales "
+                  f"{(w1s_l.nbytes // p + w2s_l.nbytes) / 2**20:.1f})")
+        else:
+            w1s_l = w2s_l = None
+            w1_l = jax.device_put(
+                w1_perm, NamedSharding(mesh_v2, P(None, None, "x")))
+            w2_l = jax.device_put(
+                w2, NamedSharding(mesh_v2, P(None, "x", None)))
 
         def v2_runner(be: int, cap: int, bd1c: int | None,
                       bd2c: int | None,
                       bcT: int | None = None,
                       bg: int = 1) -> Callable[[], jax.Array]:
             def fn(tok: jax.Array, w1x: jax.Array, w2x: jax.Array,
-                   r: jax.Array) -> jax.Array:
+                   r: jax.Array, s1: jax.Array | None = None,
+                   s2: jax.Array | None = None) -> jax.Array:
                 # no reshape here: anything reshaping a weight inside
                 # the jitted fn re-materializes the tensor per call
                 return fused_moe_decode_tp_fused(
@@ -353,6 +392,8 @@ def main() -> None:
                     r,            # router weight, replicated
                     w1x,
                     w2x,
+                    w1_scale=s1,
+                    w2_scale=s2,
                     mesh=mesh_v2,
                     axis_name="x",
                     top_k=k,
@@ -368,18 +409,25 @@ def main() -> None:
                     interpret=args.interpret,
                 )
 
+            in_specs = [P("x", None), P(None, None, "x"),
+                        P(None, "x", None), P(None, None)]
+            operands = [tok_l, w1_l, w2_l, w_r]
+            if fp8:
+                in_specs += [P(None, "x"), P(None, None)]
+                operands += [w1s_l, w2s_l]
             jitted = jax.jit(jax.shard_map(
                 fn, mesh=mesh_v2,
-                in_specs=(P("x", None), P(None, None, "x"),
-                          P(None, "x", None), P(None, None)),
+                in_specs=tuple(in_specs),
                 out_specs=P("x", None), check_vma=False))
-            return lambda: jitted(tok_l, w1_l, w2_l, w_r)
+            return lambda: jitted(*operands)
 
         if "v02" in args.variants:
             # An ablated row stubs one stage (output wrong on purpose) - tag
             # the name so a differential-timing row is never mistaken for a
             # real measurement of the kernel.
             v2_name = "v2_tp_inkernel_ag"
+            if fp8:
+                v2_name += "[fp8]"
             if args.ablate != "none":
                 v2_name += f"[ablate={args.ablate}]"
             variants[v2_name] = v2_runner(
