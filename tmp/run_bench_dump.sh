@@ -40,8 +40,20 @@ run python -c "import tpu_inference.kernels.fused_moe.v2.decode_kernel as m; pri
 #    dumps + ablate ladder below all run at the WINNER config, not at a
 #    stale hand-picked one. (64 MiB is the PHYSICAL VMEM capacity; the
 #    tuner's failed rows are the ones that exceed it.)
+# --profile-dir arms the tuner's finalist re-rank: sweeps order by
+# wall-min, then the top-5 are re-measured on DEVICE time (sub-us
+# stable vs ~40us envelope jitter). Needs the prof env (jax>=0.11 with
+# matched libtpu) - on the old pair the re-rank is skipped, not fatal.
+rm -rf tmp/moe_xprof_tune tmp/moe_xprof_tune.tar.xz
 run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
-    --variants=v02 --iters=10 --warmup=3 --tune
+    --variants=v02 --iters=10 --warmup=3 --tune \
+    --profile-dir=tmp/moe_xprof_tune
+run bash -c '
+  if [ -d tmp/moe_xprof_tune ]; then
+    tar -c tmp/moe_xprof_tune | xz -9 -T0 > tmp/moe_xprof_tune.tar.xz
+    ls -lh tmp/moe_xprof_tune.tar.xz
+    rm -rf tmp/moe_xprof_tune
+  fi'
 TUNED_FLAGS=$(grep -o 'WINNER: .* ->' "$LOG" | tail -1 \
               | sed 's/WINNER: //; s/ ->//')
 echo "TUNED_FLAGS: $TUNED_FLAGS"

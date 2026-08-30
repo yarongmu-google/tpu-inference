@@ -418,6 +418,7 @@ def main() -> None:
             best_us: float | None = None
             best: tuple[int, int, int | None, int | None,
                         int | None, int] | None = None
+            measured: list = []   # (wall_us, config) for finalist re-rank
 
             def measure(be: int, cap: int, b1: int | None,
                         b2: int | None, bt: int | None = None,
@@ -435,6 +436,7 @@ def main() -> None:
                     print(f"{tag}: failed ({type(ex).__name__}: {msg})")
                     return
                 print(f"{tag}: {us:.1f} us")
+                measured.append((us, (be, cap, b1, b2, bt, bg)))
                 if best_us is None or us < best_us:
                     best_us, best = us, (be, cap, b1, b2, bt, bg)
 
@@ -455,6 +457,57 @@ def main() -> None:
             print(f"[tune] {label} stage 4: combine T-chunk (bcT)")
             for bt in [x for x in (8, 16, 32, 64, 128, 256) if x < t]:
                 measure(best[0], best[1], best[2], best[3], bt, best[5])
+            # Finalist re-rank on DEVICE time: wall-min orders configs
+            # correctly only down to the envelope jitter (~30-40us),
+            # while stage sweeps often differ by 10-30us; device-only
+            # profiling is sub-us stable. Profile the top finalists and
+            # let the device median pick. Requires the matched
+            # jax/libtpu pair (the prof env); on the mismatched pair
+            # the profiler SEGFAULTS, so gate on the known-good jax.
+            finalists = []
+            seen = set()
+            for us, cfg in sorted(measured):
+                if cfg not in seen:
+                    finalists.append((us, cfg))
+                    seen.add(cfg)
+                if len(finalists) == 5:
+                    break
+            jax_ok = tuple(
+                int(x) for x in jax.__version__.split(".")[:2]) >= (0, 11)
+            if args.profile_dir and jax_ok and len(finalists) > 1:
+                print(f"[tune] {label} finalist re-rank on device time:")
+                best_dev = None
+                for us, cfg in finalists:
+                    fbe, fcap, fb1, fb2, fbt, fbg = cfg
+                    trace_dir = (f"{args.profile_dir}/tune_be{fbe}_bg{fbg}"
+                                 f"_c{fcap}_{fb1 or 0}_{fb2 or 0}_{fbt or 0}")
+                    fn = v2_runner(be=fbe, cap=fcap, bd1c=fb1, bd2c=fb2,
+                                   bcT=fbt, bg=fbg)
+                    jax.block_until_ready(fn())
+                    opts = jax.profiler.ProfileOptions()
+                    opts.python_tracer_level = 0
+                    opts.device_tracer_level = 2
+                    jax.profiler.start_trace(trace_dir,
+                                             profiler_options=opts)
+                    for _ in range(5):
+                        jax.block_until_ready(fn())
+                    jax.profiler.stop_trace()
+                    rows = _device_kernel_ms_per_dispatch_from_trace(
+                        trace_dir, jit_name_prefix="jit_")
+                    if not rows:
+                        print(f"  {cfg}: no trace rows")
+                        continue
+                    tc = sorted(r[0] for r in rows)
+                    dev_us = tc[len(tc) // 2] * 1e3
+                    print(f"  {cfg}: wall {us:.1f} -> device {dev_us:.1f} us")
+                    if best_dev is None or dev_us < best_dev[0]:
+                        best_dev = (dev_us, cfg)
+                if best_dev is not None:
+                    best_us, best = best_dev
+            elif args.profile_dir and not jax_ok:
+                print("[tune] finalist re-rank skipped: profiler needs "
+                      f"jax>=0.11 (matched libtpu); this env has "
+                      f"{jax.__version__}")
             be, cap, b1, b2, bt, bg = best
             print(f"[tune] {label} WINNER: --be={be} --bg={bg} "
                   f"--capacity={cap} --bd1c={b1 or 0} --bd2c={b2 or 0} "
