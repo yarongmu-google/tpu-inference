@@ -1,6 +1,6 @@
 
 + git rev-parse --short HEAD
-a69baa1a53
+a0924662a3
 + exit=0
 
 + python -c import jax; print(jax.__version__); print(jax.devices())
@@ -9,101 +9,97 @@ a69baa1a53
 + exit=0
 
 + python -c import tpu_inference.kernels.fused_moe.v2.decode_kernel as m; print(m.__file__)
-WARNING 08-29 15:25:37 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 08-29 18:37:51 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-29 15:25:41 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-29 15:25:41 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-29 15:25:41 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-29 18:37:54 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-29 18:37:54 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-29 18:37:54 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 /home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py
 + exit=0
 
 + python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=10 --warmup=3 --tune
-WARNING 08-29 15:25:43 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 08-29 18:37:56 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-29 15:25:47 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-29 15:25:47 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-29 15:25:47 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-29 18:38:00 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-29 18:38:00 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-29 18:38:00 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
 [tune] max expert load = 21 -> capacity >= 32
 
 [tune] v02 stage 1: be x bg x capacity
-  be=2 bg=1 cap=32 bd1c=0 bd2c=0 bcT=0 wbuf=2: 4306.6 us
-  be=2 bg=1 cap=64 bd1c=0 bd2c=0 bcT=0 wbuf=2: 4287.8 us
-  be=2 bg=2 cap=32 bd1c=0 bd2c=0 bcT=0 wbuf=2: 4250.8 us
-  be=2 bg=2 cap=64 bd1c=0 bd2c=0 bcT=0 wbuf=2: 4086.6 us
-  be=2 bg=4 cap=32 bd1c=0 bd2c=0 bcT=0 wbuf=2: 4244.5 us
-  be=2 bg=4 cap=64 bd1c=0 bd2c=0 bcT=0 wbuf=2: 4070.0 us
-  be=2 bg=8 cap=32 bd1c=0 bd2c=0 bcT=0 wbuf=2: 4275.0 us
-  be=2 bg=8 cap=64 bd1c=0 bd2c=0 bcT=0 wbuf=2: 4089.2 us
-  be=4 bg=1 cap=32 bd1c=0 bd2c=0 bcT=0 wbuf=2: 4066.0 us
-  be=4 bg=1 cap=64 bd1c=0 bd2c=0 bcT=0 wbuf=2: 4054.0 us
-  be=4 bg=2 cap=32 bd1c=0 bd2c=0 bcT=0 wbuf=2: 3917.7 us
-  be=4 bg=2 cap=64 bd1c=0 bd2c=0 bcT=0 wbuf=2: 3946.2 us
-  be=4 bg=4 cap=32 bd1c=0 bd2c=0 bcT=0 wbuf=2: 3929.1 us
-  be=4 bg=4 cap=64 bd1c=0 bd2c=0 bcT=0 wbuf=2: 3934.9 us
-  be=4 bg=8 cap=32 bd1c=0 bd2c=0 bcT=0 wbuf=2: 3949.3 us
-  be=4 bg=8 cap=64 bd1c=0 bd2c=0 bcT=0 wbuf=2: 3905.0 us
-  be=8 bg=1 cap=32 bd1c=0 bd2c=0 bcT=0 wbuf=2: 3847.5 us
-  be=8 bg=1 cap=64 bd1c=0 bd2c=0 bcT=0 wbuf=2: 4015.9 us
-  be=8 bg=2 cap=32 bd1c=0 bd2c=0 bcT=0 wbuf=2: 3801.8 us
-  be=8 bg=2 cap=64 bd1c=0 bd2c=0 bcT=0 wbuf=2: 3922.1 us
-  be=8 bg=4 cap=32 bd1c=0 bd2c=0 bcT=0 wbuf=2: 3725.4 us
-  be=8 bg=4 cap=64 bd1c=0 bd2c=0 bcT=0 wbuf=2: failed (JaxRuntimeError: RESOURCE_EXHAUSTED: XLA:TPU compile permanent error. Ran out of memory in memory space vmem. Used 66.24M of 63.94M vmem. Exceeded vmem capac)
-  be=8 bg=8 cap=32 bd1c=0 bd2c=0 bcT=0 wbuf=2: 3749.2 us
-  be=8 bg=8 cap=64 bd1c=0 bd2c=0 bcT=0 wbuf=2: failed (AssertionError: static VMEM need 74.6 MiB exceeds 64 MiB (weight block 6.0, be=8, bg=8 with 2x x-parity and 2*bg ohg-ring slots; try a smaller be, bg or cap)
-[tune] v02 stage 2: weight lookahead (wbuf)
-  be=8 bg=4 cap=32 bd1c=0 bd2c=0 bcT=0 wbuf=2: 3767.3 us
-  be=8 bg=4 cap=32 bd1c=0 bd2c=0 bcT=0 wbuf=4: 3720.8 us
-  be=8 bg=4 cap=32 bd1c=0 bd2c=0 bcT=0 wbuf=8: failed (JaxRuntimeError: RESOURCE_EXHAUSTED: XLA:TPU compile permanent error. Ran out of memory in memory space vmem. Used 70.37M of 63.94M vmem. Exceeded vmem capac)
-[tune] v02 stage 3: gmm1 D-chunk (bd1c)
-  be=8 bg=4 cap=32 bd1c=128 bd2c=0 bcT=0 wbuf=4: 7045.9 us
-  be=8 bg=4 cap=32 bd1c=256 bd2c=0 bcT=0 wbuf=4: 5385.5 us
-  be=8 bg=4 cap=32 bd1c=512 bd2c=0 bcT=0 wbuf=4: 4525.1 us
-  be=8 bg=4 cap=32 bd1c=1024 bd2c=0 bcT=0 wbuf=4: 4057.1 us
-  be=8 bg=4 cap=32 bd1c=2048 bd2c=0 bcT=0 wbuf=4: 3740.2 us
-[tune] v02 stage 4: gmm2 D-chunk (bd2c)
-  be=8 bg=4 cap=32 bd1c=0 bd2c=128 bcT=0 wbuf=4: 3738.1 us
-  be=8 bg=4 cap=32 bd1c=0 bd2c=256 bcT=0 wbuf=4: 3725.8 us
-  be=8 bg=4 cap=32 bd1c=0 bd2c=512 bcT=0 wbuf=4: 3695.4 us
-  be=8 bg=4 cap=32 bd1c=0 bd2c=1024 bcT=0 wbuf=4: 3689.1 us
-  be=8 bg=4 cap=32 bd1c=0 bd2c=2048 bcT=0 wbuf=4: 3707.2 us
-[tune] v02 stage 5: combine T-chunk (bcT)
-  be=8 bg=4 cap=32 bd1c=0 bd2c=1024 bcT=8 wbuf=4: 4988.9 us
-  be=8 bg=4 cap=32 bd1c=0 bd2c=1024 bcT=16 wbuf=4: 4500.9 us
-  be=8 bg=4 cap=32 bd1c=0 bd2c=1024 bcT=32 wbuf=4: 3991.2 us
-  be=8 bg=4 cap=32 bd1c=0 bd2c=1024 bcT=64 wbuf=4: 3802.8 us
-  be=8 bg=4 cap=32 bd1c=0 bd2c=1024 bcT=128 wbuf=4: 3689.7 us
-  be=8 bg=4 cap=32 bd1c=0 bd2c=1024 bcT=256 wbuf=4: 3736.3 us
-[tune] v02 WINNER: --be=8 --bg=4 --capacity=32 --bd1c=0 --bd2c=1024 --bcT=0 --wbuf=4 -> 3689.1 us
+  be=2 bg=1 cap=32 bd1c=0 bd2c=0 bcT=0: 1526.1 us
+  be=2 bg=1 cap=64 bd1c=0 bd2c=0 bcT=0: 1513.4 us
+  be=2 bg=2 cap=32 bd1c=0 bd2c=0 bcT=0: 1469.9 us
+  be=2 bg=2 cap=64 bd1c=0 bd2c=0 bcT=0: 1534.3 us
+  be=2 bg=4 cap=32 bd1c=0 bd2c=0 bcT=0: 1491.0 us
+  be=2 bg=4 cap=64 bd1c=0 bd2c=0 bcT=0: 1499.3 us
+  be=2 bg=8 cap=32 bd1c=0 bd2c=0 bcT=0: 1481.1 us
+  be=2 bg=8 cap=64 bd1c=0 bd2c=0 bcT=0: 1477.9 us
+  be=4 bg=1 cap=32 bd1c=0 bd2c=0 bcT=0: 1237.3 us
+  be=4 bg=1 cap=64 bd1c=0 bd2c=0 bcT=0: 1320.1 us
+  be=4 bg=2 cap=32 bd1c=0 bd2c=0 bcT=0: 1210.2 us
+  be=4 bg=2 cap=64 bd1c=0 bd2c=0 bcT=0: 1301.3 us
+  be=4 bg=4 cap=32 bd1c=0 bd2c=0 bcT=0: 1195.0 us
+  be=4 bg=4 cap=64 bd1c=0 bd2c=0 bcT=0: failed (JaxRuntimeError: RESOURCE_EXHAUSTED: XLA:TPU compile permanent error. Ran out of memory in memory space vmem. Used 70.33M of 63.94M vmem. Exceeded vmem capac)
+  be=4 bg=8 cap=32 bd1c=0 bd2c=0 bcT=0: failed (JaxRuntimeError: RESOURCE_EXHAUSTED: XLA:TPU compile permanent error. Ran out of memory in memory space vmem. Used 68.32M of 63.94M vmem. Exceeded vmem capac)
+  be=4 bg=8 cap=64 bd1c=0 bd2c=0 bcT=0: failed (AssertionError: static VMEM need 68.6 MiB exceeds 64 MiB (weight block 24.0, be=4, bg=8 with 2x x-parity and 2*bg ohg-ring slots; try a smaller be, bg or ca)
+  be=8 bg=1 cap=32 bd1c=0 bd2c=0 bcT=0: failed (AssertionError: static VMEM need 75.1 MiB exceeds 64 MiB (weight block 48.0, be=8, bg=1 with 2x x-parity and 2*bg ohg-ring slots; try a smaller be, bg or ca)
+  be=8 bg=1 cap=64 bd1c=0 bd2c=0 bcT=0: failed (AssertionError: static VMEM need 81.6 MiB exceeds 64 MiB (weight block 48.0, be=8, bg=1 with 2x x-parity and 2*bg ohg-ring slots; try a smaller be, bg or ca)
+  be=8 bg=2 cap=32 bd1c=0 bd2c=0 bcT=0: failed (AssertionError: static VMEM need 77.6 MiB exceeds 64 MiB (weight block 48.0, be=8, bg=2 with 2x x-parity and 2*bg ohg-ring slots; try a smaller be, bg or ca)
+  be=8 bg=2 cap=64 bd1c=0 bd2c=0 bcT=0: failed (AssertionError: static VMEM need 86.6 MiB exceeds 64 MiB (weight block 48.0, be=8, bg=2 with 2x x-parity and 2*bg ohg-ring slots; try a smaller be, bg or ca)
+  be=8 bg=4 cap=32 bd1c=0 bd2c=0 bcT=0: failed (AssertionError: static VMEM need 82.6 MiB exceeds 64 MiB (weight block 48.0, be=8, bg=4 with 2x x-parity and 2*bg ohg-ring slots; try a smaller be, bg or ca)
+  be=8 bg=4 cap=64 bd1c=0 bd2c=0 bcT=0: failed (AssertionError: static VMEM need 96.6 MiB exceeds 64 MiB (weight block 48.0, be=8, bg=4 with 2x x-parity and 2*bg ohg-ring slots; try a smaller be, bg or ca)
+  be=8 bg=8 cap=32 bd1c=0 bd2c=0 bcT=0: failed (AssertionError: static VMEM need 92.6 MiB exceeds 64 MiB (weight block 48.0, be=8, bg=8 with 2x x-parity and 2*bg ohg-ring slots; try a smaller be, bg or ca)
+  be=8 bg=8 cap=64 bd1c=0 bd2c=0 bcT=0: failed (AssertionError: static VMEM need 116.6 MiB exceeds 64 MiB (weight block 48.0, be=8, bg=8 with 2x x-parity and 2*bg ohg-ring slots; try a smaller be, bg or c)
+[tune] v02 stage 2: gmm1 D-chunk (bd1c)
+  be=4 bg=4 cap=32 bd1c=128 bd2c=0 bcT=0: 1193.9 us
+  be=4 bg=4 cap=32 bd1c=256 bd2c=0 bcT=0: 1200.6 us
+  be=4 bg=4 cap=32 bd1c=512 bd2c=0 bcT=0: 1206.1 us
+  be=4 bg=4 cap=32 bd1c=1024 bd2c=0 bcT=0: 1216.9 us
+  be=4 bg=4 cap=32 bd1c=2048 bd2c=0 bcT=0: 1221.4 us
+[tune] v02 stage 3: gmm2 D-chunk (bd2c)
+  be=4 bg=4 cap=32 bd1c=128 bd2c=128 bcT=0: 1159.1 us
+  be=4 bg=4 cap=32 bd1c=128 bd2c=256 bcT=0: 1203.2 us
+  be=4 bg=4 cap=32 bd1c=128 bd2c=512 bcT=0: 1219.2 us
+  be=4 bg=4 cap=32 bd1c=128 bd2c=1024 bcT=0: 1204.0 us
+  be=4 bg=4 cap=32 bd1c=128 bd2c=2048 bcT=0: 1218.0 us
+[tune] v02 stage 4: combine T-chunk (bcT)
+  be=4 bg=4 cap=32 bd1c=128 bd2c=128 bcT=8: 2155.6 us
+  be=4 bg=4 cap=32 bd1c=128 bd2c=128 bcT=16: 1566.3 us
+  be=4 bg=4 cap=32 bd1c=128 bd2c=128 bcT=32: 1298.8 us
+  be=4 bg=4 cap=32 bd1c=128 bd2c=128 bcT=64: 1166.6 us
+  be=4 bg=4 cap=32 bd1c=128 bd2c=128 bcT=128: 1146.5 us
+  be=4 bg=4 cap=32 bd1c=128 bd2c=128 bcT=256: 1142.0 us
+[tune] v02 WINNER: --be=4 --bg=4 --capacity=32 --bd1c=128 --bd2c=128 --bcT=256 -> 1142.0 us
 + exit=0
-TUNED_FLAGS: --be=8 --bg=4 --capacity=32 --bd1c=0 --bd2c=1024 --bcT=0 --wbuf=4
-DUMP_FLAGS: --be=8 --bg=4 --capacity=32 --bd1c=0 --bd2c=1024 --bcT=0 --wbuf=4
+TUNED_FLAGS: --be=4 --bg=4 --capacity=32 --bd1c=128 --bd2c=128 --bcT=256
+DUMP_FLAGS: --be=4 --bg=4 --capacity=32 --bd1c=128 --bd2c=128 --bcT=256
 
-+ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=3 --warmup=1 --be=8 --bg=4 --capacity=32 --bd1c=0 --bd2c=1024 --bcT=0 --wbuf=4
-WARNING 08-29 15:29:51 [tpu_platform.py:447] Pin memory is not supported on TPU.
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=3 --warmup=1 --be=4 --bg=4 --capacity=32 --bd1c=128 --bd2c=128 --bcT=256
+WARNING 08-29 18:40:59 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-29 15:29:54 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-29 15:29:54 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-29 15:29:54 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-29 18:41:02 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-29 18:41:02 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-29 18:41:02 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
 
 variant                              min us  median us
-v2_tp_inkernel_ag                    3771.7     3787.6
+v2_tp_inkernel_ag                    1223.1     1332.7
 + exit=0
 
 + du -sh tmp/mosaic_dump
-128M	tmp/mosaic_dump
+107M	tmp/mosaic_dump
 + exit=0
 
 + bash -c 
@@ -120,66 +116,66 @@ v2_tp_inkernel_ag                    3771.7     3787.6
   rm -rf tmp/mosaic_dump
 + ls tmp/mosaic_dump
 + tail -30
-1788042678339580621-0002-mosaic-dump-anonymous-post-mosaic-module-infer-memref-layout.txt
-1788042678339580621-0003-mosaic-dump-anonymous-post-simplify.txt
-1788042678339580621-0004-mosaic-dump-anonymous-post-mosaic-module-canonicalize-operations.txt
-1788042678339580621-0005-mosaic-dump-anonymous-post-mosaic-module-canonicalize-memory-space.txt
-1788042678339580621-0006-mosaic-dump-anonymous-post-tiling-propagation.txt
-1788042678339580621-0007-mosaic-dump-anonymous-post-mosaic-module-logical-to-physical-device-id.txt
-1788042678339580621-0008-mosaic-dump-anonymous-post-mosaic-module-lower-to-mlo.txt
-1788042678339580621-0009-mosaic-dump-anonymous-sparsecore-module-post-emit-scs.txt
-1788042678341196728-0000-mosaic-dump-anonymous-post-deserialization.txt
-1788042678459464776-0000-mosaic-dump-anonymous-post-deserialization.txt
-1788042678474563883-0000-mosaic-dump-anonymous-post-deserialization.txt
-1788042678484040807-0001-mosaic-dump-anonymous-original.txt
-1788042678484040807-0002-mosaic-dump-anonymous-post-infer-memref-layout.txt
-1788042678484040807-0003-mosaic-dump-anonymous-post-infer-memref-layout-simplify.txt
-1788042678484040807-0004-mosaic-dump-anonymous-post-infer-memref-space.txt
-1788042678484040807-0005-mosaic-dump-anonymous-post-canonicalize-memory-space.txt
-1788042678484040807-0006-mosaic-dump-anonymous-post-canonicalize-operations.txt
-1788042678484040807-0007-mosaic-dump-anonymous-post-pre-canon-optimization.txt
-1788042678484040807-0008-mosaic-dump-anonymous-post-canonicalize-mosaic.txt
-1788042678484040807-0009-mosaic-dump-anonymous-post-canonicalize-mosaic-simplify.txt
-1788042678484040807-0010-mosaic-dump-anonymous-post-tiling-propagation.txt
-1788042678484040807-0011-mosaic-dump-anonymous-post-infer-vector-layout.txt
-1788042678484040807-0012-mosaic-dump-anonymous-post-relayout-insertion.txt
-1788042678484040807-0013-mosaic-dump-anonymous-post-apply-vector-layout.txt
-1788042678484040807-0014-mosaic-dump-anonymous-post-apply-vector-layout-simplify.txt
-1788042678484040807-0015-mosaic-dump-anonymous-post-logical-to-physical-device-id.txt
-1788042678484040807-0016-mosaic-dump-anonymous-post-late-loop-unroll.txt
-1788042678484040807-0017-mosaic-dump-anonymous-post-lower-to-llo.txt
-1788042678484040807-0018-mosaic-dump-anonymous-post-eliminate-llo-extensions.txt
-1788042678484040807-0019-mosaic-dump-anonymous-post-finalize-llo.txt
-++ ls tmp/mosaic_dump/1788042678278203554-0000-mosaic-dump-anonymous-post-deserialization.txt tmp/mosaic_dump/1788042678301981231-0000-mosaic-dump-anonymous-post-serialization.txt tmp/mosaic_dump/1788042678305256082-0000-mosaic-dump-anonymous-sparsecore-module-original.txt tmp/mosaic_dump/1788042678305256082-0001-mosaic-dump-anonymous-mosaic-module-original.txt tmp/mosaic_dump/1788042678305256082-0002-mosaic-dump-anonymous-post-mosaic-module-infer-memref-layout.txt tmp/mosaic_dump/1788042678305256082-0003-mosaic-dump-anonymous-post-simplify.txt tmp/mosaic_dump/1788042678305256082-0004-mosaic-dump-anonymous-post-mosaic-module-canonicalize-operations.txt tmp/mosaic_dump/1788042678305256082-0005-mosaic-dump-anonymous-post-mosaic-module-canonicalize-memory-space.txt tmp/mosaic_dump/1788042678305256082-0006-mosaic-dump-anonymous-post-tiling-propagation.txt tmp/mosaic_dump/1788042678305256082-0007-mosaic-dump-anonymous-post-mosaic-module-logical-to-physical-device-id.txt tmp/mosaic_dump/1788042678305256082-0008-mosaic-dump-anonymous-post-mosaic-module-lower-to-mlo.txt tmp/mosaic_dump/1788042678305256082-0009-mosaic-dump-anonymous-sparsecore-module-post-emit-scs.txt tmp/mosaic_dump/1788042678306877598-0000-mosaic-dump-anonymous-post-deserialization.txt tmp/mosaic_dump/1788042678336766583-0000-mosaic-dump-anonymous-post-serialization.txt tmp/mosaic_dump/1788042678339580621-0000-mosaic-dump-anonymous-sparsecore-module-original.txt tmp/mosaic_dump/1788042678339580621-0001-mosaic-dump-anonymous-mosaic-module-original.txt tmp/mosaic_dump/1788042678339580621-0002-mosaic-dump-anonymous-post-mosaic-module-infer-memref-layout.txt tmp/mosaic_dump/1788042678339580621-0003-mosaic-dump-anonymous-post-simplify.txt tmp/mosaic_dump/1788042678339580621-0004-mosaic-dump-anonymous-post-mosaic-module-canonicalize-operations.txt tmp/mosaic_dump/1788042678339580621-0005-mosaic-dump-anonymous-post-mosaic-module-canonicalize-memory-space.txt tmp/mosaic_dump/1788042678339580621-0006-mosaic-dump-anonymous-post-tiling-propagation.txt tmp/mosaic_dump/1788042678339580621-0007-mosaic-dump-anonymous-post-mosaic-module-logical-to-physical-device-id.txt tmp/mosaic_dump/1788042678339580621-0008-mosaic-dump-anonymous-post-mosaic-module-lower-to-mlo.txt tmp/mosaic_dump/1788042678339580621-0009-mosaic-dump-anonymous-sparsecore-module-post-emit-scs.txt tmp/mosaic_dump/1788042678341196728-0000-mosaic-dump-anonymous-post-deserialization.txt tmp/mosaic_dump/1788042678459464776-0000-mosaic-dump-anonymous-post-deserialization.txt tmp/mosaic_dump/1788042678474563883-0000-mosaic-dump-anonymous-post-deserialization.txt tmp/mosaic_dump/1788042678484040807-0001-mosaic-dump-anonymous-original.txt tmp/mosaic_dump/1788042678484040807-0002-mosaic-dump-anonymous-post-infer-memref-layout.txt tmp/mosaic_dump/1788042678484040807-0003-mosaic-dump-anonymous-post-infer-memref-layout-simplify.txt tmp/mosaic_dump/1788042678484040807-0004-mosaic-dump-anonymous-post-infer-memref-space.txt tmp/mosaic_dump/1788042678484040807-0005-mosaic-dump-anonymous-post-canonicalize-memory-space.txt tmp/mosaic_dump/1788042678484040807-0006-mosaic-dump-anonymous-post-canonicalize-operations.txt tmp/mosaic_dump/1788042678484040807-0007-mosaic-dump-anonymous-post-pre-canon-optimization.txt tmp/mosaic_dump/1788042678484040807-0008-mosaic-dump-anonymous-post-canonicalize-mosaic.txt tmp/mosaic_dump/1788042678484040807-0009-mosaic-dump-anonymous-post-canonicalize-mosaic-simplify.txt tmp/mosaic_dump/1788042678484040807-0010-mosaic-dump-anonymous-post-tiling-propagation.txt tmp/mosaic_dump/1788042678484040807-0011-mosaic-dump-anonymous-post-infer-vector-layout.txt tmp/mosaic_dump/1788042678484040807-0012-mosaic-dump-anonymous-post-relayout-insertion.txt tmp/mosaic_dump/1788042678484040807-0013-mosaic-dump-anonymous-post-apply-vector-layout.txt tmp/mosaic_dump/1788042678484040807-0014-mosaic-dump-anonymous-post-apply-vector-layout-simplify.txt tmp/mosaic_dump/1788042678484040807-0015-mosaic-dump-anonymous-post-logical-to-physical-device-id.txt tmp/mosaic_dump/1788042678484040807-0016-mosaic-dump-anonymous-post-late-loop-unroll.txt tmp/mosaic_dump/1788042678484040807-0017-mosaic-dump-anonymous-post-lower-to-llo.txt tmp/mosaic_dump/1788042678484040807-0018-mosaic-dump-anonymous-post-eliminate-llo-extensions.txt tmp/mosaic_dump/1788042678484040807-0019-mosaic-dump-anonymous-post-finalize-llo.txt
+1788054146503622098-0002-mosaic-dump-anonymous-post-mosaic-module-infer-memref-layout.txt
+1788054146503622098-0003-mosaic-dump-anonymous-post-simplify.txt
+1788054146503622098-0004-mosaic-dump-anonymous-post-mosaic-module-canonicalize-operations.txt
+1788054146503622098-0005-mosaic-dump-anonymous-post-mosaic-module-canonicalize-memory-space.txt
+1788054146503622098-0006-mosaic-dump-anonymous-post-tiling-propagation.txt
+1788054146503622098-0007-mosaic-dump-anonymous-post-mosaic-module-logical-to-physical-device-id.txt
+1788054146503622098-0008-mosaic-dump-anonymous-post-mosaic-module-lower-to-mlo.txt
+1788054146503622098-0009-mosaic-dump-anonymous-sparsecore-module-post-emit-scs.txt
+1788054146505253203-0000-mosaic-dump-anonymous-post-deserialization.txt
+1788054146624668091-0000-mosaic-dump-anonymous-post-deserialization.txt
+1788054146649852155-0000-mosaic-dump-anonymous-post-deserialization.txt
+1788054146666741392-0001-mosaic-dump-anonymous-original.txt
+1788054146666741392-0002-mosaic-dump-anonymous-post-infer-memref-layout.txt
+1788054146666741392-0003-mosaic-dump-anonymous-post-infer-memref-layout-simplify.txt
+1788054146666741392-0004-mosaic-dump-anonymous-post-infer-memref-space.txt
+1788054146666741392-0005-mosaic-dump-anonymous-post-canonicalize-memory-space.txt
+1788054146666741392-0006-mosaic-dump-anonymous-post-canonicalize-operations.txt
+1788054146666741392-0007-mosaic-dump-anonymous-post-pre-canon-optimization.txt
+1788054146666741392-0008-mosaic-dump-anonymous-post-canonicalize-mosaic.txt
+1788054146666741392-0009-mosaic-dump-anonymous-post-canonicalize-mosaic-simplify.txt
+1788054146666741392-0010-mosaic-dump-anonymous-post-tiling-propagation.txt
+1788054146666741392-0011-mosaic-dump-anonymous-post-infer-vector-layout.txt
+1788054146666741392-0012-mosaic-dump-anonymous-post-relayout-insertion.txt
+1788054146666741392-0013-mosaic-dump-anonymous-post-apply-vector-layout.txt
+1788054146666741392-0014-mosaic-dump-anonymous-post-apply-vector-layout-simplify.txt
+1788054146666741392-0015-mosaic-dump-anonymous-post-logical-to-physical-device-id.txt
+1788054146666741392-0016-mosaic-dump-anonymous-post-late-loop-unroll.txt
+1788054146666741392-0017-mosaic-dump-anonymous-post-lower-to-llo.txt
+1788054146666741392-0018-mosaic-dump-anonymous-post-eliminate-llo-extensions.txt
+1788054146666741392-0019-mosaic-dump-anonymous-post-finalize-llo.txt
+++ ls tmp/mosaic_dump/1788054144662359188-0000-mosaic-dump-anonymous-post-serialization.txt tmp/mosaic_dump/1788054144678923772-0000-mosaic-dump-anonymous-sparsecore-module-original.txt tmp/mosaic_dump/1788054144678923772-0001-mosaic-dump-anonymous-mosaic-module-original.txt tmp/mosaic_dump/1788054144678923772-0002-mosaic-dump-anonymous-post-mosaic-module-infer-memref-layout.txt tmp/mosaic_dump/1788054144678923772-0003-mosaic-dump-anonymous-post-simplify.txt tmp/mosaic_dump/1788054144678923772-0004-mosaic-dump-anonymous-post-mosaic-module-canonicalize-operations.txt tmp/mosaic_dump/1788054144678923772-0005-mosaic-dump-anonymous-post-mosaic-module-canonicalize-memory-space.txt tmp/mosaic_dump/1788054144678923772-0006-mosaic-dump-anonymous-post-tiling-propagation.txt tmp/mosaic_dump/1788054144678923772-0007-mosaic-dump-anonymous-post-mosaic-module-logical-to-physical-device-id.txt tmp/mosaic_dump/1788054144678923772-0008-mosaic-dump-anonymous-post-mosaic-module-lower-to-mlo.txt tmp/mosaic_dump/1788054144678923772-0009-mosaic-dump-anonymous-sparsecore-module-post-emit-scs.txt tmp/mosaic_dump/1788054144680629755-0000-mosaic-dump-anonymous-post-deserialization.txt tmp/mosaic_dump/1788054144709699752-0000-mosaic-dump-anonymous-post-serialization.txt tmp/mosaic_dump/1788054144712352188-0000-mosaic-dump-anonymous-sparsecore-module-original.txt tmp/mosaic_dump/1788054144712352188-0001-mosaic-dump-anonymous-mosaic-module-original.txt tmp/mosaic_dump/1788054144712352188-0002-mosaic-dump-anonymous-post-mosaic-module-infer-memref-layout.txt tmp/mosaic_dump/1788054144712352188-0003-mosaic-dump-anonymous-post-simplify.txt tmp/mosaic_dump/1788054144712352188-0004-mosaic-dump-anonymous-post-mosaic-module-canonicalize-operations.txt tmp/mosaic_dump/1788054144712352188-0005-mosaic-dump-anonymous-post-mosaic-module-canonicalize-memory-space.txt tmp/mosaic_dump/1788054144712352188-0006-mosaic-dump-anonymous-post-tiling-propagation.txt tmp/mosaic_dump/1788054144712352188-0007-mosaic-dump-anonymous-post-mosaic-module-logical-to-physical-device-id.txt tmp/mosaic_dump/1788054144712352188-0008-mosaic-dump-anonymous-post-mosaic-module-lower-to-mlo.txt tmp/mosaic_dump/1788054144712352188-0009-mosaic-dump-anonymous-sparsecore-module-post-emit-scs.txt tmp/mosaic_dump/1788054144713919824-0000-mosaic-dump-anonymous-post-deserialization.txt tmp/mosaic_dump/1788054146436497017-0000-mosaic-dump-anonymous-post-deserialization.txt tmp/mosaic_dump/1788054146468528680-0000-mosaic-dump-anonymous-post-serialization.txt tmp/mosaic_dump/1788054146471988950-0000-mosaic-dump-anonymous-sparsecore-module-original.txt tmp/mosaic_dump/1788054146471988950-0001-mosaic-dump-anonymous-mosaic-module-original.txt tmp/mosaic_dump/1788054146471988950-0002-mosaic-dump-anonymous-post-mosaic-module-infer-memref-layout.txt tmp/mosaic_dump/1788054146471988950-0003-mosaic-dump-anonymous-post-simplify.txt tmp/mosaic_dump/1788054146471988950-0004-mosaic-dump-anonymous-post-mosaic-module-canonicalize-operations.txt tmp/mosaic_dump/1788054146471988950-0005-mosaic-dump-anonymous-post-mosaic-module-canonicalize-memory-space.txt tmp/mosaic_dump/1788054146471988950-0006-mosaic-dump-anonymous-post-tiling-propagation.txt tmp/mosaic_dump/1788054146471988950-0007-mosaic-dump-anonymous-post-mosaic-module-logical-to-physical-device-id.txt tmp/mosaic_dump/1788054146471988950-0008-mosaic-dump-anonymous-post-mosaic-module-lower-to-mlo.txt tmp/mosaic_dump/1788054146471988950-0009-mosaic-dump-anonymous-sparsecore-module-post-emit-scs.txt tmp/mosaic_dump/1788054146473812272-0000-mosaic-dump-anonymous-post-deserialization.txt tmp/mosaic_dump/1788054146500781401-0000-mosaic-dump-anonymous-post-serialization.txt tmp/mosaic_dump/1788054146503622098-0000-mosaic-dump-anonymous-sparsecore-module-original.txt tmp/mosaic_dump/1788054146503622098-0001-mosaic-dump-anonymous-mosaic-module-original.txt tmp/mosaic_dump/1788054146503622098-0002-mosaic-dump-anonymous-post-mosaic-module-infer-memref-layout.txt tmp/mosaic_dump/1788054146503622098-0003-mosaic-dump-anonymous-post-simplify.txt tmp/mosaic_dump/1788054146503622098-0004-mosaic-dump-anonymous-post-mosaic-module-canonicalize-operations.txt tmp/mosaic_dump/1788054146503622098-0005-mosaic-dump-anonymous-post-mosaic-module-canonicalize-memory-space.txt tmp/mosaic_dump/1788054146503622098-0006-mosaic-dump-anonymous-post-tiling-propagation.txt tmp/mosaic_dump/1788054146503622098-0007-mosaic-dump-anonymous-post-mosaic-module-logical-to-physical-device-id.txt tmp/mosaic_dump/1788054146503622098-0008-mosaic-dump-anonymous-post-mosaic-module-lower-to-mlo.txt tmp/mosaic_dump/1788054146503622098-0009-mosaic-dump-anonymous-sparsecore-module-post-emit-scs.txt tmp/mosaic_dump/1788054146505253203-0000-mosaic-dump-anonymous-post-deserialization.txt tmp/mosaic_dump/1788054146624668091-0000-mosaic-dump-anonymous-post-deserialization.txt tmp/mosaic_dump/1788054146649852155-0000-mosaic-dump-anonymous-post-deserialization.txt tmp/mosaic_dump/1788054146666741392-0001-mosaic-dump-anonymous-original.txt tmp/mosaic_dump/1788054146666741392-0002-mosaic-dump-anonymous-post-infer-memref-layout.txt tmp/mosaic_dump/1788054146666741392-0003-mosaic-dump-anonymous-post-infer-memref-layout-simplify.txt tmp/mosaic_dump/1788054146666741392-0004-mosaic-dump-anonymous-post-infer-memref-space.txt tmp/mosaic_dump/1788054146666741392-0005-mosaic-dump-anonymous-post-canonicalize-memory-space.txt tmp/mosaic_dump/1788054146666741392-0006-mosaic-dump-anonymous-post-canonicalize-operations.txt tmp/mosaic_dump/1788054146666741392-0007-mosaic-dump-anonymous-post-pre-canon-optimization.txt tmp/mosaic_dump/1788054146666741392-0008-mosaic-dump-anonymous-post-canonicalize-mosaic.txt tmp/mosaic_dump/1788054146666741392-0009-mosaic-dump-anonymous-post-canonicalize-mosaic-simplify.txt tmp/mosaic_dump/1788054146666741392-0010-mosaic-dump-anonymous-post-tiling-propagation.txt tmp/mosaic_dump/1788054146666741392-0011-mosaic-dump-anonymous-post-infer-vector-layout.txt tmp/mosaic_dump/1788054146666741392-0012-mosaic-dump-anonymous-post-relayout-insertion.txt tmp/mosaic_dump/1788054146666741392-0013-mosaic-dump-anonymous-post-apply-vector-layout.txt tmp/mosaic_dump/1788054146666741392-0014-mosaic-dump-anonymous-post-apply-vector-layout-simplify.txt tmp/mosaic_dump/1788054146666741392-0015-mosaic-dump-anonymous-post-logical-to-physical-device-id.txt tmp/mosaic_dump/1788054146666741392-0016-mosaic-dump-anonymous-post-late-loop-unroll.txt tmp/mosaic_dump/1788054146666741392-0017-mosaic-dump-anonymous-post-lower-to-llo.txt tmp/mosaic_dump/1788054146666741392-0018-mosaic-dump-anonymous-post-eliminate-llo-extensions.txt tmp/mosaic_dump/1788054146666741392-0019-mosaic-dump-anonymous-post-finalize-llo.txt
 ++ tail -1
-+ LAST=tmp/mosaic_dump/1788042678484040807-0019-mosaic-dump-anonymous-post-finalize-llo.txt
-+ python tmp/dump_histogram.py tmp/mosaic_dump/1788042678484040807-0019-mosaic-dump-anonymous-post-finalize-llo.txt
-+ python tmp/llo_timeline.py tmp/mosaic_dump/1788042678484040807-0019-mosaic-dump-anonymous-post-finalize-llo.txt --cols 150
++ LAST=tmp/mosaic_dump/1788054146666741392-0019-mosaic-dump-anonymous-post-finalize-llo.txt
++ python tmp/dump_histogram.py tmp/mosaic_dump/1788054146666741392-0019-mosaic-dump-anonymous-post-finalize-llo.txt
++ python tmp/llo_timeline.py tmp/mosaic_dump/1788054146666741392-0019-mosaic-dump-anonymous-post-finalize-llo.txt --cols 150
 + wc -l tmp/op_histogram.txt tmp/timeline.txt
- 272 tmp/op_histogram.txt
-  31 tmp/timeline.txt
- 303 total
+ 268 tmp/op_histogram.txt
+  34 tmp/timeline.txt
+ 302 total
 + tar -c tmp/mosaic_dump
 + xz -9 -T0
 + ls -lh tmp/mosaic_passes.tar.xz
--rw-rw-r-- 1 ymu_google_com ymu_google_com 2.2M Aug 29 15:31 tmp/mosaic_passes.tar.xz
+-rw-rw-r-- 1 ymu_google_com ymu_google_com 2.5M Aug 29 18:42 tmp/mosaic_passes.tar.xz
 + rm -rf tmp/mosaic_dump
 + exit=0
 
-+ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=3 --warmup=1 --be=8 --bg=4 --capacity=32 --bd1c=0 --bd2c=1024 --bcT=0 --wbuf=4 --ablate=all
-WARNING 08-29 15:31:50 [tpu_platform.py:447] Pin memory is not supported on TPU.
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=3 --warmup=1 --be=4 --bg=4 --capacity=32 --bd1c=128 --bd2c=128 --bcT=256 --ablate=all
+WARNING 08-29 18:42:55 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-29 15:31:54 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-29 15:31:54 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-29 15:31:54 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-29 18:42:59 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-29 18:42:59 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-29 18:42:59 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
 
 variant                              min us  median us
-v2_tp_inkernel_ag[ablate=all]        2873.1     2926.5
+v2_tp_inkernel_ag[ablate=all]         539.4      550.5
 + exit=0
 
 + bash -c 
@@ -193,227 +189,188 @@ v2_tp_inkernel_ag[ablate=all]        2873.1     2926.5
  169 tmp/op_histogram_all.txt
   30 tmp/timeline_all.txt
  199 total
--rw-rw-r-- 1 ymu_google_com ymu_google_com 396K Aug 29 15:33 tmp/mosaic_passes_all.tar.xz
+-rw-rw-r-- 1 ymu_google_com ymu_google_com 395K Aug 29 18:44 tmp/mosaic_passes_all.tar.xz
 + exit=0
 
 + python tmp/probe_wbw.py
 array: 1.00 GiB  (512x4096x256 bf16)
-   manual1:    471.8 us    2275.6 GB/s   (median 478.5 us)
-   manual2:    469.7 us    2286.0 GB/s   (median 477.7 us)
-   manual4:    468.0 us    2294.5 GB/s   (median 476.4 us)
- manual8x1:    467.6 us    2296.5 GB/s   (median 483.5 us)
- manual8x8:    466.4 us    2302.3 GB/s   (median 476.4 us)
+   manual1:    465.8 us    2305.1 GB/s   (median 472.7 us)
+   manual2:    469.5 us    2287.2 GB/s   (median 495.2 us)
+   manual4:    476.6 us    2252.8 GB/s   (median 484.6 us)
+ manual8x1:    477.6 us    2248.2 GB/s   (median 503.2 us)
+ manual8x8:    476.9 us    2251.7 GB/s   (median 480.4 us)
 weight pair: 1.50 GiB per device (w1 512x4096x256 + w2 512x128x4096 bf16)
- wpair_1dev:    618.5 us    2603.9 GB/s   (median 624.6 us)
- wpair_8dev:    851.0 us    1892.5 GB/s per device   (15140 aggregate, median 886.2 us)
+ wpair_1dev:    618.2 us    2605.5 GB/s   (median 622.7 us)
+ wpair_8dev:    878.4 us    1833.5 GB/s per device   (14668 aggregate, median 914.0 us)
 + exit=0
 
 + python tmp/probe_floor.py
-  win128:    135.4 us total     1.06 us/step   (median 150.8 us)
-   win64:    134.5 us total     2.10 us/step   (median 141.4 us)
-  hbm128:    141.3 us total     1.10 us/step   (median 148.4 us)
-   hbm64:    135.1 us total     2.11 us/step   (median 141.0 us)
+  win128:    154.0 us total     1.20 us/step   (median 182.6 us)
+   win64:    148.9 us total     2.33 us/step   (median 174.2 us)
+  hbm128:    151.5 us total     1.18 us/step   (median 170.6 us)
+   hbm64:    154.8 us total     2.42 us/step   (median 181.1 us)
 + exit=0
 
 + python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=env --iters=10 --warmup=3
-WARNING 08-29 15:33:50 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 08-29 18:44:55 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-29 15:33:53 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-29 15:33:53 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-29 15:33:53 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-29 18:44:59 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-29 18:44:59 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-29 18:44:59 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
+max|v2_envelope_rs - v2_dispatch_only| = 1.256e+01
 
 variant                              min us  median us
+v2_dispatch_only                      372.8      395.8
+v2_envelope_rs                        386.3      420.3
 + exit=0
 
-+ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=10 --warmup=3 --be=8 --bg=4 --capacity=32 --bd1c=0 --bd2c=1024 --bcT=0 --wbuf=4 --ablate=none
-WARNING 08-29 15:35:19 [tpu_platform.py:447] Pin memory is not supported on TPU.
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=10 --warmup=3 --be=4 --bg=4 --capacity=32 --bd1c=128 --bd2c=128 --bcT=256 --ablate=none
+WARNING 08-29 18:46:26 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-29 15:35:23 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-29 15:35:23 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-29 15:35:23 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-29 18:46:30 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-29 18:46:30 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-29 18:46:30 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
 
 variant                              min us  median us
-v2_tp_inkernel_ag                    3709.3     3743.1
+v2_tp_inkernel_ag                    1199.0     1224.3
 + exit=0
 
-+ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=10 --warmup=3 --be=8 --bg=4 --capacity=32 --bd1c=0 --bd2c=1024 --bcT=0 --wbuf=4 --ablate=masks
-WARNING 08-29 15:36:54 [tpu_platform.py:447] Pin memory is not supported on TPU.
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=10 --warmup=3 --be=4 --bg=4 --capacity=32 --bd1c=128 --bd2c=128 --bcT=256 --ablate=masks
+WARNING 08-29 18:48:01 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-29 15:36:57 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-29 15:36:57 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-29 15:36:57 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-29 18:48:04 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-29 18:48:04 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-29 18:48:04 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
 
 variant                              min us  median us
-v2_tp_inkernel_ag[ablate=masks]      3495.5     3582.9
+v2_tp_inkernel_ag[ablate=masks]      1160.2     1204.0
 + exit=0
 
-+ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=10 --warmup=3 --be=8 --bg=4 --capacity=32 --bd1c=0 --bd2c=1024 --bcT=0 --wbuf=4 --ablate=gather
-WARNING 08-29 15:38:27 [tpu_platform.py:447] Pin memory is not supported on TPU.
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=10 --warmup=3 --be=4 --bg=4 --capacity=32 --bd1c=128 --bd2c=128 --bcT=256 --ablate=gather
+WARNING 08-29 18:49:35 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-29 15:38:31 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-29 15:38:31 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-29 15:38:31 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-29 18:49:38 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-29 18:49:38 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-29 18:49:38 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
 
 variant                              min us  median us
-v2_tp_inkernel_ag[ablate=gather]     3730.1     3777.5
+v2_tp_inkernel_ag[ablate=gather]     1181.5     1220.0
 + exit=0
 
-+ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=10 --warmup=3 --be=8 --bg=4 --capacity=32 --bd1c=0 --bd2c=1024 --bcT=0 --wbuf=4 --ablate=ffn
-WARNING 08-29 15:40:02 [tpu_platform.py:447] Pin memory is not supported on TPU.
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=10 --warmup=3 --be=4 --bg=4 --capacity=32 --bd1c=128 --bd2c=128 --bcT=256 --ablate=ffn
+WARNING 08-29 18:51:09 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-29 15:40:05 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-29 15:40:05 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-29 15:40:05 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-29 18:51:12 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-29 18:51:12 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-29 18:51:12 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
 
 variant                              min us  median us
-v2_tp_inkernel_ag[ablate=ffn]        3389.9     3423.1
+v2_tp_inkernel_ag[ablate=ffn]        1209.8     1243.6
 + exit=0
 
-+ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=10 --warmup=3 --be=8 --bg=4 --capacity=32 --bd1c=0 --bd2c=1024 --bcT=0 --wbuf=4 --ablate=combine
-WARNING 08-29 15:41:36 [tpu_platform.py:447] Pin memory is not supported on TPU.
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=10 --warmup=3 --be=4 --bg=4 --capacity=32 --bd1c=128 --bd2c=128 --bcT=256 --ablate=combine
+WARNING 08-29 18:52:42 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-29 15:41:40 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-29 15:41:40 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-29 15:41:40 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-29 18:52:45 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-29 18:52:45 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-29 18:52:45 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
 
 variant                              min us  median us
-v2_tp_inkernel_ag[ablate=combine]     3639.4     3687.8
+v2_tp_inkernel_ag[ablate=combine]     1071.5     1097.3
 + exit=0
 
-+ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=10 --warmup=3 --be=8 --bg=4 --capacity=32 --bd1c=0 --bd2c=1024 --bcT=0 --wbuf=4 --ablate=weights
-WARNING 08-29 15:43:10 [tpu_platform.py:447] Pin memory is not supported on TPU.
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=10 --warmup=3 --be=4 --bg=4 --capacity=32 --bd1c=128 --bd2c=128 --bcT=256 --ablate=weights
+WARNING 08-29 18:54:15 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-29 15:43:13 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-29 15:43:13 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-29 15:43:13 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-29 18:54:19 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-29 18:54:19 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-29 18:54:19 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
 
 variant                              min us  median us
-v2_tp_inkernel_ag[ablate=weights]     3236.3     3263.3
+v2_tp_inkernel_ag[ablate=weights]      945.4      973.8
 + exit=0
 
-+ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=10 --warmup=3 --be=8 --bg=4 --capacity=32 --bd1c=0 --bd2c=1024 --bcT=0 --wbuf=4 --ablate=routing
-WARNING 08-29 15:44:42 [tpu_platform.py:447] Pin memory is not supported on TPU.
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=10 --warmup=3 --be=4 --bg=4 --capacity=32 --bd1c=128 --bd2c=128 --bcT=256 --ablate=routing
+WARNING 08-29 18:55:48 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-29 15:44:45 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-29 15:44:45 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-29 15:44:45 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-29 18:55:51 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-29 18:55:51 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-29 18:55:51 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
 
 variant                              min us  median us
-v2_tp_inkernel_ag[ablate=routing]     3750.1     3763.1
+v2_tp_inkernel_ag[ablate=routing]     1156.3     1202.8
 + exit=0
 
-+ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=10 --warmup=3 --be=8 --bg=4 --capacity=32 --bd1c=0 --bd2c=1024 --bcT=0 --wbuf=4 --ablate=ag
-WARNING 08-29 15:46:16 [tpu_platform.py:447] Pin memory is not supported on TPU.
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=10 --warmup=3 --be=4 --bg=4 --capacity=32 --bd1c=128 --bd2c=128 --bcT=256 --ablate=ag
+WARNING 08-29 18:57:22 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 08-29 15:46:20 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-29 15:46:20 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-29 15:46:20 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
-Traceback (most recent call last):
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py", line 973, in fused_moe_decode_tp_fused
-    out = pl.pallas_call(
-jax._src.source_info_util.JaxStackTraceBeforeTransformation: ValueError: collective_id has to be unspecified or None when not using a custom barrier
-
-The preceding stack trace is the source of the JAX operation that, once transformed by JAX, triggered the following exception.
-
---------------------
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "<frozen runpy>", line 198, in _run_module_as_main
-  File "<frozen runpy>", line 88, in _run_code
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 410, in <module>
-    main()
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 388, in main
-    outs = {name: np.asarray(fn(), np.float32)
-                             ^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 259, in <lambda>
-    return lambda: jitted(tok_l, w1_l, w2_l, w_r)
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/pallas_call.py", line 974, in _pallas_call_lowering
-    return mlir.lower_per_platform(
-           ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/pallas_call.py", line 906, in tpu_lowering
-    return mosaic_tpu_backend.pallas_call_tpu_lowering_rule(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/pallas_call_registration.py", line 422, in pallas_call_tpu_lowering_rule
-    return _lower_to_custom_call(
-           ^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/pallas_call_registration.py", line 324, in _lower_to_custom_call
-    out_nodes = mosaic.lower_module_to_custom_call(
-                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/tpu_custom_call.py", line 767, in lower_module_to_custom_call
-    config = _lower_to_custom_call_config(
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/tpu_custom_call.py", line 638, in _lower_to_custom_call_config
-    return _lowered_to_custom_call_config(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/tpu_custom_call.py", line 697, in _lowered_to_custom_call_config
-    raise ValueError(
-ValueError: collective_id has to be unspecified or None when not using a custom barrier
---------------------
-For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
-devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
-weights/device = 1536 MiB
-+ exit=1
-
-+ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=10 --warmup=3 --be=8 --bg=4 --capacity=32 --bd1c=0 --bd2c=1024 --bcT=0 --wbuf=4 --ablate=all
-WARNING 08-29 15:47:47 [tpu_platform.py:447] Pin memory is not supported on TPU.
-/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
-  raw_cnt = _raw_device_count_nvml()
-/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
-  raw_cnt = _raw_device_count_nvml()
-INFO 08-29 15:47:51 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 08-29 15:47:51 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 08-29 15:47:51 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 08-29 18:57:25 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-29 18:57:25 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-29 18:57:25 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
 
 variant                              min us  median us
-v2_tp_inkernel_ag[ablate=all]        2772.7     2813.6
+v2_tp_inkernel_ag[ablate=ag]         1136.5     1155.5
++ exit=0
+
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=10 --warmup=3 --be=4 --bg=4 --capacity=32 --bd1c=128 --bd2c=128 --bcT=256 --ablate=all
+WARNING 08-29 18:58:57 [tpu_platform.py:447] Pin memory is not supported on TPU.
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+INFO 08-29 18:59:00 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-29 18:59:00 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-29 18:59:00 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
+weights/device = 1536 MiB
+
+variant                              min us  median us
+v2_tp_inkernel_ag[ablate=all]         485.4      508.3
 + exit=0
 
 log: tmp/bench_dump.log  hist: tmp/op_histogram.txt  passes: tmp/mosaic_passes.tar.xz
