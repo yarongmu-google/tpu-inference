@@ -147,6 +147,13 @@ def _device_kernel_ms_per_dispatch_from_trace(
             duration_us = float(event["dur"])
             end_us = start_us + duration_us
             if pid in sc_pids:
+                # leaf ops only: wrapper spans (jit_*, OFFLOAD_COLLECTIVE)
+                # cover the whole async region incl. WAITING for the TC
+                # kernel's output - occupancy, not work (measured 898us
+                # of span around 28us of actual reduce-scatter)
+                if (name.startswith("jit_") or name == "OFFLOAD_COLLECTIVE"
+                        or name.isdigit()):
+                    continue
                 sc_ops_by_dev.setdefault(sc_pids[pid], []).append(
                     (start_us, end_us))
                 continue
