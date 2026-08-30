@@ -89,15 +89,16 @@ def _iter_trace_events(trace_dir: str):
             yield json.load(trace_file).get("traceEvents", [])
 
 
-def _tensorcore_pids(events) -> set:
-    pids = set()
+def _device_pids(events) -> tuple:
+    """(tensorcore_pids, sparsecore_pids) from the trace metadata."""
+    tc, sc = set(), set()
     for event in events:
         if event.get("ph") == "M" and event.get("name") == "process_name":
             process_name = str(event.get("args", {}).get("name", ""))
-            if ("/device:TPU:" in process_name
-                    and "SparseCore" not in process_name):
-                pids.add(event.get("pid"))
-    return pids
+            if "/device:TPU:" in process_name:
+                (sc if "SparseCore" in process_name else tc).add(
+                    event.get("pid"))
+    return tc, sc
 
 
 def _device_kernel_ms_per_dispatch_from_trace(
@@ -110,17 +111,24 @@ def _device_kernel_ms_per_dispatch_from_trace(
     trailing-copy edges subtracted)."""
     matching_by_pid: dict = {}
     ops_by_pid: dict = {}
+    sc_ops: list = []
     for events in _iter_trace_events(trace_dir):
-        tensorcore_pids = _tensorcore_pids(events)
+        tensorcore_pids, sparsecore_pids = _device_pids(events)
         for event in events:
             pid = event.get("pid")
-            if (event.get("ph") != "X" or not event.get("dur")
-                    or pid not in tensorcore_pids):
+            if event.get("ph") != "X" or not event.get("dur"):
                 continue
             name = str(event.get("name", ""))
             start_us = float(event["ts"])
             duration_us = float(event["dur"])
             end_us = start_us + duration_us
+            if pid in sparsecore_pids:
+                # SparseCore busy time (offloaded collectives - v2's
+                # exit RS lands here); attributed per dispatch window
+                sc_ops.append((start_us, end_us, duration_us))
+                continue
+            if pid not in tensorcore_pids:
+                continue
             if name.startswith(jit_name_prefix):
                 matching_by_pid.setdefault(pid, []).append(
                     (start_us, end_us, duration_us))
@@ -132,7 +140,7 @@ def _device_kernel_ms_per_dispatch_from_trace(
     pid, dispatches = max(matching_by_pid.items(),
                           key=lambda item: len(item[1]))
     ops = ops_by_pid.get(pid, [])
-    latencies_ms = []
+    rows = []
     for start_us, end_us, duration_us in sorted(dispatches):
         children = [op for op in ops if start_us <= op[0] < end_us]
         barrier_us = sum(op[2] for op in children
@@ -142,9 +150,12 @@ def _device_kernel_ms_per_dispatch_from_trace(
             last = max(children, key=lambda op: op[1])
             if last[3].startswith("copy"):
                 copy_us = last[2]
-        latencies_ms.append(
-            max(duration_us - barrier_us - copy_us, 0.0) / 1000.0)
-    return latencies_ms
+        # SC work overlapping (or started within) this dispatch window
+        sc_us = sum(op[2] for op in sc_ops
+                    if start_us <= op[0] < end_us)
+        rows.append((max(duration_us - barrier_us - copy_us, 0.0) / 1000.0,
+                     sc_us / 1000.0))
+    return rows
 
 
 def _time(fn: Callable[[], jax.Array], iters: int,
@@ -479,13 +490,16 @@ def main() -> None:
             for _ in range(5):
                 jax.block_until_ready(fn())
             jax.profiler.stop_trace()
-            ms = _device_kernel_ms_per_dispatch_from_trace(
+            rows = _device_kernel_ms_per_dispatch_from_trace(
                 trace_dir, jit_name_prefix="jit_")
-            if ms:
+            if rows:
+                tc = sorted(r[0] for r in rows)
+                sc = sorted(r[1] for r in rows)
                 print(f"{name:<32} device-only per dispatch: "
-                      f"min {min(ms)*1e3:8.1f} us  "
-                      f"median {sorted(ms)[len(ms)//2]*1e3:8.1f} us  "
-                      f"({len(ms)} dispatches)")
+                      f"TC min {tc[0]*1e3:8.1f} us  "
+                      f"median {tc[len(tc)//2]*1e3:8.1f} us  "
+                      f"| SC median {sc[len(sc)//2]*1e3:6.1f} us  "
+                      f"({len(rows)} dispatches)")
             else:
                 print(f"{name:<32} no matching device dispatches in trace")
         print(f"\ntraces under {args.profile_dir}/<variant>; open in "
