@@ -176,7 +176,17 @@ def run_null() -> None:
     harness envelope (354 us, floor_decomp 2026-08-29). H1 PREDICTS:
     null_1dev(1) ~= 150-180, null_8dev(1) ~= 330-400, and steps=128
     adds < 60 us. If null_8dev is instead ~= 0, the fixed cost lives
-    device-side and the fp8 stream floor really is ~600 us."""
+    device-side and the fp8 stream floor really is ~600 us.
+
+    ANSWERED (2026-08-30): null_1dev 132.5/141.0 us (steps 1/128) -
+    clean solo envelope + a 67-226 ns/step floor (negligible; explains
+    the flat be sweep). null_8dev came back 706.9/735.6 - INVALID as
+    built: the original xs = jnp.zeros() landed unsharded on device 0,
+    so every call paid an input reshard (fixed below for posterity).
+    H1 was instead CONFIRMED by the E-sweep: linear with slope
+    3149 GB/s/dev and intercept 366 us (max residual 7.9 us) - see
+    the E-sweep comment. Device-side fp8 stream ~256 us => the fp8
+    kernel is MXU-BOUND (357 > 256)."""
     x = jnp.zeros((8, 128), jnp.float32)
     for steps in (1, 128):
         fn = jax.jit(build_null(steps))
@@ -188,7 +198,12 @@ def run_null() -> None:
         return
     mesh = jax.sharding.Mesh(np.array(jax.devices()), ("x",))
     P = jax.sharding.PartitionSpec
-    xs = jnp.zeros((8 * p, 128), jnp.float32)
+    # sharded at creation - an unsharded jnp.zeros lands on device 0
+    # and every call then pays an input reshard that swamps the
+    # envelope being measured (the round-3 null_8dev bug)
+    xs = jax.device_put(
+        np.zeros((8 * p, 128), np.float32),
+        jax.sharding.NamedSharding(mesh, P("x", None)))
     for steps in (1, 128):
         fn = jax.jit(jax.shard_map(
             build_null(steps), mesh=mesh,
@@ -319,6 +334,15 @@ def main() -> None:
     # e/512 * 241us + 363: e=64 -> ~393, 128 -> ~423, 256 -> ~483.
     # Nonlinearity here = a NEW hidden cost (the bf16 XLA-copy
     # pattern); linear-with-intercept-363 = H1 confirmed twice over.
+    # ANSWERED (2026-08-30): 395.4 / 427.3 / 501.6 (+ 618.5 at 512) -
+    # LINEAR: lstsq slope = 3149 GB/s/dev (~= 3207 CMN spec),
+    # intercept 366 us (~= the 354 us harness envelope), max residual
+    # 7.9 us; solo fit 3323 GB/s + 147 us. H1 CONFIRMED: the historic
+    # "1.83-1.93 TB/s under load" was envelope-conflated wall; the
+    # device-side stream is fp8 ~256 / bf16 ~511 us => the fp8 kernel
+    # is MXU-BOUND (357 > 256) and the bf16 kernel's 848 device ~=
+    # MXU busy ~715 + floors, not the stream. See qwen35_fp8
+    # proposal.md sec 0d for the re-based constants.
     run_null()
     for e_cnt in (64, 128, 256):
         run_pair(w1_f8[:e_cnt], w2_f8[:e_cnt], be=4)
