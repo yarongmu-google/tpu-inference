@@ -22,6 +22,29 @@ Only the two invariants that shape everything are stated here:
 v0 scope: bf16 weights/acts, no shared expert, no in-kernel RS;
 routing beyond `capacity` rows/expert is DROPPED (needs a spill path
 for production).
+
+v1 scope adds the FP8 PATH (w8a8, per the qwen35_fp8 kernel plan),
+engaged when the weights arrive e4m3 with per-channel scales
+(in_blocks == 1, the serving default requant contract):
+- tokens are quantized ONCE in the prologue (per-token abs-max,
+  clipped at 448 - e4m3 has no Inf, overflow makes NaN), all-gathered
+  as fp8 + s_tok (halves ICI bytes);
+- dispatch gains a third operator OHS carrying s_tok, whose XLU
+  row-reduce yields s_x exactly (one nonzero per row); OH goes e4m3
+  (0/1 exact), the gather matmul restores e4m3 values losslessly;
+- gmm1 runs fp8 x fp8; scales are applied ONCE per expert after the
+  full-K accumulation (per-channel contract - no per-chunk subc
+  machinery), BEFORE the silu nonlinearity; h stays bf16 and gmm2
+  rides the free MSR->GMR bf16 latch on the fp8-stored w2;
+- the combine is K-FUSED: one K = bg*be*C dot per row chunk instead
+  of bg K=128 dots (probe-validated 1.55x; MRB store-add owns the
+  cross-tile accumulation). Re-bracketed f32 sums => the fp8 path is
+  tolerance-tested, never bitwise vs bf16;
+- scale slabs stream WITH the weight slabs on the same semaphores
+  (v1's pattern) because a [E, N] f32 scale buffer cannot take a
+  dynamic sublane index (E2003) while a [2, be, N] slab read with a
+  static expert index can.
+The bf16 path is byte-for-byte untouched (bitwise-guarded).
 """
 
 import functools
@@ -155,52 +178,72 @@ def _mask_operators(
     num_tokens: int,
     capacity: int,
     act_dtype,
-) -> tuple[jax.Array, jax.Array]:
-    """VALU phase: expand slots into the two one-hot operators.
+    oh_dtype=None,            # fp8 path: e4m3 (0/1 is exact in e4m3)
+    s_row: jax.Array | None = None,   # fp8 path: [1, T] f32 token scales
+) -> tuple[jax.Array, ...]:
+    """VALU phase: expand slots into the one-hot operators.
 
-    Returns (OH [C, T], OHG_T [T, C]) in act dtype."""
+    Returns (OH [C, T], OHG_T [T, C]) - plus, on the fp8 path,
+    s_x [C, 1] f32: the gathered per-slot token scales, produced by
+    summing the OHS operator over lanes (each row holds at most one
+    nonzero, so the sum IS the select - exact, no transpose needed)."""
     live = routed_mask == 1
     slot_iota = lax.broadcasted_iota(jnp.int32, (capacity, num_tokens), 0)
-    oh = jnp.where((slot_iota == slot) & live, 1.0, 0.0).astype(act_dtype)
+    oh_hit = (slot_iota == slot) & live
+    oh = jnp.where(oh_hit, 1.0, 0.0).astype(oh_dtype or act_dtype)
     slot_iota_t = lax.broadcasted_iota(jnp.int32, (num_tokens, capacity), 1)
     ohg_t = jnp.where((slot_iota_t == slot_t) & live_t,
                       gate_t, 0.0).astype(act_dtype)
-    return oh, ohg_t
+    if s_row is None:
+        return oh, ohg_t
+    ohs = jnp.where(oh_hit,
+                    jnp.broadcast_to(s_row, (capacity, num_tokens)), 0.0)
+    s_x = jnp.sum(ohs, axis=1, keepdims=True)            # [C, 1] exact
+    return oh, ohg_t, s_x
 
 
 def _decode_moe_kernel(
-    tokens_local_hbm,    # HBM [T/P, D] this device's token shard
-    route_in_hbm,        # HBM [E, D] router weight, or [T/P, E] logits
-                         # when not router_fused (upstream [out, in])
-    w1_hbm,              # HBM [E, D, 2I] - streamed via the blocked fetch
-    w2_hbm,              # HBM [E, I, D]
-    out_hbm,             # HBM [T, D] union partials (caller
-                         # reduce-scatters) - DMA'd once from out_stage
-    tokens_full_vmem,    # VMEM [T, D] the gathered union
-    send_sem,            # DMA - all outbound remote copies
-    recv_sem_tokens,     # DMA - inbound token shards
-    recv_sem_meta,       # DMA - inbound top-k idx/weight shards
-    acc_vmem,            # VMEM [T, D] f32 accumulator
-    topk_idx_vmem,       # VMEM [T, k] i32 - AG'd routing results
-    topk_w_vmem,         # VMEM [T, k] f32
-    idx_kt_vmem,         # VMEM [k, T] i32 - transposed once, read per step
-    x_vmem,              # VMEM [2, be*C, D] gathered rows, parity slots:
-                         # slot k%2 read at step k, slot (k+1)%2 built
-    y_vmem,              # VMEM [bg, be*C, D] expert outputs for the group
-    ohg_vmem,            # VMEM [2*bg, T, be*C] combine operators - a ring
-                         # written one step AHEAD of its group's combine
-    b_w1_x2_vmem,        # VMEM [2, be, D, 2I] - x2 buffer of whole
-                         # expert-block slabs, parity slots like x
-                         # (slot k%2 read at step k)
-    b_w2_x2_vmem,        # VMEM [2, be, I, D]
-    local_sems,          # DMA (2, 5): 2 x [b_gating_sem, b_w1_sem,
-                         # b_w2_sem, b_tokens_sem, b_output_sem] (v1's
-                         # layout; index 3 is his b_w3_sem - our w1
-                         # fuses w1+w3, so it carries the token fetch)
-    tokens_local_vmem,   # VMEM [T/P, D] prologue-fetched copy
-    router_w_vmem,       # VMEM route_in-shaped prologue-fetched copy
-    out_stage_vmem,      # VMEM [T, D] act-dtype staging for the output
-    *,
+    # Positional refs, in pallas order (inputs, outputs, scratch).
+    # Common refs (both modes):
+    #   tokens_local_hbm  HBM [T/P, D] this device's token shard
+    #   route_in_hbm      HBM [E, D] router weight, or [T/P, E] logits
+    #                     when not router_fused (upstream [out, in])
+    #   w1_hbm            HBM [E, D, 2I] - streamed via the blocked fetch
+    #   w2_hbm            HBM [E, I, D]
+    #   out_hbm           HBM [T, D] union partials (caller
+    #                     reduce-scatters) - DMA'd once from out_stage
+    #   tokens_full_vmem  VMEM [T, D] the gathered union (e4m3 in fp8)
+    #   send_sem          DMA - all outbound remote copies
+    #   recv_sem_tokens   DMA - inbound token shards
+    #   recv_sem_meta     DMA - inbound top-k idx/weight (+ s_tok) shards
+    #   acc_vmem          VMEM [T, D] f32 accumulator
+    #   topk_idx_vmem     VMEM [T, k] i32 - AG'd routing results
+    #   topk_w_vmem       VMEM [T, k] f32
+    #   idx_kt_vmem       VMEM [k, T] i32 - transposed once, read per step
+    #   x_vmem            VMEM [2, be*C, D] gathered rows, parity slots:
+    #                     slot k%2 read at step k, slot (k+1)%2 built
+    #                     (e4m3 in fp8)
+    #   y_vmem            VMEM [bg, be*C, D] expert outputs for the group
+    #   ohg_vmem          VMEM [2*bg, T, be*C] combine operators - a ring
+    #                     written one step AHEAD of its group's combine
+    #   b_w1_x2_vmem      VMEM [2, be, D, 2I] - x2 buffer of whole
+    #                     expert-block slabs, parity slots like x
+    #   b_w2_x2_vmem      VMEM [2, be, I, D]
+    #   local_sems        DMA (2, 5): 2 x [b_gating_sem, b_w1_sem,
+    #                     b_w2_sem, b_tokens_sem, b_output_sem] (v1's
+    #                     layout; the fp8 scale slabs ride sems 1/2)
+    #   tokens_local_vmem VMEM [T/P, D] prologue-fetched copy (bf16)
+    #   router_w_vmem     VMEM route_in-shaped prologue-fetched copy
+    #   out_stage_vmem    VMEM [T, D] act-dtype staging for the output
+    # fp8-only refs:
+    #   w1s_hbm           HBM [E, 2I] f32 per-channel w13 scales
+    #   w2s_hbm           HBM [E, D] f32 per-channel w2 scales
+    #   s_tok_vmem        VMEM [T, 1] f32 per-token quant scales
+    #   s_row_vmem        VMEM [1, T] f32 lane copy of s_tok (OHS build)
+    #   s_x_vmem          VMEM [2, be*C, 1] f32 gathered scales, parity
+    #   b_w1s_x2_vmem     VMEM [2, be, 2I] f32 scale slabs (ride w1 sem)
+    #   b_w2s_x2_vmem     VMEM [2, be, D] f32 scale slabs (ride w2 sem)
+    *refs,
     axis_name: str,
     mesh_axis_names: tuple,
     num_experts: int,
@@ -215,7 +258,25 @@ def _decode_moe_kernel(
     bd2c: int | None = None,
     bcT: int | None = None,
     ablate: str = "none",
+    fp8: bool = False,
 ):
+    if fp8:
+        (tokens_local_hbm, route_in_hbm, w1_hbm, w2_hbm,
+         w1s_hbm, w2s_hbm, out_hbm,
+         tokens_full_vmem, send_sem, recv_sem_tokens, recv_sem_meta,
+         acc_vmem, topk_idx_vmem, topk_w_vmem, idx_kt_vmem,
+         x_vmem, y_vmem, ohg_vmem, b_w1_x2_vmem, b_w2_x2_vmem,
+         local_sems, tokens_local_vmem, router_w_vmem, out_stage_vmem,
+         s_tok_vmem, s_row_vmem, s_x_vmem,
+         b_w1s_x2_vmem, b_w2s_x2_vmem) = refs
+    else:
+        (tokens_local_hbm, route_in_hbm, w1_hbm, w2_hbm, out_hbm,
+         tokens_full_vmem, send_sem, recv_sem_tokens, recv_sem_meta,
+         acc_vmem, topk_idx_vmem, topk_w_vmem, idx_kt_vmem,
+         x_vmem, y_vmem, ohg_vmem, b_w1_x2_vmem, b_w2_x2_vmem,
+         local_sems, tokens_local_vmem, router_w_vmem,
+         out_stage_vmem) = refs
+    qdtype = jnp.float8_e4m3fn
     # `ablate` stubs one stage at a time so wall-clock differences localise
     # the cost. The profiler segfaults in this environment (PLUGIN_Profiler
     # ABI mismatch), so differential timing is the only stage-level signal.
@@ -243,6 +304,11 @@ def _decode_moe_kernel(
     # uninitialized). Timing-only, like every other row.
     do_routing = ablate != "routing"
     do_ag = ablate != "ag"
+    # fp8-only timing rows: `quant` stubs the abs-max scale search
+    # (plain cast, s_tok = 1 - output wrong on purpose, like every
+    # ablate row); `scales` stubs the per-expert scale multiplies.
+    do_quant = ablate != "quant"
+    do_scales = ablate != "scales"
 
     block_id = pl.program_id(0)          # which expert block (grid step)
     num_blocks = pl.num_programs(0)
@@ -318,8 +384,10 @@ def _decode_moe_kernel(
     def start_fetch_bw(block, bw_sem_id):
         """Start expert block `block` - w1 [be, D, 2I] and w2 [be, I, D]
         slabs, ONE contiguous descriptor each (max inner runs; measured
-        2.2+ TB/s standalone). Callers fence out-of-range blocks (OOB
-        DMA reads are fatal)."""
+        2.2+ TB/s standalone). fp8 adds the block's scale rows on the
+        SAME semaphores (v1's pattern - tiny, and it keeps the wait
+        structure one-per-sem-per-step). Callers fence out-of-range
+        blocks (OOB DMA reads are fatal)."""
         pltpu.make_async_copy(
             src_ref=w1_hbm.at[pl.ds(block * be, be)],
             dst_ref=b_w1_x2_vmem.at[bw_sem_id],
@@ -328,10 +396,19 @@ def _decode_moe_kernel(
             src_ref=w2_hbm.at[pl.ds(block * be, be)],
             dst_ref=b_w2_x2_vmem.at[bw_sem_id],
             sem=local_sems.at[bw_sem_id, 2]).start()
+        if fp8:
+            pltpu.make_async_copy(
+                src_ref=w1s_hbm.at[pl.ds(block * be, be)],
+                dst_ref=b_w1s_x2_vmem.at[bw_sem_id],
+                sem=local_sems.at[bw_sem_id, 1]).start()
+            pltpu.make_async_copy(
+                src_ref=w2s_hbm.at[pl.ds(block * be, be)],
+                dst_ref=b_w2s_x2_vmem.at[bw_sem_id],
+                sem=local_sems.at[bw_sem_id, 2]).start()
 
     def wait_fetch_bw(bw_sem_id):
-        """Wait BOTH of this step's slabs, once, at the step top (dummy
-        refs only size the waits)."""
+        """Wait BOTH of this step's slabs (plus, fp8, their scale rows),
+        once, at the step top (dummy refs only size the waits)."""
         pltpu.make_async_copy(
             src_ref=w1_hbm.at[pl.ds(0, be)],
             dst_ref=b_w1_x2_vmem.at[bw_sem_id],
@@ -340,6 +417,15 @@ def _decode_moe_kernel(
             src_ref=w2_hbm.at[pl.ds(0, be)],
             dst_ref=b_w2_x2_vmem.at[bw_sem_id],
             sem=local_sems.at[bw_sem_id, 2]).wait()
+        if fp8:
+            pltpu.make_async_copy(
+                src_ref=w1s_hbm.at[pl.ds(0, be)],
+                dst_ref=b_w1s_x2_vmem.at[bw_sem_id],
+                sem=local_sems.at[bw_sem_id, 1]).wait()
+            pltpu.make_async_copy(
+                src_ref=w2s_hbm.at[pl.ds(0, be)],
+                dst_ref=b_w2s_x2_vmem.at[bw_sem_id],
+                sem=local_sems.at[bw_sem_id, 2]).wait()
 
     # PROLOGUE 0 (DMA): the once-per-kernel inputs, one start/wait pair
     # per tensor (v1's start_fetch_b_gating / wait_fetch_b_gating
@@ -408,24 +494,61 @@ def _decode_moe_kernel(
             topk_idx_vmem[pl.ds(row0, padded_rows), :] = topk_indices
             topk_w_vmem[pl.ds(row0, padded_rows), :] = topk_weights
 
+    def quantize_tokens(row0):
+        """PROLOGUE 1b (fp8, VALU/XLU): per-token dynamic quantization
+        of the LOCAL shard, once per dispatch - the checkpoint's
+        activation_scheme is dynamic, and the production gmm quantizes
+        its LHS the same way (per-block in-kernel). Writes this
+        device's rows of tokens_full (e4m3) and s_tok (f32).
+
+        ACCURACY details, deliberate:
+        - abs-max per ROW (token), scale = amax/448 (e4m3 max);
+        - the quantized value is CLIPPED to [-448, 448]: e4m3 has no
+          Inf, and f32 rounding in x * (448/amax) can land a hair
+          above 448, which vcvt would turn into NaN;
+        - all-zero rows (incl. phantom pad rows) get s = 0, q = 0 -
+          zeros flow through gather/gmm and self-mask in dispatch
+          (idx = -1), satisfying the phantom-DATA-must-be-zeros rule;
+        - padding happens in f32 BEFORE the e4m3 cast."""
+        with jax.named_scope("moe_quant"):
+            t = tokens_local_vmem[...].astype(jnp.float32)   # [T/P, D]
+            if do_quant:
+                amax = jnp.max(jnp.abs(t), axis=1, keepdims=True)
+                sinv = jnp.where(amax > 0.0, 448.0 / amax, 0.0)
+                q = jnp.clip(t * sinv, -448.0, 448.0)
+                s = amax / 448.0                             # [T/P, 1]
+            else:
+                q = t
+                s = jnp.ones((num_local_tokens, 1), jnp.float32)
+            if padded_rows != num_local_tokens:
+                gap = padded_rows - num_local_tokens
+                q = jnp.pad(q, ((0, gap), (0, 0)))
+                s = jnp.pad(s, ((0, gap), (0, 0)))
+            tokens_full_vmem[pl.ds(row0, padded_rows), :] = q.astype(
+                qdtype)
+            s_tok_vmem[pl.ds(row0, padded_rows), :] = s
+
     def start_ag(my_id, row0):
         """PROLOGUE 2 (grid step 0): start the VMEM-direct all-gather.
 
-        Local: tokens_local [T/P, D] -> tokens_full[row0:row0+T/P],
-        then 3 remote copies per peer (token shard, topk_idx rows,
-        topk_w rows) straight into each peer's VMEM - no HBM staging;
-        the raw gating never exists outside the kernel. Returns with
-        the copies IN FLIGHT. Caller MUST have passed sync_barrier()
-        first: no peer VMEM may be written before its owner enters the
-        kernel (the barrier is hoisted into the prologue so it overlaps
-        the input fetches)."""
-        with jax.named_scope("moe_ag_local"):
-            block = tokens_local_vmem[...]
-            if padded_rows != num_local_tokens:
-                block = jnp.pad(
-                    block,
-                    ((0, padded_rows - num_local_tokens), (0, 0)))
-            tokens_full_vmem[pl.ds(row0, padded_rows), :] = block
+        Local: tokens_local [T/P, D] -> tokens_full[row0:row0+T/P]
+        (on the fp8 path quantize_tokens already wrote the local rows,
+        fp8 + s_tok - the AG then ships HALF the token bytes), then
+        the remote copies per peer (token shard, topk_idx rows, topk_w
+        rows, + s_tok rows on fp8) straight into each peer's VMEM - no
+        HBM staging; the raw gating never exists outside the kernel.
+        Returns with the copies IN FLIGHT. Caller MUST have passed
+        sync_barrier() first: no peer VMEM may be written before its
+        owner enters the kernel (the barrier is hoisted into the
+        prologue so it overlaps the input fetches)."""
+        if not fp8:
+            with jax.named_scope("moe_ag_local"):
+                block = tokens_local_vmem[...]
+                if padded_rows != num_local_tokens:
+                    block = jnp.pad(
+                        block,
+                        ((0, padded_rows - num_local_tokens), (0, 0)))
+                tokens_full_vmem[pl.ds(row0, padded_rows), :] = block
 
         if not do_ag:
             return
@@ -434,7 +557,7 @@ def _decode_moe_kernel(
                 @pl.when(peer != my_id)
                 def _send(peer=peer):
                     rows = pl.ds(row0, padded_rows)
-                    for src, dst, rsem in (
+                    sends = [
                         (tokens_full_vmem.at[rows, :],
                          tokens_full_vmem.at[rows, :],
                          recv_sem_tokens),
@@ -444,7 +567,12 @@ def _decode_moe_kernel(
                         (topk_w_vmem.at[rows, :],
                          topk_w_vmem.at[rows, :],
                          recv_sem_meta),
-                    ):
+                    ]
+                    if fp8:
+                        sends.append((s_tok_vmem.at[rows, :],
+                                      s_tok_vmem.at[rows, :],
+                                      recv_sem_meta))
+                    for src, dst, rsem in sends:
                         pltpu.make_async_remote_copy(
                             src_ref=src,
                             dst_ref=dst,
@@ -467,7 +595,9 @@ def _decode_moe_kernel(
             # depends on these and not on the (much larger) token shards,
             # which keep streaming underneath.
             inbound_rows = pl.ds(0, inbound * padded_rows)
-            for buf in (topk_idx_vmem, topk_w_vmem):
+            meta_bufs = ((topk_idx_vmem, topk_w_vmem, s_tok_vmem)
+                         if fp8 else (topk_idx_vmem, topk_w_vmem))
+            for buf in meta_bufs:
                 pltpu.make_async_copy(
                     buf.at[inbound_rows, :],
                     buf.at[inbound_rows, :],
@@ -485,7 +615,9 @@ def _decode_moe_kernel(
                     tokens_full_vmem.at[inbound_rows, :],
                     sem).wait()
             # send-side hygiene: the top-k sends complete too
-            for buf in (topk_idx_vmem, topk_w_vmem):
+            hygiene_bufs = ((topk_idx_vmem, topk_w_vmem, s_tok_vmem)
+                            if fp8 else (topk_idx_vmem, topk_w_vmem))
+            for buf in hygiene_bufs:
                 pltpu.make_async_copy(
                     buf.at[inbound_rows, :],
                     buf.at[inbound_rows, :], send_sem).wait()
@@ -499,6 +631,10 @@ def _decode_moe_kernel(
             # the per-step mask builder reduces over k with T on LANES;
             # one transpose here beats one per expert per grid step.
             idx_kt_vmem[...] = topk_idx_vmem[...].T          # [k, T]
+            if fp8:
+                # s_tok lane copy for the OHS row-broadcast build -
+                # one tiny [T,1] -> [1,T] transpose, once per dispatch
+                s_row_vmem[...] = s_tok_vmem[...].T          # [1, T]
 
     def build_dispatch(first_expert):
         """STEP 1 fill form (VALU + XLU, unskewed): per-expert dispatch
@@ -541,19 +677,26 @@ def _decode_moe_kernel(
 
     def dispatch_phase_c_valu(membership, slots):
         """STEP 1c (VALU): the one-hot operator selects for ONE
-        next-step expert. Returns (OH [C, T], OHG_T [T, C])."""
+        next-step expert. Returns (OH [C, T], OHG_T [T, C]) - fp8 adds
+        s_x [C, 1] (see _mask_operators)."""
         routed_mask, live_t, gate_t = membership
         slot, slot_t = slots
         with jax.named_scope("moe_masks"):
             return _mask_operators(
                 routed_mask=routed_mask, live_t=live_t, gate_t=gate_t,
                 slot=slot, slot_t=slot_t, num_tokens=num_tokens,
-                capacity=capacity, act_dtype=act_dtype)
+                capacity=capacity, act_dtype=act_dtype,
+                oh_dtype=qdtype if fp8 else None,
+                s_row=s_row_vmem[...] if fp8 else None)
 
     def zero_pieces():
         """Ablate stub: the piece structure with zero operators."""
-        return [(jnp.zeros((capacity, num_tokens), act_dtype),
-                 jnp.zeros((num_tokens, capacity), act_dtype))] * be
+        oh_dt = qdtype if fp8 else act_dtype
+        piece = (jnp.zeros((capacity, num_tokens), oh_dt),
+                 jnp.zeros((num_tokens, capacity), act_dtype))
+        if fp8:
+            piece = piece + (jnp.zeros((capacity, 1), jnp.float32),)
+        return [piece] * be
 
     def park_dispatch_mxu(pieces, x_slot, ohg_slot):
         """STEP 1d (MXU + vst): finish a step's dispatch from its pieces.
@@ -565,14 +708,23 @@ def _decode_moe_kernel(
         if do_gather:
             with jax.named_scope("moe_gather"):
                 oh_block = jnp.concatenate(
-                    [oh for oh, _ in pieces], axis=0)        # [be*C, T]
-                x_vmem.at[x_slot][...] = jnp.dot(
+                    [p[0] for p in pieces], axis=0)          # [be*C, T]
+                gathered = jnp.dot(
                     oh_block, tokens_full_vmem[...],
-                    preferred_element_type=jnp.float32,
-                ).astype(act_dtype)                          # [be*C, D]
+                    preferred_element_type=jnp.float32)      # [be*C, D]
+                # fp8: OH is 0/1 (exact in e4m3), each output element
+                # is one product 1.0 * v summed in f32, and the
+                # f32 -> e4m3 restore of an e4m3 value is LOSSLESS -
+                # the gather is exact selection, no requantization.
+                x_vmem.at[x_slot][...] = gathered.astype(
+                    qdtype if fp8 else act_dtype)
+        if fp8:
+            with jax.named_scope("moe_sx_park"):
+                s_x_vmem.at[x_slot][...] = jnp.concatenate(
+                    [p[2] for p in pieces], axis=0)          # [be*C, 1]
         with jax.named_scope("moe_ohg_park"):
             ohg_vmem.at[ohg_slot][...] = jnp.concatenate(
-                [ohg_t for _, ohg_t in pieces], axis=1)      # [T, be*C]
+                [p[1] for p in pieces], axis=1)              # [T, be*C]
 
     def expert_gmm1_mxu(local_e_id: int, x_step, w1_step):
         """STEP 4a (MXU): gmm1 for ONE expert - rows
@@ -592,6 +744,23 @@ def _decode_moe_kernel(
                     preferred_element_type=jnp.float32)
             return gate_up
 
+    def expert_scales_valu(local_e_id: int, gate_up, x_slot):
+        """STEP 4a' (VALU, fp8): dequantize the f32 accumulator ONCE,
+        after the full-K accumulation and BEFORE the silu nonlinearity
+        - exact under the per-channel contract (one scale covers the
+        whole contraction; no per-chunk subc machinery). Two broadcast
+        multiplies: s_x [C,1] (lane-broadcast; lowers as
+        vperm+vslreplicate, probe case scale_mult) and s_w13 [1,2I]
+        (sublane broadcast, stride-0)."""
+        rows = pl.ds(local_e_id * capacity, capacity)
+        with jax.named_scope("moe_scale1"):
+            s_xj = s_x_vmem[x_slot, rows, :]                 # [C, 1]
+            s13 = b_w1s_x2_vmem[x_slot,
+                                pl.ds(local_e_id, 1), :]     # [1, 2I]
+            return (gate_up
+                    * jnp.broadcast_to(s_xj, gate_up.shape)
+                    * jnp.broadcast_to(s13, gate_up.shape))
+
     def expert_act_eup(gate_up):
         """STEP 4b (EUP): SwiGLU - silu(gate) * up, exp2 + reciprocal on
         the transcendental unit. Own trace scope so its cost is visible
@@ -603,24 +772,35 @@ def _decode_moe_kernel(
                                 gate_up[:, inter_size:],
                                 "silu").astype(act_dtype)
 
-    def expert_gmm2_mxu(local_e_id: int, act_out, y_step, w2_step):
+    def expert_gmm2_mxu(local_e_id: int, act_out, y_step, w2_step,
+                        s2_step=None):
         """STEP 4c (MXU): gmm2 for ONE expert - act_out [C, Ipad]
         sliced to w2's UNPADDED rows @ w2_step [be, I, D] (this step's
         slab) -> rows [local_e_id*C : +C] of y_step [be*C, D]. Serving
         pads w13's per-shard intermediate to 128 but leaves w2 at the
         real I (30B: 96 vs 128); the pad columns of act_out are exact
         zeros (silu(0)*0), so the slice drops nothing. bd2c chunks the
-        output."""
+        output. fp8: act_out is bf16 against the fp8-stored w2 slab -
+        the multiply rides the free MSR->GMR bf16 latch (probe case
+        gmm2_w8a16: identical fp8 pushes, no vcvt storm); s2_step
+        [be, D] applies the per-channel w2 scale per n-chunk, on the
+        f32 result, before the bf16 cast."""
         rows = slice(local_e_id * capacity,
                      (local_e_id + 1) * capacity)
         i_w2 = w2_hbm.shape[1]           # unpadded per-shard I
         with jax.named_scope("moe_gmm2"):
             n_chunk = bd2c or hidden_size
             for n0 in range(0, hidden_size, n_chunk):
-                y_step[rows, n0:n0 + n_chunk] = jnp.dot(
+                t = jnp.dot(
                     act_out[:, :i_w2],
                     w2_step[local_e_id, :, n0:n0 + n_chunk], # [I, n_chunk]
-                    preferred_element_type=jnp.float32).astype(act_dtype)
+                    preferred_element_type=jnp.float32)
+                if s2_step is not None:
+                    with jax.named_scope("moe_scale2"):
+                        s2 = s2_step[pl.ds(local_e_id, 1),
+                                     pl.ds(n0, n_chunk)]     # [1, n_chunk]
+                        t = t * jnp.broadcast_to(s2, t.shape)
+                y_step[rows, n0:n0 + n_chunk] = t.astype(act_dtype)
 
     def combine_group():
         """STEP 5 (group end): acc [T, D] f32 += sum over the group's bg
@@ -642,6 +822,29 @@ def _decode_moe_kernel(
         with jax.named_scope("moe_combine"):
             t_chunk = bcT or num_tokens
             first_of_group = block_id - (bg - 1)
+            if fp8:
+                # K-FUSED (the steps0_3 Finding-1 restructure, probe-
+                # validated at 1.55x over the split form): ONE
+                # K = bg*be*C dot per row chunk. Concatenating the bg
+                # operand pairs into a single contraction makes the
+                # GMR fills 256-deep, halving the M-row streams at
+                # identical MACs; the MRB's store-add owns the
+                # cross-tile accumulation. Re-bracketed f32 sums vs
+                # the bf16 path => tolerance tests, never bitwise.
+                y_wide = jnp.concatenate(
+                    [y_vmem[p] for p in range(bg)],
+                    axis=0)                      # [bg*be*C, D]
+                for t0 in range(0, num_tokens, t_chunk):
+                    rows = pl.ds(t0, t_chunk)
+                    ohg_wide = jnp.concatenate(
+                        [ohg_vmem[lax.rem(first_of_group + p, ohg_ring),
+                                  t0:t0 + t_chunk, :]
+                         for p in range(bg)],
+                        axis=1)                  # [t_chunk, bg*be*C]
+                    acc_vmem[rows, :] = acc_vmem[rows, :] + jnp.dot(
+                        ohg_wide, y_wide,
+                        preferred_element_type=jnp.float32)
+                return
             for t0 in range(0, num_tokens, t_chunk):
                 rows = pl.ds(t0, t_chunk)
                 partial_sum = jnp.zeros((t_chunk, hidden_size), jnp.float32)
@@ -704,6 +907,8 @@ def _decode_moe_kernel(
         row0 = my_id * padded_rows
         if do_routing:
             compute_routing(row0)
+        if fp8:
+            quantize_tokens(row0)     # after routing (it reads bf16)
         start_ag(my_id, row0)
         acc_vmem[...] = jnp.zeros_like(acc_vmem)   # data-free, pre-wait
         if do_ag:
@@ -753,9 +958,13 @@ def _decode_moe_kernel(
         if do_ffn and j < be:
             gate_up = expert_gmm1_mxu(j, x_vmem.at[x_par],
                                       b_w1_x2_vmem.at[x_par])  # F(k, e_j)
+            if fp8 and do_scales:
+                gate_up = expert_scales_valu(j, gate_up, x_par)
             act_out = expert_act_eup(gate_up)
             expert_gmm2_mxu(j, act_out, y_vmem.at[group_pos],
-                            b_w2_x2_vmem.at[x_par])
+                            b_w2_x2_vmem.at[x_par],
+                            s2_step=(b_w2s_x2_vmem.at[x_par]
+                                     if (fp8 and do_scales) else None))
         if do_masks:
             if j < be:
                 a_out[j] = dispatch_phase_a_valu(            # A(k+1, e_j)
@@ -792,8 +1001,11 @@ def fused_moe_decode_tp_fused(
     tokens_local: jax.Array,   # [T/P, D]
     route_in: jax.Array,       # router_fused: [E, D] router weight
                                # (replicated); else [T/P, E] upstream logits
-    w1_local: jax.Array,       # [E, D, 2*I/P]
+    w1_local: jax.Array,       # [E, D, 2*I/P]; e4m3 => the fp8 path
     w2_local: jax.Array,       # [E, I/P, D]
+    w1_scale: jax.Array | None = None,   # fp8: [E, 1, 1, 2*I/P] or
+                               # [E, 2*I/P] f32 per-channel (in_blocks==1)
+    w2_scale: jax.Array | None = None,   # fp8: [E, 1, 1, D] or [E, D]
     *,
     router_fused: bool = True,
     mesh: jax.sharding.Mesh,
@@ -827,15 +1039,42 @@ def fused_moe_decode_tp_fused(
         interpret = pltpu.InterpretParams(dma_execution_mode="on_wait")
     num_devices = mesh.shape[axis_name]                      # P
     num_local_tokens, hidden_size = tokens_local.shape       # T/P, D
+    # fp8 path: e4m3 weights + per-channel scales (the serving default
+    # requant contract, in_blocks == 1). Scales are accepted in the
+    # serving 4-axis shape and squeezed to 2D here - a bitcast-class
+    # reshape of a small f32 tensor, NOT a weight relayout.
+    fp8 = w1_local.dtype == jnp.float8_e4m3fn
+    assert (w1_scale is not None) == fp8 and (
+        w2_scale is not None) == fp8, (
+        "fp8 (e4m3) weights require BOTH per-channel scales; bf16 "
+        "takes none", w1_local.dtype, w1_scale is None, w2_scale is None)
+    if fp8:
+        assert w2_local.dtype == jnp.float8_e4m3fn, w2_local.dtype
+        w1_scale = w1_scale.reshape(w1_local.shape[0], -1).astype(
+            jnp.float32)                                     # [E, 2I]
+        w2_scale = w2_scale.reshape(w2_local.shape[0], -1).astype(
+            jnp.float32)                                     # [E, D]
+        assert w1_scale.shape[1] == w1_local.shape[2], (
+            "w13 scale is not per-channel in_blocks==1 (block-scale "
+            "checkpoints must be requantized - the serving default)",
+            w1_scale.shape, w1_local.shape)
+        assert w2_scale.shape[1] == w2_local.shape[2], (
+            w2_scale.shape, w2_local.shape)
     # pad each device's row block to the sublane tile: serving calls
     # with as few as 2 rows/device, and the kernel's dynamic row0
-    # (my_id * padded_rows) must be provably 16-aligned (E2003). All
+    # (my_id * padded_rows) must be provably 16-aligned (E2003) - 32
+    # for fp8, whose (8,128)(4,1) tile packs 4 rows per word. All
     # T-sized buffers are allocated padded; phantom rows are masked out
     # of dispatch and sliced off after the reduce-scatter. When T/P is
     # already aligned (the bench shapes) this is the identity.
-    padded_rows = -(-num_local_tokens // 16) * 16
+    row_granule = 32 if fp8 else 16
+    padded_rows = -(-num_local_tokens // row_granule) * row_granule
     num_tokens = padded_rows * num_devices                   # T (padded)
     num_experts, _, inter2 = w1_local.shape                  # E, _, 2*I/P
+    if fp8:
+        assert capacity % 32 == 0, (
+            "fp8 x rows are 32-packed; capacity must be a multiple "
+            "of 32", capacity)
     # serving pads w13's per-shard I to 128 but not w2's (30B: w13 gives
     # 128/projection, w2 has 96 rows) - w2 buffers size from w2 itself
     i_w2 = w2_local.shape[1]
@@ -862,19 +1101,29 @@ def fused_moe_decode_tp_fused(
     # weights stream through x2 buffers of whole expert-block slabs
     # (waited once per step, keeping the emission one basic block).
     act_bytes = jnp.dtype(tokens_local.dtype).itemsize
+    w_bytes = jnp.dtype(w1_local.dtype).itemsize   # 1 in fp8, 2 in bf16
+    tok_bytes = 1 if fp8 else act_bytes            # tokens_full / x / oh
     weight_block = be * (hidden_size * inter2
-                         + i_w2 * hidden_size) * act_bytes
+                         + i_w2 * hidden_size) * w_bytes
     vmem_need = (
         2 * weight_block                     # w1+w2 slab x2 buffers
         + num_local_tokens * hidden_size * act_bytes   # tokens_local copy
         + route_in.size * route_in.dtype.itemsize  # router_w/gating copy
         + num_tokens * hidden_size * act_bytes         # out staging
-        + num_tokens * hidden_size * act_bytes         # tokens_full
+        + num_tokens * hidden_size * tok_bytes         # tokens_full
         + num_tokens * hidden_size * 4                 # acc (f32)
-        + (2 + bg) * be * capacity * hidden_size * act_bytes  # x(2) + y
+        + 2 * be * capacity * hidden_size * tok_bytes  # x parity pair
+        + bg * be * capacity * hidden_size * act_bytes # y (bf16 always)
         + 2 * bg * num_tokens * be * capacity * act_bytes  # ohg ring
         + 3 * num_tokens * top_k * 4           # topk tables, both layouts
     )
+    if fp8:
+        vmem_need += (
+            2 * be * (inter2 + hidden_size) * 4    # scale slab x2 bufs
+            + num_tokens * 128 * 4                 # s_tok [T,1] lane-padded
+            + 8 * num_tokens * 4                   # s_row [1,T] sublane-pad
+            + 2 * 128 * be * capacity * 4          # s_x [2,beC,1] lane-pad
+        )
     assert vmem_need <= vmem_limit_bytes, (
         f"static VMEM need {vmem_need / 2**20:.1f} MiB exceeds "
         f"{vmem_limit_bytes / 2**20:.0f} MiB "
@@ -882,6 +1131,45 @@ def fused_moe_decode_tp_fused(
         f"with 2x x-parity and 2*bg ohg-ring slots; "
         f"try a smaller be, bg or capacity)")
 
+    tok_dtype = jnp.float8_e4m3fn if fp8 else tokens_local.dtype
+    num_inputs = 6 if fp8 else 4
+    scratch_shapes = [
+        pltpu.VMEM((num_tokens, hidden_size),
+                   tok_dtype),                           # tokens_full
+        pltpu.SemaphoreType.DMA,                         # send_sem
+        pltpu.SemaphoreType.DMA,                         # recv_sem_tokens
+        pltpu.SemaphoreType.DMA,                         # recv_sem_meta
+        pltpu.VMEM((num_tokens, hidden_size), jnp.float32),      # acc
+        pltpu.VMEM((num_tokens, top_k), jnp.int32),      # topk_idx
+        pltpu.VMEM((num_tokens, top_k), jnp.float32),    # topk_w
+        pltpu.VMEM((top_k, num_tokens), jnp.int32),      # idx_kt
+        pltpu.VMEM((2, be * capacity, hidden_size),
+                   tok_dtype),                           # x, parity
+        pltpu.VMEM((bg, be * capacity, hidden_size),
+                   tokens_local.dtype),                  # y
+        pltpu.VMEM((2 * bg, num_tokens, be * capacity),
+                   tokens_local.dtype),                  # ohg ring
+        pltpu.VMEM((2, be, hidden_size, inter2),
+                   w1_local.dtype),                      # b_w1_x2_vmem
+        pltpu.VMEM((2, be, i_w2, hidden_size),
+                   w2_local.dtype),                      # b_w2_x2_vmem
+        pltpu.SemaphoreType.DMA((2, 5)),                 # local_sems
+        pltpu.VMEM(tokens_local.shape,
+                   tokens_local.dtype),                  # tokens copy
+        pltpu.VMEM(route_in.shape, route_in.dtype),      # route copy
+        pltpu.VMEM((num_tokens, hidden_size),
+                   tokens_local.dtype),                  # out staging
+    ]
+    if fp8:
+        scratch_shapes += [
+            pltpu.VMEM((num_tokens, 1), jnp.float32),    # s_tok
+            pltpu.VMEM((1, num_tokens), jnp.float32),    # s_row
+            pltpu.VMEM((2, be * capacity, 1),
+                       jnp.float32),                     # s_x, parity
+            pltpu.VMEM((2, be, inter2), jnp.float32),    # b_w1s_x2
+            pltpu.VMEM((2, be, hidden_size),
+                       jnp.float32),                     # b_w2s_x2
+        ]
     grid_spec = pltpu.PrefetchScalarGridSpec(
         num_scalar_prefetch=0,
         grid=(num_blocks,),
@@ -893,39 +1181,11 @@ def fused_moe_decode_tp_fused(
             # per-kernel constants. The weights stream via the blocked
             # fetch (see fetch_weights); tokens/route are fetched once
             # in the prologue; out is DMA'd once in the epilogue.
-            pl.BlockSpec(memory_space=pltpu.MemorySpace.HBM),
-            pl.BlockSpec(memory_space=pltpu.MemorySpace.HBM),
-            pl.BlockSpec(memory_space=pltpu.MemorySpace.HBM),
-            pl.BlockSpec(memory_space=pltpu.MemorySpace.HBM),
+            pl.BlockSpec(memory_space=pltpu.MemorySpace.HBM)
+            for _ in range(num_inputs)
         ],
         out_specs=pl.BlockSpec(memory_space=pltpu.MemorySpace.HBM),
-        scratch_shapes=[
-            pltpu.VMEM((num_tokens, hidden_size),
-                       tokens_local.dtype),                  # tokens_full
-            pltpu.SemaphoreType.DMA,                         # send_sem
-            pltpu.SemaphoreType.DMA,                         # recv_sem_tokens
-            pltpu.SemaphoreType.DMA,                         # recv_sem_meta
-            pltpu.VMEM((num_tokens, hidden_size), jnp.float32),      # acc
-            pltpu.VMEM((num_tokens, top_k), jnp.int32),      # topk_idx
-            pltpu.VMEM((num_tokens, top_k), jnp.float32),    # topk_w
-            pltpu.VMEM((top_k, num_tokens), jnp.int32),      # idx_kt
-            pltpu.VMEM((2, be * capacity, hidden_size),
-                       tokens_local.dtype),                  # x, parity
-            pltpu.VMEM((bg, be * capacity, hidden_size),
-                       tokens_local.dtype),                  # y
-            pltpu.VMEM((2 * bg, num_tokens, be * capacity),
-                       tokens_local.dtype),                  # ohg ring
-            pltpu.VMEM((2, be, hidden_size, inter2),
-                       w1_local.dtype),                      # b_w1_x2_vmem
-            pltpu.VMEM((2, be, i_w2, hidden_size),
-                       w2_local.dtype),                      # b_w2_x2_vmem
-            pltpu.SemaphoreType.DMA((2, 5)),                 # local_sems
-            pltpu.VMEM(tokens_local.shape,
-                       tokens_local.dtype),                  # tokens copy
-            pltpu.VMEM(route_in.shape, route_in.dtype),      # route copy
-            pltpu.VMEM((num_tokens, hidden_size),
-                       tokens_local.dtype),                  # out staging
-        ],
+        scratch_shapes=scratch_shapes,
     )
     kernel = functools.partial(
         _decode_moe_kernel,
@@ -943,7 +1203,21 @@ def fused_moe_decode_tp_fused(
         bd2c=bd2c,
         bcT=bcT,
         ablate=ablate,
+        fp8=fp8,
     )
+    # pin every operand in HBM (v1's idiom): without the constraint
+    # XLA may try to stage operands into VMEM
+    operands = [
+        pltpu.with_memory_space_constraint(tokens_local, pltpu.HBM),
+        pltpu.with_memory_space_constraint(route_in, pltpu.HBM),
+        pltpu.with_memory_space_constraint(w1_local, pltpu.HBM),
+        pltpu.with_memory_space_constraint(w2_local, pltpu.HBM),
+    ]
+    if fp8:
+        operands += [
+            pltpu.with_memory_space_constraint(w1_scale, pltpu.HBM),
+            pltpu.with_memory_space_constraint(w2_scale, pltpu.HBM),
+        ]
     out = pl.pallas_call(
         kernel,
         grid_spec=grid_spec,
@@ -956,13 +1230,7 @@ def fused_moe_decode_tp_fused(
             vmem_limit_bytes=vmem_limit_bytes,
         ),
         interpret=interpret,
-    )(
-      # pin every operand in HBM (v1's idiom): without the constraint
-      # XLA may try to stage operands into VMEM
-      pltpu.with_memory_space_constraint(tokens_local, pltpu.HBM),
-      pltpu.with_memory_space_constraint(route_in, pltpu.HBM),
-      pltpu.with_memory_space_constraint(w1_local, pltpu.HBM),
-      pltpu.with_memory_space_constraint(w2_local, pltpu.HBM))
+    )(*operands)
     out = lax.psum_scatter(out, axis_name, scatter_dimension=0, tiled=True)
     return out[:num_local_tokens]        # drop the phantom pad rows
 
@@ -972,6 +1240,10 @@ def fused_moe_decode_tp_serving(
     gating_output: jax.Array,  # [T, E] router logits, same sharding
     w1: jax.Array,             # [E, D, 2I] sharded on the last axis
     w2: jax.Array,             # [E, I, D] sharded on the middle axis
+    w1_scale: jax.Array | None = None,   # fp8: [E, 1, 1, 2I] f32,
+                               # sharded on the last axis with w1
+    w2_scale: jax.Array | None = None,   # fp8: [E, 1, 1, D] f32,
+                               # REPLICATED (in_blocks == 1)
     *,
     mesh: jax.sharding.Mesh,
     axis_name: str,
@@ -999,6 +1271,23 @@ def fused_moe_decode_tp_serving(
     # the fused entry's positional order IS the shard_map operand order,
     # so binding the static config is all it takes
     P = jax.sharding.PartitionSpec
+    fp8 = w1.dtype == jnp.float8_e4m3fn
+    if fp8:
+        # fp8 x rows pack 4/word: the kernel needs capacity % 32 == 0.
+        # Rounding UP only ever reduces capacity drops.
+        capacity = -(-capacity // 32) * 32
+    in_specs = [P(axis_name, None),
+                P(axis_name, None),
+                P(None, None, axis_name),
+                P(None, axis_name, None)]
+    operands = [hidden_states, gating_output, w1, w2]
+    if fp8:
+        # w13 scale is per-shard-reordered WITH the weight (same
+        # process_w13_for_gmm), so it shards on its last axis; w2's
+        # per-channel scale (in_blocks == 1) is replicated.
+        in_specs += [P(None, None, None, axis_name),
+                     P(None, None, None, None)]
+        operands += [w1_scale, w2_scale]
     return jax.shard_map(
         functools.partial(
             fused_moe_decode_tp_fused,
@@ -1013,10 +1302,7 @@ def fused_moe_decode_tp_serving(
             interpret=interpret,
         ),
         mesh=mesh,
-        in_specs=(P(axis_name, None),
-                  P(axis_name, None),
-                  P(None, None, axis_name),
-                  P(None, axis_name, None)),
+        in_specs=tuple(in_specs),
         out_specs=P(axis_name, None),
         check_vma=False,
-    )(hidden_states, gating_output, w1, w2)
+    )(*operands)
