@@ -128,10 +128,10 @@ def _kernel_pair(w1_hbm, w2_hbm, o_ref, w1_bufs, w2_bufs, sems, *, be: int):
                       + w2_bufs[slot, 0, 0:8, 0:128].astype(jnp.float32))
 
 
-def build_pair(be: int, dtype=jnp.bfloat16):
+def build_pair(be: int, dtype=jnp.bfloat16, num_experts: int = E):
     return pl.pallas_call(
         functools.partial(_kernel_pair, be=be),
-        grid=(E // be,),
+        grid=(num_experts // be,),
         in_specs=[pl.BlockSpec(memory_space=pltpu.MemorySpace.HBM),
                   pl.BlockSpec(memory_space=pltpu.MemorySpace.HBM)],
         out_specs=pl.BlockSpec((8, 128), lambda i: (0, 0)),
@@ -144,6 +144,59 @@ def build_pair(be: int, dtype=jnp.bfloat16):
         compiler_params=pltpu.CompilerParams(
             vmem_limit_bytes=100 * 2**20),
     )
+
+
+def _kernel_null(x_ref, o_ref, sem):
+    """Empty grid steps: no DMA, no compute - wall(null) isolates the
+    CALL ENVELOPE (jit dispatch + shard_map + launch + sync), and
+    null(128) - null(1) isolates the per-step grid floor."""
+    del sem
+    blk = pl.program_id(0)
+
+    @pl.when(blk == pl.num_programs(0) - 1)
+    def _emit():
+        o_ref[...] = jnp.zeros_like(o_ref) + x_ref[0, 0]
+
+
+def build_null(steps: int):
+    return pl.pallas_call(
+        _kernel_null,
+        grid=(steps,),
+        in_specs=[pl.BlockSpec((8, 128), lambda i: (0, 0))],
+        out_specs=pl.BlockSpec((8, 128), lambda i: (0, 0)),
+        out_shape=jax.ShapeDtypeStruct((8, 128), jnp.float32),
+        scratch_shapes=[pltpu.SemaphoreType.DMA],
+    )
+
+
+def run_null() -> None:
+    """Round-3 discriminator for the ENVELOPE hypothesis (H1): the
+    round-1/2 walls fit wall = bytes/BW + E with BW ~= 3.3-3.5 TB/s
+    (near spec) and E_solo ~= 166 us / E_8dev ~= 363 us ~= the bench
+    harness envelope (354 us, floor_decomp 2026-08-29). H1 PREDICTS:
+    null_1dev(1) ~= 150-180, null_8dev(1) ~= 330-400, and steps=128
+    adds < 60 us. If null_8dev is instead ~= 0, the fixed cost lives
+    device-side and the fp8 stream floor really is ~600 us."""
+    x = jnp.zeros((8, 128), jnp.float32)
+    for steps in (1, 128):
+        fn = jax.jit(build_null(steps))
+        t, med = _timed(fn, x)
+        print(f" null_1dev[steps={steps}]: {t * 1e6:8.1f} us   "
+              f"(median {med * 1e6:.1f} us)")
+    p = len(jax.devices())
+    if p < 2:
+        return
+    mesh = jax.sharding.Mesh(np.array(jax.devices()), ("x",))
+    P = jax.sharding.PartitionSpec
+    xs = jnp.zeros((8 * p, 128), jnp.float32)
+    for steps in (1, 128):
+        fn = jax.jit(jax.shard_map(
+            build_null(steps), mesh=mesh,
+            in_specs=(P("x", None),), out_specs=P("x", None),
+            check_vma=False))
+        t, med = _timed(fn, xs)
+        print(f" null_{p}dev[steps={steps}]: {t * 1e6:8.1f} us   "
+              f"(median {med * 1e6:.1f} us)")
 
 
 def _timed(fn, *args, iters: int = 10):
@@ -166,10 +219,12 @@ def run_pair(w1_np: np.ndarray, w2_np: np.ndarray, be: int = 4) -> None:
     the derate, not the kernel."""
     per_dev_bytes = w1_np.nbytes + w2_np.nbytes
     print(f"weight pair: {per_dev_bytes / 2**30:.2f} GiB per device "
-          f"(w1 {E}x{D}x{I2} + w2 {E}x{IP}x{D} {w1_np.dtype})")
+          f"(w1 {w1_np.shape[0]}x{D}x{I2} + w2 {w2_np.shape[0]}x{IP}x{D} "
+          f"{w1_np.dtype})")
 
     dev0 = jax.devices()[0]
-    fn1 = jax.jit(build_pair(be=be, dtype=w1_np.dtype))
+    nexp = w1_np.shape[0]
+    fn1 = jax.jit(build_pair(be=be, dtype=w1_np.dtype, num_experts=nexp))
     try:
         t, med = _timed(fn1, jax.device_put(jnp.asarray(w1_np), dev0),
                         jax.device_put(jnp.asarray(w2_np), dev0))
@@ -187,13 +242,15 @@ def run_pair(w1_np: np.ndarray, w2_np: np.ndarray, be: int = 4) -> None:
     mesh = jax.sharding.Mesh(np.array(jax.devices()), ("x",))
     P = jax.sharding.PartitionSpec
     w1_all = jax.make_array_from_callback(
-        (p * E, D, I2), jax.sharding.NamedSharding(mesh, P("x", None, None)),
+        (p * nexp, D, I2),
+        jax.sharding.NamedSharding(mesh, P("x", None, None)),
         lambda idx: w1_np)   # every device: its own full local shard
     w2_all = jax.make_array_from_callback(
-        (p * E, IP, D), jax.sharding.NamedSharding(mesh, P("x", None, None)),
+        (p * nexp, IP, D),
+        jax.sharding.NamedSharding(mesh, P("x", None, None)),
         lambda idx: w2_np)
     fn8 = jax.jit(jax.shard_map(
-        build_pair(be=be, dtype=w1_np.dtype), mesh=mesh,
+        build_pair(be=be, dtype=w1_np.dtype, num_experts=nexp), mesh=mesh,
         in_specs=(P("x", None, None), P("x", None, None)),
         out_specs=P("x", None), check_vma=False))
     try:
@@ -240,24 +297,31 @@ def main() -> None:
     # is [packing, 128] ELEMENTS), so the fp8 pair (768 MiB) should run
     # at the SAME GB/s as bf16 = ~half the time; a bandwidth deviation
     # here IS a finding and re-prices the whole fp8 plan.
-    # ANSWERED (2026-08-30, be=4): DEVIATION FOUND. bf16 8dev 848-855us
-    # (1.88-1.90 TB/s) but fp8 8dev 592-600us (1.34-1.36 TB/s) - NOT
-    # byte-rate parity. Two-point fit (bf16 vs fp8 at 8dev): marginal
-    # BW = 768MiB/(848-596)us ~= 3.2 TB/s (= the CMN spec!) plus a
-    # FIXED ~345us = ~2.7us/grid-step x 128 steps (1.15us/step solo).
-    # The historic "1.88 TB/s under load" conflated the two. The be
-    # sweep below discriminates: if the fixed cost is per-step,
-    # fp8 8dev predicts ~424us at be=8 (64 steps) and ~338us at be=16;
-    # if it is a byte-rate derate, ~592us at every be. bf16 be=8 is the
-    # cross-check (predicts ~660us if per-step; be=8 never fit the
-    # KERNEL's VMEM at bf16 - 48 MiB slabs - but fits this probe's
-    # 100 MB limit; fp8 be=8 = 24 MiB fits the kernel too, making this
-    # the mechanism behind proposal candidate 5).
+    # ROUND 1 ANSWERED (2026-08-30, be=4): byte-rate parity FAILED -
+    # fp8 8dev 592-600us, not ~424. ROUND 2 ANSWERED (be sweep): FLAT
+    # (fp8 579-631 at be=4/8/16; bf16 837-841 at be=8) - the fixed
+    # cost is NOT per-step. H1 (call ENVELOPE): all 8 wall points fit
+    # wall = bytes/BW + E with BW ~= 3.49 TB/s solo / 3.34 TB/s 8dev
+    # and E ~= 166 solo / 363 8dev - and 363 matches the bench harness
+    # envelope (354us, floor_decomp). If H1 holds, the TRUE device
+    # stream is bf16 ~482 / fp8 ~241us, and the fp8 kernel is
+    # MXU-BOUND (357us > 241) - run_null() is the discriminator.
     w1_f8 = np.asarray(w_np, jnp.float8_e4m3fn)   # values irrelevant
     w2_f8 = np.asarray(w2_np, jnp.float8_e4m3fn)
     for be in (4, 8, 16):
         run_pair(w1_f8, w2_f8, be=be)
     run_pair(w_np, w2_np, be=8)
+
+    # ROUND 3: (a) null kernel - measures the envelope directly, see
+    # run_null docstring for the H1 predictions; (b) fp8 byte sweep
+    # over expert count (lesson 14: scaling separates rate from fixed
+    # cost, catches nonlinearity) - H1 predicts wall(e) =
+    # e/512 * 241us + 363: e=64 -> ~393, 128 -> ~423, 256 -> ~483.
+    # Nonlinearity here = a NEW hidden cost (the bf16 XLA-copy
+    # pattern); linear-with-intercept-363 = H1 confirmed twice over.
+    run_null()
+    for e_cnt in (64, 128, 256):
+        run_pair(w1_f8[:e_cnt], w2_f8[:e_cnt], be=4)
 
 
 if __name__ == "__main__":
