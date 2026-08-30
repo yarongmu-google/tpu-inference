@@ -66,6 +66,12 @@ run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
 run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
     --wdtype=fp8 --variants=v02 --iters=30 --warmup=5 $FLAGS
 
+# ---- 3b) act-scale A/B: tensor mode deletes OHS/s_x (one global
+# ---- dynamic scale, amax exchange under routing). (3) vs (3b) = the
+# ---- per-token machinery's true price; accuracy ladder judges later.
+run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
+    --wdtype=fp8 --act-scale=tensor --variants=v02 --iters=30 --warmup=5 $FLAGS
+
 # ---- 4) envelope + ablation ladder, incl the new fp8 rows -----------
 run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
     --wdtype=fp8 --variants=env --iters=10 --warmup=3

@@ -248,6 +248,12 @@ def main() -> None:
                         help="v2 weight dtype: fp8 = e4m3 weights + "
                         "per-channel f32 scales (the w8a8 path; v1 "
                         "stays bf16 - its fp8 wiring is separate)")
+    parser.add_argument("--act-scale", dest="act_scale", type=str,
+                        default="token", choices=("token", "tensor"),
+                        help="fp8 activation-scale mode: token = "
+                        "per-token dynamic (reference numerics); "
+                        "tensor = one dispatch-global dynamic scale "
+                        "(deletes the OHS/s_x VALU machinery)")
     parser.add_argument("--variants", type=str, default="v1,v02",
                         help="comma list from {v1, v02, env} - env "
                         "adds harness-only and harness+RS rows")
@@ -394,6 +400,7 @@ def main() -> None:
                     w2x,
                     w1_scale=s1,
                     w2_scale=s2,
+                    act_scale=args.act_scale,
                     mesh=mesh_v2,
                     axis_name="x",
                     top_k=k,
@@ -428,6 +435,8 @@ def main() -> None:
             v2_name = "v2_tp_inkernel_ag"
             if fp8:
                 v2_name += "[fp8]"
+                if args.act_scale != "token":
+                    v2_name += f"[as={args.act_scale}]"
             if args.ablate != "none":
                 v2_name += f"[ablate={args.ablate}]"
             variants[v2_name] = v2_runner(

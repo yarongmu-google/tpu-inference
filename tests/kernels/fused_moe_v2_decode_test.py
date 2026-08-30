@@ -460,3 +460,59 @@ def test_decode_kernel_fp8_lowers_for_tpu_on_cpu(t):
             tokens, gating, jnp.asarray(w1_l), jnp.asarray(w2_l),
             w1s_l, w2s_l)
     assert len(exported.mlir_module_serialized) > 0
+
+
+def _dequant_tokens_tensor_like_kernel(tokens: np.ndarray) -> np.ndarray:
+    """The tensor-mode quantization mirror: ONE global dynamic scale."""
+    g = float(np.abs(tokens).max())
+    sinv = 448.0 / g if g > 0 else 0.0
+    q = np.asarray(np.clip(tokens * sinv, -448.0, 448.0),
+                   jnp.float8_e4m3fn)
+    return q.astype(np.float32) * (g / 448.0)
+
+
+@pytest.mark.parametrize("t,d,e,i,k", [(64, 256, 16, 128, 4)])
+def test_decode_kernel_fp8_tensor_scale_matches_reference(t, d, e, i, k):
+    """act_scale="tensor": the prologue amax exchange must land the
+    same GLOBAL scale on every device, and the OHS-free path must
+    reproduce the dequantized math (scales fold into the s13 row)."""
+    _skip_unless_devices(P_DEV)
+    rng = np.random.default_rng(3)
+    tokens = np.asarray(rng.standard_normal((t, d)), np.float32)
+    w1 = rng.standard_normal((e, d, 2, i)) * 0.02
+    w2 = rng.standard_normal((e, i, d)) * 0.02
+    router_w = np.asarray(rng.standard_normal((e, d)) * 0.1, np.float32)
+    gating = tokens @ router_w.T
+    w1_q, w1_s = _quant_per_channel(w1, axis=1)
+    w2_q, w2_s = _quant_per_channel(w2, axis=1)
+    mesh = Mesh(np.array(jax.devices()[:P_DEV]), ("x",))
+
+    def fn(tok_l, w1_l, w2_l, r_l, s1_l, s2_l):
+        return fused_moe_decode_tp_fused(
+            tok_l, r_l,
+            w1_l.reshape(w1_l.shape[0], w1_l.shape[1], -1),
+            w2_l,
+            s1_l.reshape(s1_l.shape[0], -1),
+            s2_l.reshape(s2_l.shape[0], -1),
+            act_scale="tensor",
+            mesh=mesh, axis_name="x", top_k=k,
+            renormalize_topk_logits=True, capacity=t, be=4, bg=2,
+            interpret=True)
+
+    got = jax.jit(jax.shard_map(
+        fn, mesh=mesh,
+        in_specs=(P("x", None), P(None, None, None, "x"),
+                  P(None, "x", None), P(None, None),
+                  P(None, None, None, "x"), P(None, None, None)),
+        out_specs=P("x", None), check_vma=False,
+    ))(jnp.asarray(tokens), jnp.asarray(w1_q), jnp.asarray(w2_q),
+       jnp.asarray(router_w), jnp.asarray(w1_s), jnp.asarray(w2_s))
+
+    w1_deq = (w1_q.astype(np.float32) * w1_s).reshape(e, d, 2 * i)
+    w2_deq = w2_q.astype(np.float32) * w2_s
+    tok_deq = _dequant_tokens_tensor_like_kernel(tokens)
+    want = _reference_moe(jnp.asarray(tok_deq), jnp.asarray(w1_deq),
+                          jnp.asarray(w2_deq), jnp.asarray(gating), k,
+                          renormalize=True)
+    np.testing.assert_allclose(np.asarray(got), np.asarray(want),
+                               rtol=2e-2, atol=2e-2)

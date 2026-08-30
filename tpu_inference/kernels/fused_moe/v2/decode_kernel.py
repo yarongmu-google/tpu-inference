@@ -275,6 +275,7 @@ def _decode_moe_kernel(
     bcT: int | None = None,
     ablate: str = "none",
     fp8: bool = False,
+    act_scale: str = "token",
 ):
     if fp8:
         (tokens_local_hbm, route_in_hbm, w1_hbm, w2_hbm,
@@ -284,7 +285,7 @@ def _decode_moe_kernel(
          x_vmem, y_vmem, ohg_vmem, b_w1_x2_vmem, b_w2_x2_vmem,
          local_sems, tokens_local_vmem, router_w_vmem, out_stage_vmem,
          s_tok_vmem, s_row_vmem, s_x_vmem,
-         b_w1s_x2_vmem, b_w2s_x2_vmem) = refs
+         b_w1s_x2_vmem, b_w2s_x2_vmem, recv_sem_amax) = refs
     else:
         (tokens_local_hbm, route_in_hbm, w1_hbm, w2_hbm, out_hbm,
          tokens_full_vmem, send_sem, recv_sem_tokens, recv_sem_meta,
@@ -293,6 +294,13 @@ def _decode_moe_kernel(
          local_sems, tokens_local_vmem, router_w_vmem,
          out_stage_vmem) = refs
     qdtype = jnp.float8_e4m3fn
+    # act_scale="tensor" (fp8): ONE dynamic scale per dispatch, shared
+    # across devices via a prologue amax exchange that flies UNDER the
+    # routing matmul. Deletes the per-token machinery wholesale: no
+    # s_tok AG payload, no OHS operator, no s_x parks, no [C,1]
+    # lane-broadcasts - about a third of the measured VALU bound.
+    # Accuracy arm vs "token" (the checkpoint's reference scheme).
+    act_tensor = fp8 and act_scale == "tensor"
     # `ablate` stubs one stage at a time so wall-clock differences localise
     # the cost. The profiler segfaults in this environment (PLUGIN_Profiler
     # ABI mismatch), so differential timing is the only stage-level signal.
@@ -545,6 +553,67 @@ def _decode_moe_kernel(
                 qdtype)
             s_tok_vmem[pl.ds(row0, padded_rows), :] = s
 
+    def start_amax_exchange(my_id, row0):
+        """PROLOGUE 1a (fp8 tensor-scale): broadcast the local shard's
+        abs-max into this device's s_tok rows and ship them to every
+        peer NOW - the tiny exchange (padded_rows x 4 B per peer)
+        flies UNDER the routing matmul, so the global-scale round trip
+        costs prologue latency it already had. Uses its own recv sem
+        (recv_sem_amax) so the early drain cannot eat the later top-k
+        meta credits."""
+        with jax.named_scope("moe_amax_xchg"):
+            t = tokens_local_vmem[...].astype(jnp.float32)
+            amax = jnp.max(jnp.abs(t))                   # scalar
+            s_tok_vmem[pl.ds(row0, padded_rows), :] = jnp.broadcast_to(
+                amax, (padded_rows, 1))
+            if not do_ag:
+                return
+            rows = pl.ds(row0, padded_rows)
+            for peer in range(num_devices):
+                @pl.when(peer != my_id)
+                def _send(peer=peer):
+                    pltpu.make_async_remote_copy(
+                        src_ref=s_tok_vmem.at[rows, :],
+                        dst_ref=s_tok_vmem.at[rows, :],
+                        send_sem=send_sem,
+                        recv_sem=recv_sem_amax,
+                        device_id=get_mesh_device_id(peer),
+                        device_id_type=pl.DeviceIdType.MESH,
+                    ).start()
+
+    def finish_amax_and_quantize(row0):
+        """PROLOGUE 1c (fp8 tensor-scale, after routing): drain the
+        amax arrivals, take the GLOBAL max, park it in s_row_vmem
+        (which the tensor mode does not otherwise use - pl.when scoping
+        means the scalar must live in VMEM to reach the steady state),
+        and quantize the local shard with the shared scale. Same
+        clip/zero/pad discipline as the per-token path."""
+        with jax.named_scope("moe_amax_drain"):
+            # drain only what was sent: the exchange is gated on
+            # do_quant AND do_ag at the call site
+            if do_ag and do_quant:
+                inbound_rows = pl.ds(0, inbound * padded_rows)
+                pltpu.make_async_copy(
+                    s_tok_vmem.at[inbound_rows, :],
+                    s_tok_vmem.at[inbound_rows, :],
+                    recv_sem_amax).wait()
+            g = jnp.max(s_tok_vmem[...])                 # global amax
+        with jax.named_scope("moe_quant"):
+            t = tokens_local_vmem[...].astype(jnp.float32)
+            if do_quant:
+                sinv = jnp.where(g > 0.0, 448.0 / g, 0.0)
+                q = jnp.clip(t * sinv, -448.0, 448.0)
+                s_row_vmem[...] = jnp.broadcast_to(
+                    g / 448.0, s_row_vmem.shape)         # the ONE scale
+            else:
+                q = t
+                s_row_vmem[...] = jnp.ones_like(s_row_vmem)
+            if padded_rows != num_local_tokens:
+                q = jnp.pad(
+                    q, ((0, padded_rows - num_local_tokens), (0, 0)))
+            tokens_full_vmem[pl.ds(row0, padded_rows), :] = q.astype(
+                qdtype)
+
     def start_ag(my_id, row0):
         """PROLOGUE 2 (grid step 0): start the VMEM-direct all-gather.
 
@@ -585,7 +654,9 @@ def _decode_moe_kernel(
                          topk_w_vmem.at[rows, :],
                          recv_sem_meta),
                     ]
-                    if fp8:
+                    if fp8 and not act_tensor:
+                        # per-token scales ride the meta group; the
+                        # tensor mode already exchanged its one amax
                         sends.append((s_tok_vmem.at[rows, :],
                                       s_tok_vmem.at[rows, :],
                                       recv_sem_meta))
@@ -613,7 +684,8 @@ def _decode_moe_kernel(
             # which keep streaming underneath.
             inbound_rows = pl.ds(0, inbound * padded_rows)
             meta_bufs = ((topk_idx_vmem, topk_w_vmem, s_tok_vmem)
-                         if fp8 else (topk_idx_vmem, topk_w_vmem))
+                         if (fp8 and not act_tensor)
+                         else (topk_idx_vmem, topk_w_vmem))
             for buf in meta_bufs:
                 pltpu.make_async_copy(
                     buf.at[inbound_rows, :],
@@ -631,9 +703,13 @@ def _decode_moe_kernel(
                     tokens_full_vmem.at[inbound_rows, :],
                     tokens_full_vmem.at[inbound_rows, :],
                     sem).wait()
-            # send-side hygiene: the top-k sends complete too
+            # send-side hygiene: the top-k sends complete too; s_tok's
+            # send credits exist in token mode (start_ag) and in
+            # tensor mode only when the amax exchange ran (do_quant)
+            s_tok_sent = fp8 and (do_quant if act_tensor else True)
             hygiene_bufs = ((topk_idx_vmem, topk_w_vmem, s_tok_vmem)
-                            if fp8 else (topk_idx_vmem, topk_w_vmem))
+                            if s_tok_sent
+                            else (topk_idx_vmem, topk_w_vmem))
             for buf in hygiene_bufs:
                 pltpu.make_async_copy(
                     buf.at[inbound_rows, :],
@@ -648,9 +724,11 @@ def _decode_moe_kernel(
             # the per-step mask builder reduces over k with T on LANES;
             # one transpose here beats one per expert per grid step.
             idx_kt_vmem[...] = topk_idx_vmem[...].T          # [k, T]
-            if fp8:
+            if fp8 and not act_tensor:
                 # s_tok lane copy for the OHS row-broadcast build -
                 # one tiny [T,1] -> [1,T] transpose, once per dispatch
+                # (tensor mode: s_row holds the ONE global scale,
+                # written by finish_amax_and_quantize - do not clobber)
                 s_row_vmem[...] = s_tok_vmem[...].T          # [1, T]
 
     def build_dispatch(first_expert):
@@ -702,20 +780,23 @@ def _decode_moe_kernel(
         routed_mask, live_t, gate_t = membership
         slot = slots
         with jax.named_scope("moe_masks"):
+            per_token = fp8 and not act_tensor
             out = _mask_operators(
                 routed_mask=routed_mask, slot=slot,
                 num_tokens=num_tokens,
                 capacity=capacity, act_dtype=act_dtype,
                 oh_dtype=qdtype if fp8 else None,
-                s_row=s_row_vmem[...] if fp8 else None)
-            s_x = out[1] if fp8 else None
+                s_row=s_row_vmem[...] if per_token else None)
+            s_x = out[1] if per_token else None
             return (out[0], s_x, gate_t, live_t, slot)
 
     def zero_pieces():
         """Ablate stub: the piece structure with zero operators."""
         oh_dt = qdtype if fp8 else act_dtype
+        has_sx = fp8 and not act_tensor
         return [(jnp.zeros((capacity, num_tokens), oh_dt),
-                 jnp.zeros((capacity, 1), jnp.float32) if fp8 else None,
+                 jnp.zeros((capacity, 1), jnp.float32) if has_sx
+                 else None,
                  jnp.zeros((num_tokens, 1), jnp.float32),   # gate_t
                  jnp.zeros((num_tokens, 1), jnp.bool_),     # live_t
                  jnp.zeros((1, num_tokens), jnp.int32))     # slot
@@ -741,7 +822,7 @@ def _decode_moe_kernel(
                 # the gather is exact selection, no requantization.
                 x_vmem.at[x_slot][...] = gathered.astype(
                     qdtype if fp8 else act_dtype)
-        if fp8:
+        if fp8 and not act_tensor:
             with jax.named_scope("moe_sx_park"):
                 s_x_vmem.at[x_slot][...] = jnp.concatenate(
                     [p[1] for p in pieces], axis=0)          # [be*C, 1]
@@ -804,9 +885,15 @@ def _decode_moe_kernel(
         (sublane broadcast, stride-0)."""
         rows = pl.ds(local_e_id * capacity, capacity)
         with jax.named_scope("moe_scale1"):
-            s_xj = s_x_vmem[x_slot, rows, :]                 # [C, 1]
             s13 = b_w1s_x2_vmem[x_slot,
                                 pl.ds(local_e_id, 1), :]     # [1, 2I]
+            if act_tensor:
+                # ONE dispatch-global act scale, parked in s_row_vmem
+                # by the prologue; folds into the [1, 2I] row multiply
+                # - no [C, 1] lane-broadcast at all
+                s13 = s13 * s_row_vmem[0:1, 0:1]
+                return gate_up * jnp.broadcast_to(s13, gate_up.shape)
+            s_xj = s_x_vmem[x_slot, rows, :]                 # [C, 1]
             return (gate_up
                     * jnp.broadcast_to(s_xj, gate_up.shape)
                     * jnp.broadcast_to(s13, gate_up.shape))
@@ -955,10 +1042,15 @@ def _decode_moe_kernel(
         wait_fetch_b_gating()
         my_id = lax.axis_index(axis_name)
         row0 = my_id * padded_rows
+        if act_tensor and do_quant:
+            start_amax_exchange(my_id, row0)   # flies under routing
         if do_routing:
             compute_routing(row0)
         if fp8:
-            quantize_tokens(row0)     # after routing (it reads bf16)
+            if act_tensor:
+                finish_amax_and_quantize(row0)
+            else:
+                quantize_tokens(row0)  # after routing (it reads bf16)
         start_ag(my_id, row0)
         acc_vmem[...] = jnp.zeros_like(acc_vmem)   # data-free, pre-wait
         if do_ag:
@@ -1042,10 +1134,10 @@ def _decode_moe_kernel(
 
 @functools.partial(
     jax.jit,
-    static_argnames=("router_fused", "mesh", "axis_name", "top_k",
-                     "renormalize_topk_logits", "capacity", "be", "bg",
-                     "bd1c", "bd2c", "bcT", "vmem_limit_bytes", "ablate",
-                     "interpret"),
+    static_argnames=("act_scale", "router_fused", "mesh", "axis_name",
+                     "top_k", "renormalize_topk_logits", "capacity",
+                     "be", "bg", "bd1c", "bd2c", "bcT",
+                     "vmem_limit_bytes", "ablate", "interpret"),
 )
 def fused_moe_decode_tp_fused(
     tokens_local: jax.Array,   # [T/P, D]
@@ -1057,6 +1149,11 @@ def fused_moe_decode_tp_fused(
                                # [E, 2*I/P] f32 per-channel (in_blocks==1)
     w2_scale: jax.Array | None = None,   # fp8: [E, 1, 1, D] or [E, D]
     *,
+    act_scale: str = "token",  # fp8: "token" (per-token dynamic, the
+                               # checkpoint's reference scheme) or
+                               # "tensor" (one dispatch-global dynamic
+                               # scale via a prologue amax exchange -
+                               # deletes the OHS/s_x VALU machinery)
     router_fused: bool = True,
     mesh: jax.sharding.Mesh,
     axis_name: str,
@@ -1094,6 +1191,7 @@ def fused_moe_decode_tp_fused(
     # serving 4-axis shape and squeezed to 2D here - a bitcast-class
     # reshape of a small f32 tensor, NOT a weight relayout.
     fp8 = w1_local.dtype == jnp.float8_e4m3fn
+    assert act_scale in ("token", "tensor"), act_scale
     assert (w1_scale is not None) == fp8 and (
         w2_scale is not None) == fp8, (
         "fp8 (e4m3) weights require BOTH per-channel scales; bf16 "
@@ -1234,6 +1332,7 @@ def fused_moe_decode_tp_fused(
             pltpu.VMEM((2, be, inter2), jnp.float32),    # b_w1s_x2
             pltpu.VMEM((2, be, hidden_size),
                        jnp.float32),                     # b_w2s_x2
+            pltpu.SemaphoreType.DMA,                     # recv_sem_amax
         ]
     grid_spec = pltpu.PrefetchScalarGridSpec(
         num_scalar_prefetch=0,
@@ -1269,6 +1368,7 @@ def fused_moe_decode_tp_fused(
         bcT=bcT,
         ablate=ablate,
         fp8=fp8,
+        act_scale=act_scale,
     )
     # pin every operand in HBM (v1's idiom): without the constraint
     # XLA may try to stage operands into VMEM
@@ -1315,6 +1415,7 @@ def fused_moe_decode_tp_serving(
     top_k: int,
     renormalize_topk_logits: bool,
     capacity: int,
+    act_scale: str = "token",
     be: int = 4,
     bg: int = 1,
     interpret: bool = False,
@@ -1356,6 +1457,7 @@ def fused_moe_decode_tp_serving(
     return jax.shard_map(
         functools.partial(
             fused_moe_decode_tp_fused,
+            act_scale=act_scale,
             router_fused=False,
             mesh=mesh,
             axis_name=axis_name,
