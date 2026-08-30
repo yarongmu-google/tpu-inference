@@ -196,3 +196,60 @@ def test_decode_kernel_tp_fused_lowers_for_tpu_on_cpu(t, d, e, i, k,
 if __name__ == "__main__":
     import sys
     sys.exit(pytest.main([__file__, "-q", "-s"]))
+
+
+def test_decode_kernel_tp_serving_tiny_padded_shapes():
+    """The serving shape class that broke twice: tiny decode batches
+    (2 rows/device - unprovable row0 alignment, E2003) with w13's
+    per-shard intermediate padded to the lane tile while w2 is
+    unpadded. Checked against a dense reference."""
+    if len(jax.devices()) < 8:
+        pytest.skip("needs 8 devices; on CPU run with "
+                    "XLA_FLAGS=--xla_force_host_platform_device_count=8")
+    t, d, e, k, p = 16, 256, 16, 4, 8
+    il_r, il_p = 12, 16
+    rng = np.random.default_rng(0)
+    w13 = np.zeros((e, d, 2 * il_p * p), np.float32)
+    gates, ups = [], []
+    for s_ in range(p):
+        g = rng.standard_normal((e, d, il_r)) * 0.02
+        u = rng.standard_normal((e, d, il_r)) * 0.02
+        gates.append(g)
+        ups.append(u)
+        w13[:, :, s_ * 2 * il_p:s_ * 2 * il_p + il_r] = g
+        w13[:, :, s_ * 2 * il_p + il_p:s_ * 2 * il_p + il_p + il_r] = u
+    gate_full = np.concatenate(gates, -1)
+    up_full = np.concatenate(ups, -1)
+    w2 = rng.standard_normal((e, il_r * p, d)) * 0.02
+    tokens = np.asarray(rng.standard_normal((t, d)), np.float32)
+    gating = np.asarray(rng.standard_normal((t, e)), np.float32)
+    mesh = jax.sharding.Mesh(np.array(jax.devices()[:p]), ("x", ))
+    out = np.asarray(
+        fused_moe_decode_tp_serving(
+            hidden_states=jnp.asarray(tokens),
+            gating_output=jnp.asarray(gating),
+            w1=jnp.asarray(w13),
+            w2=jnp.asarray(w2),
+            mesh=mesh,
+            axis_name="x",
+            top_k=k,
+            renormalize_topk_logits=True,
+            capacity=t,
+            interpret=True,
+        ))
+
+    def softmax(x):
+        ex = np.exp(x - x.max())
+        return ex / ex.sum()
+
+    ref = np.zeros((t, d))
+    for ti in range(t):
+        idx = np.argsort(-gating[ti])[:k]
+        w = softmax(gating[ti][idx])
+        for kk in range(k):
+            ee = idx[kk]
+            h = tokens[ti] @ gate_full[ee]
+            hu = tokens[ti] @ up_full[ee]
+            ref[ti] += w[kk] * (((h / (1 + np.exp(-h))) * hu) @ w2[ee])
+    err = np.abs(out - ref).max() / np.abs(ref).max()
+    assert err < 5e-2, err

@@ -249,7 +249,12 @@ def _decode_moe_kernel(
     num_tokens, hidden_size = tokens_full_vmem.shape         # T, D
     # static under shard_map - same axis env as lax.axis_index below
     num_devices = lax.axis_size(axis_name)                   # P
-    num_local_tokens = tokens_local_vmem.shape[0]            # T/P
+    num_local_tokens = tokens_local_vmem.shape[0]            # T/P (real)
+    # per-device row block, padded to the sublane tile by the entry so
+    # every dynamic row0 below is PROVABLY 16-aligned (E2003) - serving
+    # calls with as few as 2 rows/device. Phantom rows are masked out
+    # of dispatch membership; zeros flow through gather/combine.
+    padded_rows = num_tokens // lax.axis_size(axis_name)
     inbound = num_devices - 1
     group_pos = lax.rem(block_id, bg)    # step's position within its group
 
@@ -500,15 +505,28 @@ def _decode_moe_kernel(
     def dispatch_phase_a_valu(expert_id, tables):
         """STEP 1a (VALU): membership of ONE next-step expert - table
         compares + reductions. tables = (idx_kt [k, T], topk_idx [T, k],
-        topk_w [T, k]), loaded once per step by the caller. Returns
-        (routed_mask [1, T], live_t [T, 1], gate_t [T, 1])."""
+        topk_w [T, k]), loaded once per step by the caller. Phantom pad
+        rows (row blocks padded to the sublane tile) are masked out of
+        membership here - their topk entries are uninitialized VMEM.
+        Returns (routed_mask [1, T], live_t [T, 1], gate_t [T, 1])."""
         topk_idx_kt, topk_idx_tk, topk_w_tk = tables
         with jax.named_scope("moe_masks"):
-            return _mask_membership(
+            routed_mask, live_t, gate_t = _mask_membership(
                 topk_idx_kt=topk_idx_kt,
                 topk_idx_tk=topk_idx_tk,
                 topk_w_tk=topk_w_tk,
                 expert_id=expert_id)
+            if padded_rows != num_local_tokens:
+                lane_pos = lax.broadcasted_iota(
+                    jnp.int32, (1, num_tokens), 1)
+                routed_mask = routed_mask * (
+                    lax.rem(lane_pos, padded_rows)
+                    < num_local_tokens).astype(routed_mask.dtype)
+                sub_pos = lax.broadcasted_iota(
+                    jnp.int32, (num_tokens, 1), 0)
+                live_t = live_t & (
+                    lax.rem(sub_pos, padded_rows) < num_local_tokens)
+            return routed_mask, live_t, gate_t
 
     def dispatch_phase_b_xlu(membership):
         """STEP 1b (XLU): the lane prefix-sum + transpose for ONE
@@ -672,13 +690,23 @@ def _decode_moe_kernel(
             start_fetch_bw(0, 0)   # block 0 streams under routing + AG
         start_fetch_b_tokens()
         start_fetch_b_gating()
+        if padded_rows != num_local_tokens:
+            # phantom pad rows must be REAL zeros: the gather multiplies
+            # them by zeroed mask columns and 0 * garbage(NaN/inf) = NaN.
+            # Static per-device slices; placed BEFORE the barrier so no
+            # peer's remote write can race the zeroing.
+            gap = padded_rows - num_local_tokens
+            for peer in range(num_devices):
+                pad0 = peer * padded_rows + num_local_tokens
+                tokens_full_vmem[pl.ds(pad0, gap), :] = jnp.zeros(
+                    (gap, hidden_size), tokens_full_vmem.dtype)
         if do_ag:
             with jax.named_scope("moe_ag_barrier"):
                 sync_barrier()
         wait_fetch_b_tokens()
         wait_fetch_b_gating()
         my_id = lax.axis_index(axis_name)
-        row0 = my_id * num_local_tokens
+        row0 = my_id * padded_rows
         if do_routing:
             compute_routing(row0)
         start_ag(my_id, row0)
@@ -804,7 +832,14 @@ def fused_moe_decode_tp_fused(
         interpret = pltpu.InterpretParams(dma_execution_mode="on_wait")
     num_devices = mesh.shape[axis_name]                      # P
     num_local_tokens, hidden_size = tokens_local.shape       # T/P, D
-    num_tokens = num_local_tokens * num_devices              # T
+    # pad each device's row block to the sublane tile: serving calls
+    # with as few as 2 rows/device, and the kernel's dynamic row0
+    # (my_id * padded_rows) must be provably 16-aligned (E2003). All
+    # T-sized buffers are allocated padded; phantom rows are masked out
+    # of dispatch and sliced off after the reduce-scatter. When T/P is
+    # already aligned (the bench shapes) this is the identity.
+    padded_rows = -(-num_local_tokens // 16) * 16
+    num_tokens = padded_rows * num_devices                   # T (padded)
     num_experts, _, inter2 = w1_local.shape                  # E, _, 2*I/P
     # serving pads w13's per-shard I to 128 but not w2's (30B: w13 gives
     # 128/projection, w2 has 96 rows) - w2 buffers size from w2 itself
@@ -933,7 +968,8 @@ def fused_moe_decode_tp_fused(
       pltpu.with_memory_space_constraint(route_in, pltpu.HBM),
       pltpu.with_memory_space_constraint(w1_local, pltpu.HBM),
       pltpu.with_memory_space_constraint(w2_local, pltpu.HBM))
-    return lax.psum_scatter(out, axis_name, scatter_dimension=0, tiled=True)
+    out = lax.psum_scatter(out, axis_name, scatter_dimension=0, tiled=True)
+    return out[:num_local_tokens]        # drop the phantom pad rows
 
 
 def fused_moe_decode_tp_serving(
