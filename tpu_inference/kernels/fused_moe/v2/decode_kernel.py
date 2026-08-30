@@ -1076,6 +1076,14 @@ def fused_moe_decode_tp_fused(
         assert capacity % 32 == 0, (
             "fp8 x rows are 32-packed; capacity must be a multiple "
             "of 32", capacity)
+        # Any knob that slices a (4,1)-packed SECOND-MINOR dim must be
+        # a 32-multiple: one vreg covers 32 packed rows, so a smaller
+        # slice leaves sublane groups of every vreg empty (and a
+        # sub-32 slice cuts inside the physical tile). bd1c slices
+        # w1's packed D rows (and x's lanes -> 128 keeps both aligned
+        # and matches the tuner grid); bd2c slices w2's minor/y lanes.
+        assert (bd1c or 128) % 128 == 0 and (bd2c or 128) % 128 == 0, (
+            "fp8 bd1c/bd2c must be multiples of 128", bd1c, bd2c)
     # serving pads w13's per-shard I to 128 but not w2's (30B: w13 gives
     # 128/projection, w2 has 96 rows) - w2 buffers size from w2 itself
     i_w2 = w2_local.shape[1]
