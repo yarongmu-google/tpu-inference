@@ -44,8 +44,12 @@ echo "FLAGS: $FLAGS"
 run git rev-parse --short HEAD
 run python -c "import jax, jaxlib; print('jax', jax.__version__, 'jaxlib', jaxlib.__version__)"
 
-# ---- 0) the whole test suite on this host (14 bf16 guard + 7 fp8) --
-run python -m pytest tests/kernels/fused_moe_v2_decode_test.py -q
+# ---- 0) the whole test suite (14 bf16 guard + 7 fp8). Interpret-mode
+# ---- pallas uses io_callbacks that only lower on CPU - run the tests
+# ---- on the CPU platform with 8 simulated devices, NOT on the TPU.
+run env JAX_PLATFORMS=cpu \
+    XLA_FLAGS=--xla_force_host_platform_device_count=8 \
+    python -m pytest tests/kernels/fused_moe_v2_decode_test.py -q
 
 # ---- 1) same-session bf16 baseline (lesson 24: differentials within
 # ---- one session/env) at the bf16 tuned winner ----------------------

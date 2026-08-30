@@ -233,7 +233,7 @@ def main() -> None:
     parser.add_argument("--ablate", type=str, default="none",
                         choices=["none", "masks", "gather", "ffn",
                                  "combine", "weights", "routing", "ag",
-                                 "all"],
+                                 "quant", "scales", "all"],
                         help="v2: statically stub one stage (output is "
                         "WRONG); wall-clock differences vs none are the "
                         "per-stage costs - the profiler substitute. "
