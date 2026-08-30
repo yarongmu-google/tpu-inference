@@ -1,0 +1,114 @@
+
++ git rev-parse --short HEAD
+c9e377a20a
++ exit=0
+
++ python -c import jax, jaxlib; print('jax', jax.__version__, 'jaxlib', jaxlib.__version__)
+jax 0.10.2 jaxlib 0.10.2
++ exit=0
+
++ python tmp/probe_wbw.py
+array: 1.00 GiB  (512x4096x256 bf16)
+   manual1:    460.1 us    2333.7 GB/s   (median 463.8 us)
+   manual2:    464.1 us    2313.4 GB/s   (median 471.2 us)
+   manual4:    476.6 us    2253.0 GB/s   (median 484.1 us)
+ manual8x1:    474.5 us    2262.9 GB/s   (median 479.8 us)
+ manual8x8:    476.7 us    2252.6 GB/s   (median 478.5 us)
+weight pair: 1.50 GiB per device (w1 512x4096x256 + w2 512x128x4096 bfloat16)
+ wpair_1dev:    632.8 us    2545.2 GB/s   (median 639.1 us)
+ wpair_8dev:    854.8 us    1884.2 GB/s per device   (15074 aggregate, median 881.5 us)
+weight pair: 0.75 GiB per device (w1 512x4096x256 + w2 512x128x4096 float8_e4m3fn)
+ wpair_1dev:    390.3 us    2063.4 GB/s   (median 396.1 us)
+ wpair_8dev:    600.3 us    1341.5 GB/s per device   (10732 aggregate, median 620.0 us)
++ exit=0
+
++ python tmp/probe_wbw.py
+array: 1.00 GiB  (512x4096x256 bf16)
+   manual1:    457.4 us    2347.4 GB/s   (median 461.9 us)
+   manual2:    484.8 us    2214.6 GB/s   (median 490.4 us)
+   manual4:    468.9 us    2289.8 GB/s   (median 480.0 us)
+ manual8x1:    480.3 us    2235.4 GB/s   (median 487.7 us)
+ manual8x8:    481.9 us    2228.1 GB/s   (median 485.1 us)
+weight pair: 1.50 GiB per device (w1 512x4096x256 + w2 512x128x4096 bfloat16)
+ wpair_1dev:    639.0 us    2520.4 GB/s   (median 642.5 us)
+ wpair_8dev:    847.6 us    1900.1 GB/s per device   (15201 aggregate, median 889.2 us)
+weight pair: 0.75 GiB per device (w1 512x4096x256 + w2 512x128x4096 float8_e4m3fn)
+ wpair_1dev:    389.6 us    2067.2 GB/s   (median 404.9 us)
+ wpair_8dev:    591.9 us    1360.6 GB/s per device   (10885 aggregate, median 627.0 us)
++ exit=0
+
++ bash -c 
+  ls tmp/xla_dump_fp8 | wc -l
+  for f in tmp/xla_dump_fp8/*after_optimizations*.txt; do
+    grep -nE "%(copy|reshape|transpose)" "$f" | grep -E "f8e4m3" | head -10
+  done 2>/dev/null | head -30
+  echo "(empty grep above = no fp8 weight-shaped relayout copies: PASS)"
+  tar -c tmp/xla_dump_fp8 | xz -9 -T0 > tmp/xla_dump_fp8.tar.xz
+  ls -lh tmp/xla_dump_fp8.tar.xz
+  rm -rf tmp/xla_dump_fp8
+234
+16: from instruction: %copy.1 = f8e4m3fn[512,4096,256]{2,1,0:T(32,128)(4,1)} copy(%args_0_.1), backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"33554432"}],"used_scoped_memory_configs":[],"aliasing_operands":{"lists":[]}}
+5:  ROOT %copy.1 = f8e4m3fn[512,4096,256]{2,1,0:T(32,128)(4,1)} copy(%args_0_.1), backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"33554432"}],"used_scoped_memory_configs":[],"aliasing_operands":{"lists":[]}}
+5:  ROOT %copy.1 = f8e4m3fn[512,4096,256]{2,1,0:T(32,128)(4,1)} copy(%args_0_.1), backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"33554432"}],"used_scoped_memory_configs":[],"aliasing_operands":{"lists":[]}}
+5:  ROOT %copy.1 = f8e4m3fn[512,4096,256]{2,1,0:T(32,128)(4,1)} copy(%args_0_.1), backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"33554432"}],"used_scoped_memory_configs":[]}
+16: from instruction: %copy.1 = f8e4m3fn[512,128,4096]{2,1,0:T(32,128)(4,1)} copy(%args_0_.1), backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"33554432"}],"used_scoped_memory_configs":[],"aliasing_operands":{"lists":[]}}
+5:  ROOT %copy.1 = f8e4m3fn[512,128,4096]{2,1,0:T(32,128)(4,1)} copy(%args_0_.1), backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"33554432"}],"used_scoped_memory_configs":[],"aliasing_operands":{"lists":[]}}
+5:  ROOT %copy.1 = f8e4m3fn[512,128,4096]{2,1,0:T(32,128)(4,1)} copy(%args_0_.1), backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"33554432"}],"used_scoped_memory_configs":[],"aliasing_operands":{"lists":[]}}
+5:  ROOT %copy.1 = f8e4m3fn[512,128,4096]{2,1,0:T(32,128)(4,1)} copy(%args_0_.1), backend_config={"flag_configs":[],"scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"33554432"}],"used_scoped_memory_configs":[]}
+(empty grep above = no fp8 weight-shaped relayout copies: PASS)
+-rw-rw-r-- 1 ymu_google_com ymu_google_com 48K Aug 30 13:48 tmp/xla_dump_fp8.tar.xz
++ exit=0
+
++ python tmp/probe_fp8_lowering.py
+probe_fp8_lowering: commit c9e377a20a, jax 0.10.2, device TPU7x
+   gmm1_w8a8: ok     57.5 us/call  finite=True
+  gmm1_w8a16: ok     58.7 us/call  finite=True
+  gmm2_w8a16: ok     45.2 us/call  finite=True
+  gather_fp8: ok     44.6 us/call  finite=True
+  scale_mult: ok     46.4 us/call  finite=True
++ exit=0
+
++ bash -c 
+  for f in tmp/mosaic_fp8/*post-finalize-llo*; do
+    echo "== $(basename $f)"
+    python tmp/dump_histogram.py "$f"
+  done > tmp/fp8_lowering_histograms.txt 2>&1
+  # the verdict lines: matmul ops vs convert storms, per kernel
+  grep -E "^==|vmatmul|vmatpush|vcvt|vpack|vunpack" \
+    tmp/fp8_lowering_histograms.txt | head -60
+  tar -c tmp/mosaic_fp8 | xz -9 -T0 > tmp/mosaic_fp8.tar.xz
+  ls -lh tmp/mosaic_fp8.tar.xz tmp/fp8_lowering_histograms.txt
+  rm -rf tmp/mosaic_fp8
+== 1788122894842195217-0018-mosaic-dump-anonymous-post-finalize-llo.txt
+===== tmp/mosaic_fp8/1788122894842195217-0018-mosaic-dump-anonymous-post-finalize-llo.txt
+           16  llo.vmatmul.mubr
+== 1788122895130036721-0018-mosaic-dump-anonymous-post-finalize-llo.txt
+===== tmp/mosaic_fp8/1788122895130036721-0018-mosaic-dump-anonymous-post-finalize-llo.txt
+          128  llo.vunpack
+           64  llo.vpack
+           32  llo.vmatmul.mubr
+== 1788122895375951597-0018-mosaic-dump-anonymous-post-finalize-llo.txt
+===== tmp/mosaic_fp8/1788122895375951597-0018-mosaic-dump-anonymous-post-finalize-llo.txt
+           32  llo.vmatmul.mubr
+            4  llo.vunpack
+            2  llo.vpack
+== 1788122895802088030-0018-mosaic-dump-anonymous-post-finalize-llo.txt
+===== tmp/mosaic_fp8/1788122895802088030-0018-mosaic-dump-anonymous-post-finalize-llo.txt
+          128  llo.vmatmul.mubr
+== 1788122896277373209-0018-mosaic-dump-anonymous-post-finalize-llo.txt
+===== tmp/mosaic_fp8/1788122896277373209-0018-mosaic-dump-anonymous-post-finalize-llo.txt
+           16  llo.vmatmul.mubr
+-rw-rw-r-- 1 ymu_google_com ymu_google_com 2.8K Aug 30 13:48 tmp/fp8_lowering_histograms.txt
+-rw-rw-r-- 1 ymu_google_com ymu_google_com 146K Aug 30 13:48 tmp/mosaic_fp8.tar.xz
++ exit=0
+
++ python tmp/probe_combine_kfuse.py
+probe_combine_kfuse: commit c9e377a20a, jax 0.10.2, device TPU7x; T=512 D=4096 K=512 (4x128) bcT=256 steps=128
+  as-coded:    734.9 us  (median 742.8 us)
+  K-fused :    473.0 us  (median 479.2 us)
+  ratio as-coded / K-fused = 1.55x (model predicts ~2.0); max|diff| on probe tile = 7.812e-03
++ exit=0
+
+log: tmp/fp8_probes.log  histograms: tmp/fp8_lowering_histograms.txt
+verdicts to read off: (1) fp8 wpair_8dev us + GB/s; (2) empty
+f8e4m3 copy grep; (3) per-kernel vcvt counts ~0; (4) ratio ~2x

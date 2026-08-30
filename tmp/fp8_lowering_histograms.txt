@@ -1,0 +1,93 @@
+== 1788122894842195217-0018-mosaic-dump-anonymous-post-finalize-llo.txt
+
+===== tmp/mosaic_fp8/1788122894842195217-0018-mosaic-dump-anonymous-post-finalize-llo.txt
+total ops: 1112
+
+-- <toplevel>: 1112 ops
+          288  llo.vector_load
+          256  llo.constant
+          128  llo.vmatprep.subr
+          128  llo.vlatchi
+          128  llo.vmatres
+          128  llo.vadd.f32
+           16  llo.vmatprep.mubr
+           16  llo.vmatmul.mubr
+           16  llo.vdwg
+            8  llo.vector_store
+== 1788122895130036721-0018-mosaic-dump-anonymous-post-finalize-llo.txt
+
+===== tmp/mosaic_fp8/1788122895130036721-0018-mosaic-dump-anonymous-post-finalize-llo.txt
+total ops: 1496
+
+-- <toplevel>: 1496 ops
+          320  llo.vector_load
+          256  llo.constant
+          128  llo.vbitcast
+          128  llo.vunpack
+          128  llo.vmatprep.subr
+          128  llo.vlatchi
+          128  llo.vmatres
+          128  llo.vadd.f32
+           64  llo.vpack
+           32  llo.vmatprep.mubr
+           32  llo.vmatmul.mubr
+           16  llo.vdwg
+            8  llo.vector_store
+== 1788122895375951597-0018-mosaic-dump-anonymous-post-finalize-llo.txt
+
+===== tmp/mosaic_fp8/1788122895375951597-0018-mosaic-dump-anonymous-post-finalize-llo.txt
+total ops: 997
+
+-- <toplevel>: 997 ops
+          133  llo.constant
+          132  llo.vector_load
+          128  llo.vmatprep.subr
+          128  llo.vlatchi
+          128  llo.vmatres
+          128  llo.vadd.f32
+          128  llo.vector_store
+           32  llo.vmatprep.mubr
+           32  llo.vmatmul.mubr
+           16  llo.vdwg
+            6  llo.vbitcast
+            4  llo.vunpack
+            2  llo.vpack
+== 1788122895802088030-0018-mosaic-dump-anonymous-post-finalize-llo.txt
+
+===== tmp/mosaic_fp8/1788122895802088030-0018-mosaic-dump-anonymous-post-finalize-llo.txt
+total ops: 4400
+
+-- <toplevel>: 4400 ops
+         1024  llo.vmatres
+         1024  llo.vadd.f32
+          528  llo.vector_load
+          512  llo.constant
+          512  llo.vector_store
+          256  llo.vmatprep.subr
+          256  llo.vlatchi
+          128  llo.vmatprep.mubr
+          128  llo.vmatmul.mubr
+           32  llo.vdwg
+== 1788122896277373209-0018-mosaic-dump-anonymous-post-finalize-llo.txt
+
+===== tmp/mosaic_fp8/1788122896277373209-0018-mosaic-dump-anonymous-post-finalize-llo.txt
+total ops: 1165
+
+-- <toplevel>: 1165 ops
+          293  llo.vector_load
+          260  llo.constant
+          128  llo.vmatprep.subr
+          128  llo.vlatchi
+          128  llo.vmatres
+          128  llo.vadd.f32
+           16  llo.vmatprep.mubr
+           16  llo.vmatmul.mubr
+           16  llo.vdwg
+           16  llo.vmul.f32
+           11  llo.vbitcast
+            8  llo.vector_store
+            4  llo.vslreplicate
+            4  llo.vsetperm
+            4  llo.vperm
+            4  llo.vpermres
+            1  llo.saddr_scaled
