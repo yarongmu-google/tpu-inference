@@ -70,6 +70,10 @@ for a in none masks gather ffn combine weights routing ag quant scales all; do
       --wdtype=fp8 --variants=v02 --iters=10 --warmup=3 $FLAGS --ablate=$a
 done
 
+# ---- 4b) combine-form discriminator (review finding 3): does the
+# ---- kernel's slot-major concat combine run at flat-buffer speed? ---
+run python tmp/probe_combine_kfuse.py
+
 # ---- 5) Mosaic dump of the fp8 kernel: op histogram -----------------
 # verdicts: vcvt count ~ 0 (free-latch held); vmatmul/vlatchi counts
 # consistent with the per-tile model; the combine's K-fused dot did

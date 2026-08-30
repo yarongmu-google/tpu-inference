@@ -474,7 +474,12 @@ def main() -> None:
         # be*capacity whole lane tiles for the ohg lane dim (be=4 -> 128).
         top_i = jax.lax.top_k(jax.nn.softmax(gating, axis=-1), k)[1]
         max_load = int(jnp.max(jnp.bincount(top_i.reshape(-1), length=e)))
-        sublane = 32 // jnp.dtype(dtype).itemsize
+        # fp8 x rows pack 4/word: the kernel asserts capacity % 32 == 0
+        # regardless of the act dtype - a 16-multiple candidate would
+        # just die in the tuner's except and silently push the sweep
+        # to 2x capacity (an MXU-LINEAR cost under fp8: gather goes
+        # mm-bound and combine slot-rows scale with C).
+        sublane = 32 if fp8 else 32 // jnp.dtype(dtype).itemsize
         cap0 = -(-max_load // sublane) * sublane
         print(f"[tune] max expert load = {max_load} -> capacity >= {cap0}")
         # be scales the double-buffered weight windows (2*be experts of

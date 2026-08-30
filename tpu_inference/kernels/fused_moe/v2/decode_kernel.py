@@ -385,9 +385,10 @@ def _decode_moe_kernel(
         """Start expert block `block` - w1 [be, D, 2I] and w2 [be, I, D]
         slabs, ONE contiguous descriptor each (max inner runs; measured
         2.2+ TB/s standalone). fp8 adds the block's scale rows on the
-        SAME semaphores (v1's pattern - tiny, and it keeps the wait
-        structure one-per-sem-per-step). Callers fence out-of-range
-        blocks (OOB DMA reads are fatal)."""
+        SAME semaphores (v1's pattern - tiny, and ALL waits stay at
+        the step top: two per sem per step in fp8, still zero waits
+        inside the compute loop). Callers fence out-of-range blocks
+        (OOB DMA reads are fatal)."""
         pltpu.make_async_copy(
             src_ref=w1_hbm.at[pl.ds(block * be, be)],
             dst_ref=b_w1_x2_vmem.at[bw_sem_id],
@@ -1123,6 +1124,13 @@ def fused_moe_decode_tp_fused(
             + num_tokens * 128 * 4                 # s_tok [T,1] lane-padded
             + 8 * num_tokens * 4                   # s_row [1,T] sublane-pad
             + 2 * 128 * be * capacity * 4          # s_x [2,beC,1] lane-pad
+            # K-fused combine concat temporaries (y_wide + one
+            # bcT-chunk of ohg_wide), budgeted conservatively in case
+            # Mosaic materializes the concatenated operands rather
+            # than feeding the dot from the slot reads (probe
+            # variant C measures which; review finding 3)
+            + bg * be * capacity * hidden_size * act_bytes
+            + (bcT or num_tokens) * bg * be * capacity * act_bytes
         )
     assert vmem_need <= vmem_limit_bytes, (
         f"static VMEM need {vmem_need / 2**20:.1f} MiB exceeds "

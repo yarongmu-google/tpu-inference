@@ -282,54 +282,73 @@ def _dequant_tokens_like_kernel(tokens: np.ndarray) -> np.ndarray:
 
 
 @pytest.mark.parametrize("bg", [1, 2])
-@pytest.mark.parametrize("bd1c,bd2c", [(None, None), (128, 128)],
-                         ids=["whole_d_dots", "chunked_dots"])
+@pytest.mark.parametrize("bd1c,bd2c,bcT", [(None, None, None),
+                                           (128, 128, 32)],
+                         ids=["whole_dots", "chunked_dots"])
 @pytest.mark.parametrize("t,d,e,i,k", [(64, 256, 16, 128, 4)])
 def test_decode_kernel_fp8_matches_dequant_reference(t, d, e, i, k,
-                                                     bd1c, bd2c, bg):
-    """fp8 serving entry vs the f32 reference run on DEQUANTIZED
-    weights and kernel-identically-quantized tokens: every fp8
-    mechanism (prologue quantize + fp8 AG, e4m3 OH gather restore,
-    OHS -> s_x, fp8 gmm1, scale-after-full-K, K-fused combine) must
-    reproduce the dequantized math up to summation order."""
+                                                     bd1c, bd2c, bcT, bg):
+    """fp8 fused entry vs the f32 reference run on DEQUANTIZED weights
+    and kernel-identically-quantized tokens: every fp8 mechanism
+    (prologue quantize + fp8 AG, e4m3 OH gather restore, OHS -> s_x,
+    fp8 gmm1, scale-after-full-K, per-n-chunk s2, K-fused combine)
+    must reproduce the dequantized math up to summation order.
+
+    Goes through the FUSED entry (not serving) so bd1c/bd2c/bcT are
+    real: the chunked case covers gmm1 chunk-accumulate-then-scale,
+    the per-n-chunk s2 slice offsets, and the bcT-chunked K-fused
+    combine - none of which the whole-width case exercises."""
     _skip_unless_devices(P_DEV)
     rng = np.random.default_rng(0)
     p = P_DEV
     tokens = np.asarray(rng.standard_normal((t, d)), np.float32)
-    w1 = rng.standard_normal((e, d, 2, i)) * 0.02
-    w1_serving = np.transpose(
-        w1.reshape(e, d, 2, p, i // p),
-        (0, 1, 3, 2, 4)).reshape(e, d, 2 * i)
+    w1 = rng.standard_normal((e, d, 2, i)) * 0.02       # global [E,D,2,I]
     w2 = rng.standard_normal((e, i, d)) * 0.02
-    gating = np.asarray(rng.standard_normal((t, e)), np.float32)
+    router_w = np.asarray(rng.standard_normal((e, d)) * 0.1, np.float32)
+    gating = tokens @ router_w.T
 
-    w1_q, w1_s = _quant_per_channel(w1_serving, axis=1)  # [E,1,2I]
+    # per-channel quantization on the GLOBAL [E, D, 2, I]: sharding the
+    # last axis then hands each device its own quantized slice + scale
+    w1_q, w1_s = _quant_per_channel(w1, axis=1)          # [E,1,2,I]
     w2_q, w2_s = _quant_per_channel(w2, axis=1)          # [E,1,D]
     mesh = Mesh(np.array(jax.devices()[:P_DEV]), ("x",))
 
-    got = jax.jit(lambda tok, g, a, b, sa, sb: fused_moe_decode_tp_serving(
-        tok, g, a, b, sa, sb,
-        mesh=mesh,
-        axis_name="x",
-        top_k=k,
-        renormalize_topk_logits=True,
-        capacity=t,   # multiple of 32 (fp8 row granule); no drops
-        bg=bg,
-        interpret=True,
-    ))(jnp.asarray(tokens), jnp.asarray(gating),
-       jnp.asarray(w1_q), jnp.asarray(w2_q),
-       jnp.asarray(w1_s[:, None]),        # [E, 1, 1, 2I] serving shape
-       jnp.asarray(w2_s[:, None]))        # [E, 1, 1, D]
+    def fn(tok_l, w1_l, w2_l, r_l, s1_l, s2_l):
+        w1_flat = w1_l.reshape(w1_l.shape[0], w1_l.shape[1], -1)
+        s1_flat = s1_l.reshape(s1_l.shape[0], -1)        # [E, 2*i/p]
+        return fused_moe_decode_tp_fused(
+            tok_l,
+            r_l,          # router weight, replicated
+            w1_flat,
+            w2_l,
+            s1_flat,
+            s2_l.reshape(s2_l.shape[0], -1),             # [E, D]
+            mesh=mesh,
+            axis_name="x",
+            top_k=k,
+            renormalize_topk_logits=True,
+            capacity=t,   # multiple of 32 (fp8 granule); no drops
+            be=4,
+            bg=bg,
+            bd1c=bd1c,
+            bd2c=bd2c,
+            bcT=bcT,
+            interpret=True,
+        )
 
-    # reference on the dequantized operands: un-reorder the serving
-    # arrangement back to concatenated [gate | up] for _reference_moe
-    w1_deq = (w1_q.astype(np.float32) * w1_s)
-    w1_deq_ref = np.transpose(
-        w1_deq.reshape(e, d, p, 2, i // p),
-        (0, 1, 3, 2, 4)).reshape(e, d, 2 * i)
+    got = jax.jit(jax.shard_map(
+        fn, mesh=mesh,
+        in_specs=(P("x", None), P(None, None, None, "x"),
+                  P(None, "x", None), P(None, None),
+                  P(None, None, None, "x"), P(None, None, None)),
+        out_specs=P("x", None), check_vma=False,
+    ))(jnp.asarray(tokens), jnp.asarray(w1_q), jnp.asarray(w2_q),
+       jnp.asarray(router_w), jnp.asarray(w1_s), jnp.asarray(w2_s))
+
+    w1_deq = (w1_q.astype(np.float32) * w1_s).reshape(e, d, 2 * i)
     w2_deq = w2_q.astype(np.float32) * w2_s
     tok_deq = _dequant_tokens_like_kernel(tokens)
-    want = _reference_moe(jnp.asarray(tok_deq), jnp.asarray(w1_deq_ref),
+    want = _reference_moe(jnp.asarray(tok_deq), jnp.asarray(w1_deq),
                           jnp.asarray(w2_deq), jnp.asarray(gating), k,
                           renormalize=True)
     np.testing.assert_allclose(np.asarray(got), np.asarray(want),
@@ -337,10 +356,10 @@ def test_decode_kernel_fp8_matches_dequant_reference(t, d, e, i, k,
 
     # loose sanity vs the CLEAN f32 reference: documents the
     # end-to-end w8a8 quantization error at these shapes
-    clean = _reference_moe(jnp.asarray(tokens), jnp.asarray(
-        np.transpose(w1.reshape(e, d, 2, i), (0, 1, 2, 3)).reshape(
-            e, d, 2 * i)), jnp.asarray(w2), jnp.asarray(gating), k,
-        renormalize=True)
+    clean = _reference_moe(jnp.asarray(tokens),
+                           jnp.asarray(w1.reshape(e, d, 2 * i)),
+                           jnp.asarray(w2), jnp.asarray(gating), k,
+                           renormalize=True)
     rel = (np.abs(np.asarray(got) - np.asarray(clean)).max()
            / np.abs(np.asarray(clean)).max())
     assert rel < 0.15, f"end-to-end w8a8 error {rel:.3f}"
