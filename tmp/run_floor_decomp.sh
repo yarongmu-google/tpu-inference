@@ -94,7 +94,13 @@ run bash -c '
 run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
     --variants=v1,v02 --iters=5 --warmup=2 $FLAGS \
     --profile-dir=tmp/moe_xprof
-run du -sh tmp/moe_xprof
+# raw traces are too big to push - the parsed TC/SC rows above are the
+# result; the tarball keeps the evidence pushable
+run bash -c '
+  du -sh tmp/moe_xprof
+  tar -c tmp/moe_xprof | xz -9 -T0 > tmp/moe_xprof.tar.xz
+  ls -lh tmp/moe_xprof.tar.xz
+  rm -rf tmp/moe_xprof'
 
 echo
 echo "log: tmp/floor_decomp.log"
