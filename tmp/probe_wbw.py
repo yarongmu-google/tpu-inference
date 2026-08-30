@@ -156,7 +156,7 @@ def _timed(fn, *args, iters: int = 10):
     return min(ts), statistics.median(ts)
 
 
-def run_pair(w1_np: np.ndarray, w2_np: np.ndarray) -> None:
+def run_pair(w1_np: np.ndarray, w2_np: np.ndarray, be: int = 4) -> None:
     """Stream the ACTUAL MoE weight pair (1.5 GiB, both tensors) through
     the production blocked-fetch structure - first on one device, then on ALL
     devices at once. The pure-stream time compares 1:1 against the
@@ -169,15 +169,15 @@ def run_pair(w1_np: np.ndarray, w2_np: np.ndarray) -> None:
           f"(w1 {E}x{D}x{I2} + w2 {E}x{IP}x{D} {w1_np.dtype})")
 
     dev0 = jax.devices()[0]
-    fn1 = jax.jit(build_pair(be=4, dtype=w1_np.dtype))
+    fn1 = jax.jit(build_pair(be=be, dtype=w1_np.dtype))
     try:
         t, med = _timed(fn1, jax.device_put(jnp.asarray(w1_np), dev0),
                         jax.device_put(jnp.asarray(w2_np), dev0))
-        print(f" wpair_1dev: {t * 1e6:8.1f} us   "
+        print(f" wpair_1dev[be={be}]: {t * 1e6:8.1f} us   "
               f"{per_dev_bytes / t / 1e9:7.1f} GB/s   "
               f"(median {med * 1e6:.1f} us)")
     except Exception as ex:
-        print(f" wpair_1dev: failed ({type(ex).__name__}: "
+        print(f" wpair_1dev[be={be}]: failed ({type(ex).__name__}: "
               f"{str(ex).splitlines()[0][:90]})")
 
     p = len(jax.devices())
@@ -193,17 +193,17 @@ def run_pair(w1_np: np.ndarray, w2_np: np.ndarray) -> None:
         (p * E, IP, D), jax.sharding.NamedSharding(mesh, P("x", None, None)),
         lambda idx: w2_np)
     fn8 = jax.jit(jax.shard_map(
-        build_pair(be=4, dtype=w1_np.dtype), mesh=mesh,
+        build_pair(be=be, dtype=w1_np.dtype), mesh=mesh,
         in_specs=(P("x", None, None), P("x", None, None)),
         out_specs=P("x", None), check_vma=False))
     try:
         t, med = _timed(fn8, w1_all, w2_all)
-        print(f" wpair_{p}dev: {t * 1e6:8.1f} us   "
+        print(f" wpair_{p}dev[be={be}]: {t * 1e6:8.1f} us   "
               f"{per_dev_bytes / t / 1e9:7.1f} GB/s per device   "
               f"({per_dev_bytes * p / t / 1e9:.0f} aggregate, "
               f"median {med * 1e6:.1f} us)")
     except Exception as ex:
-        print(f" wpair_{p}dev: failed ({type(ex).__name__}: "
+        print(f" wpair_{p}dev[be={be}]: failed ({type(ex).__name__}: "
               f"{str(ex).splitlines()[0][:90]})")
 
 
@@ -240,9 +240,24 @@ def main() -> None:
     # is [packing, 128] ELEMENTS), so the fp8 pair (768 MiB) should run
     # at the SAME GB/s as bf16 = ~half the time; a bandwidth deviation
     # here IS a finding and re-prices the whole fp8 plan.
+    # ANSWERED (2026-08-30, be=4): DEVIATION FOUND. bf16 8dev 848-855us
+    # (1.88-1.90 TB/s) but fp8 8dev 592-600us (1.34-1.36 TB/s) - NOT
+    # byte-rate parity. Two-point fit (bf16 vs fp8 at 8dev): marginal
+    # BW = 768MiB/(848-596)us ~= 3.2 TB/s (= the CMN spec!) plus a
+    # FIXED ~345us = ~2.7us/grid-step x 128 steps (1.15us/step solo).
+    # The historic "1.88 TB/s under load" conflated the two. The be
+    # sweep below discriminates: if the fixed cost is per-step,
+    # fp8 8dev predicts ~424us at be=8 (64 steps) and ~338us at be=16;
+    # if it is a byte-rate derate, ~592us at every be. bf16 be=8 is the
+    # cross-check (predicts ~660us if per-step; be=8 never fit the
+    # KERNEL's VMEM at bf16 - 48 MiB slabs - but fits this probe's
+    # 100 MB limit; fp8 be=8 = 24 MiB fits the kernel too, making this
+    # the mechanism behind proposal candidate 5).
     w1_f8 = np.asarray(w_np, jnp.float8_e4m3fn)   # values irrelevant
     w2_f8 = np.asarray(w2_np, jnp.float8_e4m3fn)
-    run_pair(w1_f8, w2_f8)
+    for be in (4, 8, 16):
+        run_pair(w1_f8, w2_f8, be=be)
+    run_pair(w_np, w2_np, be=8)
 
 
 if __name__ == "__main__":
