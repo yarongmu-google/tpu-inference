@@ -49,8 +49,11 @@ random (near-uniform expert load); the v2 kernel drops rows beyond
 """
 
 import argparse
+import gzip
+import json
 import statistics
 import time
+from pathlib import Path
 from collections.abc import Callable
 
 import jax
@@ -78,6 +81,70 @@ def _snake_sorted_devices() -> list[jax.Device]:
             (-1 if x.coords[0] % 2 else 1) * x.coords[1],
         ),
     )
+
+
+def _iter_trace_events(trace_dir: str):
+    for path in sorted(Path(trace_dir).rglob("*.trace.json.gz")):
+        with gzip.open(path, "rt") as trace_file:
+            yield json.load(trace_file).get("traceEvents", [])
+
+
+def _tensorcore_pids(events) -> set:
+    pids = set()
+    for event in events:
+        if event.get("ph") == "M" and event.get("name") == "process_name":
+            process_name = str(event.get("args", {}).get("name", ""))
+            if ("/device:TPU:" in process_name
+                    and "SparseCore" not in process_name):
+                pids.add(event.get("pid"))
+    return pids
+
+
+def _device_kernel_ms_per_dispatch_from_trace(
+    trace_dir: str,
+    *,
+    jit_name_prefix: str,
+) -> list:
+    """Device latency of each matching top-level JIT dispatch (ported
+    from bench_stacked_rpa_golden: TensorCore pids only, barrier and
+    trailing-copy edges subtracted)."""
+    matching_by_pid: dict = {}
+    ops_by_pid: dict = {}
+    for events in _iter_trace_events(trace_dir):
+        tensorcore_pids = _tensorcore_pids(events)
+        for event in events:
+            pid = event.get("pid")
+            if (event.get("ph") != "X" or not event.get("dur")
+                    or pid not in tensorcore_pids):
+                continue
+            name = str(event.get("name", ""))
+            start_us = float(event["ts"])
+            duration_us = float(event["dur"])
+            end_us = start_us + duration_us
+            if name.startswith(jit_name_prefix):
+                matching_by_pid.setdefault(pid, []).append(
+                    (start_us, end_us, duration_us))
+            elif not name.startswith("jit_"):
+                ops_by_pid.setdefault(pid, []).append(
+                    (start_us, end_us, duration_us, name))
+    if not matching_by_pid:
+        return []
+    pid, dispatches = max(matching_by_pid.items(),
+                          key=lambda item: len(item[1]))
+    ops = ops_by_pid.get(pid, [])
+    latencies_ms = []
+    for start_us, end_us, duration_us in sorted(dispatches):
+        children = [op for op in ops if start_us <= op[0] < end_us]
+        barrier_us = sum(op[2] for op in children
+                         if op[3] == "barrier-cores")
+        copy_us = 0.0
+        if children:
+            last = max(children, key=lambda op: op[1])
+            if last[3].startswith("copy"):
+                copy_us = last[2]
+        latencies_ms.append(
+            max(duration_us - barrier_us - copy_us, 0.0) / 1000.0)
+    return latencies_ms
 
 
 def _time(fn: Callable[[], jax.Array], iters: int,
@@ -397,12 +464,32 @@ def main() -> None:
         print(f"{name:<32} {min_us:>10.1f} {med_us:>10.1f}")
 
     if args.profile_dir:
+        # the stacked_rpa bench's proven recipe (bench_stacked_rpa_golden):
+        # python tracer OFF, device tracer level 2 - the default
+        # jax.profiler.trace() path segfaulted in ProfilerSession::Create
+        # on this stack. The parser then reports DEVICE-ONLY time per
+        # dispatch from TensorCore pids: the kernel-only number the bench
+        # wall-clock (harness + RS + dispatch) cannot give.
         for name, fn in variants.items():
-            with jax.profiler.trace(f"{args.profile_dir}/{name}"):
-                for _ in range(3):
-                    jax.block_until_ready(fn())
-        print(f"\ntraces written under {args.profile_dir}/<variant>; open "
-              "in xprof/tensorboard - v2 per-stage spans are named moe_*")
+            trace_dir = f"{args.profile_dir}/{name}"
+            opts = jax.profiler.ProfileOptions()
+            opts.python_tracer_level = 0
+            opts.device_tracer_level = 2
+            jax.profiler.start_trace(trace_dir, profiler_options=opts)
+            for _ in range(5):
+                jax.block_until_ready(fn())
+            jax.profiler.stop_trace()
+            ms = _device_kernel_ms_per_dispatch_from_trace(
+                trace_dir, jit_name_prefix="jit_")
+            if ms:
+                print(f"{name:<32} device-only per dispatch: "
+                      f"min {min(ms)*1e3:8.1f} us  "
+                      f"median {sorted(ms)[len(ms)//2]*1e3:8.1f} us  "
+                      f"({len(ms)} dispatches)")
+            else:
+                print(f"{name:<32} no matching device dispatches in trace")
+        print(f"\ntraces under {args.profile_dir}/<variant>; open in "
+              "xprof/tensorboard - v2 per-stage spans are named moe_*")
 
 
 if __name__ == "__main__":

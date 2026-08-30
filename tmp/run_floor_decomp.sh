@@ -69,5 +69,14 @@ run bash -c '
   ls -lh tmp/xla_dump.tar.xz
   rm -rf tmp/xla_dump'
 
+# Device-only profile (the stacked_rpa recipe: python tracer off,
+# device tracer 2, parsed from TensorCore pids): kernel-only numbers
+# for v1 AND v2 in one shot - the measurement that would have caught
+# the XLA reshape copy on day one.
+run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
+    --variants=v1,v02 --iters=5 --warmup=2 $FLAGS \
+    --profile-dir=tmp/moe_xprof
+run du -sh tmp/moe_xprof
+
 echo
 echo "log: tmp/floor_decomp.log"
