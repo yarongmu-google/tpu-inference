@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     PYTHON_TRACER_LEVEL: int = 1
     USE_MOE_EP_KERNEL: bool = False
     USE_MOE_TP_DECODE_KERNEL: bool = False
+    MOE_TP_DECODE_ACT_SCALE: str = "token"
     USE_UNFUSED_MEGABLOCKS: bool = False
     USE_DENSE_MOE: bool = False
     NUM_SLICES: int = 1
@@ -277,6 +278,17 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # for larger batches or unsupported configs
     "USE_MOE_TP_DECODE_KERNEL":
     env_bool("USE_MOE_TP_DECODE_KERNEL", default=False),
+    # TP decode kernel fp8 activation-scale mode: "token" (per-token
+    # dynamic - the checkpoint's reference scheme; default) or
+    # "tensor" (one dispatch-global dynamic scale). This knob is
+    # STRICTLY kernel-internal: it governs how the v2 kernel
+    # quantizes the bf16 activations it receives, and does not
+    # interact with the checkpoint's quantization_config (weights),
+    # vLLM's activation_scheme (GPU semantics), gmm_v2's own LHS
+    # quantization (the XLA path), or the MOE_REQUANTIZE_* weight
+    # knobs. Invalid values fail loudly at kernel trace time.
+    "MOE_TP_DECODE_ACT_SCALE":
+    lambda: os.getenv("MOE_TP_DECODE_ACT_SCALE", "token"),
     # Enable megablocks for JAX sparse matmul for MoE (Mixture of Experts)
     # using Unfused weights
     "USE_UNFUSED_MEGABLOCKS":

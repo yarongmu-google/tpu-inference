@@ -235,10 +235,18 @@ def moe_apply(
                     # per layer per step. If these lines ever show a
                     # shape needing a transform, fix the weight layout
                     # at load time, never in the traced path.
+                    # kernel-internal fp8 act-scale mode; orthogonal
+                    # to every vLLM/checkpoint quantization config by
+                    # design (see envs.py) - validated here so a typo
+                    # fails the server at engagement, not silently
+                    act_scale = envs.MOE_TP_DECODE_ACT_SCALE
+                    assert act_scale in ("token", "tensor"), (
+                        "MOE_TP_DECODE_ACT_SCALE must be 'token' or "
+                        "'tensor'", act_scale)
                     logger.warning_once(
                         "[MoE] TP decode kernel inputs: x %s %s, gating "
                         "%s %s, w13 %s %s, w2 %s %s, w13_scale %s, "
-                        "w2_scale %s, axis=%s",
+                        "w2_scale %s, act_scale=%s, axis=%s",
                         x.shape, x.dtype, gating_output.shape,
                         gating_output.dtype, weights.w13_weight.shape,
                         weights.w13_weight.dtype, weights.w2_weight.shape,
@@ -247,7 +255,7 @@ def moe_apply(
                         else weights.w13_weight_scale.shape,
                         None if weights.w2_weight_scale is None
                         else weights.w2_weight_scale.shape,
-                        tp_decode_axis)
+                        act_scale, tp_decode_axis)
                     t, _ = x.shape
                     e = weights.w13_weight.shape[0]
                     # 2x the average expert load, rounded up to 8 rows
@@ -262,6 +270,7 @@ def moe_apply(
                         w2=weights.w2_weight,
                         w1_scale=weights.w13_weight_scale,
                         w2_scale=weights.w2_weight_scale,
+                        act_scale=act_scale,
                         mesh=mesh,
                         axis_name=tp_decode_axis,
                         top_k=layer.top_k,
