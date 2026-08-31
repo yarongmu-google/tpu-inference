@@ -38,7 +38,7 @@ unset LIBTPU_INIT_ARGS
 
 # fp8 flags: start from the bf16 winner's shape (be=4 bg=4 cap=32
 # bd1c/bd2c/bcT mid-range); the tuner below re-decides from scratch.
-FLAGS="${FLAGS:---be=4 --bg=4 --capacity=32 --bd1c=256 --bd2c=128 --bcT=256}"
+FLAGS="${FLAGS:---be=8 --bg=2 --capacity=32 --bd1c=256 --bd2c=128 --bcT=0}"
 echo "FLAGS: $FLAGS"
 
 run git rev-parse --short HEAD
