@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# TODO(run): re-run this loop for the rs comparison - step 1 is now the
+# bf16 3-way (v1,rs,v02 + parity diffs) and step 3c the fp8 head-to-head
+# (rs,v02); PROFILE=1 adds the rs device-only session.
+#
 # fp8 kernel bring-up loop (v2 decode MoE, w8a8): tests -> bf16
 # baseline -> fp8 tune -> fp8 A/B + ablation ladder -> Mosaic/XLA
 # dumps. Everything tees into push-sized files under tmp/.
@@ -59,9 +63,11 @@ run env JAX_PLATFORMS=cpu \
     python -m pytest tests/kernels/fused_moe_v2_decode_test.py -q
 
 # ---- 1) same-session bf16 baseline (lesson 24: differentials within
-# ---- one session/env) at the bf16 tuned winner ----------------------
+# ---- one session/env) at the bf16 tuned winner. rs = the experimental
+# ---- fused EP kernel (in-kernel exit RS, entry AG outside - the mirror
+# ---- of v02's fusion boundary); its max|diff| row is the parity check.
 run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
-    --variants=v1,v02 --iters=15 --warmup=3 \
+    --variants=v1,rs,v02 --iters=15 --warmup=3 \
     --be=4 --bg=4 --capacity=32 --bd1c=256 --bd2c=128 --bcT=256
 
 # ---- 2) fp8 tuner (blocks are always tuned, lesson 13; fp8's be=8
@@ -78,6 +84,14 @@ run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
 # ---- per-token machinery's true price; accuracy ladder judges later.
 run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
     --wdtype=fp8 --act-scale=tensor --variants=v02 --iters=30 --warmup=5 $FLAGS
+
+# ---- 3c) fp8 head-to-head vs the experimental fused EP kernel: same
+# ---- serving contract (token-sharded in/out), per-channel e4m3 both.
+# ---- Kept separate from (3) so an rs failure cannot eat the v02 row.
+# ---- Read together with (4)'s ablate=routing/ag rows: those price the
+# ---- entrance fusion rs does not have ("v02 minus our extras").
+run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
+    --wdtype=fp8 --variants=rs,v02 --iters=30 --warmup=5 $FLAGS
 
 # ---- 4) envelope + ablation ladder, incl the new fp8 rows -----------
 run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \

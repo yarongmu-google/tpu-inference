@@ -81,6 +81,12 @@ run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
     --variants=v02 --iters=8 --warmup=3 \
     --be=4 --bg=4 --capacity=32 --bd1c=256 --bd2c=128 --bcT=256 \
     --profile-dir=tmp/fp8_xprof/bf16
+# the experimental fused EP kernel (rs), fp8 arm: device-only number
+# for the head-to-head with the v02 winner (wall A/B is step 3c of
+# the main loop). Separate session so an rs failure costs nothing.
+run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
+    --wdtype=fp8 --variants=rs --iters=8 --warmup=3 \
+    --profile-dir=tmp/fp8_xprof/rs
 
 run bash -c '
   if [ -d tmp/fp8_xprof ]; then

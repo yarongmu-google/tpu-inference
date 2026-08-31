@@ -14,11 +14,14 @@
 """Decode-regime fused MoE benchmark: v1 (EP, in-kernel a2a) vs the v2
 decode kernel (TP, router-fused, in-kernel VMEM-direct all-gather).
 
-Both variants are timed in the SAME serving context (DP attention):
+All variants are timed in the SAME serving context (DP attention):
 each device starts with T/P tokens and ends with its own T/P output rows.
 v1 achieves this with expert-sharded weights and an in-kernel a2a; v2 with
 I-sharded weights, an in-kernel token all-gather, and a token-axis
-reduce-scatter out.
+reduce-scatter out. --variants=rs adds the experimental fused EP kernel
+(kernels/experimental/fused_moe): expert-sharded weights, entry
+all-gather OUTSIDE the kernel (charged in the timed jit), exit
+reduce-scatter fused IN - the mirror of v2's fusion boundary.
 
 Run on a single-host TPU VM (P chips):
 
@@ -190,6 +193,17 @@ def _device_kernel_ms_per_dispatch_from_trace(
     return rows
 
 
+def _qpc(w: jax.Array, axis: int) -> tuple[jax.Array, jax.Array]:
+    """Per-channel e4m3 quantization (the serving default requant
+    contract): one f32 scale per output channel over the whole
+    contraction; clip at 448 (e4m3 has no Inf)."""
+    wf = w.astype(jnp.float32)
+    amax = jnp.max(jnp.abs(wf), axis=axis, keepdims=True)
+    s = amax / 448.0
+    q = jnp.clip(wf / s, -448.0, 448.0).astype(jnp.float8_e4m3fn)
+    return q, s.astype(jnp.float32)
+
+
 def _time(fn: Callable[[], jax.Array], iters: int,
           warmup: int) -> tuple[float, float]:
     """Returns (min_us, median_us) of end-to-end wall time per call."""
@@ -255,8 +269,11 @@ def main() -> None:
                         "tensor = one dispatch-global dynamic scale "
                         "(deletes the OHS/s_x VALU machinery)")
     parser.add_argument("--variants", type=str, default="v1,v02",
-                        help="comma list from {v1, v02, env} - env "
-                        "adds harness-only and harness+RS rows")
+                        help="comma list from {v1, rs, v02, env} - rs is "
+                        "the experimental fused EP kernel (in-kernel exit "
+                        "reduce-scatter, routing + entry all-gather "
+                        "outside - the mirror of v02's fusion boundary); "
+                        "env adds harness-only and harness+RS rows")
     parser.add_argument("--iters", type=int, default=30)
     parser.add_argument("--warmup", type=int, default=5)
     parser.add_argument("--profile-dir", type=str, default="",
@@ -270,8 +287,9 @@ def main() -> None:
                         "--xla_force_host_platform_device_count=8")
     args = parser.parse_args()
     if args.interpret:
+        # v1 and rs drive real ICI writes; neither survives interpret mode
         args.variants = ",".join(v for v in args.variants.split(",")
-                                 if v != "v1")
+                                 if v not in ("v1", "rs"))
 
     t, d, e, i, k = (args.tokens, args.hidden, args.experts,
                      args.intermediate, args.top_k)
@@ -296,6 +314,7 @@ def main() -> None:
 
     mesh_v1 = Mesh(np.array(devices).reshape(1, p), ("data", "model"))
     mesh_v2 = Mesh(np.array(devices), ("x",))
+    fp8 = args.wdtype == "fp8"
 
     per_dev_weight_bytes = (w1.nbytes + w2.nbytes) // p
     print(f"devices={p}  T={t} ({t // p}/chip)  D={d}  E={e}  I={i}  k={k}  "
@@ -332,6 +351,54 @@ def main() -> None:
 
         variants["v1_ep_a2a"] = run_v1
 
+    if "rs" in args.variants:
+        # Experimental fused EP MoE (kernels/experimental/fused_moe):
+        # gather -> GMM1 -> act -> GMM2 -> in-kernel ICI reduce-scatter
+        # (the SP exit). Routing and the ENTRY token all-gather stay
+        # outside the kernel - the mirror of v02's fusion boundary.
+        # Tokens enter token-sharded exactly like serving, so the XLA
+        # all-gather this design needs is charged inside the timed jit;
+        # the exit is the kernel's own RS, so no post-kernel collective.
+        # Its blocks come from its internal selector - no flags apply.
+        from tpu_inference.kernels.experimental.fused_moe import \
+            fused_moe_func_rs
+
+        # ShardingAxisName-compatible axes: MLP_DATA='data' (size 1),
+        # expert axis resolves to 'model' (the only EP-candidate axis
+        # present) -> 8-way EP, matching v1's weight arrangement.
+        mesh_rs = Mesh(np.array(devices).reshape(1, p), ("data", "model"))
+        tok_rs = jax.device_put(
+            tokens, NamedSharding(mesh_rs, P(("data", "model"), None)))
+        gate_rs = jax.device_put(
+            gating, NamedSharding(mesh_rs, P(("data", "model"), None)))
+        # its GMM1 wants [E, D, 2I] with [all_gate | all_up] on the last
+        # axis (no TP column permute - EP shards on E), GMM2 [E, I, D]
+        w1_flat = w1.reshape(e, d, 2 * i)
+        ep_spec = NamedSharding(mesh_rs, P("model", None, None))
+        if fp8:
+            w1_rsq, w1s_rs = _qpc(w1_flat, 1)     # scale [E,1,2I]
+            w2_rsq, w2s_rs = _qpc(w2, 1)          # scale [E,1,D]
+            w1_rs = jax.device_put(w1_rsq, ep_spec)
+            w2_rs = jax.device_put(w2_rsq, ep_spec)
+            # scale dim1 == 1 -> its _recover_quant_block_size returns
+            # the whole K: per-channel, same contract as the v02 row
+            w1s_rs = jax.device_put(w1s_rs, ep_spec)
+            w2s_rs = jax.device_put(w2s_rs, ep_spec)
+        else:
+            w1_rs = jax.device_put(w1_flat, ep_spec)
+            w2_rs = jax.device_put(w2, ep_spec)
+            w1s_rs = w2s_rs = None
+
+        def run_rs() -> jax.Array:
+            # fused_moe_func_rs is itself jitted (mesh static); output is
+            # [T, D] token-sharded over ('data','model') - the same
+            # serving exit contract as v02's reduce-scatter output
+            return fused_moe_func_rs(
+                tok_rs, w1_rs, w2_rs, w1s_rs, w2s_rs, None, None,
+                gate_rs, k, True, mesh_rs, "silu", "softmax")
+
+        variants["rs_ep_fused" + ("[fp8]" if fp8 else "")] = run_rs
+
     # env rows need the mesh + token shards but not the kernel
     v2_selected = "v02" in args.variants or "env" in args.variants
     if v2_selected:
@@ -347,19 +414,7 @@ def main() -> None:
         # linearly in E (775/1074/1634/2821us at E=64/128/256/512).
         w1_perm = w1.reshape(e, d, 2, p, i // p).transpose(
             0, 1, 3, 2, 4).reshape(e, d, 2 * i)
-        fp8 = args.wdtype == "fp8"
         if fp8:
-            # per-channel e4m3 (the serving default requant contract):
-            # one f32 scale per output channel over the whole
-            # contraction; clip at 448 (e4m3 has no Inf)
-            def _qpc(w, axis):
-                wf = w.astype(jnp.float32)
-                amax = jnp.max(jnp.abs(wf), axis=axis, keepdims=True)
-                s = amax / 448.0
-                q = jnp.clip(wf / s, -448.0, 448.0).astype(
-                    jnp.float8_e4m3fn)
-                return q, s.astype(jnp.float32)
-
             w1_q, w1_s = _qpc(w1_perm, 1)         # [E,1,2I] scale
             w2_q, w2_s = _qpc(w2, 1)              # [E,1,D] scale
             w1_l = jax.device_put(
@@ -468,11 +523,15 @@ def main() -> None:
             variants["v2_envelope_rs"] = lambda: env_jit(tok_l)
 
     if args.tune:
-        if "v1_ep_a2a" in variants:
-            v1_us, _ = _time(variants["v1_ep_a2a"], iters=args.iters,
-                             warmup=args.warmup)
-            print(f"\n[tune] v1 baseline (its own tuned defaults): "
-                  f"{v1_us:.1f} us")
+        # v1/rs pick their own blocks internally - time them once as
+        # fixed baselines, then sweep only v02's parameters
+        for base_name, base_fn in variants.items():
+            if base_name.startswith("v2_"):
+                continue
+            base_us, _ = _time(base_fn, iters=args.iters,
+                               warmup=args.warmup)
+            print(f"\n[tune] {base_name} baseline (its own tuned "
+                  f"defaults): {base_us:.1f} us")
         if not v2_selected:
             return
         # capacity floor from the actual routing, rounded to the ACT
