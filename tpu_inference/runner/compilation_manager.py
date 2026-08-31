@@ -500,7 +500,7 @@ class CompilationManager:
             shared_attention_metadata = build_shared_attn()
 
         def model_fn_warmup(_fn, _args, _call_kwargs):
-            out = self.runner.model_fn(
+            out = _fn(
                 self.runner.state_leaves,
                 self.runner.kv_caches,
                 input_ids,
@@ -1515,8 +1515,7 @@ class CompilationManager:
 
                 def drafter_propose_warmup(_fn, _args, _call_kwargs):
                     new_args = (self.runner.kv_caches, ) + _args[1:]
-                    kv_caches, draft_token_ids = self.runner.drafter.propose(
-                        *new_args, **_call_kwargs)
+                    kv_caches, draft_token_ids = _fn(*new_args, **_call_kwargs)
                     self.runner.kv_caches = kv_caches
                     return draft_token_ids
 
@@ -1659,8 +1658,7 @@ class CompilationManager:
 
                 def drafter_propose_warmup(_fn, _args, _call_kwargs):
                     new_args = (self.runner.kv_caches, ) + _args[1:]
-                    kv_caches, draft_token_ids = self.runner.drafter.propose(
-                        *new_args, **_call_kwargs)
+                    kv_caches, draft_token_ids = _fn(*new_args, **_call_kwargs)
                     self.runner.kv_caches = kv_caches
                     return draft_token_ids
 
@@ -1798,8 +1796,7 @@ class CompilationManager:
                     new_args = (self.runner.kv_caches, ) + _args[1:]
                     logger.info("Warmup drafter_propose: num_reqs=%d",
                                 num_reqs)
-                    kv_caches, draft_token_ids = self.runner.drafter.propose(
-                        *new_args, **_call_kwargs)
+                    kv_caches, draft_token_ids = _fn(*new_args, **_call_kwargs)
                     self.runner.kv_caches = kv_caches
                     return draft_token_ids
 
