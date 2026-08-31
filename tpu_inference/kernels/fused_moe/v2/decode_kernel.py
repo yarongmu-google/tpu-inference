@@ -506,34 +506,52 @@ def _decode_moe_kernel(
         device's rows [row0 : row0+T/P] of topk_idx [T, k] i32 and
         topk_w [T, k] f32."""
         with jax.named_scope("moe_routing"):
+            # Route at the PADDED row width, not the real one: a
+            # sub-sublane token operand (serving buckets go down to
+            # 1 row/device) makes Mosaic lower the dot as a
+            # broadcast-multiply-reduce and emit an illegal
+            # dtype-changing vector.broadcast (bf16 operand under
+            # f32 accumulation; verified at T/P = 1). Padding the
+            # row dim to the sublane tile keeps it on the MXU
+            # matmul path. When T/P is already padded (the bench
+            # shapes) this is the identity.
+            gap = padded_rows - num_local_tokens
             if router_fused:
+                tl = tokens_local_vmem[...]  # [T/P, D]
+                if gap:
+                    tl = jnp.concatenate(
+                        [tl, jnp.zeros((gap, hidden_size), tl.dtype)],
+                        axis=0)
                 logits_et = lax.dot_general(
                     router_w_vmem[...],      # [E, D]
-                    tokens_local_vmem[...],  # [T/P, D]
+                    tl,                      # [padded_rows, D]
                     dimension_numbers=(((1,), (1,)), ((), ())),
                     preferred_element_type=jnp.float32,
-                )                            # -> [E, T/P]
+                )                            # -> [E, padded_rows]
             else:
                 # serving path: the router ran upstream, the second input
-                # is its logits [T/P, E]; one f32 transpose to [E, T/P]
-                logits_et = router_w_vmem[...].astype(jnp.float32).T
+                # is its logits [T/P, E]; one f32 transpose to [E, rows]
+                lg = router_w_vmem[...].astype(jnp.float32)
+                if gap:
+                    lg = jnp.concatenate(
+                        [lg, jnp.zeros((gap, lg.shape[1]), jnp.float32)],
+                        axis=0)
+                logits_et = lg.T
             topk_weights, topk_indices = _routing(
                 logits_et=logits_et,
                 top_k=top_k,
                 renormalize_topk_logits=renormalize_topk_logits,
-            )                                # -> [T/P, k] each
-            if padded_rows != num_local_tokens:
-                # pad the block to the sublane tile so the store (and
-                # later the sends) are tile-aligned SIZES. Phantom rows
-                # carry idx=-1 (matches no expert - they self-mask out
-                # of dispatch) and weight 0.
-                gap = padded_rows - num_local_tokens
-                topk_indices = jnp.concatenate(
-                    [topk_indices,
-                     jnp.full((gap, top_k), -1, jnp.int32)], axis=0)
-                topk_weights = jnp.concatenate(
-                    [topk_weights,
-                     jnp.zeros((gap, top_k), jnp.float32)], axis=0)
+            )                                # -> [padded_rows, k] each
+            if gap:
+                # phantom rows DID route (their zero logits pick some
+                # expert): overwrite with idx=-1 (matches no expert -
+                # they self-mask out of dispatch) and weight 0.
+                rows = lax.broadcasted_iota(
+                    jnp.int32, (padded_rows, top_k), 0)
+                live = rows < num_local_tokens
+                topk_indices = jnp.where(live, topk_indices, -1)
+                topk_weights = jnp.where(live, topk_weights,
+                                         jnp.zeros_like(topk_weights))
             topk_idx_vmem[pl.ds(row0, padded_rows), :] = topk_indices
             topk_w_vmem[pl.ds(row0, padded_rows), :] = topk_weights
 
@@ -1477,10 +1495,12 @@ def fused_moe_decode_tp_serving(
     # so binding the static config is all it takes
     P = jax.sharding.PartitionSpec
     fp8 = w1.dtype == jnp.float8_e4m3fn
-    if fp8:
-        # fp8 x rows pack 4/word: the kernel needs capacity % 32 == 0.
-        # Rounding UP only ever reduces capacity drops.
-        capacity = -(-capacity // 32) * 32
+    # Round capacity UP to the x-buffer row granule (fp8 packs 4
+    # rows/word -> 32; bf16 sublane tile -> 16): the serving formula's
+    # min(t, ...) can hand a sub-granule capacity at tiny decode
+    # buckets, leaving every expert block's rows sublane-misaligned.
+    # Rounding up only ever reduces capacity drops.
+    capacity = -(-capacity // 32) * 32 if fp8 else -(-capacity // 16) * 16
     in_specs = [P(axis_name, None),
                 P(axis_name, None),
                 P(None, None, axis_name),

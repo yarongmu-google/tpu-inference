@@ -462,6 +462,62 @@ def test_decode_kernel_fp8_lowers_for_tpu_on_cpu(t):
     assert len(exported.mlir_module_serialized) > 0
 
 
+@pytest.mark.parametrize("router_fused", [True, False],
+                         ids=["fused_router", "serving_logits"])
+def test_decode_kernel_one_row_bucket_lowers_for_tpu_on_cpu(router_fused):
+    """Mosaic gate at T/P = 1 (the smallest serving num-reqs bucket:
+    per-DP bucket 1 x 8 devices = T 8) at REAL model dims in bf16.
+    A sub-sublane token operand made Mosaic lower the router dot as a
+    broadcast-multiply-reduce and emit an illegal dtype-changing
+    vector.broadcast (bf16 operand under f32 accumulation) - it needs
+    the bf16 dtype AND the 1-row shard to trigger, which is why the
+    f32 toy-dim lowering tests above never caught it. The kernel now
+    routes at the padded row width; this is the regression gate."""
+    import functools
+
+    from jax._src import mesh as mesh_lib
+
+    t, d, e, i, k = 8, 4096, 512, 1024, 10
+    i_loc = i // P_DEV
+    rng = np.random.default_rng(0)
+    tokens = jnp.asarray(rng.standard_normal((t, d)), jnp.bfloat16)
+    gating = jnp.asarray(rng.standard_normal((t, e)), jnp.float32)
+    router_w = jnp.asarray(rng.standard_normal((e, d)) * 0.1,
+                           jnp.bfloat16)
+    w1_l = jnp.asarray(rng.standard_normal((e, d, 2 * i_loc)) * 0.02,
+                       jnp.bfloat16)
+    w2_l = jnp.asarray(rng.standard_normal((e, i_loc, d)) * 0.02,
+                       jnp.bfloat16)
+
+    amesh = mesh_lib.AbstractMesh(
+        (P_DEV,), ("x",),
+        abstract_device=mesh_lib.AbstractDevice(
+            device_kind="TPU7x", num_cores=1, platform="tpu"))
+    fn = functools.partial(
+        fused_moe_decode_tp_fused,
+        router_fused=router_fused,
+        mesh=amesh,
+        axis_name="x",
+        top_k=k,
+        renormalize_topk_logits=True,
+        capacity=16,   # the serving entry's bf16 granule rounding
+        be=4,
+        bg=1,
+        interpret=False,
+    )
+    route_in = router_w if router_fused else gating
+    route_spec = P(None, None) if router_fused else P("x", None)
+    with mesh_lib.use_abstract_mesh(amesh):
+        sfn = jax.jit(jax.shard_map(
+            fn, mesh=amesh,
+            in_specs=(P("x", None), route_spec,
+                      P(None, None, None), P(None, None, None)),
+            out_specs=P("x", None), check_vma=False))
+        exported = jax.export.export(sfn, platforms=["tpu"])(
+            tokens, route_in, w1_l, w2_l)
+    assert len(exported.mlir_module_serialized) > 0
+
+
 def _dequant_tokens_tensor_like_kernel(tokens: np.ndarray) -> np.ndarray:
     """The tensor-mode quantization mirror: ONE global dynamic scale."""
     g = float(np.abs(tokens).max())
