@@ -51,6 +51,7 @@ import functools
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 from jax import lax
 from jax.experimental import pallas as pl
 from jax.experimental.pallas import tpu as pltpu
@@ -855,24 +856,45 @@ def _decode_moe_kernel(
             # to select-f32-then-cast (bitwise-checked). Compare
             # width matches the select width (the run-3 Mosaic
             # invalid-relayout rule).
-            cmp_dt = (jnp.int16 if jnp.dtype(act_dtype).itemsize == 2
-                      else jnp.int32)
+            # The lane-replication [T, be] -> [T, be*C] runs on the
+            # MXU: jnp.repeat lowered as ~16k lane-shuffle ops
+            # (vslreplicate/vlbroadcast/vcombine chains, run-5 dump)
+            # on the SATURATED VALU/XLU classes, while ONE constant
+            # 0/1 block-replication matmul does the same gather on
+            # the near-empty VEX/VRES classes: rep [T, 3*beC] =
+            # stack_t [T, 3be] @ R. Slot/live/gate values are exact
+            # in f32 (slots <= T, gates pass through as g*1.0 with a
+            # single nonzero per output), the compare runs f32-width
+            # to match the f32 select (the run-3 mask-width rule),
+            # and the act-dtype cast happens after the select -
+            # bitwise-identical values to the pre-batched build.
             bec = be * capacity
-            slots_t = jnp.concatenate(
-                [p[4] for p in pieces], axis=0).astype(cmp_dt).T
-            gates_t = jnp.concatenate(
-                [p[2] for p in pieces], axis=0).astype(act_dtype).T
-            lives_t = jnp.concatenate(
-                [p[3] for p in pieces], axis=0).astype(cmp_dt).T
-            slots_rep = jnp.repeat(slots_t, capacity, axis=1)
-            gates_rep = jnp.repeat(gates_t, capacity, axis=1)
-            lives_rep = jnp.repeat(lives_t, capacity, axis=1)
+            stack = jnp.concatenate(
+                [p[4].astype(jnp.float32) for p in pieces]      # slots
+                + [p[2] for p in pieces]                        # gates
+                + [p[3].astype(jnp.float32) for p in pieces],   # lives
+                axis=0)                                      # [3be, T]
+            stack_t = stack.T                                # [T, 3be]
+            # R[i, c] = 1 iff c // C == i - the block-replication
+            # pattern, built from iotas (a captured host constant is
+            # rejected by pallas; iota arithmetic constant-folds)
+            rep_mat = (lax.broadcasted_iota(
+                jnp.int32, (3 * be, 3 * bec), 1) // capacity
+                == lax.broadcasted_iota(
+                    jnp.int32, (3 * be, 3 * bec), 0)).astype(
+                jnp.float32)                                 # [3be, 3beC]
+            rep = jnp.dot(stack_t, rep_mat,
+                          preferred_element_type=jnp.float32)
+            slots_rep = rep[:, :bec]
+            gates_rep = rep[:, bec:2 * bec]
+            lives_rep = rep[:, 2 * bec:]
             iota_mod = (lax.broadcasted_iota(
                 jnp.int32, (num_tokens, bec), 1)
-                % capacity).astype(cmp_dt)
+                % capacity).astype(jnp.float32)
             ohg_vmem.at[ohg_slot][...] = jnp.where(
-                (slots_rep == iota_mod) & (lives_rep == 1),
-                gates_rep, jnp.zeros((), act_dtype))         # [T, be*C]
+                (slots_rep == iota_mod) & (lives_rep == 1.0),
+                gates_rep,
+                jnp.zeros((), jnp.float32)).astype(act_dtype)
 
     def expert_gmm1_mxu(local_e_id: int, x_step, w1_step):
         """STEP 4a (MXU): gmm1 for ONE expert - rows
