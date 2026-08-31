@@ -17,6 +17,13 @@
 # Tune is the long pole (~15 min). Re-run finalists with FLAGS=...
 # from the printed winner: FLAGS="..." ./tmp/run_fp8_kernel.sh
 # Afterwards: git add tmp/ && commit ("fp8 run.") && push.
+#
+# ENVS (lesson 22): this loop runs in the SERVING env (pinned jax
+# 0.10.2). Device-time profiling lives in tmp/run_fp8_profile.sh and
+# needs a MATCHED newer jax/libtpu pair (the prof env) - run it
+# standalone there, or chain it here with PROFILE=1 when this whole
+# loop runs in such an env (step 0's tests may fail under jax 0.11+
+# shard_map strictness - they are the serving-env guard, non-fatal).
 
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -117,6 +124,13 @@ run bash -c '
   ls -lh tmp/xla_dump_fp8k.tar.xz
   rm -rf tmp/xla_dump_fp8k'
 
+# ---- 7) optional: device-time profile (needs the matched prof env;
+# ---- see tmp/run_fp8_profile.sh's preflight) ------------------------
+if [ "${PROFILE:-0}" = "1" ]; then
+  run env FLAGS="$FLAGS" ./tmp/run_fp8_profile.sh
+fi
+
 echo
 echo "log: tmp/fp8_kernel.log  histogram: tmp/fp8_kernel_histogram.txt"
 echo "next: FLAGS=\"<tuner winner>\" ./tmp/run_fp8_kernel.sh  (steps 3-6 re-run at the winner)"
+echo "profile (prof env): ./tmp/run_fp8_profile.sh  or  PROFILE=1 <this script>"

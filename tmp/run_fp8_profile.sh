@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
-# Device-time profile of the fp8 winner vs the bf16 baseline - the
-# direct instrument behind the envelope-subtraction inference
-# (run 6: winner 750.8 wall - 402.9 envelope ~= 348 us device ~= the
-# 357 us modeled MXU floor; this run confirms or corrects it).
+# STANDALONE device-time profiler for the v2 MoE kernel (fp8 winner,
+# fp8 tensor arm, bf16 baseline) - the direct instrument behind the
+# envelope-subtraction inference (run 6: winner 750.8 wall - 402.9
+# envelope ~= 348 us device ~= the 357 us modeled MXU floor).
 #
-# MUST run in the PROF env (jax 0.11.1 + matched libtpu; the serving
-# env's profiler plugin segfaults in ProfilerSession::Create):
-#     conda activate prof && ./tmp/run_fp8_profile.sh
-#
-# The bench parses device kernel ms/dispatch from the TensorCore pids
-# (python_tracer_level=0, device_tracer_level=2; barrier-core and
-# trailing-copy edges subtracted) - lesson A.5's recipe.
+# Env requirement (lesson 22 - the pairing is the whole game):
+# jax/jaxlib/libtpu must be a MATCHED set, newer than the serving
+# pin. The preflight below compiles a trivial pallas kernel and
+# aborts with remediation if the pairing is broken (the failure mode
+# seen 2026-08-30: jax 0.11.1 with a stale libtpu ->
+# "Pallas TPU requires a recent libtpu version (at least 0.0.44)").
+#     conda activate prof
+#     pip install -U 'jax[tpu]'     # pulls the matched libtpu
+#     ./tmp/run_fp8_profile.sh
+# Callable standalone, or from the main loop via
+#     PROFILE=1 ./tmp/run_fp8_kernel.sh
 # Afterwards: git add tmp/ && commit ("fp8 profile.") && push.
 
 set -uo pipefail
@@ -38,10 +42,35 @@ echo "FLAGS: $FLAGS"
 run git rev-parse --short HEAD
 run python -c "import jax, jaxlib; print('jax', jax.__version__, 'jaxlib', jaxlib.__version__)"
 
+# ---- preflight: pallas + libtpu pairing ----------------------------
+run python - <<'EOF'
+import jax, jax.numpy as jnp
+from jax.experimental import pallas as pl
+
+
+def _k(o_ref):
+    o_ref[...] = jnp.ones_like(o_ref)
+
+
+try:
+    out = pl.pallas_call(
+        _k, out_shape=jax.ShapeDtypeStruct((8, 128), jnp.float32))()
+    jax.block_until_ready(out)
+    print("preflight: pallas/libtpu pairing OK")
+except Exception as ex:
+    raise SystemExit(
+        f"preflight FAILED: {type(ex).__name__}: {str(ex)[:200]}\n"
+        "jax/jaxlib/libtpu are not a matched set. In THIS env run:\n"
+        "    pip install -U 'jax[tpu]'\n"
+        "then rerun. (Do NOT touch the serving env's pinned jax.)")
+EOF
+
 rm -rf tmp/fp8_xprof tmp/fp8_xprof.tar.xz
 
 # fp8 token + tensor arms and the bf16 baseline, one profiled session
-# each; the parser prints device-only kernel time per dispatch.
+# each; the bench parses device-only kernel time per dispatch from
+# the TensorCore pids (python tracer off, device tracer 2 - the
+# lesson-A.5 recipe; barrier-core and trailing-copy edges subtracted).
 run python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
     --wdtype=fp8 --variants=v02 --iters=8 --warmup=3 $FLAGS \
     --profile-dir=tmp/fp8_xprof/token
@@ -60,11 +89,13 @@ run bash -c '
     ls -lh tmp/fp8_xprof.tar.xz
     rm -rf tmp/fp8_xprof
   else
-    echo "no traces captured (wrong env? conda activate prof)"
+    echo "no traces captured (preflight passed but profiler produced"
+    echo "nothing - check ProfileOptions support in this jax)"
   fi'
 
 echo
 echo "log: tmp/fp8_profile.log"
 echo "verdicts: fp8 winner device vs the 357 us MXU-floor model;"
-echo "bf16 device vs its historic 848 (the VALU-bound reinterpretation"
-echo "+ this session's shared-path op reductions may have moved it)"
+echo "token-vs-tensor device delta (envelope-free A/B); bf16 device"
+echo "vs its historic 848 (the shared-path op deletions may have"
+echo "moved it)"
