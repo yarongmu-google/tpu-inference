@@ -66,8 +66,8 @@ from jax.sharding import Mesh, NamedSharding
 from jax.sharding import PartitionSpec as P
 
 from tpu_inference.kernels.fused_moe.v1.kernel import fused_ep_moe
-from tpu_inference.kernels.fused_moe.v2.decode_kernel import \
-    fused_moe_decode_tp_fused
+from tpu_inference.kernels.fused_moe.v2.decode_kernel import (
+    fused_moe_decode_tp_fused, fused_moe_decode_tp_serving)
 
 
 def _snake_sorted_devices() -> list[jax.Device]:
@@ -498,6 +498,54 @@ def main() -> None:
                 be=args.be, cap=args.capacity,
                 bd1c=args.bd1c or None, bd2c=args.bd2c or None,
                 bcT=args.bcT or None, bg=args.bg)
+
+        if "v02s" in args.variants:
+            # the SERVING entry (router_fused=False: precomputed gating,
+            # the serving capacity formula, be=4/bg=1 defaults) - the
+            # exact path vllm engages, which the v02 rows never
+            # exercise. Purpose: reproduce serving-only failures at
+            # serving decode shapes (sweep --tokens over the num-reqs
+            # buckets) without standing up a server.
+            gate_l = jax.device_put(
+                gating, NamedSharding(mesh_v2, P("x", None)))
+            # serving scale layout is 4D ([E,1,1,N]); reshape on the
+            # HOST, never inside the jit (weight-adjacent transforms
+            # in the traced path re-materialize per call)
+            if fp8:
+                w1s4_l = jax.device_put(
+                    w1_s.reshape(e, 1, 1, -1),
+                    NamedSharding(mesh_v2, P(None, None, None, "x")))
+                w2s4_l = jax.device_put(
+                    w2_s.reshape(e, 1, 1, -1),
+                    NamedSharding(mesh_v2, P(None, None, None, None)))
+            else:
+                w1s4_l = w2s4_l = None
+            cap_serving = min(t, max(16, -(-2 * t * k // (e * 8)) * 8))
+
+            def v02s_fn(tok: jax.Array, gate: jax.Array,
+                        w1x: jax.Array, w2x: jax.Array,
+                        s1: jax.Array | None,
+                        s2: jax.Array | None) -> jax.Array:
+                return fused_moe_decode_tp_serving(
+                    tok,
+                    gate,
+                    w1x,
+                    w2x,
+                    s1,
+                    s2,
+                    act_scale=args.act_scale,
+                    mesh=mesh_v2,
+                    axis_name="x",
+                    top_k=k,
+                    renormalize_topk_logits=True,
+                    capacity=cap_serving,
+                    interpret=args.interpret,
+                )
+
+            v02s_jit = jax.jit(v02s_fn)
+            name = "v2_serving_entry" + ("[fp8]" if fp8 else "")
+            variants[name] = lambda: v02s_jit(
+                tok_l, gate_l, w1_l, w2_l, w1s4_l, w2s4_l)
 
         if "env" in args.variants:
             # envelope decomposition: what does the measurement itself
