@@ -83,14 +83,35 @@ def _tp_decode_kernel_axis(*, mesh, x, gating_output, weights, activation,
                            scoring_fn):
     """The single mesh axis carrying BOTH the token shards and the weight
     shards (TP-MoE under data-parallel attention), or None when this call
-    cannot use the TP decode kernel and must stay on the GMM path."""
+    cannot use the TP decode kernel and must stay on the GMM path.
+
+    Dtype contract: bf16 weights take NO scales; e4m3 weights REQUIRE
+    both per-channel scale tensors in the GMM_TP serving shape with
+    in_blocks == 1 (the default requant contract - a block-scale
+    checkpoint served with MOE_REQUANTIZE_BLOCK_SIZE or
+    DISABLE_WEIGHT_REQUANTIZATION set does not engage the kernel)."""
     if not isinstance(gating_output, jax.Array):
         return None
     if activation != "silu" or scoring_fn != "softmax":
         return None
-    if (weights.w13_weight_scale is not None
-            or weights.w2_weight_scale is not None
-            or weights.w13_bias is not None or weights.w2_bias is not None):
+    if weights.w13_bias is not None or weights.w2_bias is not None:
+        return None
+    w13s = weights.w13_weight_scale
+    w2s = weights.w2_weight_scale
+    fp8 = weights.w13_weight.dtype == jnp.float8_e4m3fn
+    if fp8:
+        if weights.w2_weight.dtype != jnp.float8_e4m3fn:
+            return None
+        if w13s is None or w2s is None:
+            return None
+        # per-channel contract: [E, in_blocks=1, 1, out_channels]
+        if (w13s.ndim != 4 or w13s.shape[1] != 1
+                or w13s.shape[-1] != weights.w13_weight.shape[-1]):
+            return None
+        if (w2s.ndim != 4 or w2s.shape[1] != 1
+                or w2s.shape[-1] != weights.w2_weight.shape[-1]):
+            return None
+    elif w13s is not None or w2s is not None:
         return None
     if x.ndim != 2 or weights.w13_weight.ndim != 3:
         return None
@@ -216,14 +237,22 @@ def moe_apply(
                     # at load time, never in the traced path.
                     logger.warning_once(
                         "[MoE] TP decode kernel inputs: x %s %s, gating "
-                        "%s %s, w13 %s %s, w2 %s %s, axis=%s",
+                        "%s %s, w13 %s %s, w2 %s %s, w13_scale %s, "
+                        "w2_scale %s, axis=%s",
                         x.shape, x.dtype, gating_output.shape,
                         gating_output.dtype, weights.w13_weight.shape,
                         weights.w13_weight.dtype, weights.w2_weight.shape,
-                        weights.w2_weight.dtype, tp_decode_axis)
+                        weights.w2_weight.dtype,
+                        None if weights.w13_weight_scale is None
+                        else weights.w13_weight_scale.shape,
+                        None if weights.w2_weight_scale is None
+                        else weights.w2_weight_scale.shape,
+                        tp_decode_axis)
                     t, _ = x.shape
                     e = weights.w13_weight.shape[0]
                     # 2x the average expert load, rounded up to 8 rows
+                    # (the serving entry re-rounds to 32 on the fp8
+                    # path - the e4m3 row granule)
                     cap = min(t, max(16, -(-2 * t * layer.top_k //
                                            (e * 8)) * 8))
                     output = fused_moe_decode_tp_serving(
@@ -231,6 +260,8 @@ def moe_apply(
                         gating_output=gating_output,
                         w1=weights.w13_weight,
                         w2=weights.w2_weight,
+                        w1_scale=weights.w13_weight_scale,
+                        w2_scale=weights.w2_weight_scale,
                         mesh=mesh,
                         axis_name=tp_decode_axis,
                         top_k=layer.top_k,
