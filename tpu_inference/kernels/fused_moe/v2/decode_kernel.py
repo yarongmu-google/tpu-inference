@@ -211,9 +211,17 @@ def _mask_operators(
                    jnp.zeros((), act_dtype)).astype(oh_dtype or act_dtype)
     if s_row is None:
         return (oh,)
-    # OHS stays f32-wide: the gathered scales feed the f32 dequant
+    # OHS stays f32-wide (the gathered scales feed the f32 dequant),
+    # and its select mask must be f32-WIDTH too: one i1 mask cannot
+    # serve selects of two widths - Mosaic refuses the relayout
+    # ("Invalid relayout ... vector<32x512xi1>", run 3, token mode).
+    # Recompute the hit at i32 for the f32 branch; the i16 mask above
+    # keeps its single act-dtype consumer.
+    slot_iota32 = lax.broadcasted_iota(
+        jnp.int32, (capacity, num_tokens), 0)
+    ohs_hit = (slot_iota32 == slot) & live
     ohs = jnp.where(
-        oh_hit, jnp.broadcast_to(s_row, (capacity, num_tokens)), 0.0)
+        ohs_hit, jnp.broadcast_to(s_row, (capacity, num_tokens)), 0.0)
     s_x = jnp.sum(ohs, axis=1, keepdims=True)            # [C, 1] exact
     return oh, s_x
 
