@@ -585,14 +585,18 @@ class RandomDataset(BenchmarkDataset):
         prefix_token_ids = (np.random.randint(
             0, vocab_size, size=prefix_len).tolist() if prefix_len > 0 else [])
 
-        # New sampling logic: [X * (1 - b), X * (1 + b)]
-        input_low = int(real_input_len * (1 - range_ratio))
-        input_high = int(real_input_len * (1 + range_ratio))
-        output_low = int(output_len * (1 - range_ratio))
-        # Ensure the lower bound for output length is at least 1 to prevent
-        # sampling 0 tokens, which can cause request failures.
-        output_low = max(output_low, 1)
-        output_high = int(output_len * (1 + range_ratio))
+        # Sampling range: [X * (1 - b), X]. The CLI-specified length is a
+        # hard upper bound - no request ever exceeds it. Both lower bounds
+        # are clamped to >= 1: a 0-token prompt or a 0-token output is
+        # rejected by the server as a bad request. With range_ratio == 0
+        # there is no sampling and every request gets exactly the
+        # specified length (input_len minus the tokenizer's special
+        # tokens, floored at 1).
+        real_input_len = max(real_input_len, 1)
+        input_low = max(int(real_input_len * (1 - range_ratio)), 1)
+        input_high = real_input_len
+        output_low = max(int(output_len * (1 - range_ratio)), 1)
+        output_high = output_len
 
         # Add logging for debugging
         logger.info("Sampling input_len from [%s, %s]", input_low, input_high)
