@@ -48,6 +48,25 @@ for WD in fp8 bf16; do
   done
 done
 
+# ---- Mosaic dump at the T=8 rung (the fixed shape): the routing dot
+# ---- must appear as vmatmul work at the padded width, with NO
+# ---- broadcast-multiply-reduce chain in the prologue - the dump-level
+# ---- confirmation of the fix, not just "it no longer errors".
+rm -rf tmp/mosaic_t8 && mkdir -p tmp/mosaic_t8
+export LIBTPU_INIT_ARGS="--xla_mosaic_dump_to=tmp/mosaic_t8"
+python -m tpu_inference.kernels.fused_moe.v2.bench_decode \
+  --wdtype=fp8 --variants=v02s --tokens=8 --iters=2 --warmup=1 \
+  --be=4 --bg=1 --capacity=32
+unset LIBTPU_INIT_ARGS
+LAST=$(ls tmp/mosaic_t8/*post-finalize-llo* 2>/dev/null | tail -1)
+if [ -n "$LAST" ]; then
+  python tmp/dump_histogram.py "$LAST" > tmp/t8_histogram.txt
+  grep -E "vmatmul|vlatchi|vbcast|vcvt" tmp/t8_histogram.txt | head -10
+  tar -c tmp/mosaic_t8 | xz -9 -T0 > tmp/mosaic_t8.tar.xz
+  ls -lh tmp/mosaic_t8.tar.xz tmp/t8_histogram.txt
+fi
+rm -rf tmp/mosaic_t8
+
 echo
-echo "log: tmp/serving_shapes.log"
+echo "log: tmp/serving_shapes.log  t8 histogram: tmp/t8_histogram.txt"
 echo "then: git add tmp/ && commit ('serving shapes run.') && push"
