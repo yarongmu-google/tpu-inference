@@ -1,0 +1,92 @@
+FLAGS: --be=8 --bg=2 --capacity=32 --bd1c=256 --bd2c=128 --bcT=0
+
++ git rev-parse --short HEAD
+729a68e09f
++ exit=0
+
++ python -c import jax, jaxlib; print('jax', jax.__version__, 'jaxlib', jaxlib.__version__)
+jax 0.11.1 jaxlib 0.11.1
++ exit=0
+
++ python -
+preflight: pallas/libtpu pairing OK
++ exit=0
+
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --wdtype=fp8 --variants=v02 --iters=8 --warmup=3 --be=8 --bg=2 --capacity=32 --bd1c=256 --bd2c=128 --bcT=0 --profile-dir=tmp/fp8_xprof/token
+WARNING 08-30 21:21:03 [tpu_platform.py:447] Pin memory is not supported on TPU.
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+INFO 08-30 21:21:06 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-30 21:21:06 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-30 21:21:06 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
+weights/device = 1536 MiB
+v2 weights: e4m3 + per-channel scales -> 768 MiB/device (+ scales 8.5)
+
+variant                              min us  median us
+v2_tp_inkernel_ag[fp8]                828.2      856.9
+v2_tp_inkernel_ag[fp8]           device-only per dispatch: TC min    431.5 us  median    433.0 us  | SC median   33.1 us  (5 dispatches)
+
+traces under tmp/fp8_xprof/token/<variant>; open in xprof/tensorboard - v2 per-stage spans are named moe_*
++ exit=0
+
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --wdtype=fp8 --act-scale=tensor --variants=v02 --iters=8 --warmup=3 --be=8 --bg=2 --capacity=32 --bd1c=256 --bd2c=128 --bcT=0 --profile-dir=tmp/fp8_xprof/tensor
+WARNING 08-30 21:22:47 [tpu_platform.py:447] Pin memory is not supported on TPU.
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+INFO 08-30 21:22:51 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-30 21:22:51 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-30 21:22:51 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
+weights/device = 1536 MiB
+v2 weights: e4m3 + per-channel scales -> 768 MiB/device (+ scales 8.5)
+
+variant                              min us  median us
+v2_tp_inkernel_ag[fp8][as=tensor]      798.2      845.0
+v2_tp_inkernel_ag[fp8][as=tensor] device-only per dispatch: TC min    428.7 us  median    429.6 us  | SC median   31.0 us  (5 dispatches)
+
+traces under tmp/fp8_xprof/tensor/<variant>; open in xprof/tensorboard - v2 per-stage spans are named moe_*
++ exit=0
+
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02 --iters=8 --warmup=3 --be=4 --bg=4 --capacity=32 --bd1c=256 --bd2c=128 --bcT=256 --profile-dir=tmp/fp8_xprof/bf16
+WARNING 08-30 21:24:31 [tpu_platform.py:447] Pin memory is not supported on TPU.
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+INFO 08-30 21:24:35 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 08-30 21:24:35 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 08-30 21:24:35 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
+weights/device = 1536 MiB
+
+variant                              min us  median us
+v2_tp_inkernel_ag                    1182.7     1233.0
+v2_tp_inkernel_ag                device-only per dispatch: TC min    789.7 us  median    790.3 us  | SC median   27.1 us  (5 dispatches)
+
+traces under tmp/fp8_xprof/bf16/<variant>; open in xprof/tensorboard - v2 per-stage spans are named moe_*
++ exit=0
+
++ bash -c 
+  if [ -d tmp/fp8_xprof ]; then
+    du -sh tmp/fp8_xprof
+    tar -c tmp/fp8_xprof | xz -9 -T0 > tmp/fp8_xprof.tar.xz
+    ls -lh tmp/fp8_xprof.tar.xz
+    rm -rf tmp/fp8_xprof
+  else
+    echo "no traces captured (preflight passed but profiler produced"
+    echo "nothing - check ProfileOptions support in this jax)"
+  fi
+326M	tmp/fp8_xprof
+-rw-rw-r-- 1 ymu_google_com ymu_google_com 21M Aug 30 21:26 tmp/fp8_xprof.tar.xz
++ exit=0
+
+log: tmp/fp8_profile.log
+verdicts: fp8 winner device vs the 357 us MXU-floor model;
+token-vs-tensor device delta (envelope-free A/B); bf16 device
+vs its historic 848 (the shared-path op deletions may have
+moved it)
