@@ -15,6 +15,7 @@
 # ---- "Only 2D mesh is supported" (v1/kernel.py) - use the v1 line in
 # ---- the bf16 section below as the template for a working v1 config.
 # ---- (ENABLE_PALLAS_TP_MOE matches nothing in tpu_inference - dead.)
+# ~10500; decode only: ~10280
 L=tmp/vllm_logs/fp8_gmm_ep_$(date +%Y%m%d_%H%M%S).log; mkdir -p tmp/vllm_logs; ENABLE_PALLAS_TP_MOE=1 MODEL_IMPL_TYPE=vllm USE_MOE_EP_KERNEL=0 ATTN_BUCKETIZED_NUM_REQS=true ATTN_CUSTOM_NUM_REQS_BUCKETS=8,16,32,64 ONEHOT_MOE_PERMUTE_THRESHOLD=32768 VLLM_MOE_CHUNK_SIZE=256 NEW_MODEL_DESIGN=1 LIBTPU_INIT_ARGS=' --xla_tpu_use_minor_sharding_for_major_trivial_input=true --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=false --xla_tpu_ars_combiner_threshold_in_bytes=0 --xla_tpu_enable_async_collective_merger=false --xla_tpu_check_legacy_constraints_in_reduce_scatter_legalizer=false' vllm serve Qwen/Qwen3.5-397B-A17B-FP8 --max-model-len=9216 --max-num-batched-tokens=1024 --max-num-seqs=64 --no-enable-prefix-caching --gpu-memory-utilization=0.88 --tensor-parallel-size=8 --async-scheduling --port=8000 --language-model-only --enable-auto-tool-choice --tool-call-parser=qwen3_coder --reasoning-parser=qwen3 '--limit-mm-per-prompt={"image": 0, "video": 0}' --kv-cache-dtype=fp8 --enable-expert-parallel '--additional_config={"sharding": {"sharding_strategy": {"enable_dp_attention": true}}}' --block-size=256 2>&1 | tee "$L"; xz -9 -T0 "$L"
 
 # ---- fp8 line 2: v1 fused_ep_moe. v1 hard-requires the LEGACY 2D
