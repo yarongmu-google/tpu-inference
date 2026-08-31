@@ -129,35 +129,42 @@ def _lane_cumsum(
 #   _mask_operators   VALU   the iota==slot select storms ([C, T] side)
 # OH[c, t] = 1 iff token t is the c-th token routed to expert e; OHG_T
 # is its transpose scaled by the gate weight, so the combine matmul
-# carries the weighting for free. `slot` needs a prefix sum along T,
-# cheap only with T on lanes, so it is built [1, T]; its [T, 1] dual -
-# needed only by the OHG build - crosses orientations via ONE batched
-# [be, T] -> [T, be] transpose per grid step at PARK time, never per
-# expert (the per-expert slot.T lowered as ~128 padded 128x128 vxpose
-# blocks each - measured as a 215 us exposure on the fp8 bring-up, and
-# wasted power under bf16 where the weight stream hid it).
+# carries the weighting for free.
+#
+# LAYOUT DOCTRINE (2026-08-30, from the LLO issue audit - the kernel
+# is VLIW-issue-bound, so total lowered ops ARE wall clock): every
+# per-expert tensor lives in the LANE-MAJOR [., T] orientation ([1, T]
+# masks/gates/slots, [C, T] operators - full 128-lane vregs); nothing
+# per-expert is ever [T, 1] or [T, k] (1/128 and k/128 lane
+# utilization - the measured 10-20x op bloat of the original build).
+# The [T, .] orientation exists ONCE per step, at PARK: three tiny
+# [be, T] -> [T, be] transposes, a lane-replication by C, and ONE
+# full-width [T, be*C] compare+select build the combine operator.
 
 
 def _mask_membership(
     *,
     topk_idx_kt: jax.Array,   # [k, T] i32 chosen expert ids, k major
-    topk_idx_tk: jax.Array,   # [T, k] i32 same table, tokens major
-    topk_w_tk: jax.Array,     # [T, k] f32 gate weights, tokens major
+    topk_w_kt: jax.Array,     # [k, T] f32 gate weights, k major
     expert_id,                # scalar (may be traced)
-) -> tuple[jax.Array, jax.Array, jax.Array]:
-    """VALU phase: which tokens picked this expert, and their gates.
+) -> tuple[jax.Array, jax.Array]:
+    """VALU phase: which tokens picked this expert, and their gates -
+    LANE-MAJOR throughout (2026-08-30 rewrite). The old [T, k] /
+    [T, 1] orientation tiled [512, 10] as 64 vregs with 10/128 lanes
+    used and [T, 1] at 1/128 - a 12-128x lane-padding tax on every
+    compare/where/sum, which the LLO dump showed as the true bulk of
+    the dispatch-build op count (the kernel is VLIW-ISSUE-bound at
+    ~7.8 ops/cycle, so total ops ARE the wall clock). In [k, T] the
+    same math is 8 full-lane vregs.
 
-    Returns (routed_mask [1, T] i32 0/1, live_t [T, 1] bool,
-    gate_t [T, 1] f32)."""
+    Returns (routed_mask [1, T] i32 0/1, gate_row [1, T] f32);
+    liveness is routed_mask itself - no [T, 1] tensors exist."""
     hit_kt = topk_idx_kt == expert_id                        # [k, T]
     routed_mask = jnp.max(hit_kt.astype(jnp.int32), axis=0,
                           keepdims=True)                     # [1, T]
-    hit_tk = topk_idx_tk == expert_id                        # [T, k]
-    live_t = jnp.max(hit_tk.astype(jnp.int32), axis=1,
-                     keepdims=True) == 1                     # [T, 1]
-    gate_t = jnp.sum(jnp.where(hit_tk, topk_w_tk, 0.0), axis=1,
-                     keepdims=True)                          # [T, 1]
-    return routed_mask, live_t, gate_t
+    gate_row = jnp.sum(jnp.where(hit_kt, topk_w_kt, 0.0), axis=0,
+                       keepdims=True)                        # [1, T]
+    return routed_mask, gate_row
 
 
 def _mask_slots(routed_mask: jax.Array,
@@ -290,6 +297,7 @@ def _decode_moe_kernel(
          w1s_hbm, w2s_hbm, out_hbm,
          tokens_full_vmem, send_sem, recv_sem_tokens, recv_sem_meta,
          acc_vmem, topk_idx_vmem, topk_w_vmem, idx_kt_vmem,
+         w_kt_vmem,
          x_vmem, y_vmem, ohg_vmem, b_w1_x2_vmem, b_w2_x2_vmem,
          local_sems, tokens_local_vmem, router_w_vmem, out_stage_vmem,
          s_tok_vmem, s_row_vmem, s_x_vmem,
@@ -298,6 +306,7 @@ def _decode_moe_kernel(
         (tokens_local_hbm, route_in_hbm, w1_hbm, w2_hbm, out_hbm,
          tokens_full_vmem, send_sem, recv_sem_tokens, recv_sem_meta,
          acc_vmem, topk_idx_vmem, topk_w_vmem, idx_kt_vmem,
+         w_kt_vmem,
          x_vmem, y_vmem, ohg_vmem, b_w1_x2_vmem, b_w2_x2_vmem,
          local_sems, tokens_local_vmem, router_w_vmem,
          out_stage_vmem) = refs
@@ -732,6 +741,7 @@ def _decode_moe_kernel(
             # the per-step mask builder reduces over k with T on LANES;
             # one transpose here beats one per expert per grid step.
             idx_kt_vmem[...] = topk_idx_vmem[...].T          # [k, T]
+            w_kt_vmem[...] = topk_w_vmem[...].T              # [k, T]
             if fp8 and not act_tensor:
                 # s_tok lane copy for the OHS row-broadcast build -
                 # one tiny [T,1] -> [1,T] transpose, once per dispatch
@@ -747,8 +757,7 @@ def _decode_moe_kernel(
         [(OH [C, T], OHG_T [T, C])] * be in act dtype."""
         with jax.named_scope("moe_masks"):
             tables = (idx_kt_vmem[...],                      # [k, T]
-                      topk_idx_vmem[...],                    # [T, k]
-                      topk_w_vmem[...])                      # [T, k]
+                      w_kt_vmem[...])                        # [k, T]
             pieces = []
             for local_e_id in range(be):
                 membership = dispatch_phase_a_valu(
@@ -758,18 +767,16 @@ def _decode_moe_kernel(
             return pieces
 
     def dispatch_phase_a_valu(expert_id, tables):
-        """STEP 1a (VALU): membership of ONE next-step expert - table
-        compares + reductions. tables = (idx_kt [k, T], topk_idx [T, k],
-        topk_w [T, k]), loaded once per step by the caller. Phantom pad
+        """STEP 1a (VALU): membership of ONE next-step expert - LANE-
+        MAJOR table compares + reductions. tables = (idx_kt [k, T],
+        w_kt [k, T]), loaded once per step by the caller. Phantom pad
         rows self-mask: routing stores idx=-1 there, which matches no
-        expert id. Returns (routed_mask [1, T], live_t [T, 1],
-        gate_t [T, 1])."""
-        topk_idx_kt, topk_idx_tk, topk_w_tk = tables
+        expert id. Returns (routed_mask [1, T], gate_row [1, T])."""
+        topk_idx_kt, topk_w_kt = tables
         with jax.named_scope("moe_masks"):
             return _mask_membership(
                 topk_idx_kt=topk_idx_kt,
-                topk_idx_tk=topk_idx_tk,
-                topk_w_tk=topk_w_tk,
+                topk_w_kt=topk_w_kt,
                 expert_id=expert_id)
 
     def dispatch_phase_b_xlu(membership):
@@ -785,7 +792,7 @@ def _decode_moe_kernel(
         slot); the [T, C] OHG build is DEFERRED to park so all be slot
         rows share one batched transpose (the per-expert slot.T was
         the measured masks hog - wasted power even where it hid)."""
-        routed_mask, live_t, gate_t = membership
+        routed_mask, gate_row = membership
         slot = slots
         with jax.named_scope("moe_masks"):
             per_token = fp8 and not act_tensor
@@ -796,7 +803,7 @@ def _decode_moe_kernel(
                 oh_dtype=qdtype if fp8 else None,
                 s_row=s_row_vmem[...] if per_token else None)
             s_x = out[1] if per_token else None
-            return (out[0], s_x, gate_t, live_t, slot)
+            return (out[0], s_x, gate_row, routed_mask, slot)
 
     def zero_pieces():
         """Ablate stub: the piece structure with zero operators."""
@@ -805,8 +812,8 @@ def _decode_moe_kernel(
         return [(jnp.zeros((capacity, num_tokens), oh_dt),
                  jnp.zeros((capacity, 1), jnp.float32) if has_sx
                  else None,
-                 jnp.zeros((num_tokens, 1), jnp.float32),   # gate_t
-                 jnp.zeros((num_tokens, 1), jnp.bool_),     # live_t
+                 jnp.zeros((1, num_tokens), jnp.float32),   # gate_row
+                 jnp.zeros((1, num_tokens), jnp.int32),     # routed
                  jnp.zeros((1, num_tokens), jnp.int32))     # slot
                 ] * be
 
@@ -835,35 +842,37 @@ def _decode_moe_kernel(
                 s_x_vmem.at[x_slot][...] = jnp.concatenate(
                     [p[1] for p in pieces], axis=0)          # [be*C, 1]
         with jax.named_scope("moe_ohg_park"):
-            # deferred OHG build (BOTH dtypes): ONE batched
-            # [be, T] -> [T, be] transpose for the whole step - the
-            # old per-expert [1,T] -> [T,1] transposes each lowered
-            # as ~128 padded 128x128 vxpose blocks (512 vxpose + 512
-            # vperm chains per step at be=4; the measured 215 us fp8
-            # masks exposure, and pure wasted power under bf16 where
-            # the stream hid it). Then the [T, C] one-hot selects,
-            # here at park where the gather matmul overlaps them.
-            # 16-bit storm here too (see _mask_operators): i16 slots
-            # make the batched transpose a b16 XLU op (TBL 101 vs 127,
-            # half the vregs) and the compares half-width; the gate is
-            # rounded to act dtype BEFORE the select - identical
-            # per-element result to select-f32-then-cast (bitwise-
-            # checked), at half the select width for bf16.
+            # FULL-LANE batched OHG build (2026-08-30 rewrite): the
+            # old path built be quarter-lane [T, C=32] pieces (32 of
+            # 128 lanes live) from 128x-padded [T, 1] gate/live
+            # columns with per-expert lane-broadcast chains - the LLO
+            # dump's true dispatch-build bulk. Here the be slot, gate
+            # and mask ROWS ([1, T], full-lane) transpose in three
+            # tiny [be, T] -> [T, be] ops, lane-replicate by C, and
+            # ONE [T, be*C] compare+select builds the whole step's
+            # operator at full width. The gate is rounded to act
+            # dtype before the select - identical per-element result
+            # to select-f32-then-cast (bitwise-checked). Compare
+            # width matches the select width (the run-3 Mosaic
+            # invalid-relayout rule).
+            cmp_dt = (jnp.int16 if jnp.dtype(act_dtype).itemsize == 2
+                      else jnp.int32)
+            bec = be * capacity
             slots_t = jnp.concatenate(
-                [p[4] for p in pieces],
-                axis=0).astype(jnp.int16).T                  # [T, be]
-            slot_iota_t = lax.broadcasted_iota(
-                jnp.int32, (num_tokens, capacity), 1).astype(jnp.int16)
-            ohg_cols = []
-            for j, p in enumerate(pieces):
-                _, _, gate_t, live_t, _ = p
-                gate16 = gate_t.astype(act_dtype)            # [T, 1]
-                ohg_cols.append(jnp.where(
-                    (slot_iota_t == slots_t[:, j:j + 1]) & live_t,
-                    jnp.broadcast_to(gate16, (num_tokens, capacity)),
-                    jnp.zeros((), act_dtype)))               # [T, C]
-            ohg_vmem.at[ohg_slot][...] = jnp.concatenate(
-                ohg_cols, axis=1)                            # [T, be*C]
+                [p[4] for p in pieces], axis=0).astype(cmp_dt).T
+            gates_t = jnp.concatenate(
+                [p[2] for p in pieces], axis=0).astype(act_dtype).T
+            lives_t = jnp.concatenate(
+                [p[3] for p in pieces], axis=0).astype(cmp_dt).T
+            slots_rep = jnp.repeat(slots_t, capacity, axis=1)
+            gates_rep = jnp.repeat(gates_t, capacity, axis=1)
+            lives_rep = jnp.repeat(lives_t, capacity, axis=1)
+            iota_mod = (lax.broadcasted_iota(
+                jnp.int32, (num_tokens, bec), 1)
+                % capacity).astype(cmp_dt)
+            ohg_vmem.at[ohg_slot][...] = jnp.where(
+                (slots_rep == iota_mod) & (lives_rep == 1),
+                gates_rep, jnp.zeros((), act_dtype))         # [T, be*C]
 
     def expert_gmm1_mxu(local_e_id: int, x_step, w1_step):
         """STEP 4a (MXU): gmm1 for ONE expert - rows
@@ -1101,8 +1110,7 @@ def _decode_moe_kernel(
     if do_masks:
         with jax.named_scope("moe_masks"):
             tables = (idx_kt_vmem[...],                      # [k, T]
-                      topk_idx_vmem[...],                    # [T, k]
-                      topk_w_vmem[...])                      # [T, k]
+                      w_kt_vmem[...])                        # [k, T]
     a_out, b_out, pieces = {}, {}, []
     for j in range(be + 2):
         if do_ffn and j < be:
@@ -1279,7 +1287,7 @@ def fused_moe_decode_tp_fused(
         + 2 * be * capacity * hidden_size * tok_bytes  # x parity pair
         + bg * be * capacity * hidden_size * act_bytes # y (bf16 always)
         + 2 * bg * num_tokens * be * capacity * act_bytes  # ohg ring
-        + 3 * num_tokens * top_k * 4           # topk tables, both layouts
+        + 4 * num_tokens * top_k * 4           # topk tables, both layouts
     )
     if fp8:
         vmem_need += (
@@ -1314,6 +1322,7 @@ def fused_moe_decode_tp_fused(
         pltpu.VMEM((num_tokens, top_k), jnp.int32),      # topk_idx
         pltpu.VMEM((num_tokens, top_k), jnp.float32),    # topk_w
         pltpu.VMEM((top_k, num_tokens), jnp.int32),      # idx_kt
+        pltpu.VMEM((top_k, num_tokens), jnp.float32),    # w_kt
         pltpu.VMEM((2, be * capacity, hidden_size),
                    tok_dtype),                           # x, parity
         pltpu.VMEM((bg, be * capacity, hidden_size),
