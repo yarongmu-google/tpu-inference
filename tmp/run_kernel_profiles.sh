@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
-# Device-time 3-way: v1 (fused_ep_moe), rs (experimental fused EP),
-# v02s (our serving entry, tuned blocks) - one profiled session PER
-# VARIANT so a crash (the rs fp8 row dies at trace today) costs only
-# its own row. T=512 (the tuned shape) and T=64 (the SERVING decode
-# shape on the hybrid model) both run: at MNS=64 serving, T=64 device
-# time is the number that matters.
+# Device-time 3-way: v1 (fused_ep_moe), rs (experimental fused EP,
+# via the jax-0.11 shim in bench_decode), v02s (our serving entry,
+# tuned blocks) - one profiled session PER VARIANT so a crash costs
+# only its own row. T=512 (the tuned shape) and T=64 (the SERVING
+# decode shape on the hybrid model) both run.
+#
+# The v02s sessions also profile the fused-entry shadow row (substring
+# selection); the winner FLAGS below make that row the TUNED fused
+# entry (last run it silently used be=4/bg=1 defaults - ignore those
+# rows in older logs). bf16's bcT=256 is only legal at T=512.
 #
 # ENV: needs the matched jax/libtpu pair (prof env) - preflight below.
 #     conda activate prof && ./tmp/run_kernel_profiles.sh
-# Wall rows print too, but the "device-only per dispatch" lines are
-# the verdict (TC median; SC column shows any SparseCore involvement).
+# The summary at the end tags every row with T= and dtype; TC median
+# is the verdict, the SC column shows SparseCore involvement.
 # Afterwards: git add tmp/ && commit ("kernel profiles.") && push.
 
 set -uo pipefail
@@ -54,23 +58,38 @@ EOF
 rm -rf tmp/kprof tmp/kprof.tar.xz && mkdir -p tmp/kprof
 
 BENCH="python -m tpu_inference.kernels.fused_moe.v2.bench_decode"
+FP8_FLAGS="--be=8 --bg=2 --capacity=32 --bd1c=256 --bd2c=128 --bcT=0"
 
 for T in 64 512; do
+  BF16_FLAGS="--be=4 --bg=4 --capacity=32 --bd1c=256 --bd2c=128"
+  [ "$T" -ge 512 ] && BF16_FLAGS="$BF16_FLAGS --bcT=256"
+
   # bf16: all three kernels
-  for V in v1 rs v02s; do
-    run $BENCH --variants=$V --tokens=$T --iters=8 --warmup=3 \
-        --profile-dir=tmp/kprof/bf16_${V}_t${T}
-  done
-  # fp8: v1 has no fp8 wiring in the bench; rs's fp8 row currently
-  # dies at trace - keep it so the full error lands in this log
-  for V in rs v02s; do
-    run $BENCH --wdtype=fp8 --variants=$V --tokens=$T --iters=8 --warmup=3 \
-        --profile-dir=tmp/kprof/fp8_${V}_t${T}
-  done
+  run $BENCH --variants=v1 --tokens=$T --iters=8 --warmup=3 \
+      --profile-dir=tmp/kprof/bf16_v1_t${T}
+  run $BENCH --variants=rs --tokens=$T --iters=8 --warmup=3 \
+      --profile-dir=tmp/kprof/bf16_rs_t${T}
+  run $BENCH --variants=v02s --tokens=$T --iters=8 --warmup=3 \
+      $BF16_FLAGS --profile-dir=tmp/kprof/bf16_v02s_t${T}
+
+  # fp8: v1 has no fp8 wiring in the bench
+  run $BENCH --wdtype=fp8 --variants=rs --tokens=$T --iters=8 --warmup=3 \
+      --profile-dir=tmp/kprof/fp8_rs_t${T}
+  run $BENCH --wdtype=fp8 --variants=v02s --tokens=$T --iters=8 --warmup=3 \
+      $FP8_FLAGS --profile-dir=tmp/kprof/fp8_v02s_t${T}
 done
 
 echo
 echo "=== DEVICE-TIME SUMMARY (TC median is the verdict) ==="
-grep -h "device-only per dispatch" "$LOG" || true
+awk '
+  /^\+ python/ {
+    t = "?"; d = "bf16"
+    for (i = 1; i <= NF; i++) {
+      if ($i ~ /^--tokens=/)   { split($i, a, "="); t = a[2] }
+      if ($i == "--wdtype=fp8") { d = "fp8" }
+    }
+  }
+  /device-only per dispatch/ { printf "T=%-4s %-5s %s\n", t, d, $0 }
+' "$LOG"
 run bash -c 'tar -c tmp/kprof | xz -9 -T0 > tmp/kprof.tar.xz; ls -lh tmp/kprof.tar.xz; rm -rf tmp/kprof'
 echo "log: tmp/kernel_profiles.log"
