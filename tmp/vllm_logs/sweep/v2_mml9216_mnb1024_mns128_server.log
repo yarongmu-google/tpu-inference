@@ -1463,3 +1463,67 @@ INFO 09-01 13:42:59 [__init__.py:112] Registered model loader `<class 'tpu_infer
 (APIServer pid=1465351) INFO:     Started server process [1465351]
 (APIServer pid=1465351) INFO:     Waiting for application startup.
 (APIServer pid=1465351) INFO:     Application startup complete.
+(APIServer pid=1465351) INFO 09-01 15:21:51 [launcher.py:100] [shutdown] API server: shutdown triggered
+(APIServer pid=1465351) INFO 09-01 15:21:51 [launcher.py:116] [shutdown] API server: stopping engine client mode=abort timeout=0s
+(APIServer pid=1465351) INFO 09-01 15:21:51 [core_client.py:655] [shutdown] MPClient: start timeout=0s
+(APIServer pid=1465351) INFO 09-01 15:21:51 [core_client.py:657] [shutdown] MPClient: stopping engine manager
+(APIServer pid=1465351) WARNING 09-01 15:21:51 [utils.py:624] [shutdown] Process manager: force killing remaining processes count=1
+(EngineCore pid=1465862) INFO 09-01 15:21:51 [core.py:1214] [shutdown] EngineCore: trigger received signal=SIGTERM
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233] EngineCore encountered a fatal error.
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233] Traceback (most recent call last):
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]   File "/home/ymu_google_com/vllm/vllm/v1/engine/core.py", line 1224, in run_engine_core
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]     engine_core.run_busy_loop()
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]   File "/home/ymu_google_com/vllm/vllm/v1/engine/core.py", line 1263, in run_busy_loop
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]     self._process_input_queue()
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]   File "/home/ymu_google_com/vllm/vllm/v1/engine/core.py", line 1273, in _process_input_queue
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]     while not self.has_work() and self.is_running():
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]               ^^^^^^^^^^^^^^^
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]   File "/home/ymu_google_com/vllm/vllm/v1/engine/core.py", line 1251, in has_work
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]     or self.scheduler.has_requests()
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]   File "/home/ymu_google_com/vllm/vllm/v1/core/sched/interface.py", line 194, in has_requests
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]     return self.has_unfinished_requests() or self.has_finished_requests()
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]   File "/home/ymu_google_com/vllm/vllm/v1/core/sched/interface.py", line 174, in has_unfinished_requests
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]     return self.get_num_unfinished_requests() > 0
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]   File "/home/ymu_google_com/tpu-inference/tpu_inference/core/sched/dp_scheduler.py", line 1366, in get_num_unfinished_requests
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]     self._send_command(rank,
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]   File "/home/ymu_google_com/tpu-inference/tpu_inference/core/sched/dp_scheduler.py", line 571, in _send_command
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]     self.input_conns[rank].send_bytes(payload)
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]   File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/multiprocessing/connection.py", line 200, in send_bytes
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]     self._send_bytes(m[offset:offset + size])
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]   File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/multiprocessing/connection.py", line 427, in _send_bytes
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]     self._send(header + buf)
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]   File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/multiprocessing/connection.py", line 384, in _send
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]     n = write(self._handle, buf)
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233]         ^^^^^^^^^^^^^^^^^^^^^^^^
+(EngineCore pid=1465862) ERROR 09-01 15:21:51 [core.py:1233] BrokenPipeError: [Errno 32] Broken pipe
+(APIServer pid=1465351) INFO:     Shutting down
+(EngineCore pid=1465862) WARNING 09-01 15:21:51 [dp_scheduler.py:1542] Rank 0: Worker process already terminated (exit code -9), skipping shutdown command.
+(APIServer pid=1465351) ERROR 09-01 15:21:51 [async_llm.py:704] AsyncLLM output_handler failed.
+(APIServer pid=1465351) ERROR 09-01 15:21:51 [async_llm.py:704] Traceback (most recent call last):
+(APIServer pid=1465351) ERROR 09-01 15:21:51 [async_llm.py:704]   File "/home/ymu_google_com/vllm/vllm/v1/engine/async_llm.py", line 660, in output_handler
+(APIServer pid=1465351) ERROR 09-01 15:21:51 [async_llm.py:704]     outputs = await engine_core.get_output_async()
+(APIServer pid=1465351) ERROR 09-01 15:21:51 [async_llm.py:704]               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=1465351) ERROR 09-01 15:21:51 [async_llm.py:704]   File "/home/ymu_google_com/vllm/vllm/v1/engine/core_client.py", line 1061, in get_output_async
+(APIServer pid=1465351) ERROR 09-01 15:21:51 [async_llm.py:704]     raise self._format_exception(outputs) from None
+(APIServer pid=1465351) ERROR 09-01 15:21:51 [async_llm.py:704] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause.
+(EngineCore pid=1465862) WARNING 09-01 15:21:51 [dp_scheduler.py:1542] Rank 1: Worker process already terminated (exit code -9), skipping shutdown command.
+(EngineCore pid=1465862) WARNING 09-01 15:21:51 [dp_scheduler.py:1542] Rank 2: Worker process already terminated (exit code -9), skipping shutdown command.
+(EngineCore pid=1465862) WARNING 09-01 15:21:51 [dp_scheduler.py:1542] Rank 3: Worker process already terminated (exit code -9), skipping shutdown command.
+(EngineCore pid=1465862) WARNING 09-01 15:21:51 [dp_scheduler.py:1542] Rank 4: Worker process already terminated (exit code -9), skipping shutdown command.
+(EngineCore pid=1465862) WARNING 09-01 15:21:51 [dp_scheduler.py:1542] Rank 5: Worker process already terminated (exit code -9), skipping shutdown command.
+(EngineCore pid=1465862) WARNING 09-01 15:21:51 [dp_scheduler.py:1542] Rank 6: Worker process already terminated (exit code -9), skipping shutdown command.
+(EngineCore pid=1465862) WARNING 09-01 15:21:51 [dp_scheduler.py:1542] Rank 7: Worker process already terminated (exit code -9), skipping shutdown command.
+(APIServer pid=1465351) INFO 09-01 15:21:51 [core_client.py:659] [shutdown] MPClient: engine manager stopped
+(APIServer pid=1465351) INFO 09-01 15:21:51 [core_client.py:660] [shutdown] MPClient: cleaning up background resources
+(APIServer pid=1465351) INFO 09-01 15:21:51 [core_client.py:662] [shutdown] MPClient: complete
+(APIServer pid=1465351) INFO 09-01 15:21:51 [launcher.py:125] [shutdown] API server: engine client stopped
+(APIServer pid=1465351) INFO 09-01 15:21:51 [launcher.py:128] [shutdown] API server: signalling HTTP server shutdown
+(APIServer pid=1465351) INFO 09-01 15:21:51 [launcher.py:149] [shutdown] API server: shutting down FastAPI HTTP server
+(APIServer pid=1465351) INFO:     Shutting down
+(APIServer pid=1465351) INFO:     Waiting for application shutdown.
+(APIServer pid=1465351) INFO:     Application shutdown complete.
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
