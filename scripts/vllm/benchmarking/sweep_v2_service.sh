@@ -55,54 +55,33 @@ RESULTS="$SWEEP_DIR/results.tsv"
 mkdir -p "$SWEEP_DIR"
 BS=scripts/vllm/benchmarking/benchmark_serving.py
 
-# Candidate lists: explicit env wins; otherwise ANCHOR them with the
-# chip+model estimator (KV-pool arithmetic -> MNS expected-occupancy
-# anchor -> MNB lower bounds) and sweep its x0.5/x1/x2 neighbors for
-# estimation error. FULL_OUT_LEN prices the KV pool at the REAL
-# workload (the short proxy client would under-fill KV and over-admit
-# seqs). The estimator queries the TPU for HBM when HBM_GB is unset -
-# it must run before any server is up (which it is, here).
-FULL_OUT_LEN="${FULL_OUT_LEN:-8192}"
-# PEAK_TFLOPS + HBM_GBPS (optional envs): per-device hardware rates
-# enabling the MNB roofline-crossover anchor - see the estimator doc
-EST_ARGS=(--model "$MODEL" --in-len "$IN_LEN" --out-len "$FULL_OUT_LEN"
-          --gpu-util "$GPU_MEM_UTIL")
-[ -n "${PEAK_TFLOPS:-}" ] && EST_ARGS+=(--peak-tflops "$PEAK_TFLOPS")
-[ -n "${HBM_GBPS:-}" ] && EST_ARGS+=(--hbm-gbps "$HBM_GBPS")
-if [ -z "${MNB_LIST:-}" ] || [ -z "${MNS_LIST:-}" ] \
-   || [ -z "${MML_LIST:-}" ]; then
-  EST=$(python scripts/vllm/benchmarking/estimate_service_knobs.py \
-          "${EST_ARGS[@]}" --emit shell) || {
-    echo "estimator failed; set MML_LIST/MNB_LIST/MNS_LIST manually" >&2
-    exit 1
-  }
-  echo "estimator anchors: $EST"
-  # human-readable derivation into the sweep log for provenance
-  python scripts/vllm/benchmarking/estimate_service_knobs.py \
-    "${EST_ARGS[@]}" | tee "$SWEEP_DIR/estimate.txt" \
-    2>/dev/null || true
-  [ -z "${MML_LIST:-}" ] && eval "$(echo "$EST" | grep '^MML_LIST=')"
-  [ -z "${MNB_LIST:-}" ] && eval "$(echo "$EST" | grep '^MNB_LIST=')"
-  [ -z "${MNS_LIST:-}" ] && eval "$(echo "$EST" | grep '^MNS_LIST=')"
-  # always include the kernel design point (the estimator is
-  # deliberately kernel-agnostic; the v2 kernel was tuned at 512
-  # global tokens/step)
-  DESIGN_MNS="${DESIGN_MNS:-512}"
-  case " $MNS_LIST " in
-    *" $DESIGN_MNS "*) ;;
-    *) MNS_LIST="$MNS_LIST $DESIGN_MNS" ;;
-  esac
-fi
+# Candidate lists. NOTE (2026-09-01): the GQA estimator is WRONG for
+# Qwen3.5-397B - the model is HYBRID (15 attn + 45 GDN/mamba layers
+# with per-SEQ state). Measured reality: at MNS=64 the compact-mamba
+# sizing engages (pool 9.4M tokens, concurrency 1023x); at MNS=512 it
+# refuses and the pool collapses to 309k (preemption thrash). The MNS
+# axis therefore probes the compact-sizing cliff upward from the
+# known-good 64. MNB is PER-DP-RANK on this stack (measured: 1024 ->
+# 8192 global scheduled tokens/step), so its global budget already
+# sits near the roofline crossover - sweep it down, not up.
+# The estimator (estimate_service_knobs.py) remains valid for pure-GQA
+# models; pass the lists explicitly there too until it grows a
+# hybrid-aware mode.
+MML_LIST="${MML_LIST:-9216}"
+MNB_LIST="${MNB_LIST:-256 512 1024}"
+MNS_LIST="${MNS_LIST:-64 128 256}"
 echo "grid: MML={$MML_LIST} MNB={$MNB_LIST} MNS={$MNS_LIST}"
 
 LIBTPU_FLAGS=' --xla_tpu_use_minor_sharding_for_major_trivial_input=true --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=false --xla_tpu_ars_combiner_threshold_in_bytes=0 --xla_tpu_enable_async_collective_merger=false --xla_tpu_check_legacy_constraints_in_reduce_scatter_legalizer=false'
 
-# doubling num-reqs buckets 8..MNS so decode steps pad to the nearest
-# bucket, with the top bucket exactly MNS (the kernel design point)
+# GLOBAL num-reqs buckets: per-DP shapes must stay >= 8 (the GDN/
+# mamba kernels halt below that) and the ladder must reach past
+# MNS/dp because DP request assignment skews (measured 9 reqs on a
+# rank at MNS=64) - so double from MNS (per-DP MNS/8) up to 8*MNS
+# (per-DP MNS).
 buckets_for() {
-  local mns=$1 b=8 out="8"
-  while [ $((b * 2)) -le "$mns" ]; do b=$((b * 2)); out="$out,$b"; done
-  [ "$b" -ne "$mns" ] && out="$out,$mns"
+  local mns=$1 b=$1 out="$1"
+  while [ $((b * 2)) -le $((mns * 8)) ]; do b=$((b * 2)); out="$out,$b"; done
   echo "$out"
 }
 
@@ -152,7 +131,7 @@ for MML in $MML_LIST; do
       # estimate (capacity grows with T) - that shows up as
       # status=died with the assert in the server log, not silently.
       [ "$VARIANT" = "v2" ] && ENV_COMMON+=(USE_MOE_TP_DECODE_KERNEL=1
-        "MOE_TP_DECODE_MAX_TOKENS=$MNS")
+        "MOE_TP_DECODE_MAX_TOKENS=$((MNS * 8))")
 
       setsid env "${ENV_COMMON[@]}" \
         vllm serve "$MODEL" \
