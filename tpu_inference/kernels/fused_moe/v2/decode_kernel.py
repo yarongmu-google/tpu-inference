@@ -1473,8 +1473,8 @@ def fused_moe_decode_tp_serving(
     renormalize_topk_logits: bool,
     capacity: int,
     act_scale: str = "token",
-    be: int = 4,
-    bg: int = 1,
+    be: int | None = None,
+    bg: int | None = None,
     interpret: bool = False,
 ) -> jax.Array:  # [T, D] rows sharded over axis_name
     """Serving entry, called from moe_apply inside the model's jit: the
@@ -1501,6 +1501,34 @@ def fused_moe_decode_tp_serving(
     # buckets, leaving every expert block's rows sublane-misaligned.
     # Rounding up only ever reduces capacity drops.
     capacity = -(-capacity // 32) * 32 if fp8 else -(-capacity // 16) * 16
+
+    # Kernel blocks default to the BENCH TUNER'S WINNERS at the
+    # 512-token design point (fp8: 750.8 us wall vs ~880 at the old
+    # be=4/bg=1/whole-D defaults - serving was silently running the
+    # untuned shape). Divisibility guards degrade each knob
+    # independently for off-design models instead of tripping the
+    # kernel's asserts; explicit be/bg kwargs still win.
+    num_tokens, d_model = hidden_states.shape
+    num_experts = w1.shape[0]
+    devices = mesh.shape[axis_name]
+    row_granule = 32 if fp8 else 16
+    rows_per_dev = -(-num_tokens // devices)
+    padded_tokens = -(-rows_per_dev // row_granule) * row_granule * devices
+    if be is None:
+        be = 8 if fp8 else 4
+        while num_experts % be:
+            be //= 2
+    if bg is None:
+        bg = 2 if fp8 else 4
+        while (num_experts // be) % bg:
+            bg //= 2
+    bd1c = 256 if d_model % 256 == 0 else None
+    bd2c = 128 if d_model % 128 == 0 else None
+    # bf16 winner chunks the combine at 256 token columns; only legal
+    # when the padded T divides (small serving buckets fall back to
+    # the one-shot combine, which is fine at their size)
+    bcT = (256 if (not fp8 and padded_tokens % 256 == 0
+                   and 256 < padded_tokens) else None)
     in_specs = [P(axis_name, None),
                 P(axis_name, None),
                 P(None, None, axis_name),
@@ -1525,6 +1553,9 @@ def fused_moe_decode_tp_serving(
             capacity=capacity,
             be=be,
             bg=bg,
+            bd1c=bd1c,
+            bd2c=bd2c,
+            bcT=bcT,
             interpret=interpret,
         ),
         mesh=mesh,
