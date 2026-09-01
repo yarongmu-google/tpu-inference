@@ -393,9 +393,14 @@ def main() -> None:
             w1_rs = jax.device_put(w1_rsq, ep_spec)
             w2_rs = jax.device_put(w2_rsq, ep_spec)
             # scale dim1 == 1 -> its _recover_quant_block_size returns
-            # the whole K: per-channel, same contract as the v02 row
-            w1s_rs = jax.device_put(w1s_rs, ep_spec)
-            w2s_rs = jax.device_put(w2s_rs, ep_spec)
+            # the whole K: per-channel, same contract as the v02 row.
+            # His gmm indexes the scale ref with 4 indices
+            # (expert, k-block, sub, N) - pass [E, 1, 1, N], not 3D.
+            ep_spec4 = NamedSharding(mesh_rs, P("model", None, None, None))
+            w1s_rs = jax.device_put(
+                w1s_rs.reshape(e, 1, 1, -1), ep_spec4)
+            w2s_rs = jax.device_put(
+                w2s_rs.reshape(e, 1, 1, -1), ep_spec4)
         else:
             w1_rs = jax.device_put(w1_flat, ep_spec)
             w2_rs = jax.device_put(w2, ep_spec)
