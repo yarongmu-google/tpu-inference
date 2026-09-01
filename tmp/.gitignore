@@ -1,0 +1,6 @@
+# raw profiler traces are never committed - tar+xz them first
+# (the run scripts do this; *.tar.xz is what gets pushed)
+*.xplane.pb
+kprof/
+kprof2/
+fp8_xprof/
