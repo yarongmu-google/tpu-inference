@@ -218,10 +218,25 @@ def moe_apply(
                 tp_decode_axis = None
                 if (envs.USE_MOE_TP_DECODE_KERNEL
                         and moe_backend == MoEBackend.GMM_TP):
-                    tp_decode_axis = _tp_decode_kernel_axis(
-                        mesh=mesh, x=x, gating_output=gating_output,
-                        weights=weights, activation=activation,
-                        scoring_fn=layer.scoring_func)
+                    # DECODE-shaped steps only (the token count is
+                    # static per compiled step shape): prefill and
+                    # mixed batches pad tokens up to
+                    # max-num-batched-tokens, where the decode
+                    # kernel's capacity dispatch would DROP rows and
+                    # its VMEM scratch outgrows the budget - those
+                    # step shapes take the stock GMM path below.
+                    if x.shape[0] <= envs.MOE_TP_DECODE_MAX_TOKENS:
+                        tp_decode_axis = _tp_decode_kernel_axis(
+                            mesh=mesh, x=x, gating_output=gating_output,
+                            weights=weights, activation=activation,
+                            scoring_fn=layer.scoring_func)
+                    else:
+                        logger.warning_once(
+                            "[MoE]: TP decode kernel NOT engaged at "
+                            "token padding %d (> MOE_TP_DECODE_MAX_"
+                            "TOKENS=%d): prefill/mixed-shaped step, "
+                            "stock GMM path", x.shape[0],
+                            envs.MOE_TP_DECODE_MAX_TOKENS)
                 if tp_decode_axis is not None:
                     # NB: capacity-based dispatch - rows routed beyond
                     # `capacity` per expert are DROPPED. Acceptable for

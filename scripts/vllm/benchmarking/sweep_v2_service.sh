@@ -145,7 +145,14 @@ for MML in $MML_LIST; do
         "ATTN_CUSTOM_NUM_REQS_BUCKETS=$BUCKETS"
         ONEHOT_MOE_PERMUTE_THRESHOLD=32768 VLLM_MOE_CHUNK_SIZE=256
         "LIBTPU_INIT_ARGS=$LIBTPU_FLAGS")
-      [ "$VARIANT" = "v2" ] && ENV_COMMON+=(USE_MOE_TP_DECODE_KERNEL=1)
+      # the decode kernel engages only on decode-shaped steps (token
+      # padding <= threshold); track the swept MNS so every decode
+      # bucket of this combo engages. NB combos with MNS well past the
+      # 512 design point may die in warmup on the kernel's VMEM
+      # estimate (capacity grows with T) - that shows up as
+      # status=died with the assert in the server log, not silently.
+      [ "$VARIANT" = "v2" ] && ENV_COMMON+=(USE_MOE_TP_DECODE_KERNEL=1
+        "MOE_TP_DECODE_MAX_TOKENS=$MNS")
 
       setsid env "${ENV_COMMON[@]}" \
         vllm serve "$MODEL" \

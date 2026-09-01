@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     USE_MOE_EP_KERNEL: bool = False
     USE_MOE_TP_DECODE_KERNEL: bool = False
     MOE_TP_DECODE_ACT_SCALE: str = "token"
+    MOE_TP_DECODE_MAX_TOKENS: int = 512
     USE_UNFUSED_MEGABLOCKS: bool = False
     USE_DENSE_MOE: bool = False
     NUM_SLICES: int = 1
@@ -289,6 +290,16 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # knobs. Invalid values fail loudly at kernel trace time.
     "MOE_TP_DECODE_ACT_SCALE":
     lambda: os.getenv("MOE_TP_DECODE_ACT_SCALE", "token"),
+    # Largest per-step token count the TP decode kernel engages on;
+    # bigger (prefill/mixed) batches take the stock GMM path. The
+    # kernel is a DECODE kernel: capacity-based dispatch DROPS overflow
+    # rows (an accuracy hazard at prefill token counts) and its VMEM
+    # scratch scales with the token padding (the 1024-token MNB shape
+    # blew the 64 MiB budget at the tuned be=8/bg=2). Set to the
+    # serving max-num-seqs; raising it past 512 requires re-checking
+    # the kernel's VMEM estimate at the implied capacity.
+    "MOE_TP_DECODE_MAX_TOKENS":
+    lambda: int(os.getenv("MOE_TP_DECODE_MAX_TOKENS", "512")),
     # Enable megablocks for JAX sparse matmul for MoE (Mixture of Experts)
     # using Unfused weights
     "USE_UNFUSED_MEGABLOCKS":
