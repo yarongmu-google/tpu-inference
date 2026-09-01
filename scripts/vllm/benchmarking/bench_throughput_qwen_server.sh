@@ -28,24 +28,31 @@ L=tmp/vllm_logs/fp8_gmm_ep_$(date +%Y%m%d_%H%M%S).log; mkdir -p tmp/vllm_logs; E
 # ---- kernel bench (2642-2668 vs ~828 wall, same mesh).
 L=tmp/vllm_logs/fp8_v1_ep_$(date +%Y%m%d_%H%M%S).log; mkdir -p tmp/vllm_logs; MODEL_IMPL_TYPE=vllm USE_MOE_EP_KERNEL=1 ATTN_BUCKETIZED_NUM_REQS=true ATTN_CUSTOM_NUM_REQS_BUCKETS=8,16,32,64 ONEHOT_MOE_PERMUTE_THRESHOLD=32768 VLLM_MOE_CHUNK_SIZE=256 LIBTPU_INIT_ARGS=' --xla_tpu_use_minor_sharding_for_major_trivial_input=true --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=false --xla_tpu_ars_combiner_threshold_in_bytes=0 --xla_tpu_enable_async_collective_merger=false --xla_tpu_check_legacy_constraints_in_reduce_scatter_legalizer=false' vllm serve Qwen/Qwen3.5-397B-A17B-FP8 --max-model-len=9216 --max-num-batched-tokens=1024 --max-num-seqs=64 --no-enable-prefix-caching --gpu-memory-utilization=0.88 --tensor-parallel-size=8 --async-scheduling --port=8000 --language-model-only --enable-auto-tool-choice --tool-call-parser=qwen3_coder --reasoning-parser=qwen3 '--limit-mm-per-prompt={"image":0, "video": 0}' --kv-cache-dtype=fp8 --enable-expert-parallel --block-size=256 2>&1 | tee "$L"; xz -9 -T0 "$L"
 
-# ---- fp8 397B TP-MoE pair at the DESIGN POINT (max-num-seqs=512 ->
-# ---- decode steps carry 512 global tokens, the shape the v2 fp8
-# ---- kernel was built and tuned at; device 431us vs bf16 790 on the
-# ---- kernel bench). Line 3 = GMM_TP baseline (identical sharding, no
-# ---- v2); line 4 = the v2 fp8 kernel (engagement confirmed by
-# ---- "[MoE]: using the TP decode kernel" + the input-contract log
-# ---- showing e4m3 w13/w2 WITH scale shapes - the fp8 guard requires
-# ---- the per-channel in_blocks==1 contract, i.e. the DEFAULT requant;
+# ---- fp8 397B TP-MoE pair at MNS=64: the FEASIBLE operating point,
+# ---- NOT the kernel's tuned T=512 design point. Qwen3.5-397B is a
+# ---- HYBRID model (15 full-attn + 45 GDN/mamba layers with
+# ---- per-SEQUENCE state); vllm's hybrid paging pads every 256-token
+# ---- block slot to ~13 MB, the compact-mamba sizing refuses to
+# ---- engage at MNS=512, and the pool comes out at ~309k tokens =
+# ---- ~33 full-length seqs - MNS=512 preemption-thrashes from the
+# ---- first steps (measured 2-6k tok/s oscillation). MNS=64 is why
+# ---- the original upstream config used 64. Decode steps carry
+# ---- 8-64 global tokens (1-8 rows/device) - the shapes the
+# ---- T/P<granule kernel fixes exist for.
+# ---- Line 3 = GMM_TP baseline (identical sharding, no v2); line 4 =
+# ---- the v2 fp8 kernel (engagement confirmed by "[MoE]: using the
+# ---- TP decode kernel" + the input-contract log showing e4m3
+# ---- w13/w2 WITH scale shapes - the fp8 guard requires the
+# ---- per-channel in_blocks==1 contract, i.e. the DEFAULT requant;
 # ---- do NOT set MOE_REQUANTIZE_BLOCK_SIZE/DISABLE_WEIGHT_
 # ---- REQUANTIZATION on these lines). attn_dp_size=8 forces the
-# ---- single-axis mesh the guard needs. KV at 512 seqs x 9216 fp8 is
-# ---- the capacity risk - watch gpu-memory-utilization.
+# ---- single-axis mesh the guard needs.
 
 # fp8 line 3: GMM_TP baseline
-L=tmp/vllm_logs/fp8_gmm_tp_512s_$(date +%Y%m%d_%H%M%S).log; mkdir -p tmp/vllm_logs; MODEL_IMPL_TYPE=vllm NEW_MODEL_DESIGN=1 ATTN_BUCKETIZED_NUM_REQS=true ATTN_CUSTOM_NUM_REQS_BUCKETS=64,128,256,512 ONEHOT_MOE_PERMUTE_THRESHOLD=32768 VLLM_MOE_CHUNK_SIZE=256 LIBTPU_INIT_ARGS=' --xla_tpu_use_minor_sharding_for_major_trivial_input=true --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=false --xla_tpu_ars_combiner_threshold_in_bytes=0 --xla_tpu_enable_async_collective_merger=false --xla_tpu_check_legacy_constraints_in_reduce_scatter_legalizer=false' vllm serve Qwen/Qwen3.5-397B-A17B-FP8 --max-model-len=9216 --max-num-batched-tokens=1024 --max-num-seqs=512 --no-enable-prefix-caching --gpu-memory-utilization=0.88 --tensor-parallel-size=8 --async-scheduling --port=8000 --language-model-only --enable-auto-tool-choice --tool-call-parser=qwen3_coder --reasoning-parser=qwen3 '--limit-mm-per-prompt={"image":0, "video": 0}' --kv-cache-dtype=fp8 '--additional_config={"sharding":{"sharding_strategy": {"enable_dp_attention": true, "attn_dp_size": 8}}}' --block-size=256 2>&1 | tee "$L"; xz -9 -T0 "$L"
+L=tmp/vllm_logs/fp8_gmm_tp_64s_$(date +%Y%m%d_%H%M%S).log; mkdir -p tmp/vllm_logs; MODEL_IMPL_TYPE=vllm NEW_MODEL_DESIGN=1 ATTN_BUCKETIZED_NUM_REQS=true ATTN_CUSTOM_NUM_REQS_BUCKETS=8,16,32,64 ONEHOT_MOE_PERMUTE_THRESHOLD=32768 VLLM_MOE_CHUNK_SIZE=256 LIBTPU_INIT_ARGS=' --xla_tpu_use_minor_sharding_for_major_trivial_input=true --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=false --xla_tpu_ars_combiner_threshold_in_bytes=0 --xla_tpu_enable_async_collective_merger=false --xla_tpu_check_legacy_constraints_in_reduce_scatter_legalizer=false' vllm serve Qwen/Qwen3.5-397B-A17B-FP8 --max-model-len=9216 --max-num-batched-tokens=1024 --max-num-seqs=64 --no-enable-prefix-caching --gpu-memory-utilization=0.88 --tensor-parallel-size=8 --async-scheduling --port=8000 --language-model-only --enable-auto-tool-choice --tool-call-parser=qwen3_coder --reasoning-parser=qwen3 '--limit-mm-per-prompt={"image":0, "video": 0}' --kv-cache-dtype=fp8 '--additional_config={"sharding":{"sharding_strategy": {"enable_dp_attention": true, "attn_dp_size": 8}}}' --block-size=256 2>&1 | tee "$L"; xz -9 -T0 "$L"
 
 # fp8 line 4: v2 TP decode kernel (fp8 w8a8, per-token act scale)
-L=tmp/vllm_logs/fp8_v2_tp_512s_$(date +%Y%m%d_%H%M%S).log; mkdir -p tmp/vllm_logs; MODEL_IMPL_TYPE=vllm USE_MOE_TP_DECODE_KERNEL=1 NEW_MODEL_DESIGN=1 ATTN_BUCKETIZED_NUM_REQS=true ATTN_CUSTOM_NUM_REQS_BUCKETS=64,128,256,512 ONEHOT_MOE_PERMUTE_THRESHOLD=32768 VLLM_MOE_CHUNK_SIZE=256 LIBTPU_INIT_ARGS=' --xla_tpu_use_minor_sharding_for_major_trivial_input=true --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=false --xla_tpu_ars_combiner_threshold_in_bytes=0 --xla_tpu_enable_async_collective_merger=false --xla_tpu_check_legacy_constraints_in_reduce_scatter_legalizer=false' vllm serve Qwen/Qwen3.5-397B-A17B-FP8 --max-model-len=9216 --max-num-batched-tokens=1024 --max-num-seqs=512 --no-enable-prefix-caching --gpu-memory-utilization=0.88 --tensor-parallel-size=8 --async-scheduling --port=8000 --language-model-only --enable-auto-tool-choice --tool-call-parser=qwen3_coder --reasoning-parser=qwen3 '--limit-mm-per-prompt={"image":0, "video": 0}' --kv-cache-dtype=fp8 '--additional_config={"sharding":{"sharding_strategy": {"enable_dp_attention": true, "attn_dp_size": 8}}}' --block-size=256 2>&1 | tee "$L"; xz -9 -T0 "$L"
+L=tmp/vllm_logs/fp8_v2_tp_64s_$(date +%Y%m%d_%H%M%S).log; mkdir -p tmp/vllm_logs; MODEL_IMPL_TYPE=vllm USE_MOE_TP_DECODE_KERNEL=1 NEW_MODEL_DESIGN=1 ATTN_BUCKETIZED_NUM_REQS=true ATTN_CUSTOM_NUM_REQS_BUCKETS=8,16,32,64 ONEHOT_MOE_PERMUTE_THRESHOLD=32768 VLLM_MOE_CHUNK_SIZE=256 LIBTPU_INIT_ARGS=' --xla_tpu_use_minor_sharding_for_major_trivial_input=true --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=false --xla_tpu_ars_combiner_threshold_in_bytes=0 --xla_tpu_enable_async_collective_merger=false --xla_tpu_check_legacy_constraints_in_reduce_scatter_legalizer=false' vllm serve Qwen/Qwen3.5-397B-A17B-FP8 --max-model-len=9216 --max-num-batched-tokens=1024 --max-num-seqs=64 --no-enable-prefix-caching --gpu-memory-utilization=0.88 --tensor-parallel-size=8 --async-scheduling --port=8000 --language-model-only --enable-auto-tool-choice --tool-call-parser=qwen3_coder --reasoning-parser=qwen3 '--limit-mm-per-prompt={"image":0, "video": 0}' --kv-cache-dtype=fp8 '--additional_config={"sharding":{"sharding_strategy": {"enable_dp_attention": true, "attn_dp_size": 8}}}' --block-size=256 2>&1 | tee "$L"; xz -9 -T0 "$L"
 
 # ---- bf16 3-way: Qwen3-30B-A3B (fits 8 chips in bf16) - same decode-heavy
 # ---- client, three MoE paths. CAVEAT: representative for PLUMBING, not for
