@@ -109,7 +109,7 @@ def _push_round_to_target(
                 device_id={
                     ep_axis_name: target_id
                 },
-                device_id_type=pltpu.DeviceIdType.MESH,
+                device_id_type=pl.DeviceIdType.MESH,
             ).start()
 
         return _
@@ -901,12 +901,12 @@ def kernel_main_scatter_ici_dedup(
     def sync_barrier():
         barrier_sem = pltpu.get_barrier_semaphore()
         for i in range(ep_size):
-            pltpu.semaphore_signal(
+            pl.semaphore_signal(
                 barrier_sem,
                 device_id={ep_axis_name: jnp.int32(i)},
-                device_id_type=pltpu.DeviceIdType.MESH,
+                device_id_type=pl.DeviceIdType.MESH,
             )
-        pltpu.semaphore_wait(barrier_sem, ep_size)
+        pl.semaphore_wait(barrier_sem, ep_size)
 
     sync_barrier()
 
@@ -1131,7 +1131,7 @@ def kernel_main_scatter_ici_dedup(
                         device_id={
                             ep_axis_name: dest_chip
                         },
-                        device_id_type=pltpu.DeviceIdType.MESH,
+                        device_id_type=pl.DeviceIdType.MESH,
                     ).start()
 
                 @pl.when(jnp.logical_and(is_last == 1, is_local))
@@ -1664,12 +1664,12 @@ def kernel_main_scatter_ici_nodedup(
     def sync_barrier():
         barrier_sem = pltpu.get_barrier_semaphore()
         for i in range(ep_size):
-            pltpu.semaphore_signal(
+            pl.semaphore_signal(
                 barrier_sem,
                 device_id={ep_axis_name: jnp.int32(i)},
-                device_id_type=pltpu.DeviceIdType.MESH,
+                device_id_type=pl.DeviceIdType.MESH,
             )
-        pltpu.semaphore_wait(barrier_sem, ep_size)
+        pl.semaphore_wait(barrier_sem, ep_size)
 
     sync_barrier()
 
@@ -1873,7 +1873,7 @@ def kernel_main_scatter_ici_nodedup(
                         device_id={
                             ep_axis_name: dest_chip
                         },
-                        device_id_type=pltpu.DeviceIdType.MESH,
+                        device_id_type=pl.DeviceIdType.MESH,
                     ).start()
 
                 @pl.when(is_local)
