@@ -1,6 +1,6 @@
 
 + git rev-parse --short HEAD
-cd4b437491
+de5324df4c
 + exit=0
 
 + python -c import jax, jaxlib; print('jax', jax.__version__, 'jaxlib', jaxlib.__version__)
@@ -12,117 +12,84 @@ preflight: pallas/libtpu pairing OK
 + exit=0
 
 + python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v1 --tokens=64 --iters=8 --warmup=3 --profile-dir=tmp/kprof/bf16_v1_t64
-WARNING 09-01 15:25:27 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 09-01 16:25:57 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 09-01 15:25:31 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 09-01 15:25:31 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 09-01 15:25:31 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 09-01 16:26:01 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 09-01 16:26:01 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 09-01 16:26:01 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=64 (8/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
-WARNING 09-01 15:26:54 [tuned_block_sizes.py:423] [Fused MOE kernel] using default block sizes for key: (4096, 1024, 512, 10, 2, 2, 64, 8): (8, 512, 1024, 2048, 4, 512, 1024, 2048)
+WARNING 09-01 16:27:24 [tuned_block_sizes.py:423] [Fused MOE kernel] using default block sizes for key: (4096, 1024, 512, 10, 2, 2, 64, 8): (8, 512, 1024, 2048, 4, 512, 1024, 2048)
 
 variant                              min us  median us
-v1_ep_a2a                            1489.3     1521.3
-v1_ep_a2a                        device-only per dispatch: TC min   1086.1 us  median   1087.2 us  | SC median    0.0 us  (5 dispatches)
+v1_ep_a2a                            1481.9     1505.6
+v1_ep_a2a                        device-only per dispatch: TC min   1083.4 us  median   1084.8 us  | SC median    0.0 us  (5 dispatches)
 
 traces under tmp/kprof/bf16_v1_t64/<variant>; open in xprof/tensorboard - v2 per-stage spans are named moe_*
 + exit=0
 
 + python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=rs --tokens=64 --iters=8 --warmup=3 --profile-dir=tmp/kprof/bf16_rs_t64
-WARNING 09-01 15:27:07 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 09-01 16:27:36 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 09-01 15:27:10 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 09-01 15:27:10 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 09-01 15:27:11 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
-Traceback (most recent call last):
-  File "<frozen runpy>", line 198, in _run_module_as_main
-  File "<frozen runpy>", line 88, in _run_code
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 764, in <module>
-    main()
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 719, in main
-    outs = {name: np.asarray(fn(), np.float32)
-                             ^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 396, in run_rs
-    return fused_moe_func_rs(
-           ^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/fused_moe_rs.py", line 501, in fused_moe_func_rs
-    result = expert_parallel_gmm_rs(
-             ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/fused_moe_rs.py", line 390, in expert_parallel_gmm_rs
-    result = jax.shard_map(
-             ^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/fused_moe_rs.py", line 277, in moe_gmm_local_rs_nodedup
-    out_buf = gmm_v2_fused_rs_nodedup(
-              ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 1843, in gmm_v2_fused_rs
-    result = pl.pallas_call(
-             ^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/pallas_call.py", line 1329, in wrapped
-    jaxpr, consts = _trace_kernel_to_jaxpr(
-                    ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/pallas_call.py", line 805, in _trace_kernel_to_jaxpr
-    closed_jaxpr, out_avals = pe.trace_to_jaxpr(
-                              ^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 455, in kernel_main_fused_rs
-    sync_barrier()
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 448, in sync_barrier
-    pltpu.semaphore_signal(
-    ^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/deprecations.py", line 54, in getattr
-    raise AttributeError(message)
-AttributeError: pltpu.semaphore_signal was deprecated in JAX v0.10.0, and removed in JAX v0.11.0. Use pl.semaphore_signal instead.
---------------------
-For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+INFO 09-01 16:27:40 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 09-01 16:27:40 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 09-01 16:27:40 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=64 (8/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
-+ exit=1
 
-+ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02s --tokens=64 --iters=8 --warmup=3 --profile-dir=tmp/kprof/bf16_v02s_t64
-WARNING 09-01 15:28:38 [tpu_platform.py:447] Pin memory is not supported on TPU.
+variant                              min us  median us
+rs_ep_fused                           842.6      870.4
+rs_ep_fused                      device-only per dispatch: TC min      0.5 us  median    448.6 us  | SC median   30.3 us  (10 dispatches)
+
+traces under tmp/kprof/bf16_rs_t64/<variant>; open in xprof/tensorboard - v2 per-stage spans are named moe_*
++ exit=0
+
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02s --tokens=64 --iters=8 --warmup=3 --be=4 --bg=4 --capacity=32 --bd1c=256 --bd2c=128 --profile-dir=tmp/kprof/bf16_v02s_t64
+WARNING 09-01 16:29:15 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 09-01 15:28:41 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 09-01 15:28:41 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 09-01 15:28:41 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 09-01 16:29:18 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 09-01 16:29:18 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 09-01 16:29:18 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=64 (8/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
 max|v2_serving_entry - v2_tp_inkernel_ag| = 0.000e+00
 
 variant                              min us  median us
-v2_tp_inkernel_ag                    1060.2     1078.4
-v2_serving_entry                      981.0     1020.6
-v2_tp_inkernel_ag                device-only per dispatch: TC min    655.5 us  median    656.9 us  | SC median   20.7 us  (5 dispatches)
-v2_serving_entry                 device-only per dispatch: TC min    606.1 us  median    608.1 us  | SC median   21.0 us  (5 dispatches)
+v2_tp_inkernel_ag                     988.4     1005.7
+v2_serving_entry                      967.5      993.2
+v2_tp_inkernel_ag                device-only per dispatch: TC min    620.8 us  median    621.0 us  | SC median   21.3 us  (5 dispatches)
+v2_serving_entry                 device-only per dispatch: TC min    606.8 us  median    607.7 us  | SC median   21.0 us  (5 dispatches)
 
 traces under tmp/kprof/bf16_v02s_t64/<variant>; open in xprof/tensorboard - v2 per-stage spans are named moe_*
 + exit=0
 
 + python -m tpu_inference.kernels.fused_moe.v2.bench_decode --wdtype=fp8 --variants=rs --tokens=64 --iters=8 --warmup=3 --profile-dir=tmp/kprof/fp8_rs_t64
-WARNING 09-01 15:30:23 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 09-01 16:31:01 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 09-01 15:30:27 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 09-01 15:30:27 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 09-01 15:30:27 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 09-01 16:31:04 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 09-01 16:31:04 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 09-01 16:31:04 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 Traceback (most recent call last):
   File "<frozen runpy>", line 198, in _run_module_as_main
   File "<frozen runpy>", line 88, in _run_code
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 764, in <module>
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 776, in <module>
     main()
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 719, in main
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 731, in main
     outs = {name: np.asarray(fn(), np.float32)
                              ^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 396, in run_rs
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 408, in run_rs
     return fused_moe_func_rs(
            ^^^^^^^^^^^^^^^^^^
   File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/fused_moe_rs.py", line 501, in fused_moe_func_rs
@@ -143,155 +110,134 @@ Traceback (most recent call last):
   File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/pallas_call.py", line 805, in _trace_kernel_to_jaxpr
     closed_jaxpr, out_avals = pe.trace_to_jaxpr(
                               ^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 455, in kernel_main_fused_rs
-    sync_barrier()
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 448, in sync_barrier
-    pltpu.semaphore_signal(
-    ^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/deprecations.py", line 54, in getattr
-    raise AttributeError(message)
-AttributeError: pltpu.semaphore_signal was deprecated in JAX v0.10.0, and removed in JAX v0.11.0. Use pl.semaphore_signal instead.
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 1117, in kernel_main_fused_rs
+    lax.fori_loop(0, max_num_gm, gm_loop_body, None)
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 784, in gm_loop_body
+    @pl.when(is_active)
+     ^^^^^^^^^^^^^^^^^^
+  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/helpers.py", line 86, in _wrapped
+    conditionals.cond(condition, f, lambda: None)
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 858, in _
+    @pl.when(gm_id == 0)
+     ^^^^^^^^^^^^^^^^^^^
+  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/helpers.py", line 86, in _wrapped
+    conditionals.cond(condition, f, lambda: None)
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 861, in _
+    start_w1_dma(_i, expert_id, _i // num_k1, _i % num_k1)
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 576, in start_w1_dma
+    src_ref=w1_scale_ref.at[
+            ^^^^^^^^^^^^^^^^
+  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/state/indexing.py", line 186, in from_indices_shape
+    raise ValueError("`indices` must not be longer than `shape`: "
+ValueError: `indices` must not be longer than `shape`: indices=(JitTracer(int32[]), Slice(start=0, size=1, stride=1), slice(None, None, None), Slice(start=0, size=2048, stride=1)), shape=(64, 1, 2048)
 --------------------
 For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
 devices=8  T=64 (8/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
 + exit=1
 
-+ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --wdtype=fp8 --variants=v02s --tokens=64 --iters=8 --warmup=3 --profile-dir=tmp/kprof/fp8_v02s_t64
-WARNING 09-01 15:31:58 [tpu_platform.py:447] Pin memory is not supported on TPU.
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --wdtype=fp8 --variants=v02s --tokens=64 --iters=8 --warmup=3 --be=8 --bg=2 --capacity=32 --bd1c=256 --bd2c=128 --bcT=0 --profile-dir=tmp/kprof/fp8_v02s_t64
+WARNING 09-01 16:32:36 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 09-01 15:32:02 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 09-01 15:32:02 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 09-01 15:32:02 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 09-01 16:32:39 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 09-01 16:32:39 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 09-01 16:32:39 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=64 (8/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
 v2 weights: e4m3 + per-channel scales -> 768 MiB/device (+ scales 8.5)
-max|v2_serving_entry[fp8] - v2_tp_inkernel_ag[fp8]| = 9.766e-04
+max|v2_serving_entry[fp8] - v2_tp_inkernel_ag[fp8]| = 0.000e+00
 
 variant                              min us  median us
-v2_tp_inkernel_ag[fp8]                839.4      889.6
-v2_serving_entry[fp8]                 743.3      766.6
-v2_tp_inkernel_ag[fp8]           device-only per dispatch: TC min    470.7 us  median    470.8 us  | SC median   24.3 us  (5 dispatches)
-v2_serving_entry[fp8]            device-only per dispatch: TC min    376.0 us  median    376.9 us  | SC median   23.3 us  (5 dispatches)
+v2_tp_inkernel_ag[fp8]                747.0      779.9
+v2_serving_entry[fp8]                 755.2      792.8
+v2_tp_inkernel_ag[fp8]           device-only per dispatch: TC min    364.6 us  median    365.7 us  | SC median   23.6 us  (5 dispatches)
+v2_serving_entry[fp8]            device-only per dispatch: TC min    376.3 us  median    377.4 us  | SC median   23.9 us  (5 dispatches)
 
 traces under tmp/kprof/fp8_v02s_t64/<variant>; open in xprof/tensorboard - v2 per-stage spans are named moe_*
 + exit=0
 
 + python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v1 --tokens=512 --iters=8 --warmup=3 --profile-dir=tmp/kprof/bf16_v1_t512
-WARNING 09-01 15:33:51 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 09-01 16:34:27 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 09-01 15:33:54 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 09-01 15:33:54 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 09-01 15:33:54 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 09-01 16:34:31 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 09-01 16:34:31 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 09-01 16:34:31 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
-WARNING 09-01 15:35:18 [tuned_block_sizes.py:423] [Fused MOE kernel] using default block sizes for key: (4096, 1024, 512, 10, 2, 2, 512, 8): (64, 512, 1024, 2048, 32, 512, 1024, 2048)
+WARNING 09-01 16:35:54 [tuned_block_sizes.py:423] [Fused MOE kernel] using default block sizes for key: (4096, 1024, 512, 10, 2, 2, 512, 8): (64, 512, 1024, 2048, 32, 512, 1024, 2048)
 
 variant                              min us  median us
-v1_ep_a2a                            2666.2     2682.8
-v1_ep_a2a                        device-only per dispatch: TC min   2255.0 us  median   2257.5 us  | SC median    0.0 us  (5 dispatches)
+v1_ep_a2a                            2663.6     2716.3
+v1_ep_a2a                        device-only per dispatch: TC min   2257.2 us  median   2257.8 us  | SC median    0.0 us  (5 dispatches)
 
 traces under tmp/kprof/bf16_v1_t512/<variant>; open in xprof/tensorboard - v2 per-stage spans are named moe_*
 + exit=0
 
 + python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=rs --tokens=512 --iters=8 --warmup=3 --profile-dir=tmp/kprof/bf16_rs_t512
-WARNING 09-01 15:35:37 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 09-01 16:36:13 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 09-01 15:35:41 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 09-01 15:35:41 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 09-01 15:35:41 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
-Traceback (most recent call last):
-  File "<frozen runpy>", line 198, in _run_module_as_main
-  File "<frozen runpy>", line 88, in _run_code
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 764, in <module>
-    main()
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 719, in main
-    outs = {name: np.asarray(fn(), np.float32)
-                             ^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 396, in run_rs
-    return fused_moe_func_rs(
-           ^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/fused_moe_rs.py", line 501, in fused_moe_func_rs
-    result = expert_parallel_gmm_rs(
-             ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/fused_moe_rs.py", line 390, in expert_parallel_gmm_rs
-    result = jax.shard_map(
-             ^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/fused_moe_rs.py", line 277, in moe_gmm_local_rs_nodedup
-    out_buf = gmm_v2_fused_rs_nodedup(
-              ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 1843, in gmm_v2_fused_rs
-    result = pl.pallas_call(
-             ^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/pallas_call.py", line 1329, in wrapped
-    jaxpr, consts = _trace_kernel_to_jaxpr(
-                    ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/pallas_call.py", line 805, in _trace_kernel_to_jaxpr
-    closed_jaxpr, out_avals = pe.trace_to_jaxpr(
-                              ^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 455, in kernel_main_fused_rs
-    sync_barrier()
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 448, in sync_barrier
-    pltpu.semaphore_signal(
-    ^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/deprecations.py", line 54, in getattr
-    raise AttributeError(message)
-AttributeError: pltpu.semaphore_signal was deprecated in JAX v0.10.0, and removed in JAX v0.11.0. Use pl.semaphore_signal instead.
---------------------
-For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+INFO 09-01 16:36:17 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 09-01 16:36:17 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 09-01 16:36:17 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
-+ exit=1
-
-+ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02s --tokens=512 --iters=8 --warmup=3 --profile-dir=tmp/kprof/bf16_v02s_t512
-WARNING 09-01 15:37:08 [tpu_platform.py:447] Pin memory is not supported on TPU.
-/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
-  raw_cnt = _raw_device_count_nvml()
-/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
-  raw_cnt = _raw_device_count_nvml()
-INFO 09-01 15:37:12 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 09-01 15:37:12 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 09-01 15:37:12 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
-devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
-weights/device = 1536 MiB
-max|v2_serving_entry - v2_tp_inkernel_ag| = 7.812e-03
 
 variant                              min us  median us
-v2_tp_inkernel_ag                    1218.8     1261.3
-v2_serving_entry                     1173.9     1188.0
-v2_tp_inkernel_ag                device-only per dispatch: TC min    833.6 us  median    833.6 us  | SC median   29.1 us  (5 dispatches)
-v2_serving_entry                 device-only per dispatch: TC min    786.5 us  median    787.2 us  | SC median   27.0 us  (5 dispatches)
+rs_ep_fused                          1021.2     1053.6
+rs_ep_fused                      device-only per dispatch: TC min      0.5 us  median    625.0 us  | SC median   41.2 us  (10 dispatches)
+
+traces under tmp/kprof/bf16_rs_t512/<variant>; open in xprof/tensorboard - v2 per-stage spans are named moe_*
++ exit=0
+
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --variants=v02s --tokens=512 --iters=8 --warmup=3 --be=4 --bg=4 --capacity=32 --bd1c=256 --bd2c=128 --bcT=256 --profile-dir=tmp/kprof/bf16_v02s_t512
+WARNING 09-01 16:37:52 [tpu_platform.py:447] Pin memory is not supported on TPU.
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+INFO 09-01 16:37:56 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 09-01 16:37:56 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 09-01 16:37:56 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
+weights/device = 1536 MiB
+max|v2_serving_entry - v2_tp_inkernel_ag| = 4.395e-03
+
+variant                              min us  median us
+v2_tp_inkernel_ag                    1201.2     1223.6
+v2_serving_entry                     1172.6     1188.1
+v2_tp_inkernel_ag                device-only per dispatch: TC min    789.5 us  median    790.0 us  | SC median   27.5 us  (5 dispatches)
+v2_serving_entry                 device-only per dispatch: TC min    786.3 us  median    786.8 us  | SC median   27.3 us  (5 dispatches)
 
 traces under tmp/kprof/bf16_v02s_t512/<variant>; open in xprof/tensorboard - v2 per-stage spans are named moe_*
 + exit=0
 
 + python -m tpu_inference.kernels.fused_moe.v2.bench_decode --wdtype=fp8 --variants=rs --tokens=512 --iters=8 --warmup=3 --profile-dir=tmp/kprof/fp8_rs_t512
-WARNING 09-01 15:38:56 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 09-01 16:39:41 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 09-01 15:39:00 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 09-01 15:39:00 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 09-01 15:39:00 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 09-01 16:39:45 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 09-01 16:39:45 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 09-01 16:39:45 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 Traceback (most recent call last):
   File "<frozen runpy>", line 198, in _run_module_as_main
   File "<frozen runpy>", line 88, in _run_code
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 764, in <module>
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 776, in <module>
     main()
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 719, in main
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 731, in main
     outs = {name: np.asarray(fn(), np.float32)
                              ^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 396, in run_rs
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 408, in run_rs
     return fused_moe_func_rs(
            ^^^^^^^^^^^^^^^^^^
   File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/fused_moe_rs.py", line 501, in fused_moe_func_rs
@@ -312,56 +258,70 @@ Traceback (most recent call last):
   File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/pallas_call.py", line 805, in _trace_kernel_to_jaxpr
     closed_jaxpr, out_avals = pe.trace_to_jaxpr(
                               ^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 455, in kernel_main_fused_rs
-    sync_barrier()
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 448, in sync_barrier
-    pltpu.semaphore_signal(
-    ^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/deprecations.py", line 54, in getattr
-    raise AttributeError(message)
-AttributeError: pltpu.semaphore_signal was deprecated in JAX v0.10.0, and removed in JAX v0.11.0. Use pl.semaphore_signal instead.
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 1117, in kernel_main_fused_rs
+    lax.fori_loop(0, max_num_gm, gm_loop_body, None)
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 784, in gm_loop_body
+    @pl.when(is_active)
+     ^^^^^^^^^^^^^^^^^^
+  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/helpers.py", line 86, in _wrapped
+    conditionals.cond(condition, f, lambda: None)
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 858, in _
+    @pl.when(gm_id == 0)
+     ^^^^^^^^^^^^^^^^^^^
+  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/helpers.py", line 86, in _wrapped
+    conditionals.cond(condition, f, lambda: None)
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 861, in _
+    start_w1_dma(_i, expert_id, _i // num_k1, _i % num_k1)
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 576, in start_w1_dma
+    src_ref=w1_scale_ref.at[
+            ^^^^^^^^^^^^^^^^
+  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/state/indexing.py", line 186, in from_indices_shape
+    raise ValueError("`indices` must not be longer than `shape`: "
+ValueError: `indices` must not be longer than `shape`: indices=(JitTracer(int32[]), Slice(start=0, size=1, stride=1), slice(None, None, None), Slice(start=0, size=2048, stride=1)), shape=(64, 1, 2048)
 --------------------
 For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
 devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
 + exit=1
 
-+ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --wdtype=fp8 --variants=v02s --tokens=512 --iters=8 --warmup=3 --profile-dir=tmp/kprof/fp8_v02s_t512
-WARNING 09-01 15:40:31 [tpu_platform.py:447] Pin memory is not supported on TPU.
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --wdtype=fp8 --variants=v02s --tokens=512 --iters=8 --warmup=3 --be=8 --bg=2 --capacity=32 --bd1c=256 --bd2c=128 --bcT=0 --profile-dir=tmp/kprof/fp8_v02s_t512
+WARNING 09-01 16:41:16 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 09-01 15:40:35 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 09-01 15:40:35 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 09-01 15:40:35 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 09-01 16:41:20 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 09-01 16:41:20 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 09-01 16:41:20 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
 v2 weights: e4m3 + per-channel scales -> 768 MiB/device (+ scales 8.5)
 max|v2_serving_entry[fp8] - v2_tp_inkernel_ag[fp8]| = 7.812e-03
 
 variant                              min us  median us
-v2_tp_inkernel_ag[fp8]                992.8     1004.8
-v2_serving_entry[fp8]                 847.3      860.9
-v2_tp_inkernel_ag[fp8]           device-only per dispatch: TC min    587.6 us  median    587.8 us  | SC median   28.3 us  (5 dispatches)
-v2_serving_entry[fp8]            device-only per dispatch: TC min    441.7 us  median    443.5 us  | SC median   32.2 us  (5 dispatches)
+v2_tp_inkernel_ag[fp8]                802.9      848.6
+v2_serving_entry[fp8]                 833.6      859.3
+v2_tp_inkernel_ag[fp8]           device-only per dispatch: TC min    431.5 us  median    432.0 us  | SC median   31.6 us  (5 dispatches)
+v2_serving_entry[fp8]            device-only per dispatch: TC min    442.6 us  median    443.3 us  | SC median   31.5 us  (5 dispatches)
 
 traces under tmp/kprof/fp8_v02s_t512/<variant>; open in xprof/tensorboard - v2 per-stage spans are named moe_*
 + exit=0
 
 === DEVICE-TIME SUMMARY (TC median is the verdict) ===
-v1_ep_a2a                        device-only per dispatch: TC min   1086.1 us  median   1087.2 us  | SC median    0.0 us  (5 dispatches)
-v2_tp_inkernel_ag                device-only per dispatch: TC min    655.5 us  median    656.9 us  | SC median   20.7 us  (5 dispatches)
-v2_serving_entry                 device-only per dispatch: TC min    606.1 us  median    608.1 us  | SC median   21.0 us  (5 dispatches)
-v2_tp_inkernel_ag[fp8]           device-only per dispatch: TC min    470.7 us  median    470.8 us  | SC median   24.3 us  (5 dispatches)
-v2_serving_entry[fp8]            device-only per dispatch: TC min    376.0 us  median    376.9 us  | SC median   23.3 us  (5 dispatches)
-v1_ep_a2a                        device-only per dispatch: TC min   2255.0 us  median   2257.5 us  | SC median    0.0 us  (5 dispatches)
-v2_tp_inkernel_ag                device-only per dispatch: TC min    833.6 us  median    833.6 us  | SC median   29.1 us  (5 dispatches)
-v2_serving_entry                 device-only per dispatch: TC min    786.5 us  median    787.2 us  | SC median   27.0 us  (5 dispatches)
-v2_tp_inkernel_ag[fp8]           device-only per dispatch: TC min    587.6 us  median    587.8 us  | SC median   28.3 us  (5 dispatches)
-v2_serving_entry[fp8]            device-only per dispatch: TC min    441.7 us  median    443.5 us  | SC median   32.2 us  (5 dispatches)
+T=64   bf16  v1_ep_a2a                        device-only per dispatch: TC min   1083.4 us  median   1084.8 us  | SC median    0.0 us  (5 dispatches)
+T=64   bf16  rs_ep_fused                      device-only per dispatch: TC min      0.5 us  median    448.6 us  | SC median   30.3 us  (10 dispatches)
+T=64   bf16  v2_tp_inkernel_ag                device-only per dispatch: TC min    620.8 us  median    621.0 us  | SC median   21.3 us  (5 dispatches)
+T=64   bf16  v2_serving_entry                 device-only per dispatch: TC min    606.8 us  median    607.7 us  | SC median   21.0 us  (5 dispatches)
+T=64   fp8   v2_tp_inkernel_ag[fp8]           device-only per dispatch: TC min    364.6 us  median    365.7 us  | SC median   23.6 us  (5 dispatches)
+T=64   fp8   v2_serving_entry[fp8]            device-only per dispatch: TC min    376.3 us  median    377.4 us  | SC median   23.9 us  (5 dispatches)
+T=512  bf16  v1_ep_a2a                        device-only per dispatch: TC min   2257.2 us  median   2257.8 us  | SC median    0.0 us  (5 dispatches)
+T=512  bf16  rs_ep_fused                      device-only per dispatch: TC min      0.5 us  median    625.0 us  | SC median   41.2 us  (10 dispatches)
+T=512  bf16  v2_tp_inkernel_ag                device-only per dispatch: TC min    789.5 us  median    790.0 us  | SC median   27.5 us  (5 dispatches)
+T=512  bf16  v2_serving_entry                 device-only per dispatch: TC min    786.3 us  median    786.8 us  | SC median   27.3 us  (5 dispatches)
+T=512  fp8   v2_tp_inkernel_ag[fp8]           device-only per dispatch: TC min    431.5 us  median    432.0 us  | SC median   31.6 us  (5 dispatches)
+T=512  fp8   v2_serving_entry[fp8]            device-only per dispatch: TC min    442.6 us  median    443.3 us  | SC median   31.5 us  (5 dispatches)
 
 + bash -c tar -c tmp/kprof | xz -9 -T0 > tmp/kprof.tar.xz; ls -lh tmp/kprof.tar.xz; rm -rf tmp/kprof
--rw-rw-r-- 1 ymu_google_com ymu_google_com 67M Sep  1 15:42 tmp/kprof.tar.xz
+-rw-rw-r-- 1 ymu_google_com ymu_google_com 83M Sep  1 16:43 tmp/kprof.tar.xz
 + exit=0
 log: tmp/kernel_profiles.log
