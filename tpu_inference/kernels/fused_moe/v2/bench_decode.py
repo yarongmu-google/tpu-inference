@@ -360,6 +360,18 @@ def main() -> None:
         # all-gather this design needs is charged inside the timed jit;
         # the exit is the kernel's own RS, so no post-kernel collective.
         # Its blocks come from its internal selector - no flags apply.
+        #
+        # jax >= 0.11 compat shim, applied in OUR bench so his module
+        # stays untouched: the kernel targets the serving env's jax
+        # 0.10 pltpu API; the semaphore ops moved to pl in 0.11 and
+        # pltpu's names were removed. Alias them back so the prof env
+        # (matched jax/libtpu for device-time profiling) can run it.
+        from jax.experimental import pallas as _pl
+        from jax.experimental.pallas import tpu as _pltpu
+        for _name in ("semaphore_signal", "semaphore_wait",
+                      "semaphore_read"):
+            if not hasattr(_pltpu, _name) and hasattr(_pl, _name):
+                setattr(_pltpu, _name, getattr(_pl, _name))
         from tpu_inference.kernels.experimental.fused_moe import \
             fused_moe_func_rs
 
