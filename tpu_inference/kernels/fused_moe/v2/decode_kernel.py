@@ -1514,12 +1514,18 @@ def fused_moe_decode_tp_serving(
     row_granule = 32 if fp8 else 16
     rows_per_dev = -(-num_tokens // devices)
     padded_tokens = -(-rows_per_dev // row_granule) * row_granule * devices
+    # Shapes past the 512-token design point (mixed prefill+decode
+    # steps admitted via MOE_TP_DECODE_MAX_TOKENS > MNS) double the
+    # serving capacity (2x average load grows with T), and the tuned
+    # be=8 weight windows plus that scratch exceed the 64 MiB VMEM
+    # budget - fall back to the known-fitting blocks there.
+    big_t = padded_tokens > 512
     if be is None:
-        be = 8 if fp8 else 4
+        be = 4 if big_t else (8 if fp8 else 4)
         while num_experts % be:
             be //= 2
     if bg is None:
-        bg = 2 if fp8 else 4
+        bg = 1 if big_t else (2 if fp8 else 4)
         while (num_experts // be) % bg:
             bg //= 2
     bd1c = 256 if d_model % 256 == 0 else None
