@@ -55,6 +55,20 @@ RESULTS="$SWEEP_DIR/results.tsv"
 mkdir -p "$SWEEP_DIR"
 BS=scripts/vllm/benchmarking/benchmark_serving.py
 
+# ---- env preflight (lesson 22's failure mode, third sighting): the
+# ---- sweep must run in the SERVING env (pinned jax 0.10.x). Under the
+# ---- prof env's jax 0.11 every server dies at import in seconds
+# ---- (jax.core.Effect removed) and the whole sweep "finishes"
+# ---- instantly with status=died rows.
+JAXV=$(python -c "import jax; print(jax.__version__)" 2>/dev/null || echo none)
+case "$JAXV" in
+  0.10.*) echo "env preflight: jax $JAXV (serving env) OK" ;;
+  *) echo "env preflight FAILED: jax=$JAXV - this is not the serving" >&2
+     echo "env. Run: conda activate <serving env> (jax 0.10.x) first;" >&2
+     echo "the prof env (jax 0.11+) is only for run_kernel_profiles.sh." >&2
+     exit 1 ;;
+esac
+
 # Candidate lists. NOTE (2026-09-01): the GQA estimator is WRONG for
 # Qwen3.5-397B - the model is HYBRID (15 attn + 45 GDN/mamba layers
 # with per-SEQ state). Measured reality: at MNS=64 the compact-mamba
@@ -100,14 +114,12 @@ for MML in $MML_LIST; do
         echo "SKIP mml=$MML: workload in+out=$((IN_LEN + OUT_LEN)) exceeds it"
         continue
       fi
-      # MNB hard lower bounds (see estimate_service_knobs.py): a
-      # prompt must prefill in one step, and a decode step batches
-      # one token per running seq - an MNB below either just splits
-      # steps, never wins. Skip instead of burning a server start.
-      if [ "$MNB" -lt "$IN_LEN" ]; then
-        echo "SKIP mnb=$MNB < in_len=$IN_LEN (prefill would chunk)"
-        continue
-      fi
+      # MNB < MNS is the one structural skip (a decode step batches
+      # one token per running seq; smaller MNB splits every decode
+      # step). MNB < in_len is FINE on this stack - chunked prefill
+      # is on (the origin/tune rule that skipped it assumed chunking
+      # off), and sweeping MNB below in_len is exactly the
+      # prefill-stall-vs-TTFT tradeoff this axis exists to measure.
       if [ "$MNB" -lt "$MNS" ]; then
         echo "SKIP mnb=$MNB < mns=$MNS (decode step would split)"
         continue
