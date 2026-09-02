@@ -191,7 +191,8 @@ for MML in $MML_LIST; do
           --backend vllm --port "$PORT" \
           --random-input-len="$IN_LEN" --random-output-len="$OUT_LEN" \
           --random-range-ratio="$RANGE_RATIO" \
-          --num-prompts="$NUM_PROMPTS" --max-concurrency="$((MNS * 8))" \
+          --num-prompts="$(( NUM_PROMPTS > MNS * 16 ? NUM_PROMPTS : MNS * 16 ))" \
+          --max-concurrency="$((MNS * 8))" \
           --ignore-eos > "$CLOG" 2>&1
         if [ $? -eq 0 ]; then
           STATUS=ok
