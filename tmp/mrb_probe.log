@@ -1,0 +1,38 @@
+A_dot_chunked: min    138.0 us  median    147.6 us
+B_mrb_1mxu: min    142.2 us  median    148.8 us
+C_mrb_2mxu: min    135.1 us  median    140.2 us
+Traceback (most recent call last):
+  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/compiler.py", line 353, in backend_compile_and_load
+    return backend.compile_and_load(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+jax.errors.JaxRuntimeError: INTERNAL: Mosaic failed to compile TPU kernel with MLIR module name `<no name>` HLO name `tpu_custom_call.1`: Low-level MXU operations cannot be mixed in the same program with high-level operations
+
+at location: loc("dot_general:"("dot_general/dot_general"(callsite("kernel_coexist"("/home/ymu_google_com/tpu-inference/tmp/probe_mrb_combine.py":72:11 to 75:43) at "kernel_coexist"("/home/ymu_google_com/tpu-inference/tmp/probe_mrb_combine.py":72:11 to 75:43)))))
+
+The MLIR operation involved:
+  %391 = "tpu.matmul"(%389, %390, %0) <{dimension_numbers = #tpu.dot_dimension_numbers<[1], [0], [0], [1], [0, 0, 1, 1], [], []>, transpose_lhs = false, transpose_lhs_hint = false, transpose_rhs = false}> : (vector<512x512xf8E4M3FN>, vector<512x256xf8E4M3FN>, vector<512x256xf32>) -> vector<512x256xf32>
+
+Please report a bug at: https://github.com/jax-ml/jax/issues/new/choose
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/ymu_google_com/tpu-inference/tmp/probe_mrb_combine.py", line 134, in <module>
+    main()
+  File "/home/ymu_google_com/tpu-inference/tmp/probe_mrb_combine.py", line 119, in main
+    outs[name] = np.asarray(jax.block_until_ready(jfn(lhs, rhs)))
+                                                  ^^^^^^^^^^^^^
+  File "/home/ymu_google_com/tpu-inference/tmp/probe_mrb_combine.py", line 72, in kernel_coexist
+    tail = jax.lax.dot_general(
+  File "/home/ymu_google_com/tpu-inference/tmp/probe_mrb_combine.py", line 72, in dot_general/dot_general"(callsite("kernel_coexist
+    tail = jax.lax.dot_general(
+jax._src.pallas.mosaic.error_handling.MosaicError: INTERNAL: Mosaic failed to compile TPU kernel with MLIR module name `<no name>` HLO name `tpu_custom_call.1`: Low-level MXU operations cannot be mixed in the same program with high-level operations
+
+The MLIR operation involved:
+  %391 = "tpu.matmul"(%389, %390, %0) <{dimension_numbers = #tpu.dot_dimension_numbers<[1], [0], [0], [1], [0, 0, 1, 1], [], []>, transpose_lhs = false, transpose_lhs_hint = false, transpose_rhs = false}> : (vector<512x512xf8E4M3FN>, vector<512x256xf8E4M3FN>, vector<512x256xf32>) -> vector<512x256xf32>
+
+Please report a bug at: https://github.com/jax-ml/jax/issues/new/choose
+
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
