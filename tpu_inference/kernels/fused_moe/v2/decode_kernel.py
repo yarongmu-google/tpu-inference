@@ -1514,18 +1514,30 @@ def fused_moe_decode_tp_serving(
     row_granule = 32 if fp8 else 16
     rows_per_dev = -(-num_tokens // devices)
     padded_tokens = -(-rows_per_dev // row_granule) * row_granule * devices
-    # Shapes past the 512-token design point (mixed prefill+decode
-    # steps admitted via MOE_TP_DECODE_MAX_TOKENS > MNS) double the
-    # serving capacity (2x average load grows with T), and the tuned
-    # be=8 weight windows plus that scratch exceed the 64 MiB VMEM
-    # budget - fall back to the known-fitting blocks there.
-    big_t = padded_tokens > 512
+    # Per-shape tuned blocks, keyed by the padded token count. The
+    # T-scaled residents (all-gathered tokens, the f32 output
+    # accumulator) and the capacity-scaled x/y grow with T, so the
+    # weight windows must shrink - the T<=512 row is the bench
+    # tuner's winner; the big-T rows hold the known-VMEM-fitting
+    # blocks until tmp/run_bigT_tune.sh refills them with tuned
+    # winners (the tuner prunes candidates through the kernel's VMEM
+    # assert, so anything it prints is legal).
+    _T_BLOCKS = (
+        # (padded_tokens <=, fp8 (be, bg), bf16 (be, bg))
+        (512, (8, 2), (4, 4)),
+        (1536, (4, 1), (4, 1)),   # refill from run_bigT_tune winners
+    )
+    d_be, d_bg = 4, 1             # beyond the table: smallest windows
+    for _t_cap, _blk8, _blk16 in _T_BLOCKS:
+        if padded_tokens <= _t_cap:
+            d_be, d_bg = _blk8 if fp8 else _blk16
+            break
     if be is None:
-        be = 4 if big_t else (8 if fp8 else 4)
+        be = d_be
         while num_experts % be:
             be //= 2
     if bg is None:
-        bg = 1 if big_t else (2 if fp8 else 4)
+        bg = d_bg
         while (num_experts // be) % bg:
             bg //= 2
     bd1c = 256 if d_model % 256 == 0 else None
