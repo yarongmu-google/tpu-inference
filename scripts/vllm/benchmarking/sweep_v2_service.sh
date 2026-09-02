@@ -69,7 +69,13 @@ case "$JAXV" in
      exit 1 ;;
 esac
 
-# Candidate lists. NOTE (2026-09-01): the GQA estimator is WRONG for
+# Candidate lists. NOTE (2026-09-01, rev 2): MNS and MNB are
+# PER-DP-RANK on this stack - global concurrency is 8x MNS and the
+# client must be driven at that concurrency (an --max-concurrency of
+# MNS measures the client throttle, not the server; the first sweep
+# made exactly that mistake). MNS=256 (2048 global) exceeds the
+# ~1023-seq pool and thrashes - proven, not worth re-running.
+# Older note: the GQA estimator is WRONG for
 # Qwen3.5-397B - the model is HYBRID (15 attn + 45 GDN/mamba layers
 # with per-SEQ state). Measured reality: at MNS=64 the compact-mamba
 # sizing engages (pool 9.4M tokens, concurrency 1023x); at MNS=512 it
@@ -83,7 +89,7 @@ esac
 # hybrid-aware mode.
 MML_LIST="${MML_LIST:-9216}"
 MNB_LIST="${MNB_LIST:-256 512 1024}"
-MNS_LIST="${MNS_LIST:-64 128 256}"
+MNS_LIST="${MNS_LIST:-64 128}"
 echo "grid: MML={$MML_LIST} MNB={$MNB_LIST} MNS={$MNS_LIST}"
 
 LIBTPU_FLAGS=' --xla_tpu_use_minor_sharding_for_major_trivial_input=true --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=false --xla_tpu_ars_combiner_threshold_in_bytes=0 --xla_tpu_enable_async_collective_merger=false --xla_tpu_check_legacy_constraints_in_reduce_scatter_legalizer=false'
@@ -185,7 +191,7 @@ for MML in $MML_LIST; do
           --backend vllm --port "$PORT" \
           --random-input-len="$IN_LEN" --random-output-len="$OUT_LEN" \
           --random-range-ratio="$RANGE_RATIO" \
-          --num-prompts="$NUM_PROMPTS" --max-concurrency="$MNS" \
+          --num-prompts="$NUM_PROMPTS" --max-concurrency="$((MNS * 8))" \
           --ignore-eos > "$CLOG" 2>&1
         if [ $? -eq 0 ]; then
           STATUS=ok
