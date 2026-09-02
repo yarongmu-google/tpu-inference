@@ -1,0 +1,220 @@
+
++ git rev-parse --short HEAD
+5506eb29d3
++ exit=0
+env preflight: jax 0.10.2 OK
+
+########## T=1024 fp8 tune ##########
+
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --wdtype=fp8 --tune --tokens=1024 --iters=10 --warmup=3
+WARNING 09-02 10:19:42 [tpu_platform.py:447] Pin memory is not supported on TPU.
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+INFO 09-02 10:19:46 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 09-02 10:19:46 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 09-02 10:19:46 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+devices=8  T=1024 (128/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
+weights/device = 1536 MiB
+v2 weights: e4m3 + per-channel scales -> 768 MiB/device (+ scales 8.5)
+WARNING 09-02 10:21:15 [tuned_block_sizes.py:423] [Fused MOE kernel] using default block sizes for key: (4096, 1024, 512, 10, 2, 2, 1024, 8): (128, 512, 1024, 2048, 64, 512, 1024, 2048)
+
+[tune] v1_ep_a2a baseline (its own tuned defaults): 4127.9 us
+[tune] max expert load = 36 -> capacity >= 64
+
+[tune] v02 stage 1: be x bg x capacity
+  be=2 bg=1 cap=64 bd1c=0 bd2c=0 bcT=0: 1657.7 us
+  be=2 bg=1 cap=128 bd1c=0 bd2c=0 bcT=0: 1987.9 us
+  be=2 bg=2 cap=64 bd1c=0 bd2c=0 bcT=0: 1410.5 us
+  be=2 bg=2 cap=128 bd1c=0 bd2c=0 bcT=0: 1941.6 us
+  be=2 bg=4 cap=64 bd1c=0 bd2c=0 bcT=0: 1384.3 us
+  be=2 bg=4 cap=128 bd1c=0 bd2c=0 bcT=0: failed (AssertionError: static VMEM need 64.0 MiB exceeds 64 MiB (weight block 6.0, be=2, bg=4 with 2x x-parity and 2*bg ohg-ring slots; try a smaller be, bg or cap)
+  be=2 bg=8 cap=64 bd1c=0 bd2c=0 bcT=0: 1374.0 us
+  be=2 bg=8 cap=128 bd1c=0 bd2c=0 bcT=0: failed (AssertionError: static VMEM need 86.0 MiB exceeds 64 MiB (weight block 6.0, be=2, bg=8 with 2x x-parity and 2*bg ohg-ring slots; try a smaller be, bg or cap)
+  be=4 bg=1 cap=64 bd1c=0 bd2c=0 bcT=0: 1369.7 us
+  be=4 bg=1 cap=128 bd1c=0 bd2c=0 bcT=0: failed (JaxRuntimeError: RESOURCE_EXHAUSTED: XLA:TPU compile permanent error. Ran out of memory in memory space vmem. Used 66.87M of 63.94M vmem. Exceeded vmem capac)
+  be=4 bg=2 cap=64 bd1c=0 bd2c=0 bcT=0: 1364.2 us
+  be=4 bg=2 cap=128 bd1c=0 bd2c=0 bcT=0: failed (AssertionError: static VMEM need 72.3 MiB exceeds 64 MiB (weight block 12.0, be=4, bg=2 with 2x x-parity and 2*bg ohg-ring slots; try a smaller be, bg or ca)
+  be=4 bg=4 cap=64 bd1c=0 bd2c=0 bcT=0: failed (AssertionError: static VMEM need 70.1 MiB exceeds 64 MiB (weight block 12.0, be=4, bg=4 with 2x x-parity and 2*bg ohg-ring slots; try a smaller be, bg or ca)
+  be=4 bg=4 cap=128 bd1c=0 bd2c=0 bcT=0: failed (AssertionError: static VMEM need 94.3 MiB exceeds 64 MiB (weight block 12.0, be=4, bg=4 with 2x x-parity and 2*bg ohg-ring slots; try a smaller be, bg or ca)
+  be=4 bg=8 cap=64 bd1c=0 bd2c=0 bcT=0: failed (AssertionError: static VMEM need 92.1 MiB exceeds 64 MiB (weight block 12.0, be=4, bg=8 with 2x x-parity and 2*bg ohg-ring slots; try a smaller be, bg or ca)
+  be=4 bg=8 cap=128 bd1c=0 bd2c=0 bcT=0: failed (AssertionError: static VMEM need 138.3 MiB exceeds 64 MiB (weight block 12.0, be=4, bg=8 with 2x x-parity and 2*bg ohg-ring slots; try a smaller be, bg or c)
+  be=8 bg=1 cap=64 bd1c=0 bd2c=0 bcT=0: failed (AssertionError: static VMEM need 73.5 MiB exceeds 64 MiB (weight block 24.0, be=8, bg=1 with 2x x-parity and 2*bg ohg-ring slots; try a smaller be, bg or ca)
+  be=8 bg=1 cap=128 bd1c=0 bd2c=0 bcT=0: failed (AssertionError: static VMEM need 89.0 MiB exceeds 64 MiB (weight block 24.0, be=8, bg=1 with 2x x-parity and 2*bg ohg-ring slots; try a smaller be, bg or ca)
+  be=8 bg=2 cap=64 bd1c=0 bd2c=0 bcT=0: failed (AssertionError: static VMEM need 84.5 MiB exceeds 64 MiB (weight block 24.0, be=8, bg=2 with 2x x-parity and 2*bg ohg-ring slots; try a smaller be, bg or ca)
+  be=8 bg=2 cap=128 bd1c=0 bd2c=0 bcT=0: failed (AssertionError: static VMEM need 111.0 MiB exceeds 64 MiB (weight block 24.0, be=8, bg=2 with 2x x-parity and 2*bg ohg-ring slots; try a smaller be, bg or c)
+  be=8 bg=4 cap=64 bd1c=0 bd2c=0 bcT=0: failed (AssertionError: static VMEM need 106.5 MiB exceeds 64 MiB (weight block 24.0, be=8, bg=4 with 2x x-parity and 2*bg ohg-ring slots; try a smaller be, bg or c)
+  be=8 bg=4 cap=128 bd1c=0 bd2c=0 bcT=0: failed (AssertionError: static VMEM need 155.0 MiB exceeds 64 MiB (weight block 24.0, be=8, bg=4 with 2x x-parity and 2*bg ohg-ring slots; try a smaller be, bg or c)
+  be=8 bg=8 cap=64 bd1c=0 bd2c=0 bcT=0: failed (AssertionError: static VMEM need 150.5 MiB exceeds 64 MiB (weight block 24.0, be=8, bg=8 with 2x x-parity and 2*bg ohg-ring slots; try a smaller be, bg or c)
+  be=8 bg=8 cap=128 bd1c=0 bd2c=0 bcT=0: failed (AssertionError: static VMEM need 243.0 MiB exceeds 64 MiB (weight block 24.0, be=8, bg=8 with 2x x-parity and 2*bg ohg-ring slots; try a smaller be, bg or c)
+[tune] v02 stage 2: gmm1 D-chunk (bd1c)
+  be=4 bg=2 cap=64 bd1c=128 bd2c=0 bcT=0: 1193.0 us
+  be=4 bg=2 cap=64 bd1c=256 bd2c=0 bcT=0: 1363.3 us
+  be=4 bg=2 cap=64 bd1c=512 bd2c=0 bcT=0: 1378.0 us
+  be=4 bg=2 cap=64 bd1c=1024 bd2c=0 bcT=0: 1361.2 us
+  be=4 bg=2 cap=64 bd1c=2048 bd2c=0 bcT=0: 1347.2 us
+[tune] v02 stage 3: gmm2 D-chunk (bd2c)
+  be=4 bg=2 cap=64 bd1c=128 bd2c=128 bcT=0: 1207.1 us
+  be=4 bg=2 cap=64 bd1c=128 bd2c=256 bcT=0: 1197.6 us
+  be=4 bg=2 cap=64 bd1c=128 bd2c=512 bcT=0: 1207.5 us
+  be=4 bg=2 cap=64 bd1c=128 bd2c=1024 bcT=0: 1206.6 us
+  be=4 bg=2 cap=64 bd1c=128 bd2c=2048 bcT=0: 1225.1 us
+[tune] v02 stage 4: combine T-chunk (bcT)
+  be=4 bg=2 cap=64 bd1c=128 bd2c=0 bcT=8: 6320.9 us
+  be=4 bg=2 cap=64 bd1c=128 bd2c=0 bcT=16: 3166.0 us
+  be=4 bg=2 cap=64 bd1c=128 bd2c=0 bcT=32: 2426.0 us
+  be=4 bg=2 cap=64 bd1c=128 bd2c=0 bcT=64: 1666.3 us
+  be=4 bg=2 cap=64 bd1c=128 bd2c=0 bcT=128: 1231.1 us
+  be=4 bg=2 cap=64 bd1c=128 bd2c=0 bcT=256: 1220.6 us
+[tune] v02 WINNER: --be=4 --bg=2 --capacity=64 --bd1c=128 --bd2c=0 --bcT=0 -> 1193.0 us
++ exit=0
+
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --wdtype=fp8 --variants=v02s --tokens=1024 --iters=15 --warmup=3
+WARNING 09-02 10:23:49 [tpu_platform.py:447] Pin memory is not supported on TPU.
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+INFO 09-02 10:23:52 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 09-02 10:23:52 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 09-02 10:23:52 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+devices=8  T=1024 (128/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
+weights/device = 1536 MiB
+v2 weights: e4m3 + per-channel scales -> 768 MiB/device (+ scales 8.5)
+max|v2_serving_entry[fp8] - v2_tp_inkernel_ag[fp8]| = 2.275e+00
+
+variant                              min us  median us
+v2_tp_inkernel_ag[fp8]               1195.9     1217.5
+v2_serving_entry[fp8]                1218.3     1251.2
++ exit=0
+
+########## T=1280 fp8 tune ##########
+
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --wdtype=fp8 --tune --tokens=1280 --iters=10 --warmup=3
+WARNING 09-02 10:25:34 [tpu_platform.py:447] Pin memory is not supported on TPU.
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+INFO 09-02 10:25:37 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 09-02 10:25:37 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 09-02 10:25:37 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+devices=8  T=1280 (160/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
+weights/device = 1536 MiB
+v2 weights: e4m3 + per-channel scales -> 768 MiB/device (+ scales 8.5)
+WARNING 09-02 10:27:06 [tuned_block_sizes.py:423] [Fused MOE kernel] using default block sizes for key: (4096, 1024, 512, 10, 2, 2, 1280, 8): (128, 512, 1024, 2048, 64, 512, 1024, 2048)
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 843, in <module>
+    main()
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 658, in main
+    base_us, _ = _time(base_fn, iters=args.iters,
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 211, in _time
+    jax.block_until_ready(fn())
+                          ^^^^
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 344, in run_v1
+    return fused_ep_moe(
+           ^^^^^^^^^^^^^
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v1/kernel.py", line 1503, in fused_ep_moe
+    raise ValueError(
+ValueError: Expected local_num_tokens=160 to be aligned to bt=128.
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
++ exit=1
+
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --wdtype=fp8 --variants=v02s --tokens=1280 --iters=15 --warmup=3
+WARNING 09-02 10:27:11 [tpu_platform.py:447] Pin memory is not supported on TPU.
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+INFO 09-02 10:27:14 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 09-02 10:27:14 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 09-02 10:27:14 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+devices=8  T=1280 (160/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
+weights/device = 1536 MiB
+v2 weights: e4m3 + per-channel scales -> 768 MiB/device (+ scales 8.5)
+max|v2_serving_entry[fp8] - v2_tp_inkernel_ag[fp8]| = 2.731e+00
+
+variant                              min us  median us
+v2_tp_inkernel_ag[fp8]               1335.0     1362.5
+v2_serving_entry[fp8]                1412.7     1442.5
++ exit=0
+
+########## T=1536 fp8 tune ##########
+
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --wdtype=fp8 --tune --tokens=1536 --iters=10 --warmup=3
+WARNING 09-02 10:29:00 [tpu_platform.py:447] Pin memory is not supported on TPU.
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+INFO 09-02 10:29:04 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 09-02 10:29:04 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 09-02 10:29:04 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+devices=8  T=1536 (192/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
+weights/device = 1536 MiB
+v2 weights: e4m3 + per-channel scales -> 768 MiB/device (+ scales 8.5)
+WARNING 09-02 10:30:33 [tuned_block_sizes.py:423] [Fused MOE kernel] using default block sizes for key: (4096, 1024, 512, 10, 2, 2, 1536, 8): (128, 512, 1024, 2048, 64, 512, 1024, 2048)
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 843, in <module>
+    main()
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 658, in main
+    base_us, _ = _time(base_fn, iters=args.iters,
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 211, in _time
+    jax.block_until_ready(fn())
+                          ^^^^
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 344, in run_v1
+    return fused_ep_moe(
+           ^^^^^^^^^^^^^
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v1/kernel.py", line 1503, in fused_ep_moe
+    raise ValueError(
+ValueError: Expected local_num_tokens=192 to be aligned to bt=128.
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
++ exit=1
+
++ python -m tpu_inference.kernels.fused_moe.v2.bench_decode --wdtype=fp8 --variants=v02s --tokens=1536 --iters=15 --warmup=3
+WARNING 09-02 10:30:38 [tpu_platform.py:447] Pin memory is not supported on TPU.
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+INFO 09-02 10:30:41 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 09-02 10:30:41 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 09-02 10:30:41 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 843, in <module>
+    main()
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 798, in main
+    outs = {name: np.asarray(fn(), np.float32)
+                             ^^^^
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 563, in <lambda>
+    return lambda: jitted(*operands)
+                   ^^^^^^^^^^^^^^^^^
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 530, in fn
+    return fused_moe_decode_tp_fused(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/decode_kernel.py", line 1346, in fused_moe_decode_tp_fused
+    assert vmem_need <= vmem_limit_bytes, (
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: static VMEM need 64.9 MiB exceeds 64 MiB (weight block 12.0, be=4, bg=1 with 2x x-parity and 2*bg ohg-ring slots; try a smaller be, bg or capacity)
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+devices=8  T=1536 (192/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
+weights/device = 1536 MiB
+v2 weights: e4m3 + per-channel scales -> 768 MiB/device (+ scales 8.5)
++ exit=1
+
+log: tmp/bigT_tune.log
+next: paste each T's WINNER into _T_BLOCKS in decode_kernel.py's
+serving entry (and bd1c/bd2c/bcT if the winners moved off
+256/128/0), re-run the v02s rows at the winners, then line 4c.
