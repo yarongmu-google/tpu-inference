@@ -12,7 +12,7 @@ BS=scripts/vllm/benchmarking/benchmark_serving.py
 # --max-num-seqs or the client throttles itself (MNS and MNB are
 # PER-DP-RANK; global concurrency is 8x). Default 512 matches the
 # MNS=64 lines; for line 4c (MNS=128) run: CONC=1024 <paste line>.
-
+CONC=1024
 L=tmp/vllm_logs/client_fp8_mix_$(date +%Y%m%d_%H%M%S).log; mkdir -p tmp/vllm_logs; ENABLE_PALLAS_TP_MOE=1  python $BS --model Qwen/Qwen3.5-397B-A17B-FP8 --dataset-name random --backend vllm --random-input-len=1024 --random-output-len=8192 --num-prompts=2048 --random-range-ratio=0.8 --ignore-eos  --max-concurrency=${CONC:-512} 2>&1 | tee "$L"; xz -9 -T0 "$L"
 # bf16 3-way client (same decode-heavy shape, 30B model)
 # L=tmp/vllm_logs/client_bf16_mix_$(date +%Y%m%d_%H%M%S).log; mkdir -p tmp/vllm_logs; python $BS --model Qwen/Qwen3-30B-A3B --dataset-name random --backend vllm --random-input-len=1024 --random-output-len=8192 --num-prompts=2048 --random-range-ratio=0.8 --ignore-eos --max-concurrency=${CONC:-512} 2>&1 | tee "$L"; xz -9 -T0 "$L"
