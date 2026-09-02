@@ -1,122 +1,32 @@
-WARNING 09-01 16:54:50 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 09-01 17:10:59 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 09-01 16:54:53 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 09-01 16:54:53 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 09-01 16:54:54 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
-Traceback (most recent call last):
-  File "<frozen runpy>", line 198, in _run_module_as_main
-  File "<frozen runpy>", line 88, in _run_code
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 776, in <module>
-    main()
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 731, in main
-    outs = {name: np.asarray(fn(), np.float32)
-                             ^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 408, in run_rs
-    return fused_moe_func_rs(
-           ^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/fused_moe_rs.py", line 501, in fused_moe_func_rs
-    result = expert_parallel_gmm_rs(
-             ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/fused_moe_rs.py", line 390, in expert_parallel_gmm_rs
-    result = jax.shard_map(
-             ^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/fused_moe_rs.py", line 277, in moe_gmm_local_rs_nodedup
-    out_buf = gmm_v2_fused_rs_nodedup(
-              ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 1843, in gmm_v2_fused_rs
-    result = pl.pallas_call(
-             ^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/pallas_call.py", line 1329, in wrapped
-    jaxpr, consts = _trace_kernel_to_jaxpr(
-                    ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/pallas_call.py", line 805, in _trace_kernel_to_jaxpr
-    closed_jaxpr, out_avals = pe.trace_to_jaxpr(
-                              ^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 1117, in kernel_main_fused_rs
-    lax.fori_loop(0, max_num_gm, gm_loop_body, None)
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 784, in gm_loop_body
-    @pl.when(is_active)
-     ^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/helpers.py", line 86, in _wrapped
-    conditionals.cond(condition, f, lambda: None)
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 858, in _
-    @pl.when(gm_id == 0)
-     ^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/helpers.py", line 86, in _wrapped
-    conditionals.cond(condition, f, lambda: None)
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 861, in _
-    start_w1_dma(_i, expert_id, _i // num_k1, _i % num_k1)
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 576, in start_w1_dma
-    src_ref=w1_scale_ref.at[
-            ^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/state/indexing.py", line 186, in from_indices_shape
-    raise ValueError("`indices` must not be longer than `shape`: "
-ValueError: `indices` must not be longer than `shape`: indices=(JitTracer(int32[]), Slice(start=0, size=1, stride=1), slice(None, None, None), Slice(start=0, size=2048, stride=1)), shape=(64, 1, 2048)
---------------------
-For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+INFO 09-01 17:11:03 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 09-01 17:11:03 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 09-01 17:11:03 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=64 (8/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
-WARNING 09-01 16:56:25 [tpu_platform.py:447] Pin memory is not supported on TPU.
+
+variant                              min us  median us
+rs_ep_fused[fp8]                      731.5      769.2
+rs_ep_fused[fp8]                 device-only per dispatch: TC min      0.5 us  median    332.5 us  | SC median   30.0 us  (10 dispatches)
+
+traces under tmp/kprof3/fp8_rs_t64/<variant>; open in xprof/tensorboard - v2 per-stage spans are named moe_*
+WARNING 09-01 17:12:42 [tpu_platform.py:447] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 09-01 16:56:28 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 09-01 16:56:28 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 09-01 16:56:28 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
-Traceback (most recent call last):
-  File "<frozen runpy>", line 198, in _run_module_as_main
-  File "<frozen runpy>", line 88, in _run_code
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 776, in <module>
-    main()
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 731, in main
-    outs = {name: np.asarray(fn(), np.float32)
-                             ^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/fused_moe/v2/bench_decode.py", line 408, in run_rs
-    return fused_moe_func_rs(
-           ^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/fused_moe_rs.py", line 501, in fused_moe_func_rs
-    result = expert_parallel_gmm_rs(
-             ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/fused_moe_rs.py", line 390, in expert_parallel_gmm_rs
-    result = jax.shard_map(
-             ^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/fused_moe_rs.py", line 277, in moe_gmm_local_rs_nodedup
-    out_buf = gmm_v2_fused_rs_nodedup(
-              ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 1843, in gmm_v2_fused_rs
-    result = pl.pallas_call(
-             ^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/pallas_call.py", line 1329, in wrapped
-    jaxpr, consts = _trace_kernel_to_jaxpr(
-                    ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/pallas_call.py", line 805, in _trace_kernel_to_jaxpr
-    closed_jaxpr, out_avals = pe.trace_to_jaxpr(
-                              ^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 1117, in kernel_main_fused_rs
-    lax.fori_loop(0, max_num_gm, gm_loop_body, None)
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 784, in gm_loop_body
-    @pl.when(is_active)
-     ^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/helpers.py", line 86, in _wrapped
-    conditionals.cond(condition, f, lambda: None)
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 858, in _
-    @pl.when(gm_id == 0)
-     ^^^^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/helpers.py", line 86, in _wrapped
-    conditionals.cond(condition, f, lambda: None)
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 861, in _
-    start_w1_dma(_i, expert_id, _i // num_k1, _i % num_k1)
-  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/experimental/fused_moe/gmm_fused_rs_nodedup.py", line 576, in start_w1_dma
-    src_ref=w1_scale_ref.at[
-            ^^^^^^^^^^^^^^^^
-  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/state/indexing.py", line 186, in from_indices_shape
-    raise ValueError("`indices` must not be longer than `shape`: "
-ValueError: `indices` must not be longer than `shape`: indices=(JitTracer(int32[]), Slice(start=0, size=1, stride=1), slice(None, None, None), Slice(start=0, size=2048, stride=1)), shape=(64, 1, 2048)
---------------------
-For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+INFO 09-01 17:12:46 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 09-01 17:12:46 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 09-01 17:12:46 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
 devices=8  T=512 (64/chip)  D=4096  E=512  I=1024  k=10  dtype=bfloat16
 weights/device = 1536 MiB
+
+variant                              min us  median us
+rs_ep_fused[fp8]                      861.5      891.1
+rs_ep_fused[fp8]                 device-only per dispatch: TC min      0.5 us  median    453.3 us  | SC median   40.0 us  (10 dispatches)
+
+traces under tmp/kprof3/fp8_rs_t512/<variant>; open in xprof/tensorboard - v2 per-stage spans are named moe_*
