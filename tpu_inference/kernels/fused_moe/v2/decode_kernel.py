@@ -1523,14 +1523,20 @@ def fused_moe_decode_tp_serving(
     # winners (the tuner prunes candidates through the kernel's VMEM
     # assert, so anything it prints is legal).
     _T_BLOCKS = (
-        # (padded_tokens <=, fp8 (be, bg), bf16 (be, bg))
-        (512, (8, 2), (4, 4)),
-        (1536, (4, 1), (4, 1)),   # refill from run_bigT_tune winners
+        # (padded_tokens <=, fp8 (be, bg, bd1c, bd2c),
+        #                    bf16 (be, bg, bd1c, bd2c))
+        (512, (8, 2, 256, 128), (4, 4, 256, 128)),
+        # T=1024 tuner winner 2026-09-02: 1193us wall vs 1370 at the
+        # old fallback (bd2c None = whole-D gmm2)
+        (1024, (4, 2, 128, None), (4, 1, 256, 128)),
+        # T=1536: (4,1) misses the VMEM budget by 0.9 MiB - (2,1) is
+        # the known-fitting shape until run_bigT_tune refills it
+        (1536, (2, 1, 128, None), (2, 1, 256, 128)),
     )
-    d_be, d_bg = 4, 1             # beyond the table: smallest windows
+    d_be, d_bg, d_b1, d_b2 = 2, 1, None, None   # beyond the table
     for _t_cap, _blk8, _blk16 in _T_BLOCKS:
         if padded_tokens <= _t_cap:
-            d_be, d_bg = _blk8 if fp8 else _blk16
+            d_be, d_bg, d_b1, d_b2 = _blk8 if fp8 else _blk16
             break
     if be is None:
         be = d_be
@@ -1540,8 +1546,8 @@ def fused_moe_decode_tp_serving(
         bg = d_bg
         while (num_experts // be) % bg:
             bg //= 2
-    bd1c = 256 if d_model % 256 == 0 else None
-    bd2c = 128 if d_model % 128 == 0 else None
+    bd1c = d_b1 if (d_b1 and d_model % d_b1 == 0) else None
+    bd2c = d_b2 if (d_b2 and d_model % d_b2 == 0) else None
     # bf16 winner chunks the combine at 256 token columns; only legal
     # when the padded T divides (small serving buckets fall back to
     # the one-shot combine, which is fine at their size)

@@ -36,9 +36,12 @@ esac
 
 BENCH="python -m tpu_inference.kernels.fused_moe.v2.bench_decode"
 
-for T in 1024 1280 1536; do
+# 1024 done (WINNER be=4 bg=2 cap=64 bd1c=128 bd2c=0 -> 1193us);
+# --variants=v02 skips the v1 baseline, whose bt=128 alignment
+# rejects 160/192 rows per chip and killed the 1280/1536 tunes
+for T in 1280 1536; do
   echo; echo "########## T=$T fp8 tune ##########"
-  run $BENCH --wdtype=fp8 --tune --tokens=$T --iters=10 --warmup=3
+  run $BENCH --wdtype=fp8 --tune --variants=v02 --tokens=$T --iters=10 --warmup=3
   # baseline row at the CURRENT serving-entry blocks for the delta
   run $BENCH --wdtype=fp8 --variants=v02s --tokens=$T --iters=15 --warmup=3
 done
