@@ -19,7 +19,8 @@
 # Local dev gate: --export lowers for the TPU target on CPU (the
 # same trick as the kernel's lowering tests) - trace/lowering bugs
 # surface without hardware. Run on the VM (serving env) for numbers:
-#   python tmp/probe_mrb_combine.py
+#   python tmp/probe_mrb_combine.py 2>&1 | tee tmp/mrb_probe.log
+#   (then: git add tmp/ && commit "mrb probe." && push)
 #   python tmp/probe_mrb_combine.py --export   # local, no TPU
 
 import argparse
