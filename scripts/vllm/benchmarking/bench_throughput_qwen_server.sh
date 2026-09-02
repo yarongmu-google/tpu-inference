@@ -2,6 +2,11 @@
 # installed, so the server runs from anywhere; the log path tmp/vllm_logs
 # is repo-relative so it can be pushed). When the server exits (ctrl-C),
 # the line xz-compresses its own log - then: git add tmp/vllm_logs.
+#
+# MULTI-SLICE note: when any line here grows into a multi-slice
+# workload, prepend TPU_RUNTIME_METRICS_PORTS=8431,8432,8433,8434 so
+# each slice's runtime metrics server gets its own port (single-slice
+# lines don't need it).
 # Every line is standalone copy-paste-able and tees its full output to
 # tmp/vllm_logs/<label>_<timestamp>.log - server startup errors (mesh
 # asserts, OOM, kernel fallbacks like "[MoE]: using the TP decode
