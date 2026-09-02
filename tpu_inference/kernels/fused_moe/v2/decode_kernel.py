@@ -1526,12 +1526,12 @@ def fused_moe_decode_tp_serving(
         # (padded_tokens <=, fp8 (be, bg, bd1c, bd2c),
         #                    bf16 (be, bg, bd1c, bd2c))
         (512, (8, 2, 256, 128), (4, 4, 256, 128)),
-        # T=1024 tuner winner 2026-09-02: 1193us wall vs 1370 at the
-        # old fallback (bd2c None = whole-D gmm2)
+        # big-T rows: fp8 tuner winners 2026-09-02 (1193 / 1426 /
+        # 1981 us wall; bd2c None = whole-D gmm2). bf16 big-T is
+        # untuned - conservative fitting blocks.
         (1024, (4, 2, 128, None), (4, 1, 256, 128)),
-        # T=1536: (4,1) misses the VMEM budget by 0.9 MiB - (2,1) is
-        # the known-fitting shape until run_bigT_tune refills it
-        (1536, (2, 1, 128, None), (2, 1, 256, 128)),
+        (1280, (2, 4, 128, 2048), (2, 1, 256, 128)),
+        (1536, (2, 1, 128, 256), (2, 1, 256, 128)),
     )
     d_be, d_bg, d_b1, d_b2 = 2, 1, None, None   # beyond the table
     for _t_cap, _blk8, _blk16 in _T_BLOCKS:
