@@ -1,0 +1,85 @@
+
++ git rev-parse --short HEAD
+c2a4f65df4
++ exit=0
+
++ python tmp/probe_mrb_combine.py --variant D_coexist --iters 1
+Traceback (most recent call last):
+  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/compiler.py", line 353, in backend_compile_and_load
+    return backend.compile_and_load(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+jax.errors.JaxRuntimeError: INTERNAL: Mosaic failed to compile TPU kernel with MLIR module name `<no name>` HLO name `tpu_custom_call.1`: Low-level MXU operations cannot be mixed in the same program with high-level operations
+
+at location: loc("dot_general:"("dot_general/dot_general"(callsite("kernel_coexist"("/home/ymu_google_com/tpu-inference/tmp/probe_mrb_combine.py":73:11 to 76:43) at "kernel_coexist"("/home/ymu_google_com/tpu-inference/tmp/probe_mrb_combine.py":73:11 to 76:43)))))
+
+The MLIR operation involved:
+  %391 = "tpu.matmul"(%389, %390, %0) <{dimension_numbers = #tpu.dot_dimension_numbers<[1], [0], [0], [1], [0, 0, 1, 1], [], []>, transpose_lhs = false, transpose_lhs_hint = false, transpose_rhs = false}> : (vector<512x512xf8E4M3FN>, vector<512x256xf8E4M3FN>, vector<512x256xf32>) -> vector<512x256xf32>
+
+Please report a bug at: https://github.com/jax-ml/jax/issues/new/choose
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/ymu_google_com/tpu-inference/tmp/probe_mrb_combine.py", line 143, in <module>
+    main()
+  File "/home/ymu_google_com/tpu-inference/tmp/probe_mrb_combine.py", line 126, in main
+    outs[name] = np.asarray(jax.block_until_ready(jfn(lhs, rhs)))
+                                                  ^^^^^^^^^^^^^
+  File "/home/ymu_google_com/tpu-inference/tmp/probe_mrb_combine.py", line 73, in kernel_coexist
+    tail = jax.lax.dot_general(
+  File "/home/ymu_google_com/tpu-inference/tmp/probe_mrb_combine.py", line 73, in dot_general/dot_general"(callsite("kernel_coexist
+    tail = jax.lax.dot_general(
+jax._src.pallas.mosaic.error_handling.MosaicError: INTERNAL: Mosaic failed to compile TPU kernel with MLIR module name `<no name>` HLO name `tpu_custom_call.1`: Low-level MXU operations cannot be mixed in the same program with high-level operations
+
+The MLIR operation involved:
+  %391 = "tpu.matmul"(%389, %390, %0) <{dimension_numbers = #tpu.dot_dimension_numbers<[1], [0], [0], [1], [0, 0, 1, 1], [], []>, transpose_lhs = false, transpose_lhs_hint = false, transpose_rhs = false}> : (vector<512x512xf8E4M3FN>, vector<512x256xf8E4M3FN>, vector<512x256xf32>) -> vector<512x256xf32>
+
+Please report a bug at: https://github.com/jax-ml/jax/issues/new/choose
+
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
++ exit=1
+--- D dump files (last = frontier pass) ---
+1788383411321801965-0004-mosaic-dump-anonymous-post-infer-memref-space.txt
+1788383411321801965-0005-mosaic-dump-anonymous-post-canonicalize-memory-space.txt
+1788383411321801965-0006-mosaic-dump-anonymous-post-canonicalize-operations.txt
+1788383411321801965-0007-mosaic-dump-anonymous-post-pre-canon-optimization.txt
+1788383411321801965-0008-mosaic-dump-anonymous-post-canonicalize-mosaic-failed.txt
+
++ python tmp/probe_mrb_combine.py --variant A_dot_chunked --iters 2
+A_dot_chunked: min    198.5 us  median    392.0 us
++ exit=0
+
++ python tmp/dump_histogram.py tmp/mosaic_A/1788383417827951898-0021-mosaic-dump-anonymous-post-finalize-llo.txt
+
+===== tmp/mosaic_A/1788383417827951898-0021-mosaic-dump-anonymous-post-finalize-llo.txt
+total ops: 57347
+
+-- <toplevel>: 57347 ops
+        24320  llo.vadd.f32
+        16384  llo.vmatres
+         6144  llo.vector_load
+         4097  llo.constant
+         2048  llo.vmatprep.mubr
+         2048  llo.vmatmul.mubr
+         1024  llo.vmatprep.subr
+         1024  llo.vlatchi
+          128  llo.vdwg
+          128  llo.vector_store
+            2  llo.saddr_scaled
++ exit=0
+--- verdict lines (A: 64 chunks -> ~63 drains+adds if NOT
+--- fused; few vadd.f32 = Mosaic MRB-accumulates in isolation) ---
+        24320  llo.vadd.f32
+        16384  llo.vmatres
+         2048  llo.vmatprep.mubr
+         2048  llo.vmatmul.mubr
+         1024  llo.vmatprep.subr
+
++ bash -c tar -c tmp/mosaic_D tmp/mosaic_A | xz -9 -T0 > tmp/mrb_dumps.tar.xz; ls -lh tmp/mrb_dumps.tar.xz; rm -rf tmp/mosaic_D tmp/mosaic_A
+-rw-rw-r-- 1 ymu_google_com ymu_google_com 661K Sep  2 14:10 tmp/mrb_dumps.tar.xz
++ exit=0
+
+log: tmp/mrb_dumps.log  histogram: tmp/mrb_A_histogram.txt
+then: git add tmp/ && git commit -m 'mrb dumps.' && git push

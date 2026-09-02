@@ -1,0 +1,16 @@
+
+===== tmp/mosaic_A/1788383417827951898-0021-mosaic-dump-anonymous-post-finalize-llo.txt
+total ops: 57347
+
+-- <toplevel>: 57347 ops
+        24320  llo.vadd.f32
+        16384  llo.vmatres
+         6144  llo.vector_load
+         4097  llo.constant
+         2048  llo.vmatprep.mubr
+         2048  llo.vmatmul.mubr
+         1024  llo.vmatprep.subr
+         1024  llo.vlatchi
+          128  llo.vdwg
+          128  llo.vector_store
+            2  llo.saddr_scaled
