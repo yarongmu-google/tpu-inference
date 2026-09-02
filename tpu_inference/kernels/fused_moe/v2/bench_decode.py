@@ -287,9 +287,11 @@ def main() -> None:
                         "--xla_force_host_platform_device_count=8")
     args = parser.parse_args()
     if args.interpret:
-        # v1 and rs drive real ICI writes; neither survives interpret mode
+        # v1/rs drive real ICI writes and the gmm rows call TPU pallas
+        # kernels; none survives interpret mode
         args.variants = ",".join(v for v in args.variants.split(",")
-                                 if v not in ("v1", "rs"))
+                                 if v not in ("v1", "rs", "gmm_ep",
+                                              "gmm_tp"))
 
     t, d, e, i, k = (args.tokens, args.hidden, args.experts,
                      args.intermediate, args.top_k)
@@ -415,6 +417,66 @@ def main() -> None:
                 gate_rs, k, True, mesh_rs, "silu", "softmax")
 
         variants["rs_ep_fused" + ("[fp8]" if fp8 else "")] = run_rs
+
+    if "gmm_ep" in args.variants or "gmm_tp" in args.variants:
+        # The STOCK XLA GMM path (fused_moe_func) - what serving's
+        # GMM_EP / GMM_TP backends actually run. This is the baseline
+        # every hand-written kernel must beat, and it was never on the
+        # device-time table: the serving A/B could only compare end to
+        # end. Same serving contract as the other rows (token-sharded
+        # in/out, per-channel fp8 scales in the 4D [E,1,1,N] layout its
+        # docstring specifies); the legacy ("data","model") mesh is
+        # what production GMM runs on. moe_chunk_size / onehot
+        # threshold mirror the serving env values.
+        from tpu_inference.layers.common.fused_moe_gmm import \
+            fused_moe_func
+
+        mesh_g = Mesh(np.array(devices).reshape(1, p), ("data", "model"))
+        tok_g = jax.device_put(
+            tokens, NamedSharding(mesh_g, P(("data", "model"), None)))
+        gate_g = jax.device_put(
+            gating, NamedSharding(mesh_g, P(("data", "model"), None)))
+        w1_flat_g = w1.reshape(e, d, 2 * i)
+        if fp8:
+            w1_gq, w1_gs = _qpc(w1_flat_g, 1)     # scale [E,1,2I]
+            w2_gq, w2_gs = _qpc(w2, 1)            # scale [E,1,D]
+            w1_gs = w1_gs.reshape(e, 1, 1, -1)
+            w2_gs = w2_gs.reshape(e, 1, 1, -1)
+        else:
+            w1_gq, w2_gq = w1_flat_g, w2
+            w1_gs = w2_gs = None
+
+        def _gmm_variant(name: str, use_ep: bool, wspecs) -> None:
+            (s_w1, s_w2, s_s1, s_s2) = wspecs
+            w1x = jax.device_put(w1_gq, NamedSharding(mesh_g, s_w1))
+            w2x = jax.device_put(w2_gq, NamedSharding(mesh_g, s_w2))
+            s1 = (None if w1_gs is None else
+                  jax.device_put(w1_gs, NamedSharding(mesh_g, s_s1)))
+            s2 = (None if w2_gs is None else
+                  jax.device_put(w2_gs, NamedSharding(mesh_g, s_s2)))
+
+            def fn(tok, gate, a, b, sa, sb):
+                return fused_moe_func(
+                    tok, a, b, sa, sb, None, None, gate, k, True,
+                    mesh_g, use_ep, "silu", "softmax",
+                    onehot_moe_permute_threshold=32768,
+                    moe_chunk_size=256)
+
+            jitted = jax.jit(fn)
+            variants[name + ("[fp8]" if fp8 else "")] = (
+                lambda: jitted(tok_g, gate_g, w1x, w2x, s1, s2))
+
+        if "gmm_ep" in args.variants:
+            _gmm_variant(
+                "gmm_ep_xla", True,
+                (P("model", None, None), P("model", None, None),
+                 P("model", None, None, None),
+                 P("model", None, None, None)))
+        if "gmm_tp" in args.variants:
+            _gmm_variant(
+                "gmm_tp_xla", False,
+                (P(None, None, "model"), P(None, "model", None),
+                 P(None, None, None, "model"), P(None, None, None, None)))
 
     # env rows need the mesh + token shards but not the kernel
     v2_selected = "v02" in args.variants or "env" in args.variants

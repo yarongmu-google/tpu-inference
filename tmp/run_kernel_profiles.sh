@@ -77,6 +77,15 @@ for T in 64 512; do
       --profile-dir=tmp/kprof/fp8_rs_t${T}
   run $BENCH --wdtype=fp8 --variants=v02s --tokens=$T --iters=8 --warmup=3 \
       $FP8_FLAGS --profile-dir=tmp/kprof/fp8_v02s_t${T}
+
+  # the STOCK XLA GMM path - the serving baseline no hand-written
+  # kernel table ever included: is the default actually slower?
+  for GV in gmm_ep gmm_tp; do
+    run $BENCH --variants=$GV --tokens=$T --iters=8 --warmup=3 \
+        --profile-dir=tmp/kprof/bf16_${GV}_t${T}
+    run $BENCH --wdtype=fp8 --variants=$GV --tokens=$T --iters=8 --warmup=3 \
+        --profile-dir=tmp/kprof/fp8_${GV}_t${T}
+  done
 done
 
 echo
