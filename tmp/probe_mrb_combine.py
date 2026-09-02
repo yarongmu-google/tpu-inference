@@ -92,6 +92,10 @@ def main():
     p.add_argument("--export", action="store_true",
                    help="lower for TPU on CPU; no execution")
     p.add_argument("--iters", type=int, default=30)
+    p.add_argument("--variant", default="",
+                   help="run only this variant (e.g. D_coexist under a "
+                   "mosaic dump: the per-pass dump files show how far "
+                   "the pipeline got before the mixing check fired)")
     a = p.parse_args()
 
     rng = np.random.default_rng(0)
@@ -105,6 +109,8 @@ def main():
         "C_mrb_2mxu": build(kernel_mrb, mxus=2),
         "D_coexist": build(kernel_coexist),
     }
+    if a.variant:
+        variants = {a.variant: variants[a.variant]}
 
     if a.export:
         for name, fn in variants.items():
@@ -125,10 +131,12 @@ def main():
             times.append(time.perf_counter() - t0)
         print(f"{name}: min {min(times)*1e6:8.1f} us  "
               f"median {sorted(times)[len(times)//2]*1e6:8.1f} us")
-    ref = outs["A_dot_chunked"]
-    for name in ("B_mrb_1mxu", "C_mrb_2mxu"):
-        d = np.max(np.abs(outs[name] - ref))
-        print(f"max|{name} - A| = {d:.3e}")
+    if "A_dot_chunked" in outs:
+        ref = outs["A_dot_chunked"]
+        for name in ("B_mrb_1mxu", "C_mrb_2mxu"):
+            if name in outs:
+                d = np.max(np.abs(outs[name] - ref))
+                print(f"max|{name} - A| = {d:.3e}")
 
 
 if __name__ == "__main__":
