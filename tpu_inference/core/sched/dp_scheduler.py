@@ -754,6 +754,15 @@ class DPScheduler(SchedulerInterface):
 
         if self._batch_prefills:
             self._pending_new_requests.append(request)
+            import os as _os
+            if _os.environ.get("VLLM_ADMISSION_DEBUG") == "1":
+                logger.info(
+                    "[admission-debug] DP pending buffer: %d held "
+                    "(flush at %d, timeout %dms) - batch-prefill "
+                    "quantizes admission into waves",
+                    len(self._pending_new_requests),
+                    self._batch_prefill_threshold,
+                    self._batch_prefill_flush_timeout_ms)
             self._try_flush_pending()
             return
 
@@ -769,6 +778,11 @@ class DPScheduler(SchedulerInterface):
 
     def _flush_pending(self) -> None:
         """Drain the pending reqs."""
+        import os as _os
+        if (_os.environ.get("VLLM_ADMISSION_DEBUG") == "1"
+                and self._pending_new_requests):
+            logger.info("[admission-debug] DP flush: routing %d pending",
+                        len(self._pending_new_requests))
         pending = self._pending_new_requests
         self._pending_new_requests = []
         self._batch_prefill_last_flush = time()
