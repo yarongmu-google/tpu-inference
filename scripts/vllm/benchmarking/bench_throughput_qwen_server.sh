@@ -93,6 +93,18 @@ L=tmp/vllm_logs/fp8_v2_tp_104s_$(date +%Y%m%d_%H%M%S).log; mkdir -p tmp/vllm_log
 # any production claim.
 L=tmp/vllm_logs/fp8_v2_tp_128s_bf16state_$(date +%Y%m%d_%H%M%S).log; mkdir -p tmp/vllm_logs; echo "CFG label=fp8_v2_tp_128s_bf16state commit=$(git rev-parse --short HEAD)" | tee "$L"; MODEL_IMPL_TYPE=vllm USE_MOE_TP_DECODE_KERNEL=1 MOE_TP_DECODE_MAX_TOKENS=1024 NEW_MODEL_DESIGN=1 ATTN_BUCKETIZED_NUM_REQS=true ATTN_CUSTOM_NUM_REQS_BUCKETS=128,256,512,1024 ONEHOT_MOE_PERMUTE_THRESHOLD=32768 VLLM_MOE_CHUNK_SIZE=256 LIBTPU_INIT_ARGS=' --xla_tpu_use_minor_sharding_for_major_trivial_input=true --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=false --xla_tpu_ars_combiner_threshold_in_bytes=0 --xla_tpu_enable_async_collective_merger=false --xla_tpu_check_legacy_constraints_in_reduce_scatter_legalizer=false' vllm serve Qwen/Qwen3.5-397B-A17B-FP8 --max-model-len=9216 --max-num-batched-tokens=256 --max-num-seqs=128 --no-enable-prefix-caching --gpu-memory-utilization=0.88 --tensor-parallel-size=8 --async-scheduling --port=8000 --language-model-only --enable-auto-tool-choice --tool-call-parser=qwen3_coder --reasoning-parser=qwen3 '--limit-mm-per-prompt={"image":0, "video": 0}' --kv-cache-dtype=fp8 --mamba-ssm-cache-dtype=bfloat16 '--additional_config={"sharding":{"sharding_strategy": {"enable_dp_attention": true, "attn_dp_size": 8}}}' --block-size=256 2>&1 | tee -a "$L"; cp tmp/vllm_server_stats.csv "${L%.log}_stats.csv" 2>/dev/null; xz -9 -T0 "$L"
 
+# fp8 line 4f: bf16 state at ITS OWN fixed point - MNS=152/rank
+# (1216 global; ceiling 1209, +0.6% inside the h=1.35 margin).
+# 4d ran bf16 at 1024 = under its ceiling; this cashes the rest.
+# Decode pads 160/rank -> 1280 global (tuned block row exists).
+# The step-time question decides it: if the bf16 curve is flat
+# enough, 1216 x ~105-115ms -> ~10.5-11k; if it is as steep as
+# f32 above 1024, this LOSES to 4d and the bf16 optimum is near
+# 1024. Client: CONC=1216. Prefix VLLM_ADMISSION_DEBUG=1 to
+# certify refusals ~= 0 at the computed carve (tight tails only
+# inferred it for 4e). Same accuracy caveat as 4d.
+L=tmp/vllm_logs/fp8_v2_tp_152s_bf16state_$(date +%Y%m%d_%H%M%S).log; mkdir -p tmp/vllm_logs; echo "CFG label=fp8_v2_tp_152s_bf16state commit=$(git rev-parse --short HEAD)" | tee "$L"; MODEL_IMPL_TYPE=vllm USE_MOE_TP_DECODE_KERNEL=1 MOE_TP_DECODE_MAX_TOKENS=1216 NEW_MODEL_DESIGN=1 ATTN_BUCKETIZED_NUM_REQS=true ATTN_CUSTOM_NUM_REQS_BUCKETS=152,304,608,1216 ONEHOT_MOE_PERMUTE_THRESHOLD=32768 VLLM_MOE_CHUNK_SIZE=256 LIBTPU_INIT_ARGS=' --xla_tpu_use_minor_sharding_for_major_trivial_input=true --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=false --xla_tpu_ars_combiner_threshold_in_bytes=0 --xla_tpu_enable_async_collective_merger=false --xla_tpu_check_legacy_constraints_in_reduce_scatter_legalizer=false' vllm serve Qwen/Qwen3.5-397B-A17B-FP8 --max-model-len=9216 --max-num-batched-tokens=256 --max-num-seqs=152 --no-enable-prefix-caching --gpu-memory-utilization=0.88 --tensor-parallel-size=8 --async-scheduling --port=8000 --language-model-only --enable-auto-tool-choice --tool-call-parser=qwen3_coder --reasoning-parser=qwen3 '--limit-mm-per-prompt={"image":0, "video": 0}' --kv-cache-dtype=fp8 --mamba-ssm-cache-dtype=bfloat16 '--additional_config={"sharding":{"sharding_strategy": {"enable_dp_attention": true, "attn_dp_size": 8}}}' --block-size=256 2>&1 | tee -a "$L"; cp tmp/vllm_server_stats.csv "${L%.log}_stats.csv" 2>/dev/null; xz -9 -T0 "$L"
+
 # fp8 line 4b - CONTINGENCY, run only if line 4 halts at
 # SparseCoreSequencer again: identical to line 4 but with ALL SC
 # collective offloads disabled (line 4 only disables reduce-scatter).
