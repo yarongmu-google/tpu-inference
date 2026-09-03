@@ -122,6 +122,30 @@ def _kv_bytes_per_token(cfg, kv_byte: int) -> int:
     return 2 * kv_heads * head_dim * cfg.num_hidden_layers * kv_byte
 
 
+def _hybrid_layer_split(cfg) -> tuple[int, int]:
+    """(full-attention layers, linear/mamba layers) from layer_types;
+    (all, 0) when the model is a plain transformer."""
+    types = getattr(cfg, "layer_types", None)
+    if not types:
+        return cfg.num_hidden_layers, 0
+    n_full = sum(1 for t in types if t == "full_attention")
+    return n_full, len(types) - n_full
+
+
+def _linear_state_bytes_per_layer(cfg, state_byte: int) -> int:
+    """Per-seq per-layer linear-attention state: the f32/bf16 recurrent
+    state (nv x kd x vd) plus the bf16 conv tail (conv_dim x (K-1)).
+    Check the derived value against the server's carve log line
+    (kv_cache_manager 'mamba_unpadded=...') before trusting a sweep."""
+    nv = cfg.linear_num_value_heads
+    nk = cfg.linear_num_key_heads
+    kd = cfg.linear_key_head_dim
+    vd = cfg.linear_value_head_dim
+    kernel = cfg.linear_conv_kernel_dim
+    conv_dim = 2 * nk * kd + nv * vd
+    return nv * kd * vd * state_byte + conv_dim * (kernel - 1) * 2
+
+
 def _hbm_bytes_per_device(args) -> int:
     if args.hbm_gb:
         return int(args.hbm_gb * 2**30)
@@ -159,6 +183,19 @@ def main() -> int:
                    help="HBM per device; else HBM_GB env, else jax query")
     p.add_argument("--reserve-gb", type=float, default=4.0,
                    help="activation/workspace reserve per device")
+    p.add_argument("--range-ratio", type=float, default=0.8,
+                   help="benchmark length sampling: lens are uniform on "
+                   "[x*(1-r), x], so E[len] = x*(1-r/2)")
+    p.add_argument("--page-headroom", type=float, default=1.35,
+                   help="hybrid mode: page-demand safety factor for rank "
+                   "imbalance, block quantization, and cohort variance")
+    p.add_argument("--mamba-state-byte", type=int, default=4,
+                   help="hybrid mode: bytes/elem of the recurrent state "
+                   "(4 = f32 default; 2 = --mamba-ssm-cache-dtype bf16)")
+    p.add_argument("--avail-gb", type=float, default=0.0,
+                   help="pin the total cache budget to the server's "
+                   "measured 'avail=' carve line instead of the "
+                   "hbm*util - weights - reserve estimate")
     p.add_argument("--peak-tflops", type=float, default=0.0,
                    help="per-device peak TFLOP/s at the serving dtype "
                    "(enables the MNB roofline-crossover anchor)")
@@ -184,11 +221,54 @@ def main() -> int:
         return 1
     pool_tokens = int(args.tp * pool_dev / kv_tok)
 
-    mns_worst = pool_tokens // mml
-    mns_expected = int(pool_tokens / (args.in_len + args.out_len / 2))
-    # MNS anchored at expected occupancy; worst case is the floor the
-    # operator should know about (guaranteed-no-preemption point)
-    mns_list = _neighbors(mns_expected, mult=64, lo=64)
+    budget = (int(args.avail_gb * 2**30) if args.avail_gb
+              else int(args.tp * pool_dev))
+    n_full, n_linear = _hybrid_layer_split(cfg)
+    hybrid = None
+    if n_linear:
+        # Hybrid fixed point. vLLM carves the cache budget into a fixed
+        # per-seq slot pool (MNS slots, paid whether or not a seq runs)
+        # plus attention pages for whatever is left; sizing MNS by
+        # attention arithmetic alone makes the two carves inconsistent
+        # and the page side starves (admission churn + preemption).
+        # Solve for the MNS where the carves agree:
+        #   MNS * (slot + c * page_tok * h) = budget
+        # with c the per-seq context the pages must cover.
+        heads = cfg.num_attention_heads
+        head_dim = getattr(cfg, "head_dim", cfg.hidden_size // heads)
+        page_tok = 2 * cfg.num_key_value_heads * head_dim \
+            * n_full * args.kv_byte
+        slot = n_linear * _linear_state_bytes_per_layer(
+            cfg, state_byte=args.mamba_state_byte)
+        r = args.range_ratio
+        e_in = args.in_len * (1 - r / 2)
+        a, b = args.out_len * (1 - r), args.out_len
+        e_out = (a + b) / 2
+        # steady state: a running seq observed at a random moment has
+        # written E[L^2]/(2E[L]) tokens (length-biased renewal age)
+        c_run = e_in + (a * a + a * b + b * b) / 3 / (2 * e_out)
+        # cohort: closed-loop admission waves age in lockstep, so peak
+        # demand tracks the EXPECTED FINAL length, not the steady mix
+        c_full = e_in + e_out
+        h = args.page_headroom
+        mns_cohort = int(budget / (slot + c_full * page_tok * h))
+        mns_steady = int(budget / (slot + c_run * page_tok * h))
+        hybrid = dict(page_tok=page_tok, slot=slot, c_run=c_run,
+                      c_full=c_full, mns_cohort=mns_cohort,
+                      mns_steady=mns_steady)
+        mns_worst = int(budget / (slot + mml * page_tok))
+        mns_expected = mns_cohort
+        # anchor at the cohort (conservative) end; the steady end is
+        # the upper neighbor worth probing when no valley appears
+        mns_list = sorted({
+            _round_to(x, mult=8, at_least=64)
+            for x in (mns_cohort * 0.75, mns_cohort, mns_steady)})
+    else:
+        mns_worst = pool_tokens // mml
+        mns_expected = int(pool_tokens / (args.in_len + args.out_len / 2))
+        # MNS anchored at expected occupancy; worst case is the floor
+        # the operator should know about (no-preemption point)
+        mns_list = _neighbors(mns_expected, mult=64, lo=64)
     # MNB anchor: roofline crossover when the hardware rates are
     # given, else the max of the two hard lower bounds. The sweep's
     # per-combo skip enforces the pairwise MNB >= MNS rule.
@@ -215,18 +295,45 @@ def main() -> int:
     print(f"HBM/device           {hbm / 2**30:8.1f} GiB")
     print(f"weights (total)      {weights / 2**30:8.1f} GiB "
           f"-> {weights / args.tp / 2**30:.1f}/device")
-    print(f"KV bytes/token       {kv_tok / 2**10:8.1f} KiB (full copy; "
-          f"same total under DP or TP attention)")
     print(f"KV pool/device       {pool_dev / 2**30:8.1f} GiB "
           f"(util={args.gpu_util}, reserve={args.reserve_gb}G)")
-    print(f"pool capacity        {pool_tokens:8d} tokens across "
-          f"{args.tp} devices")
+    if hybrid:
+        hy = hybrid
+        src = "pinned --avail-gb" if args.avail_gb else "estimated"
+        mg = hy["mns_cohort"] * hy["slot"]
+        print(f"cache budget         {budget / 2**30:8.1f} GiB ({src})")
+        print(f"hybrid layers        {n_full} full-attention + "
+              f"{n_linear} linear")
+        print(f"page bytes/token     {hy['page_tok']:8d} "
+              f"({hy['page_tok'] / 2**10:.1f} KiB, full-attn layers)")
+        print(f"slot bytes/seq       {hy['slot']:8d} "
+              f"({hy['slot'] / 2**20:.1f} MiB, state_byte="
+              f"{args.mamba_state_byte}; check vs the server's "
+              f"mamba_unpadded carve line)")
+        print(f"avg ctx (cohort)     {hy['c_full']:8.0f} tokens "
+              f"(E[in] + E[out]; admission waves age in lockstep)")
+        print(f"avg ctx (steady)     {hy['c_run']:8.0f} tokens "
+              f"(length-biased running mix)")
+        print(f"MNS fixed point      {hy['mns_cohort']:8d} cohort / "
+              f"{hy['mns_steady']} steady (headroom h="
+              f"{args.page_headroom})")
+        print(f"carve at cohort MNS  {mg / 2**30:8.1f} GiB slots "
+              f"({100 * mg / budget:.0f}%) + "
+              f"{(budget - mg) / 2**30:.1f} GiB pages -> "
+              f"{(budget - mg) / hy['page_tok'] / hy['mns_cohort']:.0f} "
+              f"tokens/seq of page room")
+    else:
+        print(f"KV bytes/token       {kv_tok / 2**10:8.1f} KiB (full "
+              f"copy; same total under DP or TP attention)")
+        print(f"pool capacity        {pool_tokens:8d} tokens across "
+              f"{args.tp} devices")
     print(f"max-model-len        {mml:8d} (= in {args.in_len} + out "
           f"{args.out_len}; workload-pinned)")
     print(f"MNS worst-case       {mns_worst:8d} (all seqs at full len; "
           f"no-preemption guarantee)")
-    print(f"MNS expected         {mns_expected:8d} (steady state, "
-          f"avg len = in + out/2)")
+    if not hybrid:
+        print(f"MNS expected         {mns_expected:8d} (steady state, "
+              f"avg len = in + out/2)")
     print(f"MNB lower bounds     max(in_len={args.in_len}, MNS)")
     if mnb_cross:
         print(f"MNB roofline cross   {mnb_cross:8d} (compute catches "
