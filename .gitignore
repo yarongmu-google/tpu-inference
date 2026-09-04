@@ -203,3 +203,6 @@ shellcheck*/
 csrc/moe/marlin_moe_wna16/kernel_*
 
 !/support_matrices/**
+
+# Run artifacts under tmp/ are deliberately committed (see tmp/README.md).
+!tmp/**
