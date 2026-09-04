@@ -13,7 +13,9 @@
 #      native convert op or to an emulation sequence?
 #
 # Run (serving env):
-#   python tmp/probe_fp4_unpack.py 2>&1 | tee tmp/fp4_unpack_probe.log
+#   python tmp/probe_fp4_unpack.py
+# All output is duplicated to tmp/fp4_unpack_probe.log automatically -
+# commit that file.
 # Optional codegen dump:
 #   rm -rf tmp/mosaic_fp4 && mkdir -p tmp/mosaic_fp4
 #   LIBTPU_INIT_ARGS=--xla_mosaic_dump_to=tmp/mosaic_fp4 \
@@ -21,6 +23,7 @@
 # Then: git add tmp/ && git commit -m "fp4 unpack probe." && git push
 
 import argparse
+import sys
 import time
 
 import jax
@@ -39,7 +42,22 @@ def bench(fn, *args, iters=30):
     return min(ts), out
 
 
+class _Tee:
+    def __init__(self, path):
+        self.f = open(path, "w")
+        self.stdout = sys.stdout
+
+    def write(self, s):
+        self.stdout.write(s)
+        self.f.write(s)
+
+    def flush(self):
+        self.stdout.flush()
+        self.f.flush()
+
+
 def main():
+    sys.stdout = _Tee("tmp/fp4_unpack_probe.log")
     p = argparse.ArgumentParser()
     p.add_argument("--elems", type=int, default=1 << 28,
                    help="elements to convert (default 268M)")
