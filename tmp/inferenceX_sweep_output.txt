@@ -1,0 +1,320 @@
+(vllm12) ymu_google_com@t1v-n-7822eeda-w-0:~/tpu-inference (topk) $ bash tests/e2e/benchmarking/inferencex/qwen3.5/sweep.s
+h
+--- starting server SHARDING=TP8_EP ISL=8192 OSL=1024 CONC=4 (log: /tmp/qwen3.5_sweep_server_isl8192_osl1024_conc4_0903-21
+39.log) ---
+--- server ready ---
+########## ISL=8192 OSL=1024 CONC=4 SHARDING=TP8_EP ##########
+INFERENCEX_REPO unset -> cloning InferenceX to /tmp/InferenceX
+Cloning into '/tmp/InferenceX'...
+remote: Enumerating objects: 1505, done.
+remote: Counting objects: 100% (1505/1505), done.
+remote: Compressing objects: 100% (774/774), done.
+remote: Total 1505 (delta 783), reused 1107 (delta 665), pack-reused 0 (from 0)
+Receiving objects: 100% (1505/1505), 2.18 MiB | 16.43 MiB/s, done.
+Resolving deltas: 100% (783/783), done.
++ python3 /tmp/InferenceX/utils/bench_serving/benchmark_serving.py --model Qwen/Qwen3.5-397B-A17B-FP8 --backend vllm --bas
+e-url http://0.0.0.0:8000 --dataset-name random --random-input-len 8192 --random-output-len 1024 --random-range-ratio 0.8
+--num-prompts 40 --max-concurrency 4 --request-rate inf --ignore-eos --save-result --num-warmups 8 --percentile-metrics tt
+ft,tpot,itl,e2el --result-dir /tmp/qwen3.5-inferencex-bench --result-filename qwen3.5_isl8192_osl1024_conc4_0903-2202.json
+ --use-chat-template
+INFO 09-03 22:02:18 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips
+=8 | num_cores_per_chip=2
+WARNING 09-03 22:02:18 [tpu_platform.py:447] Pin memory is not supported on TPU.
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't i
+nitialize NVML
+  raw_cnt = _raw_device_count_nvml()
+Namespace(backend='vllm', base_url='http://0.0.0.0:8000', host='127.0.0.1', port=8000, endpoint='/v1/completions', dataset
+_name='random', dataset_path=None, max_concurrency=4, model='Qwen/Qwen3.5-397B-A17B-FP8', tokenizer=None, best_of=1, use_b
+eam_search=False, num_prompts=40, logprobs=None, request_rate=inf, burstiness=1.0, seed=0, trust_remote_code=False, disabl
+e_tqdm=False, profile=False, save_result=True, save_detailed=False, metadata=None, result_dir='/tmp/qwen3.5-inferencex-ben
+ch', result_filename='qwen3.5_isl8192_osl1024_conc4_0903-2202.json', ignore_eos=True, percentile_metrics='ttft,tpot,itl,e2
+el', metric_percentiles='90,99,99.9', goodput=None, sonnet_input_len=550, sonnet_output_len=150, sonnet_prefix_len=200, sh
+aregpt_output_len=None, random_input_len=8192, random_output_len=1024, random_range_ratio=0.8, random_prefix_len=0, use_ch
+at_template=True, random_num_workers=0, dsv4=False, hf_subset=None, hf_split=None, hf_output_len=None, tokenizer_mode='aut
+o', served_model_name=None, lora_modules=None, num_warmups=8)
+Generating 40 prompts using 8 worker processes...
+Prompt generation completed in 1.8s
+-------------------  Input/Output Length Statistics  -------------------
+ input_lens : min=6629  max=8179  mean=7353.52  avg_token_mismatch=10.28
+ output_lens: min=820   max=1022  mean=920.12
+------------------------------------------------------------------------
+
+Starting initial single prompt test run...
+Warming up with 8 requests...
+100%|███████████████████████████████████████████████████████████████████████████████████████| 8/8 [00:21<00:00,  2.71s/it]
+Warmup completed.
+Traffic request rate: inf
+Burstiness factor: 1.0 (Poisson process)
+Maximum request concurrency: 4
+  0%|                                                                                              | 0/40 [00:00<?, ?it/s]
+Starting main benchmark run...
+100%|█████████████████████████████████████████████████████████████████████████████████████| 40/40 [01:43<00:00,  2.60s/it]
+============ Serving Benchmark Result ============
+Successful requests:                     40
+Benchmark duration (s):                  103.81
+Total input tokens:                      294141
+Total generated tokens:                  36805
+Request throughput (req/s):              0.39
+Output token throughput (tok/s):         354.55
+Total Token throughput (tok/s):          3188.11
+---------------Time to First Token----------------
+Mean TTFT (ms):                          646.69
+Median TTFT (ms):                        584.15
+P90 TTFT (ms):                           727.17
+P99 TTFT (ms):                           1812.70
+P99.9 TTFT (ms):                         1977.03
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          10.34
+Median TPOT (ms):                        10.47
+P90 TPOT (ms):                           10.78
+P99 TPOT (ms):                           11.09
+P99.9 TPOT (ms):                         11.24
+---------------Inter-token Latency----------------
+Mean ITL (ms):                           10.35
+Median ITL (ms):                         8.77
+P90 ITL (ms):                            9.29
+P99 ITL (ms):                            133.35
+P99.9 ITL (ms):                          141.05
+----------------End-to-end Latency----------------
+Mean E2EL (ms):                          10156.15
+Median E2EL (ms):                        10046.41
+P90 E2EL (ms):                           11235.35
+P99 E2EL (ms):                           11958.17
+P99.9 E2EL (ms):                         11961.68
+==================================================
++ set +x
+--- starting server SHARDING=TP8_EP ISL=8192 OSL=1024 CONC=8 (log: /tmp/qwen3.5_sweep_server_isl8192_osl1024_conc8_0903-22
+04.log) ---
+--- server ready ---
+########## ISL=8192 OSL=1024 CONC=8 SHARDING=TP8_EP ##########
++ python3 /tmp/InferenceX/utils/bench_serving/benchmark_serving.py --model Qwen/Qwen3.5-397B-A17B-FP8 --backend vllm --bas
+e-url http://0.0.0.0:8000 --dataset-name random --random-input-len 8192 --random-output-len 1024 --random-range-ratio 0.8
+--num-prompts 80 --max-concurrency 8 --request-rate inf --ignore-eos --save-result --num-warmups 16 --percentile-metrics t
+tft,tpot,itl,e2el --result-dir /tmp/qwen3.5-inferencex-bench --result-filename qwen3.5_isl8192_osl1024_conc8_0903-2233.jso
+n --use-chat-template
+INFO 09-03 22:33:46 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips
+=8 | num_cores_per_chip=2
+WARNING 09-03 22:33:47 [tpu_platform.py:447] Pin memory is not supported on TPU.
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't i
+nitialize NVML
+  raw_cnt = _raw_device_count_nvml()
+Namespace(backend='vllm', base_url='http://0.0.0.0:8000', host='127.0.0.1', port=8000, endpoint='/v1/completions', dataset
+_name='random', dataset_path=None, max_concurrency=8, model='Qwen/Qwen3.5-397B-A17B-FP8', tokenizer=None, best_of=1, use_b
+eam_search=False, num_prompts=80, logprobs=None, request_rate=inf, burstiness=1.0, seed=0, trust_remote_code=False, disabl
+e_tqdm=False, profile=False, save_result=True, save_detailed=False, metadata=None, result_dir='/tmp/qwen3.5-inferencex-ben
+ch', result_filename='qwen3.5_isl8192_osl1024_conc8_0903-2233.json', ignore_eos=True, percentile_metrics='ttft,tpot,itl,e2
+el', metric_percentiles='90,99,99.9', goodput=None, sonnet_input_len=550, sonnet_output_len=150, sonnet_prefix_len=200, sh
+aregpt_output_len=None, random_input_len=8192, random_output_len=1024, random_range_ratio=0.8, random_prefix_len=0, use_ch
+at_template=True, random_num_workers=0, dsv4=False, hf_subset=None, hf_split=None, hf_output_len=None, tokenizer_mode='aut
+o', served_model_name=None, lora_modules=None, num_warmups=16)
+Generating 80 prompts using 8 worker processes...
+Prompt generation completed in 2.1s
+-------------------  Input/Output Length Statistics  -------------------
+ input_lens : min=6583  max=8179  mean=7312.35  avg_token_mismatch=10.24
+ output_lens: min=819   max=1024  mean=925.86
+------------------------------------------------------------------------
+
+Starting initial single prompt test run...
+Warming up with 16 requests...
+100%|█████████████████████████████████████████████████████████████████████████████████████| 16/16 [00:25<00:00,  1.61s/it]
+Warmup completed.
+Traffic request rate: inf
+Burstiness factor: 1.0 (Poisson process)
+Maximum request concurrency: 8
+  0%|                                                                                              | 0/80 [00:00<?, ?it/s]
+Starting main benchmark run...
+100%|█████████████████████████████████████████████████████████████████████████████████████| 80/80 [02:08<00:00,  1.61s/it]
+============ Serving Benchmark Result ============
+Successful requests:                     80
+Benchmark duration (s):                  128.50
+Total input tokens:                      584988
+Total generated tokens:                  74069
+Request throughput (req/s):              0.62
+Output token throughput (tok/s):         576.39
+Total Token throughput (tok/s):          5128.67
+---------------Time to First Token----------------
+Mean TTFT (ms):                          789.22
+Median TTFT (ms):                        590.08
+P90 TTFT (ms):                           1127.35
+P99 TTFT (ms):                           3680.64
+P99.9 TTFT (ms):                         3973.22
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          12.82
+Median TPOT (ms):                        13.00
+P90 TPOT (ms):                           13.79
+P99 TPOT (ms):                           14.52
+P99.9 TPOT (ms):                         14.91
+---------------Inter-token Latency----------------
+Mean ITL (ms):                           12.85
+Median ITL (ms):                         9.50
+P90 ITL (ms):                            9.91
+P99 ITL (ms):                            137.51
+P99.9 ITL (ms):                          142.90
+----------------End-to-end Latency----------------
+Mean E2EL (ms):                          12675.45
+Median E2EL (ms):                        12677.61
+P90 E2EL (ms):                           14530.72
+P99 E2EL (ms):                           16594.62
+P99.9 E2EL (ms):                         16613.86
+==================================================
++ set +x
+--- starting server SHARDING=DP4TP2_EP ISL=8192 OSL=1024 CONC=16 (log: /tmp/qwen3.5_sweep_server_isl8192_osl1024_conc16_09
+03-2236.log) ---
+--- server ready ---
+########## ISL=8192 OSL=1024 CONC=16 SHARDING=DP4TP2_EP ##########
++ python3 /tmp/InferenceX/utils/bench_serving/benchmark_serving.py --model Qwen/Qwen3.5-397B-A17B-FP8 --backend vllm --bas
+e-url http://0.0.0.0:8000 --dataset-name random --random-input-len 8192 --random-output-len 1024 --random-range-ratio 0.8
+--num-prompts 160 --max-concurrency 16 --request-rate inf --ignore-eos --save-result --num-warmups 32 --percentile-metrics
+ ttft,tpot,itl,e2el --result-dir /tmp/qwen3.5-inferencex-bench --result-filename qwen3.5_isl8192_osl1024_conc16_0903-2326.
+json --use-chat-template
+INFO 09-03 23:26:25 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips
+=8 | num_cores_per_chip=2
+WARNING 09-03 23:26:25 [tpu_platform.py:447] Pin memory is not supported on TPU.
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't i
+nitialize NVML
+  raw_cnt = _raw_device_count_nvml()
+Namespace(backend='vllm', base_url='http://0.0.0.0:8000', host='127.0.0.1', port=8000, endpoint='/v1/completions', dataset
+_name='random', dataset_path=None, max_concurrency=16, model='Qwen/Qwen3.5-397B-A17B-FP8', tokenizer=None, best_of=1, use_
+beam_search=False, num_prompts=160, logprobs=None, request_rate=inf, burstiness=1.0, seed=0, trust_remote_code=False, disa
+ble_tqdm=False, profile=False, save_result=True, save_detailed=False, metadata=None, result_dir='/tmp/qwen3.5-inferencex-b
+ench', result_filename='qwen3.5_isl8192_osl1024_conc16_0903-2326.json', ignore_eos=True, percentile_metrics='ttft,tpot,itl
+,e2el', metric_percentiles='90,99,99.9', goodput=None, sonnet_input_len=550, sonnet_output_len=150, sonnet_prefix_len=200,
+ sharegpt_output_len=None, random_input_len=8192, random_output_len=1024, random_range_ratio=0.8, random_prefix_len=0, use
+_chat_template=True, random_num_workers=0, dsv4=False, hf_subset=None, hf_split=None, hf_output_len=None, tokenizer_mode='
+auto', served_model_name=None, lora_modules=None, num_warmups=32)
+Generating 160 prompts using 8 worker processes...
+Prompt generation completed in 2.5s
+-------------------  Input/Output Length Statistics  -------------------
+ input_lens : min=6566  max=8190  mean=7346.27  avg_token_mismatch=10.32
+ output_lens: min=819   max=1024  mean=915.16
+------------------------------------------------------------------------
+
+Starting initial single prompt test run...
+Warming up with 32 requests...
+100%|█████████████████████████████████████████████████████████████████████████████████████| 32/32 [00:36<00:00,  1.15s/it]
+Warmup completed.
+Traffic request rate: inf
+Burstiness factor: 1.0 (Poisson process)
+Maximum request concurrency: 16
+  0%|                                                                                             | 0/160 [00:00<?, ?it/s]
+Starting main benchmark run...
+100%|██████████████████████████████████████████████████████████████████████████████████| 160/160 [00:00<00:00, 799.13it/s]
+/tmp/InferenceX/utils/bench_serving/benchmark_serving.py:674: UserWarning: All requests failed. This is likely due to a mi
+sconfiguration on the benchmark arguments.
+  metrics, actual_output_lens = calculate_metrics(
+============ Serving Benchmark Result ============
+Successful requests:                     0
+Benchmark duration (s):                  0.20
+Total input tokens:                      0
+Total generated tokens:                  0
+Request throughput (req/s):              0.00
+Output token throughput (tok/s):         0.00
+Total Token throughput (tok/s):          0.00
+---------------Time to First Token----------------
+Mean TTFT (ms):                          0.00
+Median TTFT (ms):                        0.00
+P90 TTFT (ms):                           0.00
+P99 TTFT (ms):                           0.00
+P99.9 TTFT (ms):                         0.00
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          0.00
+Median TPOT (ms):                        0.00
+P90 TPOT (ms):                           0.00
+P99 TPOT (ms):                           0.00
+P99.9 TPOT (ms):                         0.00
+---------------Inter-token Latency----------------
+Mean ITL (ms):                           0.00
+Median ITL (ms):                         0.00
+P90 ITL (ms):                            0.00
+P99 ITL (ms):                            0.00
+P99.9 ITL (ms):                          0.00
+----------------End-to-end Latency----------------
+Mean E2EL (ms):                          0.00
+Median E2EL (ms):                        0.00
+P90 E2EL (ms):                           0.00
+P99 E2EL (ms):                           0.00
+P99.9 E2EL (ms):                         0.00
+==================================================
+FAIL: request failure rate 100.0% exceeds 5% threshold (0/160 completed)
+--- starting server SHARDING=DP4TP2_EP ISL=8192 OSL=1024 CONC=32 (log: /tmp/qwen3.5_sweep_server_isl8192_osl1024_conc32_09
+03-2327.log) ---
+--- server ready ---
+########## ISL=8192 OSL=1024 CONC=32 SHARDING=DP4TP2_EP ##########
++ python3 /tmp/InferenceX/utils/bench_serving/benchmark_serving.py --model Qwen/Qwen3.5-397B-A17B-FP8 --backend vllm --bas
+e-url http://0.0.0.0:8000 --dataset-name random --random-input-len 8192 --random-output-len 1024 --random-range-ratio 0.8
+--num-prompts 320 --max-concurrency 32 --request-rate inf --ignore-eos --save-result --num-warmups 64 --percentile-metrics
+ ttft,tpot,itl,e2el --result-dir /tmp/qwen3.5-inferencex-bench --result-filename qwen3.5_isl8192_osl1024_conc32_0904-0027.
+json --use-chat-template
+INFO 09-04 00:27:08 [__init__.py:76] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips
+=8 | num_cores_per_chip=2
+WARNING 09-04 00:27:09 [tpu_platform.py:447] Pin memory is not supported on TPU.
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't i
+nitialize NVML
+  raw_cnt = _raw_device_count_nvml()
+Namespace(backend='vllm', base_url='http://0.0.0.0:8000', host='127.0.0.1', port=8000, endpoint='/v1/completions', dataset
+_name='random', dataset_path=None, max_concurrency=32, model='Qwen/Qwen3.5-397B-A17B-FP8', tokenizer=None, best_of=1, use_
+beam_search=False, num_prompts=320, logprobs=None, request_rate=inf, burstiness=1.0, seed=0, trust_remote_code=False, disa
+ble_tqdm=False, profile=False, save_result=True, save_detailed=False, metadata=None, result_dir='/tmp/qwen3.5-inferencex-b
+ench', result_filename='qwen3.5_isl8192_osl1024_conc32_0904-0027.json', ignore_eos=True, percentile_metrics='ttft,tpot,itl
+,e2el', metric_percentiles='90,99,99.9', goodput=None, sonnet_input_len=550, sonnet_output_len=150, sonnet_prefix_len=200,
+ sharegpt_output_len=None, random_input_len=8192, random_output_len=1024, random_range_ratio=0.8, random_prefix_len=0, use
+_chat_template=True, random_num_workers=0, dsv4=False, hf_subset=None, hf_split=None, hf_output_len=None, tokenizer_mode='
+auto', served_model_name=None, lora_modules=None, num_warmups=64)
+Generating 320 prompts using 8 worker processes...
+Prompt generation completed in 3.7s
+-------------------  Input/Output Length Statistics  -------------------
+ input_lens : min=6566  max=8189  mean=7352.64  avg_token_mismatch=10.45
+ output_lens: min=819   max=1024  mean=925.45
+------------------------------------------------------------------------
+
+Starting initial single prompt test run...
+Warming up with 64 requests...
+100%|█████████████████████████████████████████████████████████████████████████████████████| 64/64 [00:42<00:00,  1.49it/s]
+Warmup completed.
+Traffic request rate: inf
+Burstiness factor: 1.0 (Poisson process)
+Maximum request concurrency: 32
+  0%|                                                                                             | 0/320 [00:00<?, ?it/s]
+Starting main benchmark run...
+100%|██████████████████████████████████████████████████████████████████████████████████| 320/320 [00:00<00:00, 850.88it/s]
+/tmp/InferenceX/utils/bench_serving/benchmark_serving.py:674: UserWarning: All requests failed. This is likely due to a mi
+sconfiguration on the benchmark arguments.
+  metrics, actual_output_lens = calculate_metrics(
+============ Serving Benchmark Result ============
+Successful requests:                     0
+Benchmark duration (s):                  0.38
+Total input tokens:                      0
+Total generated tokens:                  0
+Request throughput (req/s):              0.00
+Output token throughput (tok/s):         0.00
+Total Token throughput (tok/s):          0.00
+---------------Time to First Token----------------
+Mean TTFT (ms):                          0.00
+Median TTFT (ms):                        0.00
+P90 TTFT (ms):                           0.00
+P99 TTFT (ms):                           0.00
+P99.9 TTFT (ms):                         0.00
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          0.00
+Median TPOT (ms):                        0.00
+P90 TPOT (ms):                           0.00
+P99 TPOT (ms):                           0.00
+P99.9 TPOT (ms):                         0.00
+---------------Inter-token Latency----------------
+Mean ITL (ms):                           0.00
+Median ITL (ms):                         0.00
+P90 ITL (ms):                            0.00
+P99 ITL (ms):                            0.00
+P99.9 ITL (ms):                          0.00
+----------------End-to-end Latency----------------
+Mean E2EL (ms):                          0.00
+Median E2EL (ms):                        0.00
+P90 E2EL (ms):                           0.00
+P99 E2EL (ms):                           0.00
+P99.9 E2EL (ms):                         0.00
+==================================================
+FAIL: request failure rate 100.0% exceeds 5% threshold (0/320 completed)
+--- starting server SHARDING=DP8_EP ISL=8192 OSL=1024 CONC=64 (log: /tmp/qwen3.5_sweep_server_isl8192_osl1024_conc64_0904-
+0028.log) ---
+ERROR: server exited during startup (see /tmp/qwen3.5_sweep_server_isl8192_osl1024_conc64_0904-0028.log)
+(vllm12) ymu_google_com@t1v-n-7822eeda-w-0:~/tpu-inference (topk) $
