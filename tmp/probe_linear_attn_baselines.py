@@ -151,6 +151,65 @@ def main():
         gb = 2 * B * H * K * V * 4 / 1e9
         print(f"{B:>5} {t*1e3:9.3f} {gb:13.2f} {gb/t:8.0f}")
 
+    # B2: slotted-state variant - the state lives in a 2x-oversized
+    # pool addressed by shuffled per-seq indices (gather/update/scatter
+    # per step), the serving cache pattern.
+    print("\nB2. decode step with slot indirection (pool 2x, shuffled)")
+    print(f"{'B':>5} {'ms/step':>9} {'GB/s':>8} {'vs B':>6}")
+    for B in (32, 64):
+        nb = 2 * B
+        pool = jnp.zeros((nb, H, K, V), jnp.float32)
+        idx = jnp.asarray(rng.permutation(nb)[:B], jnp.int32)
+        qd = jnp.asarray(rng.standard_normal((B, H, K)), jnp.float32)
+        vd = jnp.asarray(rng.standard_normal((B, H, V)), jnp.float32)
+        gd = jnp.asarray(-np.abs(rng.standard_normal((B, H, K))) * 0.1,
+                         jnp.float32)
+        bd = jnp.asarray(rng.random((B, H)), jnp.float32)
+
+        def slotted(pool, idx, q, k, v, g, beta):
+            S = pool[idx]
+            S, o = decode_step(S, q, k, v, g, beta)
+            return pool.at[idx].set(S), o
+
+        t = bench_chained_state(slotted, pool, idx, qd, qd, vd, gd, bd)
+        gb = 2 * B * H * K * V * 4 / 1e9
+        print(f"{B:>5} {t*1e3:9.3f} {gb/t:8.0f} {'':>6}")
+
+    # B3: full fused layer - projections (bf16 weights streamed) +
+    # low-rank gate + recurrence + gated norm + out projection, one
+    # jit. Tests whether XLA overlaps the weight stream with the
+    # state stream; ideal = (weights + state r+w) / stream rate.
+    print("\nB3. full decode layer (proj + gate + recurrence + out)")
+    D = 7168
+    P = H * K
+    wq, wk, wv = (jnp.asarray(
+        rng.standard_normal((D, P)) * 0.02, jnp.bfloat16) for _ in range(3))
+    wo = jnp.asarray(rng.standard_normal((P, D)) * 0.02, jnp.bfloat16)
+    wg = jnp.asarray(rng.standard_normal((D, P)) * 0.02, jnp.bfloat16)
+    fa = jnp.asarray(rng.standard_normal((D, K)) * 0.02, jnp.bfloat16)
+    fb = jnp.asarray(rng.standard_normal((K, P)) * 0.02, jnp.bfloat16)
+    wbytes = sum(int(np.prod(w.shape)) * 2 for w in (wq, wk, wv, wo, wg, fa, fb))
+
+    def full_layer(S, x):
+        q = (x @ wq).reshape(-1, H, K).astype(jnp.float32)
+        k = (x @ wk).reshape(-1, H, K).astype(jnp.float32)
+        v = (x @ wv).reshape(-1, H, V).astype(jnp.float32)
+        graw = ((x @ fa) @ fb).reshape(-1, H, K).astype(jnp.float32)
+        g = -5.0 * jax.nn.sigmoid(graw)
+        beta = jnp.ones((x.shape[0], H), jnp.float32)
+        S, o = decode_step(S, q, k, v, g, beta)
+        go = (x @ wg).reshape(-1, H, V).astype(jnp.float32)
+        o = o * jax.nn.sigmoid(go)
+        return S, (o.reshape(-1, P).astype(jnp.bfloat16) @ wo)
+
+    print(f"{'B':>5} {'ms/step':>9} {'ideal ms':>9} {'eff':>6}")
+    for B in (32, 64):
+        S = jnp.zeros((B, H, K, V), jnp.float32)
+        x = jnp.asarray(rng.standard_normal((B, D)), jnp.bfloat16)
+        t = bench_chained_state(full_layer, S, x)
+        ideal = (wbytes + 2 * B * H * K * V * 4) / 1.9e12
+        print(f"{B:>5} {t*1e3:9.3f} {ideal*1e3:9.3f} {ideal/t:6.1%}")
+
     # C: exp throughput
     n = 1 << 27
     x = jnp.asarray(rng.standard_normal(n), jnp.float32) * -1.0
