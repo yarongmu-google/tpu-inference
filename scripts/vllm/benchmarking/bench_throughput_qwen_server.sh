@@ -115,6 +115,19 @@ L=tmp/vllm_logs/fp8_v2_tp_104s_$(date +%Y%m%d_%H%M%S).log; mkdir -p tmp/vllm_log
 # hypothesis dead, the step profile is next.
 L=tmp/vllm_logs/fp8_v2_tp_104s_p2buckets_$(date +%Y%m%d_%H%M%S).log; mkdir -p tmp/vllm_logs; echo "CFG label=fp8_v2_tp_104s_p2buckets commit=$(git rev-parse --short HEAD)" | tee "$L"; VLLM_ADMISSION_DEBUG=1 MODEL_IMPL_TYPE=vllm USE_MOE_TP_DECODE_KERNEL=1 MOE_TP_DECODE_MAX_TOKENS=1024 NEW_MODEL_DESIGN=1 ATTN_BUCKETIZED_NUM_REQS=true ATTN_CUSTOM_NUM_REQS_BUCKETS=128,256,512,1024 ONEHOT_MOE_PERMUTE_THRESHOLD=32768 VLLM_MOE_CHUNK_SIZE=256 LIBTPU_INIT_ARGS=' --xla_tpu_use_minor_sharding_for_major_trivial_input=true --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=false --xla_tpu_ars_combiner_threshold_in_bytes=0 --xla_tpu_enable_async_collective_merger=false --xla_tpu_check_legacy_constraints_in_reduce_scatter_legalizer=false' vllm serve Qwen/Qwen3.5-397B-A17B-FP8 --max-model-len=9216 --max-num-batched-tokens=256 --max-num-seqs=104 --no-enable-prefix-caching --gpu-memory-utilization=0.88 --tensor-parallel-size=8 --async-scheduling --port=8000 --language-model-only --enable-auto-tool-choice --tool-call-parser=qwen3_coder --reasoning-parser=qwen3 '--limit-mm-per-prompt={"image":0, "video": 0}' --kv-cache-dtype=fp8 '--additional_config={"sharding":{"sharding_strategy": {"enable_dp_attention": true, "attn_dp_size": 8}}}' --block-size=256 2>&1 | tee -a "$L"; cp tmp/vllm_server_stats.csv "${L%.log}_stats.csv" 2>/dev/null; xz -9 -T0 "$L"
 
+# fp8 line 4i: 4h + SINGLE-SPEED STEPS - the width and routing
+# wins combined. 4h proved the bucket cliff (116 -> 92.7ms at
+# 832-wide f32) but still ran two-speed: MNB=256/rank allows
+# 2048-token mixed buckets that fall off the 1024 gate to GMM.
+# MNB=128/rank caps every step at 1024 global tokens (832
+# decode + up to 192 riders) -> all buckets on the kernel at
+# tuned shapes, prefill always riding (rider capacity ~2k tok/s
+# vs ~1.1k steady demand). Expect ~8.8k steady / ~8-8.3k whole
+# run - the f32 shot at beating the default (8067-8125) with no
+# accuracy caveat. Client: mix, CONC=832, VLLM_ADMISSION_DEBUG=1.
+# Verify: zero "NOT engaged", zero REFUSED, TPOT ~92-98ms.
+L=tmp/vllm_logs/fp8_v2_tp_104s_singlespeed_$(date +%Y%m%d_%H%M%S).log; mkdir -p tmp/vllm_logs; echo "CFG label=fp8_v2_tp_104s_singlespeed commit=$(git rev-parse --short HEAD)" | tee "$L"; VLLM_ADMISSION_DEBUG=1 MODEL_IMPL_TYPE=vllm USE_MOE_TP_DECODE_KERNEL=1 MOE_TP_DECODE_MAX_TOKENS=1024 NEW_MODEL_DESIGN=1 ATTN_BUCKETIZED_NUM_REQS=true ATTN_CUSTOM_NUM_REQS_BUCKETS=128,256,512,1024 ONEHOT_MOE_PERMUTE_THRESHOLD=32768 VLLM_MOE_CHUNK_SIZE=256 LIBTPU_INIT_ARGS=' --xla_tpu_use_minor_sharding_for_major_trivial_input=true --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=false --xla_tpu_ars_combiner_threshold_in_bytes=0 --xla_tpu_enable_async_collective_merger=false --xla_tpu_check_legacy_constraints_in_reduce_scatter_legalizer=false' vllm serve Qwen/Qwen3.5-397B-A17B-FP8 --max-model-len=9216 --max-num-batched-tokens=128 --max-num-seqs=104 --no-enable-prefix-caching --gpu-memory-utilization=0.88 --tensor-parallel-size=8 --async-scheduling --port=8000 --language-model-only --enable-auto-tool-choice --tool-call-parser=qwen3_coder --reasoning-parser=qwen3 '--limit-mm-per-prompt={"image":0, "video": 0}' --kv-cache-dtype=fp8 '--additional_config={"sharding":{"sharding_strategy": {"enable_dp_attention": true, "attn_dp_size": 8}}}' --block-size=256 2>&1 | tee -a "$L"; cp tmp/vllm_server_stats.csv "${L%.log}_stats.csv" 2>/dev/null; xz -9 -T0 "$L"
+
 # fp8 line 4d: 4c + bf16 GDN SSM state (--mamba-ssm-cache-dtype;
 # the flag flows vllm cache_config -> MambaSpec.dtypes -> the TPU
 # cache builder verbatim). The SSM state is the dominant per-seq
