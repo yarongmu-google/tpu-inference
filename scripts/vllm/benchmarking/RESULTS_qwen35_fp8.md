@@ -23,8 +23,8 @@ VLLM_ADMISSION_DEBUG=1 (refusal/preemption tracer in the scheduler).
 | 4c sweep "winner" | MNS=128/rank f32 | 1024 cfg | 118.2-118.7 | 6333-6639 (5 runs) | 09-02/03 | THE VALLEY: inconsistent carve -> 3786 refusals, 547 preemptions, ~1.02M recomputed tokens |
 | 4e fixed point | MNS=104/rank f32 (carve-consistent) | 832 | 116.2 | 6157 | 09-03 | valley eliminated (KV 53%, wait ~5) but step time exposed |
 | 4h p2buckets | 4e + power-of-2 req buckets | 832 | 92.7 | 7544 | 09-03 | bucket cliff confirmed: -24ms/step from ladder shape alone; 0 refusals (tracer-certified) |
-| 4i singlespeed | 4h + MNB=128/rank | 832 | pending | pending | - | width + routing combined; predicted ~8-8.3k |
-| 4d bf16 state | MNS=128/rank + bf16 SSM state | 1024 | 94.8 | 8535 | 09-02 | best number overall; ACCURACY EVAL OWED before any production claim |
+| 4i singlespeed | 4h + MNB=128/rank | 832 | 78.35 | **8604** | 09-03 | BEATS the default (+6.6%) at pure f32, no caveats; 0 refusals, 0 fallbacks; inside the fixed point's originally predicted 8.5-9k |
+| 4d bf16 state | MNS=128/rank + bf16 SSM state | 1024 | 94.8 | 8535 | 09-02 | predates the routing/bucket fixes; ACCURACY EVAL OWED; a 4d+fixes config is the obvious next ceiling probe |
 | 1 default | stock EP deployment, MNS=64/rank | 512 | 53.6-56.0 | 8067-8125 | 09-02/03 | the target; 8067 run tracer-certified 0 refusals, prefill riding continuously |
 
 Decode-only (in=1): ours 8687 vs default 8666 vs stock GMM-TP 4970 -
@@ -52,7 +52,10 @@ request-bucket ladders cost ~24ms/step at 832-wide via per-seq kernel
 slow paths (116->92.7ms); the runner now sorts ladders after the
 max_num_seqs append (a previously fatal config trap). Remaining at
 832-wide f32: ~23ms/step residue vs the component model (~70ms) -
-step-profile pending; if it falls, 832-wide clears 11k.
+single-speed steps (4i) then removed the two-speed mixing tax
+entirely: 78.35ms at 832-wide -> 8604 out tok/s, ABOVE the default
+deployment at pure f32. Final residue vs the component model: ~8ms;
+step-profile still worthwhile but no longer load-bearing.
 
 ## Reproduction
 
