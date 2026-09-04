@@ -40,17 +40,28 @@ H, K, V = 96, 128, 128
 CLOCK_GHZ = 1.1
 
 
-def bench(fn, *args, iters=20, donate=None):
-    jfn = jax.jit(fn, donate_argnums=donate) if donate else jax.jit(fn)
-    out = jax.block_until_ready(jfn(*args))
+def bench(fn, *args, iters=20):
+    jfn = jax.jit(fn)
+    jax.block_until_ready(jfn(*args))
     ts = []
     for _ in range(iters):
-        a = args if donate is None else tuple(
-            jnp.copy(x) if i in donate else x for i, x in enumerate(args))
         t0 = time.perf_counter()
-        out = jax.block_until_ready(jfn(*a))
+        jax.block_until_ready(jfn(*args))
         ts.append(time.perf_counter() - t0)
     return min(ts)
+
+
+def bench_chained_state(step_fn, S, *args, iters=20):
+    """Time state-donating steps by feeding the returned state back -
+    the donation-safe pattern (never reuse a donated input)."""
+    jfn = jax.jit(step_fn, donate_argnums=(0,))
+    S, o = jfn(S, *args)
+    jax.block_until_ready(S)
+    t0 = time.perf_counter()
+    for _ in range(iters):
+        S, o = jfn(S, *args)
+    jax.block_until_ready(S)
+    return (time.perf_counter() - t0) / iters
 
 
 # ---- A. chunked prefill (UT/WY form, factorized decay) -------------
@@ -136,7 +147,7 @@ def main():
             rng.standard_normal((B, H, K))) * 0.1, jnp.float32)
         vd = jnp.asarray(rng.standard_normal((B, H, V)), jnp.float32)
         bd = jnp.asarray(rng.random((B, H)), jnp.float32)
-        t = bench(decode_step, S, qd, kd, vd, gd, bd, donate=(0,))
+        t = bench_chained_state(decode_step, S, qd, kd, vd, gd, bd)
         gb = 2 * B * H * K * V * 4 / 1e9
         print(f"{B:>5} {t*1e3:9.3f} {gb:13.2f} {gb/t:8.0f}")
 
