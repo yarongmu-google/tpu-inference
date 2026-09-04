@@ -1,0 +1,10 @@
+jax 0.10.2 [TpuDevice(id=0, process_index=0, coords=(0,0,0), core_on_chip=0)]
+
+A. chunked prefill XLA baseline, T=8192, H=96, K=V=128
+    C        ms   cyc/token(2-MXU clock)
+   64     22.43                   3011.8
+  128     70.50                   9466.4
+  256     69.30                   9306.0
+
+B. decode recurrent step (state f32 through HBM)
+    B   ms/step  state r+w GB     GB/s
