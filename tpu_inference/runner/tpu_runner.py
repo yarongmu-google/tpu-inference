@@ -1118,6 +1118,26 @@ class TPUModelRunner(KVConnectorModelRunnerMixin, LoRAModelRunnerMixin):
         self.attn_num_reqs_paddings = runner_utils.get_attn_req_paddings(
             min_req_size=MIN_NUM_SEQS,
             max_req_size=scheduler_config.max_num_seqs)
+        # A bucket smaller than dp_size shards to ZERO requests per
+        # device: precompile then builds a (0,)-shaped attention batch
+        # and dies ("sub got incompatible shapes ... (0,)"). Filter the
+        # GLOBAL ladder (the precompile loops iterate it) before
+        # deriving the per-dp ladder, so the two stay consistent. The
+        # max_num_seqs bucket is always appended upstream, so the
+        # ladder cannot end up empty.
+        dropped = [
+            p for p in self.attn_num_reqs_paddings if p < self.dp_size
+        ]
+        if dropped:
+            logger.warning(
+                "Dropping attn req bucket(s) %s: smaller than dp_size="
+                "%d, they shard to zero requests per device. NB "
+                "per-device buckets below 8 are also known-fragile for "
+                "the linear-attention kernels.", dropped, self.dp_size)
+            self.attn_num_reqs_paddings = [
+                p for p in self.attn_num_reqs_paddings
+                if p >= self.dp_size
+            ]
         self.attn_num_reqs_paddings_per_dp = [
             padding // self.dp_size
             for padding in self.attn_num_reqs_paddings

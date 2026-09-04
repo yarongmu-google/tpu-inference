@@ -69,7 +69,16 @@ export MOE_ROUTE_PADDING_TO_EXPERT0=1
 export MIN_TOKEN_BUCKET=8
 export USE_MOE_EP_KERNEL=0
 export ATTN_BUCKETIZED_NUM_REQS=true
-export ATTN_CUSTOM_NUM_REQS_BUCKETS=4,8,16,32,64
+# Bucket ladder must be sharding-aware: buckets are GLOBAL and divide by
+# the attn-DP size. A global bucket < dp_size shards to zero requests
+# per device (precompile crash); per-device buckets < 8 halt the
+# linear-attention kernels (E0200 core halt observed at DP4 with the
+# old flat 4..64 ladder). Keep per-device buckets in [8, 64].
+case "$SHARDING" in
+  DP8_EP)    export ATTN_CUSTOM_NUM_REQS_BUCKETS=64,128,256,512 ;;
+  DP4TP2_EP) export ATTN_CUSTOM_NUM_REQS_BUCKETS=32,64,128,256 ;;
+  *)         export ATTN_CUSTOM_NUM_REQS_BUCKETS=4,8,16,32,64 ;;
+esac
 export ONEHOT_MOE_PERMUTE_THRESHOLD=32768
 export VLLM_MOE_CHUNK_SIZE=256
 export RAGGED_GATED_DELTA_RULE_IMPL=chunked_kernel_p_recurrent_kernel_d
