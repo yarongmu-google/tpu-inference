@@ -1,0 +1,12 @@
+jax 0.10.2 devices [TpuDevice(id=0, process_index=0, coords=(0,0,0), core_on_chip=0)]
+jnp.float4_e2m1fn: YES
+jnp.float8_e4m3fn: YES
+jnp.int4: YES
+jnp.uint4: YES
+
+variant                                       ms   Gelem/s  GB/s(out)
+native e2m1->e4m3 astype                    0.28     948.8      948.8
+uint8 nibble bit-surgery x2                 0.72     371.0      371.0
+packed-byte stream (add 0)                  0.24    1141.7     1141.7
+
+verdict rule: unpack Gelem/s must exceed the HBM packed stream rate (~1.9 TB/s = ~3800 Gelem/s at 4 bits) for the convert to hide under the weight fetch; the gap, if any, is the pipeline-depth requirement.
