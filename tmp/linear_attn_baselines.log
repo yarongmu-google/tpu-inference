@@ -2,14 +2,24 @@ jax 0.10.2 [TpuDevice(id=0, process_index=0, coords=(0,0,0), core_on_chip=0)]
 
 A. chunked prefill XLA baseline, T=8192, H=96, K=V=128
     C        ms   cyc/token(2-MXU clock)
-   64     22.42                   3010.8
-  128     70.43                   9456.9
-  256     69.18                   9289.6
+   64     22.47                   3017.4
+  128     70.23                   9430.4
+  256     69.19                   9291.0
 
 B. decode recurrent step (state f32 through HBM)
     B   ms/step  state r+w GB     GB/s
-    8     0.092          0.10     1097
-   32     0.274          0.40     1467
-   64     0.527          0.81     1527
+    8     0.092          0.10     1092
+   32     0.275          0.40     1462
+   64     0.524          0.81     1537
 
-C. exp() on 134M f32: 0.50 ms = 269 Gelem/s (r+w 2151 GB/s)
+B2. decode step with slot indirection (pool 2x, shuffled)
+    B   ms/step     GB/s   vs B
+   32     0.778      518       
+   64     1.538      524       
+
+B3. full decode layer (proj + gate + recurrence + out)
+    B   ms/step  ideal ms    eff
+   32     0.563     0.678 120.5%
+   64     0.829     0.890 107.4%
+
+C. exp() on 134M f32: 0.50 ms = 271 Gelem/s (r+w 2169 GB/s)
