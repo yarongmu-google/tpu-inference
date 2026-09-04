@@ -173,6 +173,12 @@ def get_attn_req_paddings(min_req_size: int, max_req_size: int) -> list[int]:
         )
         reqs.append(max_req_size)
 
+    # get_padded_token_len bisects, which requires sorted paddings; the
+    # appended max_req_size lands at the tail and silently corrupts the
+    # lookup for any custom ladder that does not already contain it
+    # (asserts at the first step whose req count bisects past the tail).
+    reqs = sorted(set(reqs))
+
     logger.info(f"Prepared attn request paddings: {reqs}")
 
     return reqs
