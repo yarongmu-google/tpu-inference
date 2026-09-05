@@ -1,6 +1,53 @@
 jax 0.10.2 [TpuDevice(id=0, process_index=0, coords=(0,0,0), core_on_chip=0)]
-A. exp f32 resident: 1.07 Telem/s (~1.1 cyc per 1024 elems; EUP theory 1.0)
-A2. sigmoid f32 resident: 0.67 Telem/s (~1.7 cyc/1024)
-B. e2m1->e4m3(->f32 acc) resident: 1.31 Telem/s (~0.9 cyc/1024) [NB includes the f32 upcast for the accumulator - an upper bound on convert cost]
+n sweep (128, 512, 2048, 8192); clock 1.10 GHz; valid iff span > 10x jitter
+A.  exp f32 chained, tile 32x512 (16 vregs)
+    n=  128  min     190.6 us  median     212.0 us
+    n=  512  min     177.1 us  median     195.0 us
+    n= 2048  min     206.8 us  median     291.3 us
+    n= 8192  min     322.6 us  median     335.9 us
+    slope     17.7 ns/iter  fit-resid 3.7%  span 132.0 us  jitter 84.4 us  -> INVALID (span < 10x jitter)
+    => 0.93 Telem/s  = 1.21 cyc per 1024 elems
+A2. sigmoid f32 chained, tile 32x512 (16 vregs)
+    n=  128  min     184.7 us  median     257.9 us
+    n=  512  min     189.0 us  median     207.7 us
+    n= 2048  min     231.7 us  median     250.2 us
+    n= 8192  min     396.6 us  median     410.2 us
+    slope     26.6 ns/iter  fit-resid 0.8%  span 211.9 us  jitter 73.2 us  -> INVALID (span < 10x jitter)
+    => 0.62 Telem/s  = 1.83 cyc per 1024 elems
+A.  exp f32 chained, tile 256x512 (128 vregs)
+    n=  128  min     195.2 us  median     205.6 us
+    n=  512  min     220.8 us  median     240.7 us
+    n= 2048  min     425.0 us  median     503.0 us
+    n= 8192  min    1144.7 us  median    1159.3 us
+    slope    118.7 ns/iter  fit-resid 1.2%  span 949.5 us  jitter 78.0 us  -> VALID
+    => 1.10 Telem/s  = 1.02 cyc per 1024 elems
+A2. sigmoid f32 chained, tile 256x512 (128 vregs)
+    n=  128  min     189.4 us  median     220.8 us
+    n=  512  min     266.6 us  median     281.8 us
+    n= 2048  min     589.1 us  median     594.7 us
+    n= 8192  min    1718.3 us  median    1737.7 us
+    slope    188.8 ns/iter  fit-resid 1.5%  span 1528.9 us  jitter 31.4 us  -> VALID
+    => 0.69 Telem/s  = 1.62 cyc per 1024 elems
+B.  e2m1->e4m3->float32 rotating 4x64x512 (f32 acc, 32 vregs)
+    n=  128  min     178.4 us  median     195.6 us
+    n=  512  min     174.3 us  median     190.7 us
+    n= 2048  min     255.3 us  median     313.9 us
+    n= 8192  min     433.9 us  median     438.0 us
+    slope     32.3 ns/iter  fit-resid 3.8%  span 255.6 us  jitter 58.6 us  -> INVALID (span < 10x jitter)
+    => 1.01 Telem/s  = 1.11 cyc per 1024 elems
+B.  e2m1->e4m3->bfloat16 rotating 4x64x512 (bf16 acc, 16 vregs)
+    n=  128  min     180.0 us  median     194.6 us
+    n=  512  min     193.1 us  median     289.8 us
+    n= 2048  min     201.6 us  median     277.1 us
+    n= 8192  min     301.7 us  median     377.2 us
+    slope     14.8 ns/iter  fit-resid 2.5%  span 121.7 us  jitter 96.6 us  -> INVALID (span < 10x jitter)
+    => 2.21 Telem/s  = 0.51 cyc per 1024 elems
+B0. e2m1->e4m3->f32 rotating 1x256x512 (run-4 form, 128-vreg acc spilled: store-floor reference)
+    n=  128  min     174.1 us  median     192.4 us
+    n=  512  min     219.5 us  median     238.6 us
+    n= 2048  min     368.9 us  median     386.9 us
+    n= 8192  min     971.6 us  median     981.5 us
+    slope     98.4 ns/iter  fit-resid 0.4%  span 797.6 us  jitter 19.1 us  -> VALID
+    => 1.33 Telem/s  = 0.85 cyc per 1024 elems
 
-interpretation: step-3 needs exp >= ~1 cyc/1024 (EUP full rate) and convert >= ~2 Telem/s (2 slots x 4096/op theory 9T; >=2T hides under the 24 ms MoE stream).
+read-out: 1 EUP push per vreg = 1.0 cyc/1024 (exp); sigmoid lowers to vexp + vrecip = 2 pushes; the step-3 gate budget uses the sigmoid figure. Convert: compare cyc/1024 with the in-loop vcvt/vunpack/vadd census from tmp/llo_loop_census.py.

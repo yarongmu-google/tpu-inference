@@ -1,0 +1,57 @@
+=== census tmp/mosaic_units
+chained_kernel     n=128    IN-LOOP  {'llo.vexp.f32': 16, 'llo.vmul.f32': 16}
+                             OUTSIDE  {'llo.vector_load': 16, 'llo.vector_store': 16}
+chained_kernel     n=512    IN-LOOP  {'llo.vexp.f32': 16, 'llo.vmul.f32': 16}
+                             OUTSIDE  {'llo.vector_load': 16, 'llo.vector_store': 16}
+chained_kernel     n=2048   IN-LOOP  {'llo.vexp.f32': 16, 'llo.vmul.f32': 16}
+                             OUTSIDE  {'llo.vector_load': 16, 'llo.vector_store': 16}
+chained_kernel     n=8192   IN-LOOP  {'llo.vexp.f32': 16, 'llo.vmul.f32': 16}
+                             OUTSIDE  {'llo.vector_load': 16, 'llo.vector_store': 16}
+chained_kernel     n=128    IN-LOOP  {'llo.vadd.f32': 16, 'llo.vexp.f32': 16, 'llo.vmul.f32': 32, 'llo.vneg.f32': 16, 'llo.vrecip.f32': 16}
+                             OUTSIDE  {'llo.vector_load': 16, 'llo.vector_store': 16}
+chained_kernel     n=512    IN-LOOP  {'llo.vadd.f32': 16, 'llo.vexp.f32': 16, 'llo.vmul.f32': 32, 'llo.vneg.f32': 16, 'llo.vrecip.f32': 16}
+                             OUTSIDE  {'llo.vector_load': 16, 'llo.vector_store': 16}
+chained_kernel     n=2048   IN-LOOP  {'llo.vadd.f32': 16, 'llo.vexp.f32': 16, 'llo.vmul.f32': 32, 'llo.vneg.f32': 16, 'llo.vrecip.f32': 16}
+                             OUTSIDE  {'llo.vector_load': 16, 'llo.vector_store': 16}
+chained_kernel     n=8192   IN-LOOP  {'llo.vadd.f32': 16, 'llo.vexp.f32': 16, 'llo.vmul.f32': 32, 'llo.vneg.f32': 16, 'llo.vrecip.f32': 16}
+                             OUTSIDE  {'llo.vector_load': 16, 'llo.vector_store': 16}
+chained_kernel     n=128    IN-LOOP  {'llo.vexp.f32': 128, 'llo.vmul.f32': 128}
+                             OUTSIDE  {'llo.vector_load': 128, 'llo.vector_store': 128}
+chained_kernel     n=512    IN-LOOP  {'llo.vexp.f32': 128, 'llo.vmul.f32': 128}
+                             OUTSIDE  {'llo.vector_load': 128, 'llo.vector_store': 128}
+chained_kernel     n=2048   IN-LOOP  {'llo.vexp.f32': 128, 'llo.vmul.f32': 128}
+                             OUTSIDE  {'llo.vector_load': 128, 'llo.vector_store': 128}
+chained_kernel     n=8192   IN-LOOP  {'llo.vexp.f32': 128, 'llo.vmul.f32': 128}
+                             OUTSIDE  {'llo.vector_load': 128, 'llo.vector_store': 128}
+chained_kernel     n=128    IN-LOOP  {'llo.vadd.f32': 128, 'llo.vexp.f32': 128, 'llo.vmul.f32': 256, 'llo.vneg.f32': 128, 'llo.vrecip.f32': 128}
+                             OUTSIDE  {'llo.vector_load': 128, 'llo.vector_store': 128}
+chained_kernel     n=512    IN-LOOP  {'llo.vadd.f32': 128, 'llo.vexp.f32': 128, 'llo.vmul.f32': 256, 'llo.vneg.f32': 128, 'llo.vrecip.f32': 128}
+                             OUTSIDE  {'llo.vector_load': 128, 'llo.vector_store': 128}
+chained_kernel     n=2048   IN-LOOP  {'llo.vadd.f32': 128, 'llo.vexp.f32': 128, 'llo.vmul.f32': 256, 'llo.vneg.f32': 128, 'llo.vrecip.f32': 128}
+                             OUTSIDE  {'llo.vector_load': 128, 'llo.vector_store': 128}
+chained_kernel     n=8192   IN-LOOP  {'llo.vadd.f32': 128, 'llo.vexp.f32': 128, 'llo.vmul.f32': 256, 'llo.vneg.f32': 128, 'llo.vrecip.f32': 128}
+                             OUTSIDE  {'llo.vector_load': 128, 'llo.vector_store': 128}
+rotating_kernel    n=128    IN-LOOP  {'llo.saddr_scaled': 1, 'llo.smul.u32': 1, 'llo.srem.s32': 1, 'llo.vadd.f32': 32, 'llo.vbitcast': 12, 'llo.vcvt.eXmY.e4m3': 8, 'llo.vector_load': 4, 'llo.vunpack': 40}
+                             OUTSIDE  {'llo.vector_store': 32}
+rotating_kernel    n=512    IN-LOOP  {'llo.saddr_scaled': 1, 'llo.smul.u32': 1, 'llo.srem.s32': 1, 'llo.vadd.f32': 32, 'llo.vbitcast': 12, 'llo.vcvt.eXmY.e4m3': 8, 'llo.vector_load': 4, 'llo.vunpack': 40}
+                             OUTSIDE  {'llo.vector_store': 32}
+rotating_kernel    n=2048   IN-LOOP  {'llo.saddr_scaled': 1, 'llo.smul.u32': 1, 'llo.srem.s32': 1, 'llo.vadd.f32': 32, 'llo.vbitcast': 12, 'llo.vcvt.eXmY.e4m3': 8, 'llo.vector_load': 4, 'llo.vunpack': 40}
+                             OUTSIDE  {'llo.vector_store': 32}
+rotating_kernel    n=8192   IN-LOOP  {'llo.saddr_scaled': 1, 'llo.smul.u32': 1, 'llo.srem.s32': 1, 'llo.vadd.f32': 32, 'llo.vbitcast': 12, 'llo.vcvt.eXmY.e4m3': 8, 'llo.vector_load': 4, 'llo.vunpack': 40}
+                             OUTSIDE  {'llo.vector_store': 32}
+rotating_kernel    n=128    IN-LOOP  {'llo.saddr_scaled': 1, 'llo.smul.u32': 1, 'llo.srem.s32': 1, 'llo.vadd.bf16': 16, 'llo.vbitcast': 12, 'llo.vcvt.eXmY.e4m3': 8, 'llo.vector_load': 4, 'llo.vunpack': 24}
+                             OUTSIDE  {'llo.vbitcast': 32, 'llo.vector_store': 16, 'llo.vpack': 16, 'llo.vunpack': 32}
+rotating_kernel    n=512    IN-LOOP  {'llo.saddr_scaled': 1, 'llo.smul.u32': 1, 'llo.srem.s32': 1, 'llo.vadd.bf16': 16, 'llo.vbitcast': 12, 'llo.vcvt.eXmY.e4m3': 8, 'llo.vector_load': 4, 'llo.vunpack': 24}
+                             OUTSIDE  {'llo.vbitcast': 32, 'llo.vector_store': 16, 'llo.vpack': 16, 'llo.vunpack': 32}
+rotating_kernel    n=2048   IN-LOOP  {'llo.saddr_scaled': 1, 'llo.smul.u32': 1, 'llo.srem.s32': 1, 'llo.vadd.bf16': 16, 'llo.vbitcast': 12, 'llo.vcvt.eXmY.e4m3': 8, 'llo.vector_load': 4, 'llo.vunpack': 24}
+                             OUTSIDE  {'llo.vbitcast': 32, 'llo.vector_store': 16, 'llo.vpack': 16, 'llo.vunpack': 32}
+rotating_kernel    n=8192   IN-LOOP  {'llo.saddr_scaled': 1, 'llo.smul.u32': 1, 'llo.srem.s32': 1, 'llo.vadd.bf16': 16, 'llo.vbitcast': 12, 'llo.vcvt.eXmY.e4m3': 8, 'llo.vector_load': 4, 'llo.vunpack': 24}
+                             OUTSIDE  {'llo.vbitcast': 32, 'llo.vector_store': 16, 'llo.vpack': 16, 'llo.vunpack': 32}
+rotating_kernel    n=128    IN-LOOP  {'llo.vadd.f32': 128, 'llo.vbitcast': 48, 'llo.vcvt.eXmY.e4m3': 32, 'llo.vector_load': 16, 'llo.vunpack': 160}
+                             OUTSIDE  {'llo.vector_store': 128}
+rotating_kernel    n=512    IN-LOOP  {'llo.vadd.f32': 128, 'llo.vbitcast': 48, 'llo.vcvt.eXmY.e4m3': 32, 'llo.vector_load': 16, 'llo.vunpack': 160}
+                             OUTSIDE  {'llo.vector_store': 128}
+rotating_kernel    n=2048   IN-LOOP  {'llo.vadd.f32': 128, 'llo.vbitcast': 48, 'llo.vcvt.eXmY.e4m3': 32, 'llo.vector_load': 16, 'llo.vunpack': 160}
+                             OUTSIDE  {'llo.vector_store': 128}
+rotating_kernel    n=8192   IN-LOOP  {'llo.vadd.f32': 128, 'llo.vbitcast': 48, 'llo.vcvt.eXmY.e4m3': 32, 'llo.vector_load': 16, 'llo.vunpack': 160}
+                             OUTSIDE  {'llo.vector_store': 128}

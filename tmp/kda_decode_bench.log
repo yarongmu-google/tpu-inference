@@ -280,16 +280,16 @@ FAILED tests/kernels/kda_decode_kernel_test.py::test_kda_decode_matches_referenc
 FAILED tests/kernels/kda_decode_kernel_test.py::test_kda_decode_slotted_matches_reference
 FAILED tests/kernels/kda_decode_kernel_test.py::test_kda_chunk_reference_equals_recurrent[32]
 FAILED tests/kernels/kda_decode_kernel_test.py::test_kda_chunk_reference_equals_recurrent[64]
-5 failed, 8 passed, 2 warnings in 24.85s
+5 failed, 8 passed, 2 warnings in 25.05s
 + bench
-WARNING 09-05 10:57:47 [tpu_platform.py:532] Pin memory is not supported on TPU.
+WARNING 09-05 14:55:17 [tpu_platform.py:532] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 09-05 10:57:50 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 09-05 10:57:50 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 09-05 10:57:50 [__init__.py:75] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 09-05 14:55:20 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 09-05 14:55:20 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 09-05 14:55:21 [__init__.py:75] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
     B  kernel ms    GB/s   xla ms   gain
 Traceback (most recent call last):
   File "<stdin>", line 27, in <module>
