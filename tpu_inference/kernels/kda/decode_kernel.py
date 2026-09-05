@@ -108,3 +108,83 @@ def kda_decode(
         interpret=interpret,
     )(a_log, dt_bias, q, k, v, g_raw, beta_raw, state)
     return new_state, o
+
+
+def _slotted_kernel(idx_ref, a_log_ref, dt_bias_ref, q_ref, k_ref,
+                    v_ref, g_ref, beta_ref, pool_ref, o_ref,
+                    pool_out_ref, *, lower_bound: float, eps: float):
+    del idx_ref  # consumed by the index_maps, not the body
+    _decode_kernel(a_log_ref, dt_bias_ref, q_ref, k_ref, v_ref,
+                   g_ref, beta_ref, pool_ref, o_ref, pool_out_ref,
+                   lower_bound=lower_bound, eps=eps)
+
+
+@functools.partial(
+    jax.jit,
+    static_argnames=("lower_bound", "eps", "interpret"),
+    donate_argnums=(0,),
+)
+def kda_decode_slotted(
+    pool: jax.Array,       # [num_blocks, H, K, V] f32 (donated)
+    idx: jax.Array,        # [B] int32 - slot per sequence
+    q: jax.Array,          # [B, H, K]
+    k: jax.Array,          # [B, H, K]
+    v: jax.Array,          # [B, H, V]
+    g_raw: jax.Array,      # [B, H, K]
+    beta_raw: jax.Array,   # [B, H]
+    a_log: jax.Array,      # [H] f32
+    dt_bias: jax.Array,    # [H, K] f32
+    *,
+    lower_bound: float = LOWER_BOUND,
+    eps: float = 1e-6,
+    interpret: bool = False,
+) -> tuple[jax.Array, jax.Array]:
+    """Slot-indirected decode step: state gathered from / scattered
+    back to a paged pool via scalar-prefetched indices. The gather
+    and scatter ride the Pallas pipeline's own double-buffering (the
+    same idiom as the paged-KV kernels), which is the attack on the
+    ~3x collapse XLA shows on pool[idx] / pool.at[idx].set at these
+    block sizes. Returns (new_pool, o[B, H, V])."""
+    from jax.experimental.pallas import tpu as pltpu
+
+    B = q.shape[0]
+    nb, H, K, V = pool.shape
+
+    def pool_map(n, idx_ref):
+        return (idx_ref[n], 0, 0, 0)
+
+    def row_map3(n, idx_ref):
+        return (n, 0, 0)
+
+    grid_spec = pltpu.PrefetchScalarGridSpec(
+        num_scalar_prefetch=1,
+        grid=(B,),
+        in_specs=[
+            pl.BlockSpec((H,), lambda n, i: (0,)),          # a_log
+            pl.BlockSpec((H, K), lambda n, i: (0, 0)),      # dt_bias
+            pl.BlockSpec((1, H, K), row_map3),              # q
+            pl.BlockSpec((1, H, K), row_map3),              # k
+            pl.BlockSpec((1, H, V), row_map3),              # v
+            pl.BlockSpec((1, H, K), row_map3),              # g_raw
+            pl.BlockSpec((1, H), lambda n, i: (n, 0)),      # beta
+            pl.BlockSpec((1, H, K, V), pool_map),           # state in
+        ],
+        out_specs=[
+            pl.BlockSpec((1, H, V), row_map3),              # o
+            pl.BlockSpec((1, H, K, V), pool_map),           # state out
+        ],
+    )
+    o, new_pool = pl.pallas_call(
+        functools.partial(_slotted_kernel, lower_bound=lower_bound,
+                          eps=eps),
+        grid_spec=grid_spec,
+        out_shape=[
+            jax.ShapeDtypeStruct((B, H, V), q.dtype),
+            jax.ShapeDtypeStruct((nb, H, K, V), pool.dtype),
+        ],
+        # operand index counts the scalar-prefetch arg: idx=0,
+        # a_log=1, ..., pool=8 -> aliased to output 1.
+        input_output_aliases={8: 1},
+        interpret=interpret,
+    )(idx, a_log, dt_bias, q, k, v, g_raw, beta_raw, pool)
+    return new_pool, o

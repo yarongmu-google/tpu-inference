@@ -45,5 +45,38 @@ for B in (8, 32, 64):
              jnp.zeros((B, H, K, V), jnp.float32))
     gb = 2 * B * H * K * V * 4 / 1e9
     print(f"{B:>5} {tk*1e3:10.3f} {gb/tk:7.0f} {tx*1e3:8.3f} {tx/tk:6.2f}x")
+
+from tpu_inference.kernels.kda.decode_kernel import kda_decode_slotted
+print(f"\nslotted (pool 2x, shuffled idx) - the B2-collapse rematch")
+print(f"{'B':>5} {'kernel ms':>10} {'GB/s':>7} {'xla ms':>8} {'gain':>6}")
+for B in (8, 32, 64):
+    nb = 2 * B
+    idxn = rng.permutation(nb)[:B]
+    idx = jnp.asarray(idxn, jnp.int32)
+    args = [jnp.asarray(rng.standard_normal((B, H, K)), jnp.bfloat16)
+            for _ in range(2)]
+    args += [jnp.asarray(rng.standard_normal((B, H, V)), jnp.bfloat16),
+             jnp.asarray(rng.standard_normal((B, H, K)), jnp.bfloat16),
+             jnp.asarray(rng.standard_normal((B, H)), jnp.bfloat16)]
+
+    def runp(fn, P):
+        P, o = fn(P, *args)
+        jax.block_until_ready(P)
+        t0 = time.perf_counter()
+        for _ in range(20):
+            P, o = fn(P, *args)
+        jax.block_until_ready(P)
+        return (time.perf_counter() - t0) / 20
+
+    tk = runp(lambda P, *a: kda_decode_slotted(P, idx, *a, a_log, dtb),
+              jnp.zeros((nb, H, K, V), jnp.float32))
+
+    @jax.jit
+    def xla_slotted(P, *a):
+        S, o = kda_decode_step_reference(P[idx], *a, a_log, dtb)
+        return P.at[idx].set(S), o
+    tx = runp(xla_slotted, jnp.zeros((nb, H, K, V), jnp.float32))
+    gb = 2 * B * H * K * V * 4 / 1e9
+    print(f"{B:>5} {tk*1e3:10.3f} {gb/tk:7.0f} {tx*1e3:8.3f} {tx/tk:6.2f}x")
 PY
 echo "then: git add tmp/ && git commit -m 'kda decode bench.' && git push"

@@ -90,3 +90,35 @@ def test_kda_decode_lowers_for_tpu():
     exported = jax.export.export(jax.jit(fn), platforms=["tpu"])(
         s0, q, k, v, g, beta)
     assert len(exported.mlir_module_serialized) > 0
+
+
+def test_kda_decode_slotted_matches_reference():
+    """Slot-indirected variant: gathered states updated, untouched
+    pool blocks bit-identical."""
+    from tpu_inference.kernels.kda.decode_kernel import (
+        kda_decode_slotted)
+    rng = np.random.default_rng(3)
+    B, H, K, V = 16, 96, 128, 128
+    nb = 2 * B
+    idx_np = rng.permutation(nb)[:B]
+    idx = jnp.asarray(idx_np, jnp.int32)
+    pool0 = jnp.asarray(rng.standard_normal((nb, H, K, V)) * 0.1,
+                        jnp.float32)
+    q, k, v, g, beta, a_log, dt_bias = _inputs(
+        rng, B, H, K, V, jnp.float32)
+
+    ref_s, ref_o = kda_decode_step_reference(
+        pool0[idx_np], q, k, v, g, beta, a_log, dt_bias)
+    expected = np.asarray(pool0).copy()
+    expected[idx_np] = np.asarray(ref_s)
+
+    new_pool, o = kda_decode_slotted(
+        jnp.copy(pool0), idx, q, k, v, g, beta, a_log, dt_bias,
+        interpret=INTERPRET)
+    np.testing.assert_allclose(np.asarray(o), np.asarray(ref_o),
+                               rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(np.asarray(new_pool), expected,
+                               rtol=1e-6, atol=1e-6)
+    untouched = np.setdiff1d(np.arange(nb), idx_np)
+    np.testing.assert_array_equal(np.asarray(new_pool)[untouched],
+                                  np.asarray(pool0)[untouched])
