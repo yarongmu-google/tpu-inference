@@ -1,52 +1,6 @@
 + goldens (compiled kernel on TPU)
-F.FFF.F.FFFF                                                             [100%]
+..FF....F.FF.                                                            [100%]
 =================================== FAILURES ===================================
-__________ test_kda_decode_matches_reference[8-8-128-128-8-8-float32] __________
-
-dtype = <class 'jax.numpy.float32'>, B = 8, H = 8, K = 128, V = 128, bb = 8
-bh = 8
-
-    @pytest.mark.parametrize("dtype", [jnp.float32, jnp.bfloat16])
-    @pytest.mark.parametrize("B,H,K,V,bb,bh", [
-        (8, 8, 128, 128, 8, 8),
-        (16, 96, 128, 128, 8, 8),     # K3 head count
-        (8, 8, 128, 128, 8, 4),
-    ])
-    def test_kda_decode_matches_reference(dtype, B, H, K, V, bb, bh):
-        rng = np.random.default_rng(0)
-        q, k, v, g, beta, a_log, dt_bias = _inputs(rng, B, H, K, V, dtype)
-        s0 = jnp.asarray(rng.standard_normal((B, H, K, V)) * 0.1,
-                         jnp.float32)
-    
-        ref_s, ref_o = kda_decode_step_reference(
-            s0, q, k, v, g, beta, a_log, dt_bias)
-        got_s, got_o = kda_decode(
-            jnp.copy(s0), q, k, v, g, beta, a_log, dt_bias,
-            block_b=bb, block_h=bh, interpret=INTERPRET)
-    
-        tol = 1e-6 if dtype == jnp.float32 else 2e-2
->       np.testing.assert_allclose(np.asarray(got_s), np.asarray(ref_s),
-                                   rtol=tol, atol=tol)
-E       AssertionError: 
-E       Not equal to tolerance rtol=1e-06, atol=1e-06
-E       
-E       Mismatched elements: 656846 / 1048576 (62.6%)
-E       First 5 mismatches are at indices:
-E        [0, 0, 0, 0]: -0.11810997873544693 (ACTUAL), -0.118112713098526 (DESIRED)
-E        [0, 0, 0, 1]: -0.025784531608223915 (ACTUAL), -0.0257915910333395 (DESIRED)
-E        [0, 0, 0, 2]: -0.07685454189777374 (ACTUAL), -0.07685878872871399 (DESIRED)
-E        [0, 0, 0, 4]: 0.04194430261850357 (ACTUAL), 0.0419498085975647 (DESIRED)
-E        [0, 0, 0, 5]: -0.17354488372802734 (ACTUAL), -0.17354291677474976 (DESIRED)
-E       Max absolute difference among violations: 0.00013232
-E       Max relative difference among violations: 18.59581
-E        ACTUAL: array([[[[-1.181100e-01, -2.578453e-02, -7.685454e-02, ...,
-E                 -1.883322e-01, -4.120014e-02, -6.888639e-04],
-E                [-6.506565e-02,  8.470753e-02, -3.893222e-02, ...,...
-E        DESIRED: array([[[[-1.181127e-01, -2.579159e-02, -7.685879e-02, ...,
-E                 -1.883299e-01, -4.121002e-02, -6.771553e-04],
-E                [-6.506377e-02,  8.471240e-02, -3.892928e-02, ...,...
-
-tests/kernels/kda_decode_kernel_test.py:50: AssertionError
 _________ test_kda_decode_matches_reference[16-96-128-128-8-8-float32] _________
 
 dtype = <class 'jax.numpy.float32'>, B = 16, H = 96, K = 128, V = 128, bb = 8
@@ -179,91 +133,6 @@ E       --------------------
 E       For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
 
 tests/kernels/kda_decode_kernel_test.py:45: JaxRuntimeError
-__________ test_kda_decode_matches_reference[8-8-128-128-8-4-float32] __________
-
-dtype = <class 'jax.numpy.float32'>, B = 8, H = 8, K = 128, V = 128, bb = 8
-bh = 4
-
-    @pytest.mark.parametrize("dtype", [jnp.float32, jnp.bfloat16])
-    @pytest.mark.parametrize("B,H,K,V,bb,bh", [
-        (8, 8, 128, 128, 8, 8),
-        (16, 96, 128, 128, 8, 8),     # K3 head count
-        (8, 8, 128, 128, 8, 4),
-    ])
-    def test_kda_decode_matches_reference(dtype, B, H, K, V, bb, bh):
-        rng = np.random.default_rng(0)
-        q, k, v, g, beta, a_log, dt_bias = _inputs(rng, B, H, K, V, dtype)
-        s0 = jnp.asarray(rng.standard_normal((B, H, K, V)) * 0.1,
-                         jnp.float32)
-    
-        ref_s, ref_o = kda_decode_step_reference(
-            s0, q, k, v, g, beta, a_log, dt_bias)
-        got_s, got_o = kda_decode(
-            jnp.copy(s0), q, k, v, g, beta, a_log, dt_bias,
-            block_b=bb, block_h=bh, interpret=INTERPRET)
-    
-        tol = 1e-6 if dtype == jnp.float32 else 2e-2
->       np.testing.assert_allclose(np.asarray(got_s), np.asarray(ref_s),
-                                   rtol=tol, atol=tol)
-E       AssertionError: 
-E       Not equal to tolerance rtol=1e-06, atol=1e-06
-E       
-E       Mismatched elements: 656846 / 1048576 (62.6%)
-E       First 5 mismatches are at indices:
-E        [0, 0, 0, 0]: -0.11810997873544693 (ACTUAL), -0.118112713098526 (DESIRED)
-E        [0, 0, 0, 1]: -0.025784531608223915 (ACTUAL), -0.0257915910333395 (DESIRED)
-E        [0, 0, 0, 2]: -0.07685454189777374 (ACTUAL), -0.07685878872871399 (DESIRED)
-E        [0, 0, 0, 4]: 0.04194430261850357 (ACTUAL), 0.0419498085975647 (DESIRED)
-E        [0, 0, 0, 5]: -0.17354488372802734 (ACTUAL), -0.17354291677474976 (DESIRED)
-E       Max absolute difference among violations: 0.00013232
-E       Max relative difference among violations: 18.59581
-E        ACTUAL: array([[[[-1.181100e-01, -2.578453e-02, -7.685454e-02, ...,
-E                 -1.883322e-01, -4.120014e-02, -6.888639e-04],
-E                [-6.506565e-02,  8.470753e-02, -3.893222e-02, ...,...
-E        DESIRED: array([[[[-1.181127e-01, -2.579159e-02, -7.685879e-02, ...,
-E                 -1.883299e-01, -4.121002e-02, -6.771553e-04],
-E                [-6.506377e-02,  8.471240e-02, -3.892928e-02, ...,...
-
-tests/kernels/kda_decode_kernel_test.py:50: AssertionError
-_______________________ test_kda_decode_multi_step_chain _______________________
-
-    def test_kda_decode_multi_step_chain():
-        """State threads correctly across 5 chained steps."""
-        rng = np.random.default_rng(1)
-        B, H, K, V = 8, 8, 128, 128
-        s_ref = jnp.zeros((B, H, K, V), jnp.float32)
-        s_ker = jnp.zeros((B, H, K, V), jnp.float32)
-        for step in range(5):
-            q, k, v, g, beta, a_log, dt_bias = _inputs(
-                rng, B, H, K, V, jnp.float32)
-            s_ref, o_ref = kda_decode_step_reference(
-                s_ref, q, k, v, g, beta, a_log, dt_bias)
-            s_ker, o_ker = kda_decode(
-                s_ker, q, k, v, g, beta, a_log, dt_bias,
-                interpret=INTERPRET)
->           np.testing.assert_allclose(np.asarray(o_ker),
-                                       np.asarray(o_ref), rtol=2e-5,
-                                       atol=2e-5, err_msg=f"step {step}")
-E           AssertionError: 
-E           Not equal to tolerance rtol=2e-05, atol=2e-05
-E           step 0
-E           Mismatched elements: 450 / 8192 (5.49%)
-E           First 5 mismatches are at indices:
-E            [0, 0, 17]: -0.004521812312304974 (ACTUAL), -0.004500164184719324 (DESIRED)
-E            [0, 1, 6]: -0.002746162936091423 (ACTUAL), -0.0027256226167082787 (DESIRED)
-E            [0, 1, 8]: -0.0024258126504719257 (ACTUAL), -0.002405205275863409 (DESIRED)
-E            [0, 1, 24]: -0.002336458768695593 (ACTUAL), -0.002360600745305419 (DESIRED)
-E            [0, 1, 27]: 0.002323437249287963 (ACTUAL), 0.0023441952653229237 (DESIRED)
-E           Max absolute difference among violations: 0.000119
-E           Max relative difference among violations: 0.06017289
-E            ACTUAL: array([[[ 3.930245e-03, -5.136376e-03,  1.287317e-03, ...,
-E                     2.760608e-03,  3.006087e-03, -3.476060e-03],
-E                   [ 1.256095e-03, -1.528450e-03, -6.253609e-04, ...,...
-E            DESIRED: array([[[ 3.933199e-03, -5.140780e-03,  1.280035e-03, ...,
-E                     2.754698e-03,  3.010864e-03, -3.474582e-03],
-E                   [ 1.244724e-03, -1.525790e-03, -6.239399e-04, ...,...
-
-tests/kernels/kda_decode_kernel_test.py:71: AssertionError
 __________________ test_kda_decode_slotted_matches_reference ___________________
 
     def test_kda_decode_slotted_matches_reference():
@@ -295,60 +164,7 @@ E       See https://openxla.org/xla/errors/error_1001 for more details.
 E       --------------------
 E       For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
 
-tests/kernels/kda_decode_kernel_test.py:115: JaxRuntimeError
-___________________ test_kda_decode_fused_matches_reference ____________________
-
-    def test_kda_decode_fused_matches_reference():
-        """Fully fused variant: conv caches + state scattered by slot;
-        epilogue (gated RMSNorm) included."""
-        from tpu_inference.kernels.kda.decode_kernel import kda_decode_fused
-        from tpu_inference.kernels.kda.reference import (
-            kda_decode_step_full_reference)
-        rng = np.random.default_rng(4)
-        B, H, K, V = 8, 16, 128, 128
-        nb = 2 * B
-        idx_np = rng.permutation(nb)[:B]
-        idx = jnp.asarray(idx_np, jnp.int32)
-        mk = lambda *s: jnp.asarray(rng.standard_normal(s), jnp.float32)
-        pool0, cq0, ck0, cv0 = (mk(nb, H, K, V) * 0.1, mk(nb, 3, H, K),
-                                mk(nb, 3, H, K), mk(nb, 3, H, K))
-        qr, kr, vr, g = mk(B, H, K), mk(B, H, K), mk(B, H, V), mk(B, H, K)
-        beta, go = mk(B, H), mk(B, H, V)
-        a_log = jnp.asarray(np.log(rng.uniform(1, 16, H)), jnp.float32)
-        dtb = mk(H, K) * 0.1
-        wq, wk, wv = (mk(4, H, K) * 0.3 for _ in range(3))
-        nw = mk(V) * 0.1 + 1.0
-    
-        rs, rcq, rck, rcv, ro = kda_decode_step_full_reference(
-            pool0[idx_np], cq0[idx_np], ck0[idx_np], cv0[idx_np],
-            qr, kr, vr, g, beta, go, a_log, dtb, wq, wk, wv, nw)
-        gp, gcq, gck, gcv, o = kda_decode_fused(
-            jnp.copy(pool0), jnp.copy(cq0), jnp.copy(ck0), jnp.copy(cv0),
-            idx, qr, kr, vr, g, beta, go, a_log, dtb, wq, wk, wv, nw,
-            interpret=INTERPRET)
-    
->       np.testing.assert_allclose(np.asarray(o), np.asarray(ro),
-                                   rtol=1e-5, atol=1e-5)
-E       AssertionError: 
-E       Not equal to tolerance rtol=1e-05, atol=1e-05
-E       
-E       Mismatched elements: 16191 / 16384 (98.8%)
-E       First 5 mismatches are at indices:
-E        [0, 0, 0]: -0.8922225832939148 (ACTUAL), -0.8938573598861694 (DESIRED)
-E        [0, 0, 1]: 1.1524264812469482 (ACTUAL), 1.1578675508499146 (DESIRED)
-E        [0, 0, 2]: -0.7122008800506592 (ACTUAL), -0.7128279209136963 (DESIRED)
-E        [0, 0, 3]: 0.15504413843154907 (ACTUAL), 0.15499787032604218 (DESIRED)
-E        [0, 0, 4]: 0.23263713717460632 (ACTUAL), 0.23236320912837982 (DESIRED)
-E       Max absolute difference among violations: 0.00949329
-E       Max relative difference among violations: 22.426144
-E        ACTUAL: array([[[-8.922226e-01,  1.152426e+00, -7.122009e-01, ...,
-E                 2.649875e-03,  6.665225e-01,  1.728529e-01],
-E               [ 3.833494e-01,  1.218660e-01,  1.089403e-02, ...,...
-E        DESIRED: array([[[-8.938574e-01,  1.157868e+00, -7.128279e-01, ...,
-E                 2.562139e-03,  6.678159e-01,  1.716958e-01],
-E               [ 3.829305e-01,  1.238634e-01,  1.042744e-02, ...,...
-
-tests/kernels/kda_decode_kernel_test.py:156: AssertionError
+tests/kernels/kda_decode_kernel_test.py:122: JaxRuntimeError
 ________________ test_kda_chunk_reference_equals_recurrent[32] _________________
 
 C = 32
@@ -374,29 +190,32 @@ C = 32
                 S, q[t:t + 1], k[t:t + 1], v[t:t + 1], g[t:t + 1],
                 b[t:t + 1], a_log, dtb)
             outs.append(o[0])
->       np.testing.assert_allclose(np.asarray(oc),
+        etol = 2e-4 if INTERPRET else 1e-3
+        np.testing.assert_allclose(np.asarray(oc),
                                    np.asarray(jnp.stack(outs)),
-                                   rtol=2e-4, atol=2e-4)
+                                   rtol=etol, atol=etol)
+>       np.testing.assert_allclose(np.asarray(sc), np.asarray(S[0]),
+                                   rtol=etol, atol=etol)
 E       AssertionError: 
-E       Not equal to tolerance rtol=0.0002, atol=0.0002
+E       Not equal to tolerance rtol=0.001, atol=0.001
 E       
-E       Mismatched elements: 13 / 65536 (0.0198%)
+E       Mismatched elements: 222 / 65536 (0.339%)
 E       First 5 mismatches are at indices:
-E        [21, 2, 101]: 0.03490789607167244 (ACTUAL), 0.03514726832509041 (DESIRED)
-E        [27, 3, 115]: -0.022809967398643494 (ACTUAL), -0.023019058629870415 (DESIRED)
-E        [34, 2, 37]: -0.0294073224067688 (ACTUAL), -0.029615778475999832 (DESIRED)
-E        [36, 1, 83]: 0.029982632026076317 (ACTUAL), 0.030191591009497643 (DESIRED)
-E        [51, 1, 112]: 0.02072279527783394 (ACTUAL), 0.020492589101195335 (DESIRED)
-E       Max absolute difference among violations: 0.00028223
-E       Max relative difference among violations: 0.01123363
-E        ACTUAL: array([[[ 3.816187e-04, -2.216324e-04,  3.874898e-04, ...,
-E                 2.712429e-03,  2.430618e-03, -1.109630e-03],
-E               [-4.571199e-03, -9.156168e-04, -2.495572e-04, ...,...
-E        DESIRED: array([[[ 3.795828e-04, -2.212139e-04,  3.873061e-04, ...,
-E                 2.693072e-03,  2.416799e-03, -1.108912e-03],
-E               [-4.575167e-03, -9.079260e-04, -2.516982e-04, ...,...
+E        [0, 0, 10]: 0.30761104822158813 (ACTUAL), 0.3060522675514221 (DESIRED)
+E        [0, 0, 68]: 0.1394510269165039 (ACTUAL), 0.1382540762424469 (DESIRED)
+E        [0, 0, 75]: 0.11438626796007156 (ACTUAL), 0.11322309076786041 (DESIRED)
+E        [0, 69, 10]: -0.18862055242061615 (ACTUAL), -0.18733210861682892 (DESIRED)
+E        [0, 78, 10]: -0.21249279379844666 (ACTUAL), -0.21122753620147705 (DESIRED)
+E       Max absolute difference among violations: 0.00271431
+E       Max relative difference among violations: 0.31196868
+E        ACTUAL: array([[[-0.010746,  0.025933, -0.109233, ...,  0.030807,  0.07503 ,
+E                -0.063362],
+E               [-0.008836,  0.017562, -0.06991 , ...,  0.020805,  0.047306,...
+E        DESIRED: array([[[-0.010777,  0.02573 , -0.108756, ...,  0.030682,  0.074441,
+E                -0.063227],
+E               [-0.008844,  0.017427, -0.069598, ...,  0.020717,  0.046914,...
 
-tests/kernels/kda_decode_kernel_test.py:189: AssertionError
+tests/kernels/kda_decode_kernel_test.py:207: AssertionError
 ________________ test_kda_chunk_reference_equals_recurrent[64] _________________
 
 C = 64
@@ -422,29 +241,32 @@ C = 64
                 S, q[t:t + 1], k[t:t + 1], v[t:t + 1], g[t:t + 1],
                 b[t:t + 1], a_log, dtb)
             outs.append(o[0])
->       np.testing.assert_allclose(np.asarray(oc),
+        etol = 2e-4 if INTERPRET else 1e-3
+        np.testing.assert_allclose(np.asarray(oc),
                                    np.asarray(jnp.stack(outs)),
-                                   rtol=2e-4, atol=2e-4)
+                                   rtol=etol, atol=etol)
+>       np.testing.assert_allclose(np.asarray(sc), np.asarray(S[0]),
+                                   rtol=etol, atol=etol)
 E       AssertionError: 
-E       Not equal to tolerance rtol=0.0002, atol=0.0002
+E       Not equal to tolerance rtol=0.001, atol=0.001
 E       
-E       Mismatched elements: 14 / 65536 (0.0214%)
+E       Mismatched elements: 222 / 65536 (0.339%)
 E       First 5 mismatches are at indices:
-E        [21, 2, 101]: 0.03490789607167244 (ACTUAL), 0.03514726832509041 (DESIRED)
-E        [27, 3, 115]: -0.022809967398643494 (ACTUAL), -0.023019058629870415 (DESIRED)
-E        [32, 2, 71]: 0.021294211968779564 (ACTUAL), 0.021501189097762108 (DESIRED)
-E        [34, 2, 37]: -0.02940676547586918 (ACTUAL), -0.029615778475999832 (DESIRED)
-E        [36, 1, 83]: 0.029982632026076317 (ACTUAL), 0.030191591009497643 (DESIRED)
-E       Max absolute difference among violations: 0.00028223
-E       Max relative difference among violations: 0.01123363
-E        ACTUAL: array([[[ 3.816187e-04, -2.216324e-04,  3.874898e-04, ...,
-E                 2.712429e-03,  2.430618e-03, -1.109630e-03],
-E               [-4.571199e-03, -9.156168e-04, -2.495572e-04, ...,...
-E        DESIRED: array([[[ 3.795828e-04, -2.212139e-04,  3.873061e-04, ...,
-E                 2.693072e-03,  2.416799e-03, -1.108912e-03],
-E               [-4.575167e-03, -9.079260e-04, -2.516982e-04, ...,...
+E        [0, 0, 10]: 0.30761104822158813 (ACTUAL), 0.3060522675514221 (DESIRED)
+E        [0, 0, 68]: 0.1394510269165039 (ACTUAL), 0.1382540762424469 (DESIRED)
+E        [0, 0, 75]: 0.11438626796007156 (ACTUAL), 0.11322309076786041 (DESIRED)
+E        [0, 69, 10]: -0.18862055242061615 (ACTUAL), -0.18733210861682892 (DESIRED)
+E        [0, 78, 10]: -0.21249279379844666 (ACTUAL), -0.21122753620147705 (DESIRED)
+E       Max absolute difference among violations: 0.00271431
+E       Max relative difference among violations: 0.31196868
+E        ACTUAL: array([[[-0.010746,  0.025933, -0.109233, ...,  0.030807,  0.07503 ,
+E                -0.063362],
+E               [-0.008836,  0.017562, -0.06991 , ...,  0.020805,  0.047306,...
+E        DESIRED: array([[[-0.010777,  0.02573 , -0.108756, ...,  0.030682,  0.074441,
+E                -0.063227],
+E               [-0.008844,  0.017427, -0.069598, ...,  0.020717,  0.046914,...
 
-tests/kernels/kda_decode_kernel_test.py:189: AssertionError
+tests/kernels/kda_decode_kernel_test.py:207: AssertionError
 =============================== warnings summary ===============================
 ../miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007
 ../miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007
@@ -453,25 +275,21 @@ tests/kernels/kda_decode_kernel_test.py:189: AssertionError
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
 =========================== short test summary info ============================
-FAILED tests/kernels/kda_decode_kernel_test.py::test_kda_decode_matches_reference[8-8-128-128-8-8-float32]
 FAILED tests/kernels/kda_decode_kernel_test.py::test_kda_decode_matches_reference[16-96-128-128-8-8-float32]
 FAILED tests/kernels/kda_decode_kernel_test.py::test_kda_decode_matches_reference[16-96-128-128-8-8-bfloat16]
-FAILED tests/kernels/kda_decode_kernel_test.py::test_kda_decode_matches_reference[8-8-128-128-8-4-float32]
-FAILED tests/kernels/kda_decode_kernel_test.py::test_kda_decode_multi_step_chain
 FAILED tests/kernels/kda_decode_kernel_test.py::test_kda_decode_slotted_matches_reference
-FAILED tests/kernels/kda_decode_kernel_test.py::test_kda_decode_fused_matches_reference
 FAILED tests/kernels/kda_decode_kernel_test.py::test_kda_chunk_reference_equals_recurrent[32]
 FAILED tests/kernels/kda_decode_kernel_test.py::test_kda_chunk_reference_equals_recurrent[64]
-9 failed, 3 passed, 2 warnings in 24.69s
+5 failed, 8 passed, 2 warnings in 24.85s
 + bench
-WARNING 09-05 10:47:46 [tpu_platform.py:532] Pin memory is not supported on TPU.
+WARNING 09-05 10:57:47 [tpu_platform.py:532] Pin memory is not supported on TPU.
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
 /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
   raw_cnt = _raw_device_count_nvml()
-INFO 09-05 10:47:50 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
-INFO 09-05 10:47:50 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
-INFO 09-05 10:47:50 [__init__.py:75] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+INFO 09-05 10:57:50 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 09-05 10:57:50 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 09-05 10:57:50 [__init__.py:75] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
     B  kernel ms    GB/s   xla ms   gain
 Traceback (most recent call last):
   File "<stdin>", line 27, in <module>

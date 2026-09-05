@@ -1,6 +1,6 @@
 jax 0.10.2 [TpuDevice(id=0, process_index=0, coords=(0,0,0), core_on_chip=0)]
-A. exp f32 resident: 1.38 Telem/s (~0.8 cyc per 1024 elems; EUP theory 1.0)
+A. exp f32 resident: 1.07 Telem/s (~1.1 cyc per 1024 elems; EUP theory 1.0)
 A2. sigmoid f32 resident: 0.67 Telem/s (~1.7 cyc/1024)
-B. e2m1->e4m3(->f32 acc) resident: 1.28 Telem/s (~0.9 cyc/1024) [NB includes the f32 upcast for the accumulator - an upper bound on convert cost]
+B. e2m1->e4m3(->f32 acc) resident: 1.31 Telem/s (~0.9 cyc/1024) [NB includes the f32 upcast for the accumulator - an upper bound on convert cost]
 
 interpretation: step-3 needs exp >= ~1 cyc/1024 (EUP full rate) and convert >= ~2 Telem/s (2 slots x 4096/op theory 9T; >=2T hides under the 24 ms MoE stream).
