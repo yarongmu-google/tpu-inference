@@ -136,13 +136,13 @@ def test_kda_decode_fused_matches_reference():
     idx_np = rng.permutation(nb)[:B]
     idx = jnp.asarray(idx_np, jnp.int32)
     mk = lambda *s: jnp.asarray(rng.standard_normal(s), jnp.float32)
-    pool0, cq0, ck0, cv0 = (mk(nb, H, K, V) * 0.1, mk(nb, H, K, 3),
-                            mk(nb, H, K, 3), mk(nb, H, K, 3))
+    pool0, cq0, ck0, cv0 = (mk(nb, H, K, V) * 0.1, mk(nb, 3, H, K),
+                            mk(nb, 3, H, K), mk(nb, 3, H, K))
     qr, kr, vr, g = mk(B, H, K), mk(B, H, K), mk(B, H, V), mk(B, H, K)
     beta, go = mk(B, H), mk(B, H, V)
     a_log = jnp.asarray(np.log(rng.uniform(1, 16, H)), jnp.float32)
     dtb = mk(H, K) * 0.1
-    wq, wk, wv = (mk(H, K, 4) * 0.3 for _ in range(3))
+    wq, wk, wv = (mk(4, H, K) * 0.3 for _ in range(3))
     nw = mk(V) * 0.1 + 1.0
 
     rs, rcq, rck, rcv, ro = kda_decode_step_full_reference(

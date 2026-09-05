@@ -28,6 +28,33 @@ from jax.experimental import pallas as pl
 from tpu_inference.kernels.kda.reference import LOWER_BOUND
 
 
+def _check_tpu_block_rules(specs_and_shapes):
+    """Enforce Mosaic's block-shape rules at trace time, so the
+    CPU/interpret dev loop catches what only the TPU lowering would
+    otherwise reject (jax 0.10 cannot lowering-check off-TPU):
+      - rank-1 blocks: whole array, or multiple of 1024, or a
+        power of two >= 128;
+      - rank>=2 blocks: last dim a multiple of 128 or the whole
+        array dim.
+    """
+    for name, block, shape in specs_and_shapes:
+        if len(block) == 1:
+            b, a = block[0], shape[0]
+            ok = (b == a or b % 1024 == 0
+                  or (b >= 128 and (b & (b - 1)) == 0))
+            if not ok:
+                raise ValueError(
+                    f"{name}: rank-1 block {b} over array {a} "
+                    f"violates Mosaic block rules (whole, x1024, or "
+                    f"pow2>=128)")
+        else:
+            b, a = block[-1], shape[-1]
+            if not (b == a or b % 128 == 0):
+                raise ValueError(
+                    f"{name}: last-dim block {b} over array dim {a} "
+                    f"must be whole or a multiple of 128")
+
+
 def _decode_kernel(a_log_ref, dt_bias_ref, q_ref, k_ref, v_ref,
                    g_ref, beta_ref, state_ref, o_ref, state_out_ref,
                    *, lower_bound: float, eps: float):
@@ -88,6 +115,13 @@ def kda_decode(
                                     lambda i: (i, 0, 0))
     bspec4 = pl.BlockSpec((block_b, H, K, V),
                           lambda i: (i, 0, 0, 0))
+
+    _check_tpu_block_rules([
+        ("a_log", (H,), (H,)), ("dt_bias", (H, K), (H, K)),
+        ("qkvg", (block_b, H, K), (B, H, K)),
+        ("beta", (block_b, H), (B, H)),
+        ("state", (block_b, H, K, V), state.shape),
+    ])
 
     o, new_state = pl.pallas_call(
         functools.partial(_decode_kernel, lower_bound=lower_bound,
@@ -201,11 +235,12 @@ def _fused_kernel(idx_ref, a_log_ref, dt_bias_ref, wcq_ref, wck_ref,
     f32 = jnp.float32
 
     def conv(cache_ref, x_ref, w_ref, out_cache_ref):
+        # cache [1,3,H,K] taps-leading (K on lanes); w [4,H,K]
         full = jnp.concatenate(
             [cache_ref[...].astype(f32),
-             x_ref[...].astype(f32)[..., None]], axis=-1)
-        y = jnp.sum(full * w_ref[...].astype(f32)[None], axis=-1)
-        out_cache_ref[...] = full[..., 1:].astype(out_cache_ref.dtype)
+             x_ref[...].astype(f32)[:, None]], axis=1)   # [1,4,H,K]
+        y = jnp.sum(full * w_ref[...].astype(f32)[None], axis=1)
+        out_cache_ref[...] = full[:, 1:].astype(out_cache_ref.dtype)
         return y * jax.nn.sigmoid(y)
 
     q = conv(cq_ref, q_ref, wcq_ref, cq_out_ref)     # [1, H, K]
@@ -242,9 +277,9 @@ def _fused_kernel(idx_ref, a_log_ref, dt_bias_ref, wcq_ref, wck_ref,
 )
 def kda_decode_fused(
     pool: jax.Array,      # [nb, H, K, V] f32 (donated)
-    conv_q: jax.Array,    # [nb, H, K, 3] (donated)
-    conv_k: jax.Array,    # [nb, H, K, 3] (donated)
-    conv_v: jax.Array,    # [nb, H, K, 3] (donated)
+    conv_q: jax.Array,    # [nb, 3, H, K] taps-leading (donated)
+    conv_k: jax.Array,    # [nb, 3, H, K] (donated)
+    conv_v: jax.Array,    # [nb, 3, H, K] (donated)
     idx: jax.Array,       # [B] int32
     q_raw: jax.Array,     # [B, H, K] pre-conv
     k_raw: jax.Array,
@@ -253,7 +288,7 @@ def kda_decode_fused(
     beta_raw: jax.Array,  # [B, H]
     go: jax.Array,        # [B, H, V] output-gate values
     a_log: jax.Array, dt_bias: jax.Array,
-    wconv_q: jax.Array, wconv_k: jax.Array, wconv_v: jax.Array,
+    wconv_q: jax.Array, wconv_k: jax.Array, wconv_v: jax.Array,  # [4,H,K]
     norm_w: jax.Array,    # [V]
     *,
     lower_bound: float = LOWER_BOUND,
@@ -278,9 +313,9 @@ def kda_decode_fused(
         in_specs=[
             pl.BlockSpec((H,), lambda n, i: (0,)),
             pl.BlockSpec((H, K), lambda n, i: (0, 0)),
-            pl.BlockSpec((H, K, 4), lambda n, i: (0, 0, 0)),
-            pl.BlockSpec((H, K, 4), lambda n, i: (0, 0, 0)),
-            pl.BlockSpec((H, K, 4), lambda n, i: (0, 0, 0)),
+            pl.BlockSpec((4, H, K), lambda n, i: (0, 0, 0)),
+            pl.BlockSpec((4, H, K), lambda n, i: (0, 0, 0)),
+            pl.BlockSpec((4, H, K), lambda n, i: (0, 0, 0)),
             pl.BlockSpec((V,), lambda n, i: (0,)),
             pl.BlockSpec((1, H, K), rmap3),
             pl.BlockSpec((1, H, K), rmap3),
@@ -289,16 +324,16 @@ def kda_decode_fused(
             pl.BlockSpec((1, H), lambda n, i: (n, 0)),
             pl.BlockSpec((1, H, V), rmap3),
             pl.BlockSpec((1, H, K, V), pmap4),
-            pl.BlockSpec((1, H, K, 3), pmap4),
-            pl.BlockSpec((1, H, K, 3), pmap4),
-            pl.BlockSpec((1, H, K, 3), pmap4),
+            pl.BlockSpec((1, 3, H, K), pmap4),
+            pl.BlockSpec((1, 3, H, K), pmap4),
+            pl.BlockSpec((1, 3, H, K), pmap4),
         ],
         out_specs=[
             pl.BlockSpec((1, H, V), rmap3),
             pl.BlockSpec((1, H, K, V), pmap4),
-            pl.BlockSpec((1, H, K, 3), pmap4),
-            pl.BlockSpec((1, H, K, 3), pmap4),
-            pl.BlockSpec((1, H, K, 3), pmap4),
+            pl.BlockSpec((1, 3, H, K), pmap4),
+            pl.BlockSpec((1, 3, H, K), pmap4),
+            pl.BlockSpec((1, 3, H, K), pmap4),
         ],
     )
     o, pool, conv_q, conv_k, conv_v = pl.pallas_call(

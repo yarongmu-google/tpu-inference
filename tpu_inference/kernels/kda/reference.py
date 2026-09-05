@@ -71,14 +71,15 @@ def kda_decode_step_reference(
 def short_conv_step(cache: jax.Array, x: jax.Array,
                     w: jax.Array) -> tuple[jax.Array, jax.Array]:
     """Causal depthwise conv (kernel 4) decode step with SiLU.
-    cache [B,H,K,3] (last 3 inputs), x [B,H,K], w [H,K,4].
-    Returns (new_cache, y)."""
+    cache [B,3,H,K] (last 3 inputs, TAPS LEADING - keeps the feature
+    dim K on lanes; a taps-trailing layout wastes 125/128 lanes),
+    x [B,H,K], w [4,H,K]. Returns (new_cache, y)."""
     full = jnp.concatenate(
-        [cache.astype(jnp.float32), x.astype(jnp.float32)[..., None]],
-        axis=-1)                                      # [B,H,K,4]
-    y = jnp.sum(full * w.astype(jnp.float32)[None], axis=-1)
+        [cache.astype(jnp.float32),
+         x.astype(jnp.float32)[:, None]], axis=1)     # [B,4,H,K]
+    y = jnp.sum(full * w.astype(jnp.float32)[None], axis=1)
     y = y * jax.nn.sigmoid(y)                         # SiLU
-    return full[..., 1:], y
+    return full[:, 1:], y
 
 
 def gated_rmsnorm(o: jax.Array, go: jax.Array, weight: jax.Array,
