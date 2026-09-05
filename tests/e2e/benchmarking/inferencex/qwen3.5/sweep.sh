@@ -69,10 +69,18 @@ start_server() {  # $1 = SHARDING (CONC/ISL/OSL come from the exported env)
 
 trap stop_server EXIT
 
+RESULT_DIR="${RESULT_DIR:-/tmp/qwen3.5-inferencex-bench}"
 for wl in "${WORKLOADS[@]}"; do
   export ISL="${wl%%:*}" OSL="${wl#*:}"
   for CONC in "${CONCS[@]}"; do
     export CONC
+    # Resume: skip points that already have a NON-EMPTY result (a
+    # completed==0 failure json should be deleted before rerunning).
+    done_file=$(ls "${RESULT_DIR}/qwen3.5_isl${ISL}_osl${OSL}_conc${CONC}_"*.json 2>/dev/null | head -1)
+    if [ -n "$done_file" ] && python3 -c "import json,sys; sys.exit(0 if json.load(open('$done_file')).get('completed',0)>0 else 1)" 2>/dev/null; then
+      echo "########## SKIP (done): ISL=$ISL OSL=$OSL CONC=$CONC -> $done_file ##########"
+      continue
+    fi
     sharding="${SHARDING_TABLE[$ISL,$OSL,$CONC]:-}"
     [ -n "$sharding" ] || { echo "ERROR: no sharding in SHARDING_TABLE for ISL=$ISL OSL=$OSL CONC=$CONC" >&2; exit 1; }
     stop_server
