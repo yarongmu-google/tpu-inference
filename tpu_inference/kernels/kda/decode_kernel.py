@@ -79,24 +79,26 @@ def kda_decode(
 ) -> tuple[jax.Array, jax.Array]:
     """Returns (new_state, o[B, H, V])."""
     B, H, K, V = state.shape
-    assert B % block_b == 0 and H % block_h == 0, (B, H, block_b, block_h)
-    grid = (B // block_b, H // block_h)
+    del block_h  # Mosaic rank-1/rank-2 block rules require whole-H
+    # blocks (a_log (H,), beta (.., H)); grid over sequences only.
+    assert B % block_b == 0, (B, block_b)
+    grid = (B // block_b,)
 
-    bspec3 = lambda d: pl.BlockSpec((block_b, block_h, d),
-                                    lambda i, j: (i, j, 0))
-    bspec4 = pl.BlockSpec((block_b, block_h, K, V),
-                          lambda i, j: (i, j, 0, 0))
+    bspec3 = lambda d: pl.BlockSpec((block_b, H, d),
+                                    lambda i: (i, 0, 0))
+    bspec4 = pl.BlockSpec((block_b, H, K, V),
+                          lambda i: (i, 0, 0, 0))
 
     o, new_state = pl.pallas_call(
         functools.partial(_decode_kernel, lower_bound=lower_bound,
                           eps=eps),
         grid=grid,
         in_specs=[
-            pl.BlockSpec((block_h,), lambda i, j: (j,)),        # a_log
-            pl.BlockSpec((block_h, K), lambda i, j: (j, 0)),    # dt_bias
+            pl.BlockSpec((H,), lambda i: (0,)),                 # a_log
+            pl.BlockSpec((H, K), lambda i: (0, 0)),             # dt_bias
             bspec3(K), bspec3(K), bspec3(V),                    # q k v
             bspec3(K),                                          # g_raw
-            pl.BlockSpec((block_b, block_h), lambda i, j: (i, j)),
+            pl.BlockSpec((block_b, H), lambda i: (i, 0)),
             bspec4,                                             # state
         ],
         out_specs=[bspec3(V), bspec4],

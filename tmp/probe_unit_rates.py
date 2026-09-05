@@ -55,17 +55,32 @@ def bench(fn, *args, iters=30):
 
 
 def loop_kernel(body, n, x_ref, o_ref):
+    # A/A2 (chained): feed the accumulator through the body so it is
+    # loop-VARIANT - run 1 hoisted an invariant exp() clean out of
+    # the loop (measured -76 Telem/s = negative marginal).
+    def step(i, acc):
+        return body(acc * 0.999)
+    o_ref[...] = jax.lax.fori_loop(
+        0, n, step, x_ref[...].astype(o_ref.dtype))
+
+
+def loop_kernel_accum(body, n, x_ref, o_ref):
+    # B (accumulate): keeps the ORIGINAL input dtype flowing into the
+    # body every iteration (needed for the e2m1 operand; run 1's B
+    # showed a positive, plausible marginal - not hoisted).
     def step(i, acc):
         return acc + body(x_ref[...])
     o_ref[...] = jax.lax.fori_loop(0, n, step,
                                    jnp.zeros_like(o_ref))
 
 
-def rate(body, x, out_dtype, n_lo=32, n_hi=256, iters=30):
+def rate(body, x, out_dtype, n_lo=32, n_hi=256, iters=30,
+         kernel=None):
+    kernel = kernel or loop_kernel
     ts = {}
     for n in (n_lo, n_hi):
         f = pl.pallas_call(
-            functools.partial(loop_kernel, body, n),
+            functools.partial(kernel, body, n),
             out_shape=jax.ShapeDtypeStruct(x.shape, out_dtype))
         ts[n] = bench(f, x, iters=iters)
     dt = (ts[n_hi] - ts[n_lo]) / (n_hi - n_lo)
@@ -101,7 +116,8 @@ def main():
                           jnp.float4_e2m1fn)
         r, cyc = rate(lambda t: t.astype(jnp.float8_e4m3fn)
                       .astype(jnp.float32),
-                      xf4, jnp.float32, iters=a.iters)
+                      xf4, jnp.float32, iters=a.iters,
+                      kernel=loop_kernel_accum)
         print(f"B. e2m1->e4m3(->f32 acc) resident: {r/1e12:.2f} "
               f"Telem/s (~{cyc:.1f} cyc/1024) "
               f"[NB includes the f32 upcast for the accumulator - "
