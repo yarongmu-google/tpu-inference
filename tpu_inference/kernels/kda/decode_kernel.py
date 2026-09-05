@@ -53,6 +53,12 @@ def _check_tpu_block_rules(specs_and_shapes):
                 raise ValueError(
                     f"{name}: last-dim block {b} over array dim {a} "
                     f"must be whole or a multiple of 128")
+            b2, a2 = block[-2], shape[-2]
+            if not (b2 == a2 or b2 % 8 == 0):
+                raise ValueError(
+                    f"{name}: second-to-last block dim {b2} over "
+                    f"array dim {a2} must be whole or a multiple "
+                    f"of 8 (run-2 slotted beta bug class)")
 
 
 def _decode_kernel(a_log_ref, dt_bias_ref, q_ref, k_ref, v_ref,
@@ -73,7 +79,8 @@ def _decode_kernel(a_log_ref, dt_bias_ref, q_ref, k_ref, v_ref,
     q = q * jax.lax.rsqrt(jnp.sum(q * q, -1, keepdims=True) + eps)
     q = q * (kdim ** -0.5)
     k = k * jax.lax.rsqrt(jnp.sum(k * k, -1, keepdims=True) + eps)
-    beta = jax.nn.sigmoid(beta_ref[...].astype(f32))    # [bb, bh]
+    beta = jax.nn.sigmoid(
+        beta_ref[...].astype(f32)[:, 0, :])             # [bb, H]
 
     s = s * jnp.exp(g)[..., None]                       # decay
     err = v - jnp.sum(k[..., None] * s, axis=2)         # [bb, bh, V]
@@ -108,7 +115,13 @@ def kda_decode(
     B, H, K, V = state.shape
     del block_h  # Mosaic rank-1/rank-2 block rules require whole-H
     # blocks (a_log (H,), beta (.., H)); grid over sequences only.
-    assert B % block_b == 0, (B, block_b)
+    # Auto-clamp block_b: the state window double-buffers, so
+    # 2 * block_b * H * K * V * 4B must stay well under VMEM
+    # (run 2: bb=8 at H=96 = 100 MB > 64 MB).
+    max_bb = max(1, (12 * 2**20) // (H * K * V * 4))
+    block_b = min(block_b, max_bb)
+    while B % block_b:
+        block_b -= 1
     grid = (B // block_b,)
 
     bspec3 = lambda d: pl.BlockSpec((block_b, H, d),
@@ -119,7 +132,7 @@ def kda_decode(
     _check_tpu_block_rules([
         ("a_log", (H,), (H,)), ("dt_bias", (H, K), (H, K)),
         ("qkvg", (block_b, H, K), (B, H, K)),
-        ("beta", (block_b, H), (B, H)),
+        ("beta", (block_b, 1, H), (B, 1, H)),
         ("state", (block_b, H, K, V), state.shape),
     ])
 
@@ -132,7 +145,7 @@ def kda_decode(
             pl.BlockSpec((H, K), lambda i: (0, 0)),             # dt_bias
             bspec3(K), bspec3(K), bspec3(V),                    # q k v
             bspec3(K),                                          # g_raw
-            pl.BlockSpec((block_b, H), lambda i: (i, 0)),
+            pl.BlockSpec((block_b, 1, H), lambda i: (i, 0, 0)),
             bspec4,                                             # state
         ],
         out_specs=[bspec3(V), bspec4],
@@ -142,7 +155,8 @@ def kda_decode(
         ],
         input_output_aliases={7: 1},   # state -> state_out, in place
         interpret=interpret,
-    )(a_log, dt_bias, q, k, v, g_raw, beta_raw, state)
+    )(a_log, dt_bias, q, k, v, g_raw,
+      beta_raw.reshape(B, 1, H), state)
     return new_state, o
 
 
@@ -202,7 +216,7 @@ def kda_decode_slotted(
             pl.BlockSpec((1, H, K), row_map3),              # k
             pl.BlockSpec((1, H, V), row_map3),              # v
             pl.BlockSpec((1, H, K), row_map3),              # g_raw
-            pl.BlockSpec((1, H), lambda n, i: (n, 0)),      # beta
+            pl.BlockSpec((1, 1, H), lambda n, i: (n, 0, 0)),  # beta
             pl.BlockSpec((1, H, K, V), pool_map),           # state in
         ],
         out_specs=[
@@ -222,7 +236,8 @@ def kda_decode_slotted(
         # a_log=1, ..., pool=8 -> aliased to output 1.
         input_output_aliases={8: 1},
         interpret=interpret,
-    )(idx, a_log, dt_bias, q, k, v, g_raw, beta_raw, pool)
+    )(idx, a_log, dt_bias, q, k, v, g_raw,
+      beta_raw.reshape(B, 1, H), pool)
     return new_pool, o
 
 
@@ -256,7 +271,7 @@ def _fused_kernel(idx_ref, a_log_ref, dt_bias_ref, wcq_ref, wck_ref,
     q = q * jax.lax.rsqrt(jnp.sum(q * q, -1, keepdims=True) + eps)
     q = q * (kdim ** -0.5)
     k = k * jax.lax.rsqrt(jnp.sum(k * k, -1, keepdims=True) + eps)
-    beta = jax.nn.sigmoid(beta_ref[...].astype(f32))
+    beta = jax.nn.sigmoid(beta_ref[...].astype(f32)[:, 0, :])
 
     s = s * jnp.exp(g)[..., None]
     err = v - jnp.sum(k[..., None] * s, axis=2)
@@ -321,7 +336,7 @@ def kda_decode_fused(
             pl.BlockSpec((1, H, K), rmap3),
             pl.BlockSpec((1, H, V), rmap3),
             pl.BlockSpec((1, H, K), rmap3),
-            pl.BlockSpec((1, H), lambda n, i: (n, 0)),
+            pl.BlockSpec((1, 1, H), lambda n, i: (n, 0, 0)),
             pl.BlockSpec((1, H, V), rmap3),
             pl.BlockSpec((1, H, K, V), pmap4),
             pl.BlockSpec((1, 3, H, K), pmap4),
@@ -353,6 +368,6 @@ def kda_decode_fused(
         input_output_aliases={13: 1, 14: 2, 15: 3, 16: 4},
         interpret=interpret,
     )(idx, a_log, dt_bias, wconv_q, wconv_k, wconv_v, norm_w,
-      q_raw, k_raw, v_raw, g_raw, beta_raw, go,
+      q_raw, k_raw, v_raw, g_raw, beta_raw.reshape(B, 1, H), go,
       pool, conv_q, conv_k, conv_v)
     return pool, conv_q, conv_k, conv_v, o

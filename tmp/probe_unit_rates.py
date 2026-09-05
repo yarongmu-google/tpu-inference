@@ -74,7 +74,7 @@ def loop_kernel_accum(body, n, x_ref, o_ref):
                                    jnp.zeros_like(o_ref))
 
 
-def rate(body, x, out_dtype, n_lo=32, n_hi=256, iters=30,
+def rate(body, x, out_dtype, n_lo=64, n_hi=2048, iters=30,
          kernel=None):
     kernel = kernel or loop_kernel
     ts = {}
