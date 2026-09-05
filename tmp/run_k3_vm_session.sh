@@ -15,6 +15,7 @@ python tmp/probe_unit_rates.py
 rm -rf tmp/mosaic_units && mkdir -p tmp/mosaic_units
 LIBTPU_INIT_ARGS=--xla_mosaic_dump_to=tmp/mosaic_units \
   python tmp/probe_unit_rates.py --iters 2 >/dev/null 2>&1 || true
+python tmp/llo_loop_census.py tmp/mosaic_units | tee tmp/unit_rates_census.log
 tar -c tmp/mosaic_units 2>/dev/null | xz -9 > tmp/mosaic_units.tar.xz
 rm -rf tmp/mosaic_units
 
