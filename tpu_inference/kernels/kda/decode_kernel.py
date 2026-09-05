@@ -1,0 +1,110 @@
+# SPDX-License-Identifier: Apache-2.0
+"""KDA (Kimi Delta Attention) fused recurrent decode kernel, v0.
+
+One token per sequence per call. Fuses, per (sequence-block,
+head-block) grid cell: the lower-bound gate, q/k l2-normalization,
+beta sigmoid, the channel-wise-decay delta-rule state update, and
+the output readout. State is read and written in place (aliased) -
+the whole step is one pass over the state, which is the cost model:
+decode is state-bandwidth-bound and every op here rides that stream.
+
+v0 scope (deliberate): contiguous state [B, H, K, V]; no slot
+indirection yet (the paged-pool gather/scatter double-buffer is the
+next iteration - the v2-GDN async-copy pattern). All math
+elementwise + lane-reductions: the decode step needs no MXU
+(vector-matrix at these shapes is a VPU reduce over K), keeping the
+kernel Mosaic-simple.
+
+Numerics oracle: tpu_inference/kernels/kda/reference.py (fla
+@ 3468279 math). Core accumulation in f32 regardless of input dtype.
+"""
+
+import functools
+
+import jax
+import jax.numpy as jnp
+from jax.experimental import pallas as pl
+
+from tpu_inference.kernels.kda.reference import LOWER_BOUND
+
+
+def _decode_kernel(a_log_ref, dt_bias_ref, q_ref, k_ref, v_ref,
+                   g_ref, beta_ref, state_ref, o_ref, state_out_ref,
+                   *, lower_bound: float, eps: float):
+    f32 = jnp.float32
+    q = q_ref[...].astype(f32)          # [bb, bh, K]
+    k = k_ref[...].astype(f32)
+    v = v_ref[...].astype(f32)          # [bb, bh, V]
+    s = state_ref[...].astype(f32)      # [bb, bh, K, V]
+    kdim = q.shape[-1]
+
+    # gate: per-channel log decay in (lower_bound, 0)
+    x = jnp.exp(a_log_ref[...].astype(f32))[None, :, None] * (
+        g_ref[...].astype(f32) + dt_bias_ref[...].astype(f32)[None])
+    g = lower_bound * jax.nn.sigmoid(x)                 # [bb, bh, K]
+
+    q = q * jax.lax.rsqrt(jnp.sum(q * q, -1, keepdims=True) + eps)
+    q = q * (kdim ** -0.5)
+    k = k * jax.lax.rsqrt(jnp.sum(k * k, -1, keepdims=True) + eps)
+    beta = jax.nn.sigmoid(beta_ref[...].astype(f32))    # [bb, bh]
+
+    s = s * jnp.exp(g)[..., None]                       # decay
+    err = v - jnp.sum(k[..., None] * s, axis=2)         # [bb, bh, V]
+    s = s + (beta[..., None] * k)[..., None] * err[..., None, :]
+    o_ref[...] = jnp.sum(q[..., None] * s, axis=2).astype(o_ref.dtype)
+    state_out_ref[...] = s.astype(state_out_ref.dtype)
+
+
+@functools.partial(
+    jax.jit,
+    static_argnames=("block_b", "block_h", "lower_bound", "eps",
+                     "interpret"),
+    donate_argnums=(0,),
+)
+def kda_decode(
+    state: jax.Array,     # [B, H, K, V] f32 (donated, updated)
+    q: jax.Array,         # [B, H, K]
+    k: jax.Array,         # [B, H, K]
+    v: jax.Array,         # [B, H, V]
+    g_raw: jax.Array,     # [B, H, K]
+    beta_raw: jax.Array,  # [B, H]
+    a_log: jax.Array,     # [H] f32
+    dt_bias: jax.Array,   # [H, K] f32
+    *,
+    block_b: int = 8,
+    block_h: int = 8,
+    lower_bound: float = LOWER_BOUND,
+    eps: float = 1e-6,
+    interpret: bool = False,
+) -> tuple[jax.Array, jax.Array]:
+    """Returns (new_state, o[B, H, V])."""
+    B, H, K, V = state.shape
+    assert B % block_b == 0 and H % block_h == 0, (B, H, block_b, block_h)
+    grid = (B // block_b, H // block_h)
+
+    bspec3 = lambda d: pl.BlockSpec((block_b, block_h, d),
+                                    lambda i, j: (i, j, 0))
+    bspec4 = pl.BlockSpec((block_b, block_h, K, V),
+                          lambda i, j: (i, j, 0, 0))
+
+    o, new_state = pl.pallas_call(
+        functools.partial(_decode_kernel, lower_bound=lower_bound,
+                          eps=eps),
+        grid=grid,
+        in_specs=[
+            pl.BlockSpec((block_h,), lambda i, j: (j,)),        # a_log
+            pl.BlockSpec((block_h, K), lambda i, j: (j, 0)),    # dt_bias
+            bspec3(K), bspec3(K), bspec3(V),                    # q k v
+            bspec3(K),                                          # g_raw
+            pl.BlockSpec((block_b, block_h), lambda i, j: (i, j)),
+            bspec4,                                             # state
+        ],
+        out_specs=[bspec3(V), bspec4],
+        out_shape=[
+            jax.ShapeDtypeStruct((B, H, V), q.dtype),
+            jax.ShapeDtypeStruct((B, H, K, V), state.dtype),
+        ],
+        input_output_aliases={7: 1},   # state -> state_out, in place
+        interpret=interpret,
+    )(a_log, dt_bias, q, k, v, g_raw, beta_raw, state)
+    return new_state, o
