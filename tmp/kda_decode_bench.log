@@ -1,0 +1,1073 @@
++ goldens (compiled kernel on TPU)
+F.FFFFF.F                                                                [100%]
+=================================== FAILURES ===================================
+__________ test_kda_decode_matches_reference[8-8-128-128-8-8-float32] __________
+
+dtype = <class 'jax.numpy.float32'>, B = 8, H = 8, K = 128, V = 128, bb = 8
+bh = 8
+
+    @pytest.mark.parametrize("dtype", [jnp.float32, jnp.bfloat16])
+    @pytest.mark.parametrize("B,H,K,V,bb,bh", [
+        (8, 8, 128, 128, 8, 8),
+        (16, 96, 128, 128, 8, 8),     # K3 head count
+        (8, 8, 128, 128, 8, 4),
+    ])
+    def test_kda_decode_matches_reference(dtype, B, H, K, V, bb, bh):
+        rng = np.random.default_rng(0)
+        q, k, v, g, beta, a_log, dt_bias = _inputs(rng, B, H, K, V, dtype)
+        s0 = jnp.asarray(rng.standard_normal((B, H, K, V)) * 0.1,
+                         jnp.float32)
+    
+        ref_s, ref_o = kda_decode_step_reference(
+            s0, q, k, v, g, beta, a_log, dt_bias)
+        got_s, got_o = kda_decode(
+            jnp.copy(s0), q, k, v, g, beta, a_log, dt_bias,
+            block_b=bb, block_h=bh, interpret=INTERPRET)
+    
+        tol = 1e-6 if dtype == jnp.float32 else 2e-2
+>       np.testing.assert_allclose(np.asarray(got_s), np.asarray(ref_s),
+                                   rtol=tol, atol=tol)
+E       AssertionError: 
+E       Not equal to tolerance rtol=1e-06, atol=1e-06
+E       
+E       Mismatched elements: 656846 / 1048576 (62.6%)
+E       First 5 mismatches are at indices:
+E        [0, 0, 0, 0]: -0.11810997873544693 (ACTUAL), -0.118112713098526 (DESIRED)
+E        [0, 0, 0, 1]: -0.025784531608223915 (ACTUAL), -0.0257915910333395 (DESIRED)
+E        [0, 0, 0, 2]: -0.07685454189777374 (ACTUAL), -0.07685878872871399 (DESIRED)
+E        [0, 0, 0, 4]: 0.04194430261850357 (ACTUAL), 0.0419498085975647 (DESIRED)
+E        [0, 0, 0, 5]: -0.17354488372802734 (ACTUAL), -0.17354291677474976 (DESIRED)
+E       Max absolute difference among violations: 0.00013232
+E       Max relative difference among violations: 18.59581
+E        ACTUAL: array([[[[-1.181100e-01, -2.578453e-02, -7.685454e-02, ...,
+E                 -1.883322e-01, -4.120014e-02, -6.888639e-04],
+E                [-6.506565e-02,  8.470753e-02, -3.893222e-02, ...,...
+E        DESIRED: array([[[[-1.181127e-01, -2.579159e-02, -7.685879e-02, ...,
+E                 -1.883299e-01, -4.121002e-02, -6.771553e-04],
+E                [-6.506377e-02,  8.471240e-02, -3.892928e-02, ...,...
+
+tests/kernels/kda_decode_kernel_test.py:50: AssertionError
+_________ test_kda_decode_matches_reference[16-96-128-128-8-8-float32] _________
+
+>   o, new_state = pl.pallas_call(
+        functools.partial(_decode_kernel, lower_bound=lower_bound,
+                          eps=eps),
+        grid=grid,
+        in_specs=[
+            pl.BlockSpec((block_h,), lambda i, j: (j,)),        # a_log
+            pl.BlockSpec((block_h, K), lambda i, j: (j, 0)),    # dt_bias
+            bspec3(K), bspec3(K), bspec3(V),                    # q k v
+            bspec3(K),                                          # g_raw
+            pl.BlockSpec((block_b, block_h), lambda i, j: (i, j)),
+            bspec4,                                             # state
+        ],
+        out_specs=[bspec3(V), bspec4],
+        out_shape=[
+            jax.ShapeDtypeStruct((B, H, V), q.dtype),
+            jax.ShapeDtypeStruct((B, H, K, V), state.dtype),
+        ],
+        input_output_aliases={7: 1},   # state -> state_out, in place
+        interpret=interpret,
+    )(a_log, dt_bias, q, k, v, g_raw, beta_raw, state)
+E   jax._src.source_info_util.JaxStackTraceBeforeTransformation: ValueError: The Pallas TPU lowering currently requires that rank 1 block shapes, either 1) the first (and only) dimension of the block shape is equal to the first (and only) dimension of the array shape, or 2) the first (and only) dimension of the block shape is a multiple of 1024, or 3) the first (and only) dimension of the block shape is a power of 2 and at least the tiling size (128 = 128 * (32 // 32)) of the array shape. Block spec for args[0] in pallas_call _decode_kernel at /home/ymu_google_com/tpu-inference/tpu_inference/kernels/kda/decode_kernel.py:31 has block shape (Blocked(block_size=8),), array shape (96,), and index_map { lambda ; a:i32[] b:i32[]. let  in (b,) }, in memory space <MemorySpace.DEFAULT: 'default'>.
+E   See details at https://docs.jax.dev/en/latest/pallas/grid_blockspec.html#pallas-blockspec
+E   
+E   The preceding stack trace is the source of the JAX operation that, once transformed by JAX, triggered the following exception.
+E   
+E   --------------------
+
+tpu_inference/kernels/kda/decode_kernel.py:90: JaxStackTraceBeforeTransformation
+
+The above exception was the direct cause of the following exception:
+
+dtype = <class 'jax.numpy.float32'>, B = 16, H = 96, K = 128, V = 128, bb = 8
+bh = 8
+
+    @pytest.mark.parametrize("dtype", [jnp.float32, jnp.bfloat16])
+    @pytest.mark.parametrize("B,H,K,V,bb,bh", [
+        (8, 8, 128, 128, 8, 8),
+        (16, 96, 128, 128, 8, 8),     # K3 head count
+        (8, 8, 128, 128, 8, 4),
+    ])
+    def test_kda_decode_matches_reference(dtype, B, H, K, V, bb, bh):
+        rng = np.random.default_rng(0)
+        q, k, v, g, beta, a_log, dt_bias = _inputs(rng, B, H, K, V, dtype)
+        s0 = jnp.asarray(rng.standard_normal((B, H, K, V)) * 0.1,
+                         jnp.float32)
+    
+        ref_s, ref_o = kda_decode_step_reference(
+            s0, q, k, v, g, beta, a_log, dt_bias)
+>       got_s, got_o = kda_decode(
+            jnp.copy(s0), q, k, v, g, beta, a_log, dt_bias,
+            block_b=bb, block_h=bh, interpret=INTERPRET)
+
+tests/kernels/kda_decode_kernel_test.py:45: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/pallas_call.py:974: in _pallas_call_lowering
+    return mlir.lower_per_platform(
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/pallas_call.py:906: in tpu_lowering
+    return mosaic_tpu_backend.pallas_call_tpu_lowering_rule(
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/pallas_call_registration.py:405: in pallas_call_tpu_lowering_rule
+    mosaic_module = lowering.lower_jaxpr_to_pipelined_module(
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/lowering.py:1014: in lower_jaxpr_to_pipelined_module
+    lower_jaxpr_into_pipelined_module(
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/lowering.py:1070: in lower_jaxpr_into_pipelined_module
+    _check_block_mappings(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+block_mappings = (BlockMapping(block_shape=(Blocked(block_size=8),)), BlockMapping(block_shape=(Blocked(block_size=8), Blocked(block_si...ck_size=128))), BlockMapping(block_shape=(Blocked(block_size=8), Blocked(block_size=8), Blocked(block_size=128))), ...)
+debug_info = DebugInfo(traced_for='pallas_call kernel', func_src_info='_decode_kernel at /home/ymu_google_com/tpu-inference/tpu_inf...t_bias_ref', 'q_ref', 'k_ref', 'v_ref', 'g_ref', 'beta_ref', 'state_ref', 'o_ref', 'state_out_ref'), result_paths=None)
+kernel_type = TC
+
+    def _check_block_mappings(
+        block_mappings: tuple[pallas_core.BlockMapping, ...],
+        lowering_context: mlir.LoweringRuleContext,
+        debug_info: jax_core.DebugInfo,
+        kernel_type: tpu_core.CoreType,
+    ) -> None:
+      del lowering_context  # originally needed for forward compat
+      for bm in block_mappings:
+        dtype = bm.array_aval.dtype
+        array_shape = bm.array_aval.shape
+        if should_physicalize_dtype(dtype):
+          physical_element_aval = jax_core.physical_element_aval(dtype)
+          physical_dtype = physical_element_aval.dtype
+          physical_array_shape = jax_core.physical_shape(array_shape, dtype)
+          physical_block_shape = bm.block_shape + tuple(
+              pallas_core.Blocked(i) for i in physical_element_aval.shape)
+        else:
+          physical_dtype = dtype
+          physical_array_shape = array_shape
+          physical_block_shape = bm.block_shape
+    
+        rank = len(physical_block_shape)
+        # TODO(necula): add tests for SMEM blocks with trivial windowing
+        # We support scalars too
+        block_memory_space = bm.block_aval.memory_space
+        if block_memory_space is None:
+          block_memory_space = pallas_core.MemorySpace.DEFAULT
+        memory_space = tpu_core.memory_space_to_tpu_memory_space(
+            block_memory_space, kernel_type
+        )
+        if memory_space == tpu_core.MemorySpace.SMEM and bm.has_trivial_window():
+          continue
+        if memory_space == tpu_core.MemorySpace.SEMAPHORE:
+          continue
+    
+        def err_details():
+          return (f"Block spec for {bm.origin} in pallas_call {debug_info.func_src_info} "
+                  "has block shape "
+                  f"{physical_block_shape}, array shape {physical_array_shape}, "
+                  # TODO(necula): add index_map source location info
+                  f"and index_map {bm.index_map_jaxpr.jaxpr}, in "
+                  f"memory space {bm.block_aval.memory_space!r}."
+                  "\nSee details at https://docs.jax.dev/en/latest/pallas/grid_blockspec.html#pallas-blockspec")
+        if rank < 1:
+          raise ValueError(
+              "The Pallas TPU lowering currently supports only blocks of "
+              "rank >= 1. " + err_details())
+    
+        if (
+            memory_space is ANY or memory_space == tpu_core.MemorySpace.HBM
+        ) and not bm.has_trivial_window():
+          raise ValueError(
+              "The Pallas TPU lowering currently supports in memory space ANY "
+              "only blocks having the same block shape as the array shape "
+              "and a trivial index_map (returning all 0s)." + err_details())
+    
+        unmapped_bs = pallas_core._get_block_shape(physical_block_shape)
+        bs0, as0 = unmapped_bs[-1], physical_array_shape[-1]
+        if rank >= 2:
+          bs1, as1 = unmapped_bs[-2], physical_array_shape[-2]
+        else:
+          bs1, as1 = 1, 1
+    
+        if rank >= 2:
+          evenly_divisible = (
+              (bs0 == as0 or bs0 % 128 == 0) and
+              (bs1 == as1 or bs1 % 8 == 0)
+          )
+          if not evenly_divisible:
+            extra_msg = ""
+            if pallas_core.dynamic_shapes_export_enabled():
+              extra_msg = (
+                  " In dynamic shape export - your kernel symbolic args must be"
+                  " annotated with constraints where the computation *after*"
+                  " applying any grid mapping is divisible by 8 and 128"
+                  " respectively. Ex: (mod(floordiv(m_dim, grid_size), 8) == 0))"
+              )
+            raise ValueError(
+                "The Pallas TPU lowering currently requires that the last two "
+                "dimensions of your block shape are divisible by 8 and 128 "
+                "respectively, or be equal to the respective dimensions of the "
+                "overall array. "
+                + extra_msg
+                + err_details()
+            )
+        else:
+          assert rank == 1
+          if bm.array_aval.dtype == jnp.bool_:
+            bitwidth = dtypes.itemsize_bits(BOOL_MEMREF_TYPE)
+          else:
+            bitwidth = dtypes.itemsize_bits(physical_dtype)
+          packing = 32 // bitwidth
+          sublane_count = tpu_info.get_tpu_info().num_sublanes
+          lane_count = tpu_info.get_tpu_info().num_lanes
+          min_tiling = lane_count * packing
+          chunk_size = sublane_count * lane_count
+          feasible_block_size = (
+              bs0 == as0
+              or bs0 % chunk_size == 0
+              or (bs0 >= min_tiling and (bs0 & (bs0 - 1)) == 0)  # power of 2
+          )
+          if not feasible_block_size:
+>           raise ValueError(
+                "The Pallas TPU lowering currently requires that rank 1 block"
+                " shapes, either 1) the first (and only) dimension of the block"
+                " shape is equal to the first (and only) dimension of the array"
+                " shape, or 2) the first (and only) dimension of the block shape"
+                f" is a multiple of {chunk_size}, or 3) the first (and only)"
+                " dimension of the block shape is a power of 2 and at least the"
+                f" tiling size ({min_tiling} = 128 * (32 //"
+                f" {dtypes.itemsize_bits(physical_dtype)})) of the array shape. "
+                + err_details()
+            )
+E           ValueError: The Pallas TPU lowering currently requires that rank 1 block shapes, either 1) the first (and only) dimension of the block shape is equal to the first (and only) dimension of the array shape, or 2) the first (and only) dimension of the block shape is a multiple of 1024, or 3) the first (and only) dimension of the block shape is a power of 2 and at least the tiling size (128 = 128 * (32 // 32)) of the array shape. Block spec for args[0] in pallas_call _decode_kernel at /home/ymu_google_com/tpu-inference/tpu_inference/kernels/kda/decode_kernel.py:31 has block shape (Blocked(block_size=8),), array shape (96,), and index_map { lambda ; a:i32[] b:i32[]. let  in (b,) }, in memory space <MemorySpace.DEFAULT: 'default'>.
+E           See details at https://docs.jax.dev/en/latest/pallas/grid_blockspec.html#pallas-blockspec
+E           --------------------
+E           For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/lowering.py:989: ValueError
+________ test_kda_decode_matches_reference[16-96-128-128-8-8-bfloat16] _________
+
+>   o, new_state = pl.pallas_call(
+        functools.partial(_decode_kernel, lower_bound=lower_bound,
+                          eps=eps),
+        grid=grid,
+        in_specs=[
+            pl.BlockSpec((block_h,), lambda i, j: (j,)),        # a_log
+            pl.BlockSpec((block_h, K), lambda i, j: (j, 0)),    # dt_bias
+            bspec3(K), bspec3(K), bspec3(V),                    # q k v
+            bspec3(K),                                          # g_raw
+            pl.BlockSpec((block_b, block_h), lambda i, j: (i, j)),
+            bspec4,                                             # state
+        ],
+        out_specs=[bspec3(V), bspec4],
+        out_shape=[
+            jax.ShapeDtypeStruct((B, H, V), q.dtype),
+            jax.ShapeDtypeStruct((B, H, K, V), state.dtype),
+        ],
+        input_output_aliases={7: 1},   # state -> state_out, in place
+        interpret=interpret,
+    )(a_log, dt_bias, q, k, v, g_raw, beta_raw, state)
+E   jax._src.source_info_util.JaxStackTraceBeforeTransformation: ValueError: The Pallas TPU lowering currently requires that rank 1 block shapes, either 1) the first (and only) dimension of the block shape is equal to the first (and only) dimension of the array shape, or 2) the first (and only) dimension of the block shape is a multiple of 1024, or 3) the first (and only) dimension of the block shape is a power of 2 and at least the tiling size (128 = 128 * (32 // 32)) of the array shape. Block spec for args[0] in pallas_call _decode_kernel at /home/ymu_google_com/tpu-inference/tpu_inference/kernels/kda/decode_kernel.py:31 has block shape (Blocked(block_size=8),), array shape (96,), and index_map { lambda ; a:i32[] b:i32[]. let  in (b,) }, in memory space <MemorySpace.DEFAULT: 'default'>.
+E   See details at https://docs.jax.dev/en/latest/pallas/grid_blockspec.html#pallas-blockspec
+E   
+E   The preceding stack trace is the source of the JAX operation that, once transformed by JAX, triggered the following exception.
+E   
+E   --------------------
+
+tpu_inference/kernels/kda/decode_kernel.py:90: JaxStackTraceBeforeTransformation
+
+The above exception was the direct cause of the following exception:
+
+dtype = <class 'jax.numpy.bfloat16'>, B = 16, H = 96, K = 128, V = 128, bb = 8
+bh = 8
+
+    @pytest.mark.parametrize("dtype", [jnp.float32, jnp.bfloat16])
+    @pytest.mark.parametrize("B,H,K,V,bb,bh", [
+        (8, 8, 128, 128, 8, 8),
+        (16, 96, 128, 128, 8, 8),     # K3 head count
+        (8, 8, 128, 128, 8, 4),
+    ])
+    def test_kda_decode_matches_reference(dtype, B, H, K, V, bb, bh):
+        rng = np.random.default_rng(0)
+        q, k, v, g, beta, a_log, dt_bias = _inputs(rng, B, H, K, V, dtype)
+        s0 = jnp.asarray(rng.standard_normal((B, H, K, V)) * 0.1,
+                         jnp.float32)
+    
+        ref_s, ref_o = kda_decode_step_reference(
+            s0, q, k, v, g, beta, a_log, dt_bias)
+>       got_s, got_o = kda_decode(
+            jnp.copy(s0), q, k, v, g, beta, a_log, dt_bias,
+            block_b=bb, block_h=bh, interpret=INTERPRET)
+
+tests/kernels/kda_decode_kernel_test.py:45: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/pallas_call.py:974: in _pallas_call_lowering
+    return mlir.lower_per_platform(
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/pallas_call.py:906: in tpu_lowering
+    return mosaic_tpu_backend.pallas_call_tpu_lowering_rule(
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/pallas_call_registration.py:405: in pallas_call_tpu_lowering_rule
+    mosaic_module = lowering.lower_jaxpr_to_pipelined_module(
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/lowering.py:1014: in lower_jaxpr_to_pipelined_module
+    lower_jaxpr_into_pipelined_module(
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/lowering.py:1070: in lower_jaxpr_into_pipelined_module
+    _check_block_mappings(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+block_mappings = (BlockMapping(block_shape=(Blocked(block_size=8),)), BlockMapping(block_shape=(Blocked(block_size=8), Blocked(block_si...ck_size=128))), BlockMapping(block_shape=(Blocked(block_size=8), Blocked(block_size=8), Blocked(block_size=128))), ...)
+debug_info = DebugInfo(traced_for='pallas_call kernel', func_src_info='_decode_kernel at /home/ymu_google_com/tpu-inference/tpu_inf...t_bias_ref', 'q_ref', 'k_ref', 'v_ref', 'g_ref', 'beta_ref', 'state_ref', 'o_ref', 'state_out_ref'), result_paths=None)
+kernel_type = TC
+
+    def _check_block_mappings(
+        block_mappings: tuple[pallas_core.BlockMapping, ...],
+        lowering_context: mlir.LoweringRuleContext,
+        debug_info: jax_core.DebugInfo,
+        kernel_type: tpu_core.CoreType,
+    ) -> None:
+      del lowering_context  # originally needed for forward compat
+      for bm in block_mappings:
+        dtype = bm.array_aval.dtype
+        array_shape = bm.array_aval.shape
+        if should_physicalize_dtype(dtype):
+          physical_element_aval = jax_core.physical_element_aval(dtype)
+          physical_dtype = physical_element_aval.dtype
+          physical_array_shape = jax_core.physical_shape(array_shape, dtype)
+          physical_block_shape = bm.block_shape + tuple(
+              pallas_core.Blocked(i) for i in physical_element_aval.shape)
+        else:
+          physical_dtype = dtype
+          physical_array_shape = array_shape
+          physical_block_shape = bm.block_shape
+    
+        rank = len(physical_block_shape)
+        # TODO(necula): add tests for SMEM blocks with trivial windowing
+        # We support scalars too
+        block_memory_space = bm.block_aval.memory_space
+        if block_memory_space is None:
+          block_memory_space = pallas_core.MemorySpace.DEFAULT
+        memory_space = tpu_core.memory_space_to_tpu_memory_space(
+            block_memory_space, kernel_type
+        )
+        if memory_space == tpu_core.MemorySpace.SMEM and bm.has_trivial_window():
+          continue
+        if memory_space == tpu_core.MemorySpace.SEMAPHORE:
+          continue
+    
+        def err_details():
+          return (f"Block spec for {bm.origin} in pallas_call {debug_info.func_src_info} "
+                  "has block shape "
+                  f"{physical_block_shape}, array shape {physical_array_shape}, "
+                  # TODO(necula): add index_map source location info
+                  f"and index_map {bm.index_map_jaxpr.jaxpr}, in "
+                  f"memory space {bm.block_aval.memory_space!r}."
+                  "\nSee details at https://docs.jax.dev/en/latest/pallas/grid_blockspec.html#pallas-blockspec")
+        if rank < 1:
+          raise ValueError(
+              "The Pallas TPU lowering currently supports only blocks of "
+              "rank >= 1. " + err_details())
+    
+        if (
+            memory_space is ANY or memory_space == tpu_core.MemorySpace.HBM
+        ) and not bm.has_trivial_window():
+          raise ValueError(
+              "The Pallas TPU lowering currently supports in memory space ANY "
+              "only blocks having the same block shape as the array shape "
+              "and a trivial index_map (returning all 0s)." + err_details())
+    
+        unmapped_bs = pallas_core._get_block_shape(physical_block_shape)
+        bs0, as0 = unmapped_bs[-1], physical_array_shape[-1]
+        if rank >= 2:
+          bs1, as1 = unmapped_bs[-2], physical_array_shape[-2]
+        else:
+          bs1, as1 = 1, 1
+    
+        if rank >= 2:
+          evenly_divisible = (
+              (bs0 == as0 or bs0 % 128 == 0) and
+              (bs1 == as1 or bs1 % 8 == 0)
+          )
+          if not evenly_divisible:
+            extra_msg = ""
+            if pallas_core.dynamic_shapes_export_enabled():
+              extra_msg = (
+                  " In dynamic shape export - your kernel symbolic args must be"
+                  " annotated with constraints where the computation *after*"
+                  " applying any grid mapping is divisible by 8 and 128"
+                  " respectively. Ex: (mod(floordiv(m_dim, grid_size), 8) == 0))"
+              )
+            raise ValueError(
+                "The Pallas TPU lowering currently requires that the last two "
+                "dimensions of your block shape are divisible by 8 and 128 "
+                "respectively, or be equal to the respective dimensions of the "
+                "overall array. "
+                + extra_msg
+                + err_details()
+            )
+        else:
+          assert rank == 1
+          if bm.array_aval.dtype == jnp.bool_:
+            bitwidth = dtypes.itemsize_bits(BOOL_MEMREF_TYPE)
+          else:
+            bitwidth = dtypes.itemsize_bits(physical_dtype)
+          packing = 32 // bitwidth
+          sublane_count = tpu_info.get_tpu_info().num_sublanes
+          lane_count = tpu_info.get_tpu_info().num_lanes
+          min_tiling = lane_count * packing
+          chunk_size = sublane_count * lane_count
+          feasible_block_size = (
+              bs0 == as0
+              or bs0 % chunk_size == 0
+              or (bs0 >= min_tiling and (bs0 & (bs0 - 1)) == 0)  # power of 2
+          )
+          if not feasible_block_size:
+>           raise ValueError(
+                "The Pallas TPU lowering currently requires that rank 1 block"
+                " shapes, either 1) the first (and only) dimension of the block"
+                " shape is equal to the first (and only) dimension of the array"
+                " shape, or 2) the first (and only) dimension of the block shape"
+                f" is a multiple of {chunk_size}, or 3) the first (and only)"
+                " dimension of the block shape is a power of 2 and at least the"
+                f" tiling size ({min_tiling} = 128 * (32 //"
+                f" {dtypes.itemsize_bits(physical_dtype)})) of the array shape. "
+                + err_details()
+            )
+E           ValueError: The Pallas TPU lowering currently requires that rank 1 block shapes, either 1) the first (and only) dimension of the block shape is equal to the first (and only) dimension of the array shape, or 2) the first (and only) dimension of the block shape is a multiple of 1024, or 3) the first (and only) dimension of the block shape is a power of 2 and at least the tiling size (128 = 128 * (32 // 32)) of the array shape. Block spec for args[0] in pallas_call _decode_kernel at /home/ymu_google_com/tpu-inference/tpu_inference/kernels/kda/decode_kernel.py:31 has block shape (Blocked(block_size=8),), array shape (96,), and index_map { lambda ; a:i32[] b:i32[]. let  in (b,) }, in memory space <MemorySpace.DEFAULT: 'default'>.
+E           See details at https://docs.jax.dev/en/latest/pallas/grid_blockspec.html#pallas-blockspec
+E           --------------------
+E           For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/lowering.py:989: ValueError
+__________ test_kda_decode_matches_reference[8-8-128-128-8-4-float32] __________
+
+>   o, new_state = pl.pallas_call(
+        functools.partial(_decode_kernel, lower_bound=lower_bound,
+                          eps=eps),
+        grid=grid,
+        in_specs=[
+            pl.BlockSpec((block_h,), lambda i, j: (j,)),        # a_log
+            pl.BlockSpec((block_h, K), lambda i, j: (j, 0)),    # dt_bias
+            bspec3(K), bspec3(K), bspec3(V),                    # q k v
+            bspec3(K),                                          # g_raw
+            pl.BlockSpec((block_b, block_h), lambda i, j: (i, j)),
+            bspec4,                                             # state
+        ],
+        out_specs=[bspec3(V), bspec4],
+        out_shape=[
+            jax.ShapeDtypeStruct((B, H, V), q.dtype),
+            jax.ShapeDtypeStruct((B, H, K, V), state.dtype),
+        ],
+        input_output_aliases={7: 1},   # state -> state_out, in place
+        interpret=interpret,
+    )(a_log, dt_bias, q, k, v, g_raw, beta_raw, state)
+E   jax._src.source_info_util.JaxStackTraceBeforeTransformation: ValueError: The Pallas TPU lowering currently requires that rank 1 block shapes, either 1) the first (and only) dimension of the block shape is equal to the first (and only) dimension of the array shape, or 2) the first (and only) dimension of the block shape is a multiple of 1024, or 3) the first (and only) dimension of the block shape is a power of 2 and at least the tiling size (128 = 128 * (32 // 32)) of the array shape. Block spec for args[0] in pallas_call _decode_kernel at /home/ymu_google_com/tpu-inference/tpu_inference/kernels/kda/decode_kernel.py:31 has block shape (Blocked(block_size=4),), array shape (8,), and index_map { lambda ; a:i32[] b:i32[]. let  in (b,) }, in memory space <MemorySpace.DEFAULT: 'default'>.
+E   See details at https://docs.jax.dev/en/latest/pallas/grid_blockspec.html#pallas-blockspec
+E   
+E   The preceding stack trace is the source of the JAX operation that, once transformed by JAX, triggered the following exception.
+E   
+E   --------------------
+
+tpu_inference/kernels/kda/decode_kernel.py:90: JaxStackTraceBeforeTransformation
+
+The above exception was the direct cause of the following exception:
+
+dtype = <class 'jax.numpy.float32'>, B = 8, H = 8, K = 128, V = 128, bb = 8
+bh = 4
+
+    @pytest.mark.parametrize("dtype", [jnp.float32, jnp.bfloat16])
+    @pytest.mark.parametrize("B,H,K,V,bb,bh", [
+        (8, 8, 128, 128, 8, 8),
+        (16, 96, 128, 128, 8, 8),     # K3 head count
+        (8, 8, 128, 128, 8, 4),
+    ])
+    def test_kda_decode_matches_reference(dtype, B, H, K, V, bb, bh):
+        rng = np.random.default_rng(0)
+        q, k, v, g, beta, a_log, dt_bias = _inputs(rng, B, H, K, V, dtype)
+        s0 = jnp.asarray(rng.standard_normal((B, H, K, V)) * 0.1,
+                         jnp.float32)
+    
+        ref_s, ref_o = kda_decode_step_reference(
+            s0, q, k, v, g, beta, a_log, dt_bias)
+>       got_s, got_o = kda_decode(
+            jnp.copy(s0), q, k, v, g, beta, a_log, dt_bias,
+            block_b=bb, block_h=bh, interpret=INTERPRET)
+
+tests/kernels/kda_decode_kernel_test.py:45: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/pallas_call.py:974: in _pallas_call_lowering
+    return mlir.lower_per_platform(
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/pallas_call.py:906: in tpu_lowering
+    return mosaic_tpu_backend.pallas_call_tpu_lowering_rule(
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/pallas_call_registration.py:405: in pallas_call_tpu_lowering_rule
+    mosaic_module = lowering.lower_jaxpr_to_pipelined_module(
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/lowering.py:1014: in lower_jaxpr_to_pipelined_module
+    lower_jaxpr_into_pipelined_module(
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/lowering.py:1070: in lower_jaxpr_into_pipelined_module
+    _check_block_mappings(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+block_mappings = (BlockMapping(block_shape=(Blocked(block_size=4),)), BlockMapping(block_shape=(Blocked(block_size=4), Blocked(block_si...ck_size=128))), BlockMapping(block_shape=(Blocked(block_size=8), Blocked(block_size=4), Blocked(block_size=128))), ...)
+debug_info = DebugInfo(traced_for='pallas_call kernel', func_src_info='_decode_kernel at /home/ymu_google_com/tpu-inference/tpu_inf...t_bias_ref', 'q_ref', 'k_ref', 'v_ref', 'g_ref', 'beta_ref', 'state_ref', 'o_ref', 'state_out_ref'), result_paths=None)
+kernel_type = TC
+
+    def _check_block_mappings(
+        block_mappings: tuple[pallas_core.BlockMapping, ...],
+        lowering_context: mlir.LoweringRuleContext,
+        debug_info: jax_core.DebugInfo,
+        kernel_type: tpu_core.CoreType,
+    ) -> None:
+      del lowering_context  # originally needed for forward compat
+      for bm in block_mappings:
+        dtype = bm.array_aval.dtype
+        array_shape = bm.array_aval.shape
+        if should_physicalize_dtype(dtype):
+          physical_element_aval = jax_core.physical_element_aval(dtype)
+          physical_dtype = physical_element_aval.dtype
+          physical_array_shape = jax_core.physical_shape(array_shape, dtype)
+          physical_block_shape = bm.block_shape + tuple(
+              pallas_core.Blocked(i) for i in physical_element_aval.shape)
+        else:
+          physical_dtype = dtype
+          physical_array_shape = array_shape
+          physical_block_shape = bm.block_shape
+    
+        rank = len(physical_block_shape)
+        # TODO(necula): add tests for SMEM blocks with trivial windowing
+        # We support scalars too
+        block_memory_space = bm.block_aval.memory_space
+        if block_memory_space is None:
+          block_memory_space = pallas_core.MemorySpace.DEFAULT
+        memory_space = tpu_core.memory_space_to_tpu_memory_space(
+            block_memory_space, kernel_type
+        )
+        if memory_space == tpu_core.MemorySpace.SMEM and bm.has_trivial_window():
+          continue
+        if memory_space == tpu_core.MemorySpace.SEMAPHORE:
+          continue
+    
+        def err_details():
+          return (f"Block spec for {bm.origin} in pallas_call {debug_info.func_src_info} "
+                  "has block shape "
+                  f"{physical_block_shape}, array shape {physical_array_shape}, "
+                  # TODO(necula): add index_map source location info
+                  f"and index_map {bm.index_map_jaxpr.jaxpr}, in "
+                  f"memory space {bm.block_aval.memory_space!r}."
+                  "\nSee details at https://docs.jax.dev/en/latest/pallas/grid_blockspec.html#pallas-blockspec")
+        if rank < 1:
+          raise ValueError(
+              "The Pallas TPU lowering currently supports only blocks of "
+              "rank >= 1. " + err_details())
+    
+        if (
+            memory_space is ANY or memory_space == tpu_core.MemorySpace.HBM
+        ) and not bm.has_trivial_window():
+          raise ValueError(
+              "The Pallas TPU lowering currently supports in memory space ANY "
+              "only blocks having the same block shape as the array shape "
+              "and a trivial index_map (returning all 0s)." + err_details())
+    
+        unmapped_bs = pallas_core._get_block_shape(physical_block_shape)
+        bs0, as0 = unmapped_bs[-1], physical_array_shape[-1]
+        if rank >= 2:
+          bs1, as1 = unmapped_bs[-2], physical_array_shape[-2]
+        else:
+          bs1, as1 = 1, 1
+    
+        if rank >= 2:
+          evenly_divisible = (
+              (bs0 == as0 or bs0 % 128 == 0) and
+              (bs1 == as1 or bs1 % 8 == 0)
+          )
+          if not evenly_divisible:
+            extra_msg = ""
+            if pallas_core.dynamic_shapes_export_enabled():
+              extra_msg = (
+                  " In dynamic shape export - your kernel symbolic args must be"
+                  " annotated with constraints where the computation *after*"
+                  " applying any grid mapping is divisible by 8 and 128"
+                  " respectively. Ex: (mod(floordiv(m_dim, grid_size), 8) == 0))"
+              )
+            raise ValueError(
+                "The Pallas TPU lowering currently requires that the last two "
+                "dimensions of your block shape are divisible by 8 and 128 "
+                "respectively, or be equal to the respective dimensions of the "
+                "overall array. "
+                + extra_msg
+                + err_details()
+            )
+        else:
+          assert rank == 1
+          if bm.array_aval.dtype == jnp.bool_:
+            bitwidth = dtypes.itemsize_bits(BOOL_MEMREF_TYPE)
+          else:
+            bitwidth = dtypes.itemsize_bits(physical_dtype)
+          packing = 32 // bitwidth
+          sublane_count = tpu_info.get_tpu_info().num_sublanes
+          lane_count = tpu_info.get_tpu_info().num_lanes
+          min_tiling = lane_count * packing
+          chunk_size = sublane_count * lane_count
+          feasible_block_size = (
+              bs0 == as0
+              or bs0 % chunk_size == 0
+              or (bs0 >= min_tiling and (bs0 & (bs0 - 1)) == 0)  # power of 2
+          )
+          if not feasible_block_size:
+>           raise ValueError(
+                "The Pallas TPU lowering currently requires that rank 1 block"
+                " shapes, either 1) the first (and only) dimension of the block"
+                " shape is equal to the first (and only) dimension of the array"
+                " shape, or 2) the first (and only) dimension of the block shape"
+                f" is a multiple of {chunk_size}, or 3) the first (and only)"
+                " dimension of the block shape is a power of 2 and at least the"
+                f" tiling size ({min_tiling} = 128 * (32 //"
+                f" {dtypes.itemsize_bits(physical_dtype)})) of the array shape. "
+                + err_details()
+            )
+E           ValueError: The Pallas TPU lowering currently requires that rank 1 block shapes, either 1) the first (and only) dimension of the block shape is equal to the first (and only) dimension of the array shape, or 2) the first (and only) dimension of the block shape is a multiple of 1024, or 3) the first (and only) dimension of the block shape is a power of 2 and at least the tiling size (128 = 128 * (32 // 32)) of the array shape. Block spec for args[0] in pallas_call _decode_kernel at /home/ymu_google_com/tpu-inference/tpu_inference/kernels/kda/decode_kernel.py:31 has block shape (Blocked(block_size=4),), array shape (8,), and index_map { lambda ; a:i32[] b:i32[]. let  in (b,) }, in memory space <MemorySpace.DEFAULT: 'default'>.
+E           See details at https://docs.jax.dev/en/latest/pallas/grid_blockspec.html#pallas-blockspec
+E           --------------------
+E           For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/lowering.py:989: ValueError
+_________ test_kda_decode_matches_reference[8-8-128-128-8-4-bfloat16] __________
+
+>   o, new_state = pl.pallas_call(
+        functools.partial(_decode_kernel, lower_bound=lower_bound,
+                          eps=eps),
+        grid=grid,
+        in_specs=[
+            pl.BlockSpec((block_h,), lambda i, j: (j,)),        # a_log
+            pl.BlockSpec((block_h, K), lambda i, j: (j, 0)),    # dt_bias
+            bspec3(K), bspec3(K), bspec3(V),                    # q k v
+            bspec3(K),                                          # g_raw
+            pl.BlockSpec((block_b, block_h), lambda i, j: (i, j)),
+            bspec4,                                             # state
+        ],
+        out_specs=[bspec3(V), bspec4],
+        out_shape=[
+            jax.ShapeDtypeStruct((B, H, V), q.dtype),
+            jax.ShapeDtypeStruct((B, H, K, V), state.dtype),
+        ],
+        input_output_aliases={7: 1},   # state -> state_out, in place
+        interpret=interpret,
+    )(a_log, dt_bias, q, k, v, g_raw, beta_raw, state)
+E   jax._src.source_info_util.JaxStackTraceBeforeTransformation: ValueError: The Pallas TPU lowering currently requires that rank 1 block shapes, either 1) the first (and only) dimension of the block shape is equal to the first (and only) dimension of the array shape, or 2) the first (and only) dimension of the block shape is a multiple of 1024, or 3) the first (and only) dimension of the block shape is a power of 2 and at least the tiling size (128 = 128 * (32 // 32)) of the array shape. Block spec for args[0] in pallas_call _decode_kernel at /home/ymu_google_com/tpu-inference/tpu_inference/kernels/kda/decode_kernel.py:31 has block shape (Blocked(block_size=4),), array shape (8,), and index_map { lambda ; a:i32[] b:i32[]. let  in (b,) }, in memory space <MemorySpace.DEFAULT: 'default'>.
+E   See details at https://docs.jax.dev/en/latest/pallas/grid_blockspec.html#pallas-blockspec
+E   
+E   The preceding stack trace is the source of the JAX operation that, once transformed by JAX, triggered the following exception.
+E   
+E   --------------------
+
+tpu_inference/kernels/kda/decode_kernel.py:90: JaxStackTraceBeforeTransformation
+
+The above exception was the direct cause of the following exception:
+
+dtype = <class 'jax.numpy.bfloat16'>, B = 8, H = 8, K = 128, V = 128, bb = 8
+bh = 4
+
+    @pytest.mark.parametrize("dtype", [jnp.float32, jnp.bfloat16])
+    @pytest.mark.parametrize("B,H,K,V,bb,bh", [
+        (8, 8, 128, 128, 8, 8),
+        (16, 96, 128, 128, 8, 8),     # K3 head count
+        (8, 8, 128, 128, 8, 4),
+    ])
+    def test_kda_decode_matches_reference(dtype, B, H, K, V, bb, bh):
+        rng = np.random.default_rng(0)
+        q, k, v, g, beta, a_log, dt_bias = _inputs(rng, B, H, K, V, dtype)
+        s0 = jnp.asarray(rng.standard_normal((B, H, K, V)) * 0.1,
+                         jnp.float32)
+    
+        ref_s, ref_o = kda_decode_step_reference(
+            s0, q, k, v, g, beta, a_log, dt_bias)
+>       got_s, got_o = kda_decode(
+            jnp.copy(s0), q, k, v, g, beta, a_log, dt_bias,
+            block_b=bb, block_h=bh, interpret=INTERPRET)
+
+tests/kernels/kda_decode_kernel_test.py:45: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/pallas_call.py:974: in _pallas_call_lowering
+    return mlir.lower_per_platform(
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/pallas_call.py:906: in tpu_lowering
+    return mosaic_tpu_backend.pallas_call_tpu_lowering_rule(
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/pallas_call_registration.py:405: in pallas_call_tpu_lowering_rule
+    mosaic_module = lowering.lower_jaxpr_to_pipelined_module(
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/lowering.py:1014: in lower_jaxpr_to_pipelined_module
+    lower_jaxpr_into_pipelined_module(
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/lowering.py:1070: in lower_jaxpr_into_pipelined_module
+    _check_block_mappings(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+block_mappings = (BlockMapping(block_shape=(Blocked(block_size=4),)), BlockMapping(block_shape=(Blocked(block_size=4), Blocked(block_si...ck_size=128))), BlockMapping(block_shape=(Blocked(block_size=8), Blocked(block_size=4), Blocked(block_size=128))), ...)
+debug_info = DebugInfo(traced_for='pallas_call kernel', func_src_info='_decode_kernel at /home/ymu_google_com/tpu-inference/tpu_inf...t_bias_ref', 'q_ref', 'k_ref', 'v_ref', 'g_ref', 'beta_ref', 'state_ref', 'o_ref', 'state_out_ref'), result_paths=None)
+kernel_type = TC
+
+    def _check_block_mappings(
+        block_mappings: tuple[pallas_core.BlockMapping, ...],
+        lowering_context: mlir.LoweringRuleContext,
+        debug_info: jax_core.DebugInfo,
+        kernel_type: tpu_core.CoreType,
+    ) -> None:
+      del lowering_context  # originally needed for forward compat
+      for bm in block_mappings:
+        dtype = bm.array_aval.dtype
+        array_shape = bm.array_aval.shape
+        if should_physicalize_dtype(dtype):
+          physical_element_aval = jax_core.physical_element_aval(dtype)
+          physical_dtype = physical_element_aval.dtype
+          physical_array_shape = jax_core.physical_shape(array_shape, dtype)
+          physical_block_shape = bm.block_shape + tuple(
+              pallas_core.Blocked(i) for i in physical_element_aval.shape)
+        else:
+          physical_dtype = dtype
+          physical_array_shape = array_shape
+          physical_block_shape = bm.block_shape
+    
+        rank = len(physical_block_shape)
+        # TODO(necula): add tests for SMEM blocks with trivial windowing
+        # We support scalars too
+        block_memory_space = bm.block_aval.memory_space
+        if block_memory_space is None:
+          block_memory_space = pallas_core.MemorySpace.DEFAULT
+        memory_space = tpu_core.memory_space_to_tpu_memory_space(
+            block_memory_space, kernel_type
+        )
+        if memory_space == tpu_core.MemorySpace.SMEM and bm.has_trivial_window():
+          continue
+        if memory_space == tpu_core.MemorySpace.SEMAPHORE:
+          continue
+    
+        def err_details():
+          return (f"Block spec for {bm.origin} in pallas_call {debug_info.func_src_info} "
+                  "has block shape "
+                  f"{physical_block_shape}, array shape {physical_array_shape}, "
+                  # TODO(necula): add index_map source location info
+                  f"and index_map {bm.index_map_jaxpr.jaxpr}, in "
+                  f"memory space {bm.block_aval.memory_space!r}."
+                  "\nSee details at https://docs.jax.dev/en/latest/pallas/grid_blockspec.html#pallas-blockspec")
+        if rank < 1:
+          raise ValueError(
+              "The Pallas TPU lowering currently supports only blocks of "
+              "rank >= 1. " + err_details())
+    
+        if (
+            memory_space is ANY or memory_space == tpu_core.MemorySpace.HBM
+        ) and not bm.has_trivial_window():
+          raise ValueError(
+              "The Pallas TPU lowering currently supports in memory space ANY "
+              "only blocks having the same block shape as the array shape "
+              "and a trivial index_map (returning all 0s)." + err_details())
+    
+        unmapped_bs = pallas_core._get_block_shape(physical_block_shape)
+        bs0, as0 = unmapped_bs[-1], physical_array_shape[-1]
+        if rank >= 2:
+          bs1, as1 = unmapped_bs[-2], physical_array_shape[-2]
+        else:
+          bs1, as1 = 1, 1
+    
+        if rank >= 2:
+          evenly_divisible = (
+              (bs0 == as0 or bs0 % 128 == 0) and
+              (bs1 == as1 or bs1 % 8 == 0)
+          )
+          if not evenly_divisible:
+            extra_msg = ""
+            if pallas_core.dynamic_shapes_export_enabled():
+              extra_msg = (
+                  " In dynamic shape export - your kernel symbolic args must be"
+                  " annotated with constraints where the computation *after*"
+                  " applying any grid mapping is divisible by 8 and 128"
+                  " respectively. Ex: (mod(floordiv(m_dim, grid_size), 8) == 0))"
+              )
+            raise ValueError(
+                "The Pallas TPU lowering currently requires that the last two "
+                "dimensions of your block shape are divisible by 8 and 128 "
+                "respectively, or be equal to the respective dimensions of the "
+                "overall array. "
+                + extra_msg
+                + err_details()
+            )
+        else:
+          assert rank == 1
+          if bm.array_aval.dtype == jnp.bool_:
+            bitwidth = dtypes.itemsize_bits(BOOL_MEMREF_TYPE)
+          else:
+            bitwidth = dtypes.itemsize_bits(physical_dtype)
+          packing = 32 // bitwidth
+          sublane_count = tpu_info.get_tpu_info().num_sublanes
+          lane_count = tpu_info.get_tpu_info().num_lanes
+          min_tiling = lane_count * packing
+          chunk_size = sublane_count * lane_count
+          feasible_block_size = (
+              bs0 == as0
+              or bs0 % chunk_size == 0
+              or (bs0 >= min_tiling and (bs0 & (bs0 - 1)) == 0)  # power of 2
+          )
+          if not feasible_block_size:
+>           raise ValueError(
+                "The Pallas TPU lowering currently requires that rank 1 block"
+                " shapes, either 1) the first (and only) dimension of the block"
+                " shape is equal to the first (and only) dimension of the array"
+                " shape, or 2) the first (and only) dimension of the block shape"
+                f" is a multiple of {chunk_size}, or 3) the first (and only)"
+                " dimension of the block shape is a power of 2 and at least the"
+                f" tiling size ({min_tiling} = 128 * (32 //"
+                f" {dtypes.itemsize_bits(physical_dtype)})) of the array shape. "
+                + err_details()
+            )
+E           ValueError: The Pallas TPU lowering currently requires that rank 1 block shapes, either 1) the first (and only) dimension of the block shape is equal to the first (and only) dimension of the array shape, or 2) the first (and only) dimension of the block shape is a multiple of 1024, or 3) the first (and only) dimension of the block shape is a power of 2 and at least the tiling size (128 = 128 * (32 // 32)) of the array shape. Block spec for args[0] in pallas_call _decode_kernel at /home/ymu_google_com/tpu-inference/tpu_inference/kernels/kda/decode_kernel.py:31 has block shape (Blocked(block_size=4),), array shape (8,), and index_map { lambda ; a:i32[] b:i32[]. let  in (b,) }, in memory space <MemorySpace.DEFAULT: 'default'>.
+E           See details at https://docs.jax.dev/en/latest/pallas/grid_blockspec.html#pallas-blockspec
+E           --------------------
+E           For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/lowering.py:989: ValueError
+_______________________ test_kda_decode_multi_step_chain _______________________
+
+    def test_kda_decode_multi_step_chain():
+        """State threads correctly across 5 chained steps."""
+        rng = np.random.default_rng(1)
+        B, H, K, V = 8, 8, 128, 128
+        s_ref = jnp.zeros((B, H, K, V), jnp.float32)
+        s_ker = jnp.zeros((B, H, K, V), jnp.float32)
+        for step in range(5):
+            q, k, v, g, beta, a_log, dt_bias = _inputs(
+                rng, B, H, K, V, jnp.float32)
+            s_ref, o_ref = kda_decode_step_reference(
+                s_ref, q, k, v, g, beta, a_log, dt_bias)
+            s_ker, o_ker = kda_decode(
+                s_ker, q, k, v, g, beta, a_log, dt_bias,
+                interpret=INTERPRET)
+>           np.testing.assert_allclose(np.asarray(o_ker),
+                                       np.asarray(o_ref), rtol=2e-5,
+                                       atol=2e-5, err_msg=f"step {step}")
+E           AssertionError: 
+E           Not equal to tolerance rtol=2e-05, atol=2e-05
+E           step 0
+E           Mismatched elements: 450 / 8192 (5.49%)
+E           First 5 mismatches are at indices:
+E            [0, 0, 17]: -0.004521812312304974 (ACTUAL), -0.004500164184719324 (DESIRED)
+E            [0, 1, 6]: -0.002746162936091423 (ACTUAL), -0.0027256226167082787 (DESIRED)
+E            [0, 1, 8]: -0.0024258126504719257 (ACTUAL), -0.002405205275863409 (DESIRED)
+E            [0, 1, 24]: -0.002336458768695593 (ACTUAL), -0.002360600745305419 (DESIRED)
+E            [0, 1, 27]: 0.002323437249287963 (ACTUAL), 0.0023441952653229237 (DESIRED)
+E           Max absolute difference among violations: 0.000119
+E           Max relative difference among violations: 0.06017289
+E            ACTUAL: array([[[ 3.930245e-03, -5.136376e-03,  1.287317e-03, ...,
+E                     2.760608e-03,  3.006087e-03, -3.476060e-03],
+E                   [ 1.256095e-03, -1.528450e-03, -6.253609e-04, ...,...
+E            DESIRED: array([[[ 3.933199e-03, -5.140780e-03,  1.280035e-03, ...,
+E                     2.754698e-03,  3.010864e-03, -3.474582e-03],
+E                   [ 1.244724e-03, -1.525790e-03, -6.239399e-04, ...,...
+
+tests/kernels/kda_decode_kernel_test.py:71: AssertionError
+__________________ test_kda_decode_slotted_matches_reference ___________________
+
+>   o, new_pool = pl.pallas_call(
+        functools.partial(_slotted_kernel, lower_bound=lower_bound,
+                          eps=eps),
+        grid_spec=grid_spec,
+        out_shape=[
+            jax.ShapeDtypeStruct((B, H, V), q.dtype),
+            jax.ShapeDtypeStruct((nb, H, K, V), pool.dtype),
+        ],
+        # operand index counts the scalar-prefetch arg: idx=0,
+        # a_log=1, ..., pool=8 -> aliased to output 1.
+        input_output_aliases={8: 1},
+        interpret=interpret,
+    )(idx, a_log, dt_bias, q, k, v, g_raw, beta_raw, pool)
+E   jax._src.source_info_util.JaxStackTraceBeforeTransformation: ValueError: The Pallas TPU lowering currently requires that the last two dimensions of your block shape are divisible by 8 and 128 respectively, or be equal to the respective dimensions of the overall array. Block spec for args[7] in pallas_call _slotted_kernel at /home/ymu_google_com/tpu-inference/tpu_inference/kernels/kda/decode_kernel.py:113 has block shape (Blocked(block_size=1), Blocked(block_size=96)), array shape (16, 96), and index_map { lambda ; a:i32[] b:Ref<smem>{i32[16]}. let  in (a, 0:i32[]) }, in memory space <MemorySpace.DEFAULT: 'default'>.
+E   See details at https://docs.jax.dev/en/latest/pallas/grid_blockspec.html#pallas-blockspec
+E   
+E   The preceding stack trace is the source of the JAX operation that, once transformed by JAX, triggered the following exception.
+E   
+E   --------------------
+
+tpu_inference/kernels/kda/decode_kernel.py:177: JaxStackTraceBeforeTransformation
+
+The above exception was the direct cause of the following exception:
+
+    def test_kda_decode_slotted_matches_reference():
+        """Slot-indirected variant: gathered states updated, untouched
+        pool blocks bit-identical."""
+        from tpu_inference.kernels.kda.decode_kernel import (
+            kda_decode_slotted)
+        rng = np.random.default_rng(3)
+        B, H, K, V = 16, 96, 128, 128
+        nb = 2 * B
+        idx_np = rng.permutation(nb)[:B]
+        idx = jnp.asarray(idx_np, jnp.int32)
+        pool0 = jnp.asarray(rng.standard_normal((nb, H, K, V)) * 0.1,
+                            jnp.float32)
+        q, k, v, g, beta, a_log, dt_bias = _inputs(
+            rng, B, H, K, V, jnp.float32)
+    
+        ref_s, ref_o = kda_decode_step_reference(
+            pool0[idx_np], q, k, v, g, beta, a_log, dt_bias)
+        expected = np.asarray(pool0).copy()
+        expected[idx_np] = np.asarray(ref_s)
+    
+>       new_pool, o = kda_decode_slotted(
+            jnp.copy(pool0), idx, q, k, v, g, beta, a_log, dt_bias,
+            interpret=INTERPRET)
+
+tests/kernels/kda_decode_kernel_test.py:115: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/pallas_call.py:974: in _pallas_call_lowering
+    return mlir.lower_per_platform(
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/pallas_call.py:906: in tpu_lowering
+    return mosaic_tpu_backend.pallas_call_tpu_lowering_rule(
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/pallas_call_registration.py:405: in pallas_call_tpu_lowering_rule
+    mosaic_module = lowering.lower_jaxpr_to_pipelined_module(
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/lowering.py:1014: in lower_jaxpr_to_pipelined_module
+    lower_jaxpr_into_pipelined_module(
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/lowering.py:1070: in lower_jaxpr_into_pipelined_module
+    _check_block_mappings(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+block_mappings = (BlockMapping(block_shape=(Blocked(block_size=96),)), BlockMapping(block_shape=(Blocked(block_size=96), Blocked(block_...k_size=128))), BlockMapping(block_shape=(Blocked(block_size=1), Blocked(block_size=96), Blocked(block_size=128))), ...)
+debug_info = DebugInfo(traced_for='pallas_call kernel', func_src_info='_slotted_kernel at /home/ymu_google_com/tpu-inference/tpu_in...'dt_bias_ref', 'q_ref', 'k_ref', 'v_ref', 'g_ref', 'beta_ref', 'pool_ref', 'o_ref', 'pool_out_ref'), result_paths=None)
+kernel_type = TC
+
+    def _check_block_mappings(
+        block_mappings: tuple[pallas_core.BlockMapping, ...],
+        lowering_context: mlir.LoweringRuleContext,
+        debug_info: jax_core.DebugInfo,
+        kernel_type: tpu_core.CoreType,
+    ) -> None:
+      del lowering_context  # originally needed for forward compat
+      for bm in block_mappings:
+        dtype = bm.array_aval.dtype
+        array_shape = bm.array_aval.shape
+        if should_physicalize_dtype(dtype):
+          physical_element_aval = jax_core.physical_element_aval(dtype)
+          physical_dtype = physical_element_aval.dtype
+          physical_array_shape = jax_core.physical_shape(array_shape, dtype)
+          physical_block_shape = bm.block_shape + tuple(
+              pallas_core.Blocked(i) for i in physical_element_aval.shape)
+        else:
+          physical_dtype = dtype
+          physical_array_shape = array_shape
+          physical_block_shape = bm.block_shape
+    
+        rank = len(physical_block_shape)
+        # TODO(necula): add tests for SMEM blocks with trivial windowing
+        # We support scalars too
+        block_memory_space = bm.block_aval.memory_space
+        if block_memory_space is None:
+          block_memory_space = pallas_core.MemorySpace.DEFAULT
+        memory_space = tpu_core.memory_space_to_tpu_memory_space(
+            block_memory_space, kernel_type
+        )
+        if memory_space == tpu_core.MemorySpace.SMEM and bm.has_trivial_window():
+          continue
+        if memory_space == tpu_core.MemorySpace.SEMAPHORE:
+          continue
+    
+        def err_details():
+          return (f"Block spec for {bm.origin} in pallas_call {debug_info.func_src_info} "
+                  "has block shape "
+                  f"{physical_block_shape}, array shape {physical_array_shape}, "
+                  # TODO(necula): add index_map source location info
+                  f"and index_map {bm.index_map_jaxpr.jaxpr}, in "
+                  f"memory space {bm.block_aval.memory_space!r}."
+                  "\nSee details at https://docs.jax.dev/en/latest/pallas/grid_blockspec.html#pallas-blockspec")
+        if rank < 1:
+          raise ValueError(
+              "The Pallas TPU lowering currently supports only blocks of "
+              "rank >= 1. " + err_details())
+    
+        if (
+            memory_space is ANY or memory_space == tpu_core.MemorySpace.HBM
+        ) and not bm.has_trivial_window():
+          raise ValueError(
+              "The Pallas TPU lowering currently supports in memory space ANY "
+              "only blocks having the same block shape as the array shape "
+              "and a trivial index_map (returning all 0s)." + err_details())
+    
+        unmapped_bs = pallas_core._get_block_shape(physical_block_shape)
+        bs0, as0 = unmapped_bs[-1], physical_array_shape[-1]
+        if rank >= 2:
+          bs1, as1 = unmapped_bs[-2], physical_array_shape[-2]
+        else:
+          bs1, as1 = 1, 1
+    
+        if rank >= 2:
+          evenly_divisible = (
+              (bs0 == as0 or bs0 % 128 == 0) and
+              (bs1 == as1 or bs1 % 8 == 0)
+          )
+          if not evenly_divisible:
+            extra_msg = ""
+            if pallas_core.dynamic_shapes_export_enabled():
+              extra_msg = (
+                  " In dynamic shape export - your kernel symbolic args must be"
+                  " annotated with constraints where the computation *after*"
+                  " applying any grid mapping is divisible by 8 and 128"
+                  " respectively. Ex: (mod(floordiv(m_dim, grid_size), 8) == 0))"
+              )
+>           raise ValueError(
+                "The Pallas TPU lowering currently requires that the last two "
+                "dimensions of your block shape are divisible by 8 and 128 "
+                "respectively, or be equal to the respective dimensions of the "
+                "overall array. "
+                + extra_msg
+                + err_details()
+            )
+E           ValueError: The Pallas TPU lowering currently requires that the last two dimensions of your block shape are divisible by 8 and 128 respectively, or be equal to the respective dimensions of the overall array. Block spec for args[7] in pallas_call _slotted_kernel at /home/ymu_google_com/tpu-inference/tpu_inference/kernels/kda/decode_kernel.py:113 has block shape (Blocked(block_size=1), Blocked(block_size=96)), array shape (16, 96), and index_map { lambda ; a:i32[] b:Ref<smem>{i32[16]}. let  in (a, 0:i32[]) }, in memory space <MemorySpace.DEFAULT: 'default'>.
+E           See details at https://docs.jax.dev/en/latest/pallas/grid_blockspec.html#pallas-blockspec
+E           --------------------
+E           For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/lowering.py:964: ValueError
+=============================== warnings summary ===============================
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007
+../miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007
+  /home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+    raw_cnt = _raw_device_count_nvml()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/kernels/kda_decode_kernel_test.py::test_kda_decode_matches_reference[8-8-128-128-8-8-float32]
+FAILED tests/kernels/kda_decode_kernel_test.py::test_kda_decode_matches_reference[16-96-128-128-8-8-float32]
+FAILED tests/kernels/kda_decode_kernel_test.py::test_kda_decode_matches_reference[16-96-128-128-8-8-bfloat16]
+FAILED tests/kernels/kda_decode_kernel_test.py::test_kda_decode_matches_reference[8-8-128-128-8-4-float32]
+FAILED tests/kernels/kda_decode_kernel_test.py::test_kda_decode_matches_reference[8-8-128-128-8-4-bfloat16]
+FAILED tests/kernels/kda_decode_kernel_test.py::test_kda_decode_multi_step_chain
+FAILED tests/kernels/kda_decode_kernel_test.py::test_kda_decode_slotted_matches_reference
+7 failed, 2 passed, 2 warnings in 14.63s
++ bench
+WARNING 09-05 10:10:21 [tpu_platform.py:532] Pin memory is not supported on TPU.
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/cuda/__init__.py:1007: UserWarning: Can't initialize NVML
+  raw_cnt = _raw_device_count_nvml()
+INFO 09-05 10:10:24 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 09-05 10:10:24 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 09-05 10:10:24 [__init__.py:75] TPU info: node_name=cuiq-infer-tpu7x-8-3 | tpu_type=tpu7x-8 | worker_id=0 | num_chips=8 | num_cores_per_chip=2
+    B  kernel ms    GB/s   xla ms   gain
+Traceback (most recent call last):
+  File "/home/ymu_google_com/tpu-inference/tpu_inference/kernels/kda/decode_kernel.py", line 90, in kda_decode
+    o, new_state = pl.pallas_call(
+jax._src.source_info_util.JaxStackTraceBeforeTransformation: ValueError: The Pallas TPU lowering currently requires that rank 1 block shapes, either 1) the first (and only) dimension of the block shape is equal to the first (and only) dimension of the array shape, or 2) the first (and only) dimension of the block shape is a multiple of 1024, or 3) the first (and only) dimension of the block shape is a power of 2 and at least the tiling size (128 = 128 * (32 // 32)) of the array shape. Block spec for args[0] in pallas_call _decode_kernel at /home/ymu_google_com/tpu-inference/tpu_inference/kernels/kda/decode_kernel.py:31 has block shape (Blocked(block_size=8),), array shape (96,), and index_map { lambda ; a:i32[] b:i32[]. let  in (b,) }, in memory space <MemorySpace.DEFAULT: 'default'>.
+See details at https://docs.jax.dev/en/latest/pallas/grid_blockspec.html#pallas-blockspec
+
+The preceding stack trace is the source of the JAX operation that, once transformed by JAX, triggered the following exception.
+
+--------------------
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<stdin>", line 27, in <module>
+  File "<stdin>", line 19, in run
+  File "<stdin>", line 27, in <lambda>
+  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/pallas_call.py", line 974, in _pallas_call_lowering
+    return mlir.lower_per_platform(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/pallas_call.py", line 906, in tpu_lowering
+    return mosaic_tpu_backend.pallas_call_tpu_lowering_rule(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/pallas_call_registration.py", line 405, in pallas_call_tpu_lowering_rule
+    mosaic_module = lowering.lower_jaxpr_to_pipelined_module(
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/lowering.py", line 1014, in lower_jaxpr_to_pipelined_module
+    lower_jaxpr_into_pipelined_module(
+  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/lowering.py", line 1070, in lower_jaxpr_into_pipelined_module
+    _check_block_mappings(
+  File "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/_src/pallas/mosaic/lowering.py", line 989, in _check_block_mappings
+    raise ValueError(
+ValueError: The Pallas TPU lowering currently requires that rank 1 block shapes, either 1) the first (and only) dimension of the block shape is equal to the first (and only) dimension of the array shape, or 2) the first (and only) dimension of the block shape is a multiple of 1024, or 3) the first (and only) dimension of the block shape is a power of 2 and at least the tiling size (128 = 128 * (32 // 32)) of the array shape. Block spec for args[0] in pallas_call _decode_kernel at /home/ymu_google_com/tpu-inference/tpu_inference/kernels/kda/decode_kernel.py:31 has block shape (Blocked(block_size=8),), array shape (96,), and index_map { lambda ; a:i32[] b:i32[]. let  in (b,) }, in memory space <MemorySpace.DEFAULT: 'default'>.
+See details at https://docs.jax.dev/en/latest/pallas/grid_blockspec.html#pallas-blockspec
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+then: git add tmp/ && git commit -m 'kda decode bench.' && git push
