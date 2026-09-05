@@ -133,10 +133,12 @@ def main():
         print(f"{n:>5} {t*1e3:9.3f} {cyc:9.0f}{marg}")
         prev = (n, t)
 
-    print("\nreference points: isolated scheduled tile ~300-400 cyc; "
-          "pure MAC for this chain ~200 cyc (3 matmuls, 33.6M MAC, "
-          "x0.5 width util). marginal near ~200-400 = fill amortized; "
-          "marginal >> 400 = fill exposed per tile.")
+    print("\nverdict rule (self-referencing): the n=1 row IS the "
+          "isolated chain cost. pure MAC for the chain = 42M MAC "
+          "-> ~320 cyc full-width, ~640 at 0.5 util. If marginal "
+          "-> a few hundred cyc (~pure MAC), fill amortizes and the "
+          "plan holds; if marginal stays near the n=1 cost, fill is "
+          "exposed per tile and the composed estimate doubles+.")
 
 
 if __name__ == "__main__":
