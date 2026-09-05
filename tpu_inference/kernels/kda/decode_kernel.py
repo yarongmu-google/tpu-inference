@@ -28,25 +28,35 @@ from jax.experimental import pallas as pl
 from tpu_inference.kernels.kda.reference import LOWER_BOUND
 
 
+def _packing(dtype) -> int:
+    """32 / bitwidth: f32=1, bf16=2, fp8/int8=4, fp4=8."""
+    return max(1, 32 // (jnp.dtype(dtype).itemsize * 8)) \
+        if jnp.dtype(dtype).itemsize else 8
+
+
 def _check_tpu_block_rules(specs_and_shapes):
-    """Enforce Mosaic's block-shape rules at trace time, so the
-    CPU/interpret dev loop catches what only the TPU lowering would
-    otherwise reject (jax 0.10 cannot lowering-check off-TPU):
-      - rank-1 blocks: whole array, or multiple of 1024, or a
-        power of two >= 128;
-      - rank>=2 blocks: last dim a multiple of 128 or the whole
-        array dim.
+    """Enforce Mosaic block/tiling rules at trace time so the CPU
+    dev loop catches what only TPU lowering would reject (jax 0.10
+    cannot lowering-check off-TPU). Rules per the platform tiled-
+    layout documentation: tiles are T(t*packing, 128), packing =
+    32/bitwidth
+    (f32 1, bf16 2, fp8 4, fp4 8); a packed tile needs >= packing
+    rows. Entries: (name, block, array_shape, dtype).
+      - rank-1 blocks: whole array, x1024, or pow2 >= 128*packing;
+      - rank>=2: last dim multiple of 128 or whole; second-to-last
+        a multiple of 8*packing or whole.
     """
-    for name, block, shape in specs_and_shapes:
+    for name, block, shape, dtype in specs_and_shapes:
+        p = _packing(dtype)
         if len(block) == 1:
             b, a = block[0], shape[0]
             ok = (b == a or b % 1024 == 0
-                  or (b >= 128 and (b & (b - 1)) == 0))
+                  or (b >= 128 * p and (b & (b - 1)) == 0))
             if not ok:
                 raise ValueError(
                     f"{name}: rank-1 block {b} over array {a} "
-                    f"violates Mosaic block rules (whole, x1024, or "
-                    f"pow2>=128)")
+                    f"(packing {p}) violates Mosaic rules (whole, "
+                    f"x1024, or pow2 >= {128 * p})")
         else:
             b, a = block[-1], shape[-1]
             if not (b == a or b % 128 == 0):
@@ -54,11 +64,11 @@ def _check_tpu_block_rules(specs_and_shapes):
                     f"{name}: last-dim block {b} over array dim {a} "
                     f"must be whole or a multiple of 128")
             b2, a2 = block[-2], shape[-2]
-            if not (b2 == a2 or b2 % 8 == 0):
+            if not (b2 == a2 or b2 % (8 * p) == 0):
                 raise ValueError(
                     f"{name}: second-to-last block dim {b2} over "
-                    f"array dim {a2} must be whole or a multiple "
-                    f"of 8 (run-2 slotted beta bug class)")
+                    f"array dim {a2} must be whole or a multiple of "
+                    f"8*packing={8 * p} for {jnp.dtype(dtype).name}")
 
 
 def _decode_kernel(a_log_ref, dt_bias_ref, q_ref, k_ref, v_ref,
@@ -130,10 +140,11 @@ def kda_decode(
                           lambda i: (i, 0, 0, 0))
 
     _check_tpu_block_rules([
-        ("a_log", (H,), (H,)), ("dt_bias", (H, K), (H, K)),
-        ("qkvg", (block_b, H, K), (B, H, K)),
-        ("beta", (block_b, 1, H), (B, 1, H)),
-        ("state", (block_b, H, K, V), state.shape),
+        ("a_log", (H,), (H,), a_log.dtype),
+        ("dt_bias", (H, K), (H, K), dt_bias.dtype),
+        ("qkvg", (block_b, H, K), (B, H, K), q.dtype),
+        ("beta", (block_b, 1, H), (B, 1, H), beta_raw.dtype),
+        ("state", (block_b, H, K, V), state.shape, state.dtype),
     ])
 
     o, new_state = pl.pallas_call(
