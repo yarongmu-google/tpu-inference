@@ -122,3 +122,72 @@ def test_kda_decode_slotted_matches_reference():
     untouched = np.setdiff1d(np.arange(nb), idx_np)
     np.testing.assert_array_equal(np.asarray(new_pool)[untouched],
                                   np.asarray(pool0)[untouched])
+
+
+def test_kda_decode_fused_matches_reference():
+    """Fully fused variant: conv caches + state scattered by slot;
+    epilogue (gated RMSNorm) included."""
+    from tpu_inference.kernels.kda.decode_kernel import kda_decode_fused
+    from tpu_inference.kernels.kda.reference import (
+        kda_decode_step_full_reference)
+    rng = np.random.default_rng(4)
+    B, H, K, V = 8, 16, 128, 128
+    nb = 2 * B
+    idx_np = rng.permutation(nb)[:B]
+    idx = jnp.asarray(idx_np, jnp.int32)
+    mk = lambda *s: jnp.asarray(rng.standard_normal(s), jnp.float32)
+    pool0, cq0, ck0, cv0 = (mk(nb, H, K, V) * 0.1, mk(nb, H, K, 3),
+                            mk(nb, H, K, 3), mk(nb, H, K, 3))
+    qr, kr, vr, g = mk(B, H, K), mk(B, H, K), mk(B, H, V), mk(B, H, K)
+    beta, go = mk(B, H), mk(B, H, V)
+    a_log = jnp.asarray(np.log(rng.uniform(1, 16, H)), jnp.float32)
+    dtb = mk(H, K) * 0.1
+    wq, wk, wv = (mk(H, K, 4) * 0.3 for _ in range(3))
+    nw = mk(V) * 0.1 + 1.0
+
+    rs, rcq, rck, rcv, ro = kda_decode_step_full_reference(
+        pool0[idx_np], cq0[idx_np], ck0[idx_np], cv0[idx_np],
+        qr, kr, vr, g, beta, go, a_log, dtb, wq, wk, wv, nw)
+    gp, gcq, gck, gcv, o = kda_decode_fused(
+        jnp.copy(pool0), jnp.copy(cq0), jnp.copy(ck0), jnp.copy(cv0),
+        idx, qr, kr, vr, g, beta, go, a_log, dtb, wq, wk, wv, nw,
+        interpret=INTERPRET)
+
+    np.testing.assert_allclose(np.asarray(o), np.asarray(ro),
+                               rtol=1e-5, atol=1e-5)
+    for got, base, rows, name in [(gp, pool0, rs, "state"),
+                                  (gcq, cq0, rcq, "cq"),
+                                  (gck, ck0, rck, "ck"),
+                                  (gcv, cv0, rcv, "cv")]:
+        e = np.asarray(base).copy()
+        e[idx_np] = np.asarray(rows)
+        np.testing.assert_allclose(np.asarray(got), e, rtol=1e-5,
+                                   atol=1e-5, err_msg=name)
+
+
+@pytest.mark.parametrize("C", [32, 64])
+def test_kda_chunk_reference_equals_recurrent(C):
+    """The chunked UT/WY form and the token recurrence are the same
+    function - the anchor equivalence for the prefill kernel."""
+    from tpu_inference.kernels.kda.reference import kda_chunk_reference
+    rng = np.random.default_rng(5)
+    T, H, K, V = 128, 4, 128, 128
+    mk = lambda *s: jnp.asarray(rng.standard_normal(s), jnp.float32)
+    q, k, v = mk(T, H, K), mk(T, H, K), mk(T, H, V)
+    g, b = mk(T, H, K), mk(T, H)
+    a_log = jnp.asarray(np.log(rng.uniform(1, 16, H)), jnp.float32)
+    dtb = mk(H, K) * 0.1
+
+    oc, sc = kda_chunk_reference(q, k, v, g, b, a_log, dtb, chunk=C)
+    S = jnp.zeros((1, H, K, V))
+    outs = []
+    for t in range(T):
+        S, o = kda_decode_step_reference(
+            S, q[t:t + 1], k[t:t + 1], v[t:t + 1], g[t:t + 1],
+            b[t:t + 1], a_log, dtb)
+        outs.append(o[0])
+    np.testing.assert_allclose(np.asarray(oc),
+                               np.asarray(jnp.stack(outs)),
+                               rtol=2e-4, atol=2e-4)
+    np.testing.assert_allclose(np.asarray(sc), np.asarray(S[0]),
+                               rtol=2e-4, atol=2e-4)
