@@ -125,11 +125,15 @@ def kda_decode(
     B, H, K, V = state.shape
     del block_h  # Mosaic rank-1/rank-2 block rules require whole-H
     # blocks (a_log (H,), beta (.., H)); grid over sequences only.
-    # Auto-clamp block_b: the state window double-buffers, so
-    # 2 * block_b * H * K * V * 4B must stay well under VMEM
-    # (run 2: bb=8 at H=96 = 100 MB > 64 MB).
+    # block_b is a TUNABLE: the scheduler/solver picks it from the
+    # kernel's residency plan for the target and the request bucket.
+    # The clamp below is only a last-resort guard for ad-hoc callers
+    # (probes, tests) that pass a block the buffered state window
+    # cannot hold - it keeps a diagnostic run from dying at compile
+    # instead of substituting for the solver's choice.
     max_bb = max(1, (12 * 2**20) // (H * K * V * 4))
-    block_b = min(block_b, max_bb)
+    if block_b > max_bb:
+        block_b = max_bb
     while B % block_b:
         block_b -= 1
     grid = (B // block_b,)
