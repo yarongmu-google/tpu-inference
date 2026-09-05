@@ -1,0 +1,23 @@
+jax 0.10.2 [TpuDevice(id=0, process_index=0, coords=(0,0,0), core_on_chip=0)]
+
+LOOP variant (VMEM-resident, no DMA), chain = (C,K)x(K,C) -> (C,C)^2 -> (C,C)x(C,256), C=256
+    n        ms  cyc/tile
+    1     0.203    222862
+    2     0.199    109334  marginal    -4194
+    4     0.195     53670  marginal    -1994
+    8     0.194     26661  marginal     -347
+   16     0.201     13849  marginal     1036
+   32     0.198      6795  marginal     -259
+   64     0.218      3744  marginal      693
+
+GRID variant (per-tile HBM fetch)
+    n        ms  cyc/tile
+    1     0.192    210709
+    2     0.202    111219  marginal    11728
+    4     0.208     57120  marginal     3020
+    8     0.175     24125  marginal    -8870
+   16     0.200     13737  marginal     3349
+   32     0.220      7562  marginal     1388
+   64     0.222      3810  marginal       57
+
+verdict rule (self-referencing): the n=1 row IS the isolated chain cost. pure MAC for the chain = 42M MAC -> ~320 cyc full-width, ~640 at 0.5 util. If marginal -> a few hundred cyc (~pure MAC), fill amortizes and the plan holds; if marginal stays near the n=1 cost, fill is exposed per tile and the composed estimate doubles+.

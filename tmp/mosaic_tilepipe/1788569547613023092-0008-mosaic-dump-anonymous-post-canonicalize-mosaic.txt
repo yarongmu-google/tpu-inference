@@ -1,0 +1,31 @@
+module attributes {stable_mosaic.version = 15 : i64} {
+  func.func @grid_kernel(%arg0: i32, %arg1: memref<256x128xbf16, #tpu.tiled<(8,128)(2,1),[1,1]>, #tpu.memory_space<vmem, tc>>, %arg2: memref<256x256xbf16, #tpu.tiled<(8,128)(2,1),[2,1]>, #tpu.memory_space<vmem, tc>>, %arg3: memref<256x256xf32, #tpu.tiled<(8,128),[2,1]>, #tpu.memory_space<vmem, tc>>) attributes {dimension_semantics = [#tpu.dimension_semantics<arbitrary>], iteration_bounds = array<i64: 32>, scalar_prefetch = 0 : i64, scratch_operands = 0 : i64, tpu.core_type = #tpu.core_type<tc>, window_params = [{transform_indices = @transform_0, window_bounds = array<i64: 256, 128>}, {pipeline_mode = #tpu.pipeline_mode<synchronous>, transform_indices = @transform_1, window_bounds = array<i64: 256, 256>}, {transform_indices = @transform_2, window_bounds = array<i64: 256, 256>}]} {
+    %cst = arith.constant dense<0.000000e+00> : vector<256x256xf32>
+    %c0 = arith.constant 0 : index
+    %0 = tpu.erase_memref_layout %arg1 : memref<256x128xbf16, #tpu.tiled<(8,128)(2,1),[1,1]>, #tpu.memory_space<vmem, tc>> -> memref<256x128xbf16, #tpu.memory_space<vmem, tc>>
+    %1 = tpu.erase_memref_layout %arg2 : memref<256x256xbf16, #tpu.tiled<(8,128)(2,1),[2,1]>, #tpu.memory_space<vmem, tc>> -> memref<256x256xbf16, #tpu.memory_space<vmem, tc>>
+    %2 = tpu.erase_memref_layout %arg3 : memref<256x256xf32, #tpu.tiled<(8,128),[2,1]>, #tpu.memory_space<vmem, tc>> -> memref<256x256xf32, #tpu.memory_space<vmem, tc>>
+    %get3A = tpu.vector_load %0[%c0, %c0] {strides = array<i32>} : memref<256x128xbf16, #tpu.memory_space<vmem, tc>>, vector<256x128xbf16>, 
+    %get3A_0 = tpu.vector_load %1[%c0, %c0] {strides = array<i32>} : memref<256x256xbf16, #tpu.memory_space<vmem, tc>>, vector<256x256xbf16>, 
+    %transpose3A = tpu.transpose %get3A, [1, 0] : vector<256x128xbf16> -> vector<128x256xbf16>
+    %dot_general3A = tpu.matmul %get3A, %get3A, %cst {dimension_numbers = #tpu.dot_dimension_numbers<[1], [1], [0], [0], [0, 0, 1, 0], [], []>, transpose_lhs_hint = false} : vector<256x128xbf16>, vector<256x128xbf16>, vector<256x256xf32> -> vector<256x256xf32>
+    %convert_element_type3A = tpu.truncf %dot_general3A {rounding_mode = #tpu.rounding_mode<to_nearest_even>} : vector<256x256xf32> -> vector<256x256xbf16>
+    %dot_general3A_1 = tpu.matmul %convert_element_type3A, %convert_element_type3A, %cst {dimension_numbers = #tpu.dot_dimension_numbers<[1], [0], [0], [1], [0, 0, 1, 1], [], []>, transpose_lhs_hint = false} : vector<256x256xbf16>, vector<256x256xbf16>, vector<256x256xf32> -> vector<256x256xf32>
+    %convert_element_type3A_2 = tpu.truncf %dot_general3A_1 {rounding_mode = #tpu.rounding_mode<to_nearest_even>} : vector<256x256xf32> -> vector<256x256xbf16>
+    %dot_general3A_3 = tpu.matmul %convert_element_type3A_2, %get3A_0, %cst {dimension_numbers = #tpu.dot_dimension_numbers<[1], [0], [0], [1], [0, 0, 1, 1], [], []>, transpose_lhs_hint = false} : vector<256x256xbf16>, vector<256x256xbf16>, vector<256x256xf32> -> vector<256x256xf32>
+    tpu.vector_store %2[%c0, %c0], %dot_general3A_3 {strides = array<i32>} : memref<256x256xf32, #tpu.memory_space<vmem, tc>>, vector<256x256xf32>, 
+    return
+  }
+  func.func @transform_0(%arg0: i32) -> (i32, i32) {
+    %c0_i32 = arith.constant 0 : i32
+    return %arg0, %c0_i32 : i32, i32
+  }
+  func.func @transform_1(%arg0: i32) -> (i32, i32) {
+    %c0_i32 = arith.constant 0 : i32
+    return %c0_i32, %c0_i32 : i32, i32
+  }
+  func.func @transform_2(%arg0: i32) -> (i32, i32) {
+    %c0_i32 = arith.constant 0 : i32
+    return %arg0, %c0_i32 : i32, i32
+  }
+}

@@ -1,0 +1,23 @@
+module attributes {stable_mosaic.version = 15 : i64} {
+  func.func @loop_kernel(%arg0: memref<256x128xbf16, #tpu.tiled<(8,128)(2,1),[1,1]>, #tpu.memory_space<vmem, tc>>, %arg1: memref<256x256xbf16, #tpu.tiled<(8,128)(2,1),[2,1]>, #tpu.memory_space<vmem, tc>>, %arg2: memref<256x256xf32, #tpu.tiled<(8,128),[2,1]>, #tpu.memory_space<vmem, tc>>) attributes {dimension_semantics = [], scalar_prefetch = 0 : i64, scratch_operands = 0 : i64, tpu.core_type = #tpu.core_type<tc>} {
+    %scan3A = arith.constant {in_layout = [], out_layout = [#mosaic_tc.vpad<"none">]} 32 : i32
+    %cst = arith.constant {out_layout = [#mosaic_tc.vpad<"32,{*,*},(8,128)">]} dense<0.000000e+00> : vector<256x256xf32>
+    %c0 = arith.constant {in_layout = [], out_layout = [#mosaic_tc.vpad<"none">]} 0 : index
+    %scan3A_0 = arith.constant {in_layout = [], out_layout = [#mosaic_tc.vpad<"none">]} 1 : i32
+    %scan3A_1 = arith.constant {in_layout = [], out_layout = [#mosaic_tc.vpad<"none">]} 0 : i32
+    %scan3A_2 = scf.for %scan3A_3 = %scan3A_1 to %scan3A step %scan3A_0 iter_args(%scan3A_4 = %cst) -> (vector<256x256xf32>)  : i32 {
+      %scan3A_5 = tpu.assume_layout %scan3A_4 {in_layout = [#mosaic_tc.vpad<"32,{0,0},(8,128)">], out_layout = [#mosaic_tc.vpad<"32,{0,0},(8,128)">]} : vector<256x256xf32> -> vector<256x256xf32>
+      %get3A = tpu.vector_load %arg0[%c0, %c0] {in_layout = [#mosaic_tc.vpad<"none">, #mosaic_tc.vpad<"none">, #mosaic_tc.vpad<"none">], out_layout = [#mosaic_tc.vpad<"16,{0,0},(8,128)">], strides = array<i32>} : memref<256x128xbf16, #tpu.tiled<(8,128)(2,1),[1,1]>, #tpu.memory_space<vmem, tc>>, vector<256x128xbf16>, 
+      %get3A_6 = tpu.vector_load %arg1[%c0, %c0] {in_layout = [#mosaic_tc.vpad<"none">, #mosaic_tc.vpad<"none">, #mosaic_tc.vpad<"none">], out_layout = [#mosaic_tc.vpad<"16,{0,0},(8,128)">], strides = array<i32>} : memref<256x256xbf16, #tpu.tiled<(8,128)(2,1),[2,1]>, #tpu.memory_space<vmem, tc>>, vector<256x256xbf16>, 
+      %dot_general3A = tpu.matmul %get3A, %get3A, %cst {dimension_numbers = #tpu.dot_dimension_numbers<[1], [1], [0], [0], [0, 0, 1, 0], [], []>, in_layout = [#mosaic_tc.vpad<"16,{0,0},(16,128)">, #mosaic_tc.vpad<"16,{0,0},(16,128)">, #mosaic_tc.vpad<"32,{0,0},(8,128)">], out_layout = [#mosaic_tc.vpad<"32,{0,0},(8,128)">], transpose_lhs_hint = false} : vector<256x128xbf16>, vector<256x128xbf16>, vector<256x256xf32> -> vector<256x256xf32>
+      %convert_element_type3A = tpu.truncf %dot_general3A {in_layout = [#mosaic_tc.vpad<"32,{0,0},(8,128)">], out_layout = [#mosaic_tc.vpad<"16,{0,0},(16,128)">], rounding_mode = #tpu.rounding_mode<to_nearest_even>} : vector<256x256xf32> -> vector<256x256xbf16>
+      %dot_general3A_7 = tpu.matmul %convert_element_type3A, %convert_element_type3A, %cst {dimension_numbers = #tpu.dot_dimension_numbers<[1], [0], [0], [1], [0, 0, 1, 1], [], []>, in_layout = [#mosaic_tc.vpad<"16,{0,0},(16,128)">, #mosaic_tc.vpad<"16,{0,0},(16,128)">, #mosaic_tc.vpad<"32,{0,0},(8,128)">], out_layout = [#mosaic_tc.vpad<"32,{0,0},(8,128)">], transpose_lhs_hint = false} : vector<256x256xbf16>, vector<256x256xbf16>, vector<256x256xf32> -> vector<256x256xf32>
+      %convert_element_type3A_8 = tpu.truncf %dot_general3A_7 {in_layout = [#mosaic_tc.vpad<"32,{0,0},(8,128)">], out_layout = [#mosaic_tc.vpad<"16,{0,0},(16,128)">], rounding_mode = #tpu.rounding_mode<to_nearest_even>} : vector<256x256xf32> -> vector<256x256xbf16>
+      %dot_general3A_9 = tpu.matmul %convert_element_type3A_8, %get3A_6, %cst {dimension_numbers = #tpu.dot_dimension_numbers<[1], [0], [0], [1], [0, 0, 1, 1], [], []>, in_layout = [#mosaic_tc.vpad<"16,{0,0},(16,128)">, #mosaic_tc.vpad<"16,{0,0},(16,128)">, #mosaic_tc.vpad<"32,{0,0},(8,128)">], out_layout = [#mosaic_tc.vpad<"32,{0,0},(8,128)">], transpose_lhs_hint = false} : vector<256x256xbf16>, vector<256x256xbf16>, vector<256x256xf32> -> vector<256x256xf32>
+      %add3A = arith.addf %scan3A_5, %dot_general3A_9 {in_layout = [#mosaic_tc.vpad<"32,{0,0},(8,128)">, #mosaic_tc.vpad<"32,{0,0},(8,128)">], out_layout = [#mosaic_tc.vpad<"32,{0,0},(8,128)">]} : vector<256x256xf32>
+      scf.yield {in_layout = [#mosaic_tc.vpad<"32,{0,0},(8,128)">]} %add3A : vector<256x256xf32>
+    } {in_layout = [#mosaic_tc.vpad<"none">, #mosaic_tc.vpad<"none">, #mosaic_tc.vpad<"none">, #mosaic_tc.vpad<"32,{0,0},(8,128)">], out_layout = [#mosaic_tc.vpad<"32,{0,0},(8,128)">]}
+    tpu.vector_store %arg2[%c0, %c0], %scan3A_2 {in_layout = [#mosaic_tc.vpad<"32,{0,0},(8,128)">, #mosaic_tc.vpad<"none">, #mosaic_tc.vpad<"none">, #mosaic_tc.vpad<"none">], strides = array<i32>} : memref<256x256xf32, #tpu.tiled<(8,128),[2,1]>, #tpu.memory_space<vmem, tc>>, vector<256x256xf32>, 
+    return {in_layout = []}
+  }
+}
