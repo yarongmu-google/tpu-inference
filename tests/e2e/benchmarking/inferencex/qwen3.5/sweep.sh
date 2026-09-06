@@ -21,7 +21,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PORT="${PORT:-8000}"
 READY_TIMEOUT="${READY_TIMEOUT:-5400}"   # 90 min (covers a cold compile)
 
-WORKLOADS=("8192:1024" "1024:1024")
+WORKLOADS=("8192:1024" "1024:1024" "1024:8192")
 CONCS=(4 8 16 32 64 128 256)
 # Sharding per swept point, keyed by "ISL,OSL,CONC" (every point listed).
 declare -A SHARDING_TABLE=(
@@ -39,6 +39,13 @@ declare -A SHARDING_TABLE=(
   [1024,1024,64]=DP4TP2_EP
   [1024,1024,128]=DP4TP2_EP
   [1024,1024,256]=DP4TP2_EP
+  [1024,8192,4]=TP8_EP
+  [1024,8192,8]=TP8_EP
+  [1024,8192,16]=DP4TP2_EP
+  [1024,8192,32]=DP4TP2_EP
+  [1024,8192,64]=DP8_EP
+  [1024,8192,128]=DP8_EP
+  [1024,8192,256]=DP8_EP
 )
 
 stop_server() {
@@ -74,6 +81,13 @@ for wl in "${WORKLOADS[@]}"; do
   export ISL="${wl%%:*}" OSL="${wl#*:}"
   for CONC in "${CONCS[@]}"; do
     export CONC
+    # Temporary skips for saved successful runs. The 1k/1k C256
+    # result used the separate 4i server configuration.
+    case "$ISL,$OSL,$CONC" in
+      8192,1024,4|8192,1024,8|1024,1024,256)
+        echo "########## SKIP (saved success): ISL=$ISL OSL=$OSL CONC=$CONC ##########"
+        continue ;;
+    esac
     # Resume: skip points that already have a NON-EMPTY result (a
     # completed==0 failure json should be deleted before rerunning).
     done_file=$(ls "${RESULT_DIR}/qwen3.5_isl${ISL}_osl${OSL}_conc${CONC}_"*.json 2>/dev/null | head -1)
