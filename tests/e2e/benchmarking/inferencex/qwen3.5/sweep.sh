@@ -21,31 +21,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PORT="${PORT:-8000}"
 READY_TIMEOUT="${READY_TIMEOUT:-5400}"   # 90 min (covers a cold compile)
 
-WORKLOADS=("8192:1024" "1024:1024" "1024:8192")
-CONCS=(4 8 16 32 64 128 256)
-# Sharding per swept point, keyed by "ISL,OSL,CONC" (every point listed).
-declare -A SHARDING_TABLE=(
-  [8192,1024,4]=TP8_EP
-  [8192,1024,8]=TP8_EP
-  [8192,1024,16]=DP4TP2_EP
-  [8192,1024,32]=DP4TP2_EP
-  [8192,1024,64]=DP8_EP
-  [8192,1024,128]=DP8_EP
-  [8192,1024,256]=DP8_EP
-  [1024,1024,4]=TP8_EP
-  [1024,1024,8]=TP8_EP
-  [1024,1024,16]=DP4TP2_EP
-  [1024,1024,32]=DP4TP2_EP
-  [1024,1024,64]=DP4TP2_EP
-  [1024,1024,128]=DP4TP2_EP
-  [1024,1024,256]=DP4TP2_EP
-  [1024,8192,4]=TP8_EP
-  [1024,8192,8]=TP8_EP
-  [1024,8192,16]=DP4TP2_EP
-  [1024,8192,32]=DP4TP2_EP
-  [1024,8192,64]=DP8_EP
-  [1024,8192,128]=DP8_EP
-  [1024,8192,256]=DP8_EP
+# Remaining EP points and matched 4i comparisons; successful points are omitted.
+# Order: the large 1k/8k pair first.
+RUNS=(
+  "1024:8192:256:DP8_EP"
+  "1024:8192:256:4I"
+  "1024:8192:128:4I"
+  "1024:1024:256:DP4TP2_EP"
 )
 
 stop_server() {
@@ -61,8 +43,9 @@ stop_server() {
 }
 
 start_server() {  # $1 = SHARDING (CONC/ISL/OSL come from the exported env)
-  SERVER_LOG="/tmp/qwen3.5_sweep_server_isl${ISL}_osl${OSL}_conc${CONC}_$(date +%m%d-%H%M).log"
+  SERVER_LOG="/tmp/qwen3.5_sweep_server_${1}_isl${ISL}_osl${OSL}_conc${CONC}_$(date +%m%d-%H%M).log"
   echo "--- starting server SHARDING=$1 ISL=$ISL OSL=$OSL CONC=$CONC (log: $SERVER_LOG) ---"
+  echo "CFG sharding=$1 commit=$(git -C "$SCRIPT_DIR" rev-parse HEAD)" >> "$SERVER_LOG"
   SHARDING="$1" bash "${SCRIPT_DIR}/server.sh" >> "$SERVER_LOG" 2>&1 &
   SERVER_PID=$!
   local waited=0
@@ -76,31 +59,59 @@ start_server() {  # $1 = SHARDING (CONC/ISL/OSL come from the exported env)
 
 trap stop_server EXIT
 
-RESULT_DIR="${RESULT_DIR:-/tmp/qwen3.5-inferencex-bench}"
-for wl in "${WORKLOADS[@]}"; do
-  export ISL="${wl%%:*}" OSL="${wl#*:}"
-  for CONC in "${CONCS[@]}"; do
-    export CONC
-    # Temporary skips for saved successful runs. The 1k/1k C256
-    # result used the separate 4i server configuration.
-    case "$ISL,$OSL,$CONC" in
-      8192,1024,4|8192,1024,8|1024,1024,256)
-        echo "########## SKIP (saved success): ISL=$ISL OSL=$OSL CONC=$CONC ##########"
-        continue ;;
-    esac
-    # Resume: skip points that already have a NON-EMPTY result (a
-    # completed==0 failure json should be deleted before rerunning).
-    done_file=$(ls "${RESULT_DIR}/qwen3.5_isl${ISL}_osl${OSL}_conc${CONC}_"*.json 2>/dev/null | head -1)
-    if [ -n "$done_file" ] && python3 -c "import json,sys; sys.exit(0 if json.load(open('$done_file')).get('completed',0)>0 else 1)" 2>/dev/null; then
-      echo "########## SKIP (done): ISL=$ISL OSL=$OSL CONC=$CONC -> $done_file ##########"
-      continue
-    fi
-    sharding="${SHARDING_TABLE[$ISL,$OSL,$CONC]:-}"
-    [ -n "$sharding" ] || { echo "ERROR: no sharding in SHARDING_TABLE for ISL=$ISL OSL=$OSL CONC=$CONC" >&2; exit 1; }
-    stop_server
-    start_server "$sharding" || exit 1
-    echo "########## ISL=$ISL OSL=$OSL CONC=$CONC SHARDING=$sharding ##########"
-    bash "${SCRIPT_DIR}/bench.sh"
-  done
+RESULT_ROOT="${RESULT_DIR:-/tmp/qwen3.5-inferencex-bench}"
+
+completed_result() {
+  python3 - "$RESULT_DIR" "$ISL" "$OSL" "$CONC" "$SHARDING" <<'PY_RESULT'
+import json
+import sys
+from pathlib import Path
+
+root, isl, osl, conc, sharding = sys.argv[1:]
+expected = int(conc) * 10
+directories = [Path(root)]
+# Only the outstanding DP8 point has unambiguous legacy EP results.
+# The legacy 1k/1k C256 directory also contained a separate 4i result.
+if sharding == "DP8_EP":
+    directories.append(Path(root).parent)
+pattern = f"qwen3.5_isl{isl}_osl{osl}_conc{conc}_*.json"
+for path in sorted((p for d in directories for p in d.glob(pattern)), reverse=True):
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        continue
+    if (isinstance(data, dict)
+            and data.get("num_prompts") == expected
+            and data.get("completed") == expected
+            and data.get("total_output_tokens", 0) > 0):
+        print(path)
+        sys.exit(0)
+sys.exit(1)
+PY_RESULT
+}
+
+failures=0
+for point in "${RUNS[@]}"; do
+  IFS=: read -r ISL OSL CONC SHARDING <<< "$point"
+  export ISL OSL CONC SHARDING
+  export RESULT_DIR="$RESULT_ROOT/$SHARDING"
+  if done_file=$(completed_result); then
+    echo "########## SKIP (done): $point -> $done_file ##########"
+    continue
+  fi
+  stop_server
+  if ! start_server "$SHARDING"; then
+    failures=$((failures + 1))
+    continue
+  fi
+  echo "########## ISL=$ISL OSL=$OSL CONC=$CONC SHARDING=$SHARDING ##########"
+  if ! bash "${SCRIPT_DIR}/bench.sh"; then
+    echo "FAIL: client exited unsuccessfully for $point" >&2
+    failures=$((failures + 1))
+  elif ! completed_result >/dev/null; then
+    echo "FAIL: incomplete or zero-output result for $point" >&2
+    failures=$((failures + 1))
+  fi
 done
+[ "$failures" -eq 0 ] || { echo "ERROR: $failures point(s) failed; resume to retry." >&2; exit 1; }
 echo "########## sweep complete ##########"

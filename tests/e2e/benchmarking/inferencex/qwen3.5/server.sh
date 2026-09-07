@@ -47,7 +47,12 @@ case "$SHARDING" in
       --additional_config='{"sharding": {"sharding_strategy": {"enable_dp_attention": false}}}'
       --enable-expert-parallel
     ) ;;
-  *) echo "ERROR: unknown SHARDING='$SHARDING' (expected TP8_EP|DP8_EP|DP4TP2_EP)" >&2; exit 1 ;;
+  4I)
+    DP_SIZE=8
+    SHARDING_ARGS=(
+      --additional_config='{"sharding": {"sharding_strategy": {"enable_dp_attention": true, "attn_dp_size": 8}}}'
+    ) ;;
+  *) echo "ERROR: unknown SHARDING='$SHARDING' (expected TP8_EP|DP8_EP|DP4TP2_EP|4I)" >&2; exit 1 ;;
 esac
 
 MAX_MODEL_LEN=$((ISL + OSL + MAX_MODEL_LEN_BUFFER))
@@ -68,15 +73,17 @@ export MOE_ROUTE_PADDING_TO_EXPERT0=1
 # gmm_v2 kernel asserts (num_tokens * topk) % 16 == 0 (4*10=40 isn't).
 export MIN_TOKEN_BUCKET=8
 export USE_MOE_EP_KERNEL=0
+export USE_MOE_TP_DECODE_KERNEL=0
 export ATTN_BUCKETIZED_NUM_REQS=true
 # Bucket ladder must be sharding-aware: buckets are GLOBAL and divide by
 # the attn-DP size. A global bucket < dp_size shards to zero requests
 # per device (precompile crash); per-device buckets < 8 halt the
 # linear-attention kernels (E0200 core halt observed at DP4 with the
-# old flat 4..64 ladder). Keep per-device buckets in [8, 64].
+# old flat 4..64 ladder). DP4 also needs 128 requests per device
+# at CONC=256, so its global ladder extends to 512.
 case "$SHARDING" in
   DP8_EP)    export ATTN_CUSTOM_NUM_REQS_BUCKETS=64,128,256,512 ;;
-  DP4TP2_EP) export ATTN_CUSTOM_NUM_REQS_BUCKETS=32,64,128,256 ;;
+  DP4TP2_EP) export ATTN_CUSTOM_NUM_REQS_BUCKETS=32,64,128,256,512 ;;
   *)         export ATTN_CUSTOM_NUM_REQS_BUCKETS=4,8,16,32,64 ;;
 esac
 export ONEHOT_MOE_PERMUTE_THRESHOLD=32768
@@ -89,13 +96,31 @@ export SLICE_ROPE_CACHE=1
 export DP_SCHED_BATCH_PREFILL=true
 export LIBTPU_INIT_ARGS=' --xla_tpu_use_minor_sharding_for_major_trivial_input=true --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=false --xla_tpu_ars_combiner_threshold_in_bytes=0 --xla_tpu_enable_async_collective_merger=false'
 
+GPU_MEMORY_UTILIZATION=0.9
+if [ "$SHARDING" = 4I ]; then
+  # Match bench_throughput_qwen_server.sh line 4i.
+  MAX_MODEL_LEN=9216
+  MAX_NUM_BATCHED_TOKENS=128
+  MAX_NUM_SEQS=104
+  GPU_MEMORY_UTILIZATION=0.88
+  export USE_MOE_TP_DECODE_KERNEL=1
+  export MOE_TP_DECODE_MAX_TOKENS=1024
+  export ATTN_CUSTOM_NUM_REQS_BUCKETS=128,256,512,1024
+  export MIN_TOKEN_BUCKET=16
+  export MOE_ROUTE_PADDING_TO_EXPERT0=0
+  export SLICE_ROPE_CACHE=0
+  export VLLM_ADMISSION_DEBUG=1
+  unset RAGGED_GATED_DELTA_RULE_IMPL
+  export LIBTPU_INIT_ARGS="$LIBTPU_INIT_ARGS --xla_tpu_check_legacy_constraints_in_reduce_scatter_legalizer=false"
+fi
+
 args=(
   Qwen/Qwen3.5-397B-A17B-FP8
   --max-model-len="$MAX_MODEL_LEN"
   --max-num-batched-tokens="$MAX_NUM_BATCHED_TOKENS"
   --max-num-seqs="$MAX_NUM_SEQS"
   --no-enable-prefix-caching
-  --gpu-memory-utilization=0.9
+  --gpu-memory-utilization="$GPU_MEMORY_UTILIZATION"
   --tensor-parallel-size=8
   --async-scheduling
   --port="$PORT"
