@@ -1,0 +1,2054 @@
+Build diagnostics: /home/ymu_google_com/tpu-inference/tmp/vllm_logs/jobset-build-20260907T174732Z-XeyMvsye
++ cdk agent-letter 
+Dear Agents,
+
+  You are almost certainly reading this because a human pointed you at cloud-devkit
+  and asked you to get something running. Welcome. This CLI drives real jobs on real
+  shared accelerators, so a few things are worth knowing before you start.
+
+  Read every rule. Each one ends with an ack code, and you need all of them, in
+  order, to run anything: piping this letter through head or tail drops codes and
+  leaves you unable to proceed.
+
+  1. Run "cdk agent-letter" again before each actual command.
+     [ack 1/10: 1FD1]
+
+  2. Pass every ack code to run real commands.
+     cdk --agent-code=<code_1>-<code_2>-...-<code_N> <command>
+     The codes come from this letter, in the order the rules appear.
+     [ack 2/10: 0A02]
+
+  3. DO NOT touch MongoDB directly.
+     MongoDB is managed by cdk itself. You should not try to access it directly
+     without going through cdk.
+     [ack 3/10: 15CE]
+
+  4. DO NOT use kubectl directly.
+     You should never use kubectl directly. Directly manipulating kubernetes jobs
+     can result in unexpected behavior in cdk.
+     [ack 4/10: F10E]
+
+  5. DO NOT delete a job you did not create.
+     A job that looks idle is often a human's benchmark
+     holding an accelerator reservation on purpose. Check the owner with
+     "cdk job desc <job-id>" before you act, and leave other people's jobs alone.
+     The same goes for hide, unhide, tag and untag.
+     [ack 5/10: B211]
+
+  6. When creating a job, always use tag "agent-jobs" and your agnet name.
+     When you need to create a job, please make sure that you add
+     the tag "agent-jobs" and your agent name, so that we know it is created by an agent.
+     [ack 6/10: A023]
+
+  7. Ask for JSON instead of parsing our tables.
+     "cdk job list", "cdk recipe list" and "cdk usage" all accept "-o json".
+     The human-facing layouts are trees, colors and column widths that we
+     re-style whenever we feel like it. The JSON is the contract.
+     [ack 7/10: 86C6]
+
+  8. Read the exit code, not just the output.
+     Failures print to stderr and exit non-zero. If you only scrape stdout you
+     will happily report success for a command that did nothing at all.
+     [ack 8/10: 2BDE]
+
+  9. Leave NO_UPDATE_CHECK unset.
+     It skips the self-update, which is how a fleet of agents ends up reproducing
+     bugs we fixed months ago. If the update is what is breaking you, tell your
+     human and let them decide.
+     [ack 9/10: 207E]
+
+  10. When you are unsure, stop and ask.
+     Destroying a week of someone's work takes one confident command. Nobody has
+     ever been annoyed by an agent that paused to ask which job to delete.
+     [ack 10/10: EAFB]
+
+  Please be sure to follow all above rules.
+
+  Please also read the skills in /home/ymu_google_com/cloud-devkit/.claude as well. Thanks.
+
+  — the cloud-devkit team
++ docker version 
+Client: Docker Engine - Community
+ Version:           29.8.0
+ API version:       1.56
+ Go version:        go1.26.8
+ Git commit:        88096ef
+ Built:             Thu Sep  3 21:50:08 2026
+ OS/Arch:           linux/amd64
+ Context:           default
+
+Server: Docker Engine - Community
+ Engine:
+  Version:          29.8.0
+  API version:      1.56 (minimum version 1.40)
+  Go version:       go1.26.8
+  Git commit:       3ce5872
+  Built:            Thu Sep  3 21:50:08 2026
+  OS/Arch:          linux/amd64
+  Experimental:     false
+ containerd:
+  Version:          v2.3.4
+  GitCommit:        db8809540e1a7a9da5d518876894933ff55692ab
+ runc:
+  Version:          1.5.1
+  GitCommit:        v1.5.1-0-g8f2685a4
+ docker-init:
+  Version:          0.19.0
+  GitCommit:        de40ad0
++ python -VV 
+Python 3.12.12 | packaged by Anaconda, Inc. | (main, Oct 21 2025, 20:16:04) [GCC 11.2.0]
++ git clone --depth 1 https://github.com/SemiAnalysisAI/InferenceX.git /tmp/vllm12-image-context-R5VrwYDq/InferenceX 
+Cloning into '/tmp/vllm12-image-context-R5VrwYDq/InferenceX'...
++ python /home/ymu_google_com/tpu-inference/tmp/prepare_jobset_image.py /tmp/vllm12-image-context-R5VrwYDq/image /home/ymu_google_com/tpu-inference /tmp/vllm12-image-context-R5VrwYDq/InferenceX /home/ymu_google_com/tpu-inference/tmp/vllm_logs/jobset-build-20260907T174732Z-XeyMvsye 
+/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/setuptools_scm/git.py:167: UserWarning: "/home/ymu_google_com/vllm" is shallow and may cause errors
+  warnings.warn(f'"{wd.path}" is shallow and may cause errors')
+Snapshotting environment directory: bin
+Snapshotting environment directory: lib
+Snapshotting environment directory: include
+Snapshotting environment directory: share
+Snapshotting environment directory: ssl
+Snapshotting environment directory: compiler_compat
+Snapshotting environment directory: x86_64-conda-linux-gnu
+{
+  "tpu_inference": "0c9e000400e13914ec8ebb3c18b9062d9a268334",
+  "vllm": "12a8c9e4a51b8b7a4a8bd40f7b31f3275f9c3beb",
+  "InferenceX": "9acf24caaf31d9ecc5067742d6d1415967b308ed"
+}
++ docker build --progress=plain --platform=linux/amd64 --build-arg ENV_PREFIX=/home/ymu_google_com/miniconda3/envs/vllm12 --build-arg SOURCE_REVISION=0c9e000400e13914ec8ebb3c18b9062d9a268334 --iidfile /home/ymu_google_com/tpu-inference/tmp/vllm_logs/jobset-build-20260907T174732Z-XeyMvsye/image-id.txt -t vllm12:topk-0c9e000400e1 /tmp/vllm12-image-context-R5VrwYDq/image 
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 1.23kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/ubuntu:24.04
+#2 DONE 0.4s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [ 1/10] FROM docker.io/library/ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517
+#4 resolve docker.io/library/ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517 0.0s done
+#4 CACHED
+
+#5 [internal] load build context
+#5 transferring context: 13.16MB 5.0s
+#5 transferring context: 14.64MB 6.2s done
+#5 DONE 6.5s
+
+#6 [ 2/10] RUN test -n "/home/ymu_google_com/miniconda3/envs/vllm12" && apt-get update && apt-get install -y --no-install-recommends     bash ca-certificates curl git procps build-essential libgomp1 libnuma1     libopenmpi-dev libomp-dev && rm -rf /var/lib/apt/lists/*
+#6 0.734 Get:1 http://archive.ubuntu.com/ubuntu noble InRelease [256 kB]
+#6 0.735 Get:2 http://security.ubuntu.com/ubuntu noble-security InRelease [126 kB]
+#6 1.342 Get:3 http://archive.ubuntu.com/ubuntu noble-updates InRelease [126 kB]
+#6 1.376 Get:4 http://security.ubuntu.com/ubuntu noble-security/restricted amd64 Packages [1786 kB]
+#6 1.494 Get:5 http://archive.ubuntu.com/ubuntu noble-backports InRelease [126 kB]
+#6 1.648 Get:6 http://archive.ubuntu.com/ubuntu noble/universe amd64 Packages [19.3 MB]
+#6 2.163 Get:7 http://security.ubuntu.com/ubuntu noble-security/multiverse amd64 Packages [50.0 kB]
+#6 2.166 Get:8 http://security.ubuntu.com/ubuntu noble-security/main amd64 Packages [1237 kB]
+#6 2.299 Get:9 http://security.ubuntu.com/ubuntu noble-security/universe amd64 Packages [1530 kB]
+#6 2.787 Get:10 http://archive.ubuntu.com/ubuntu noble/restricted amd64 Packages [117 kB]
+#6 2.788 Get:11 http://archive.ubuntu.com/ubuntu noble/multiverse amd64 Packages [331 kB]
+#6 2.794 Get:12 http://archive.ubuntu.com/ubuntu noble/main amd64 Packages [1808 kB]
+#6 2.820 Get:13 http://archive.ubuntu.com/ubuntu noble-updates/multiverse amd64 Packages [55.8 kB]
+#6 2.821 Get:14 http://archive.ubuntu.com/ubuntu noble-updates/universe amd64 Packages [2151 kB]
+#6 2.848 Get:15 http://archive.ubuntu.com/ubuntu noble-updates/restricted amd64 Packages [1903 kB]
+#6 2.872 Get:16 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages [1562 kB]
+#6 2.897 Get:17 http://archive.ubuntu.com/ubuntu noble-backports/universe amd64 Packages [35.9 kB]
+#6 2.898 Get:18 http://archive.ubuntu.com/ubuntu noble-backports/multiverse amd64 Packages [671 B]
+#6 2.899 Get:19 http://archive.ubuntu.com/ubuntu noble-backports/main amd64 Packages [48.9 kB]
+#6 5.108 Fetched 32.6 MB in 5s (7074 kB/s)
+#6 5.108 Reading package lists...
+#6 6.798 Reading package lists...
+#6 8.183 Building dependency tree...
+#6 8.474 Reading state information...
+#6 8.925 bash is already the newest version (5.2.21-2ubuntu4).
+#6 8.925 The following additional packages will be installed:
+#6 8.925   adduser autoconf automake autotools-dev binutils binutils-common
+#6 8.925   binutils-x86-64-linux-gnu bzip2 cpp cpp-13 cpp-13-x86-64-linux-gnu
+#6 8.926   cpp-x86-64-linux-gnu dpkg-dev g++ g++-13 g++-13-x86-64-linux-gnu
+#6 8.926   g++-x86-64-linux-gnu gcc gcc-13 gcc-13-base gcc-13-x86-64-linux-gnu
+#6 8.926   gcc-x86-64-linux-gnu gfortran-13 gfortran-13-x86-64-linux-gnu git-man
+#6 8.926   ibverbs-providers libamd-comgr2 libamdhip64-5 libasan8 libatomic1
+#6 8.926   libbinutils libbrotli1 libbsd0 libbz2-1.0 libc-dev-bin libc6-dev libcbor0.10
+#6 8.926   libcc1-0 libcrypt-dev libctf-nobfd0 libctf0 libcurl3t64-gnutls libcurl4t64
+#6 8.926   libdpkg-perl libdrm-amdgpu1 libdrm-common libdrm2 libedit2 libelf1t64
+#6 8.926   liberror-perl libevent-2.1-7t64 libevent-core-2.1-7t64 libevent-dev
+#6 8.926   libevent-extra-2.1-7t64 libevent-openssl-2.1-7t64 libevent-pthreads-2.1-7t64
+#6 8.926   libexpat1 libfabric1 libfido2-1 libgcc-13-dev libgdbm-compat4t64 libgdbm6t64
+#6 8.927   libgfortran-13-dev libgfortran5 libgprofng0 libgssapi-krb5-2
+#6 8.927   libhsa-runtime64-1 libhsakmt1 libhwasan0 libhwloc-dev libhwloc-plugins
+#6 8.927   libhwloc15 libibverbs-dev libibverbs1 libicu74 libisl23 libitm1 libjansson4
+#6 8.927   libjs-jquery libjs-jquery-ui libk5crypto3 libkeyutils1 libkrb5-3
+#6 8.927   libkrb5support0 libldap2 libllvm17t64 libllvm18 liblsan0 libltdl-dev
+#6 8.927   libltdl7 libmpc3 libmpfr6 libmunge2 libnghttp2-14 libnl-3-200 libnl-3-dev
+#6 8.927   libnl-route-3-200 libnl-route-3-dev libnuma-dev libomp-18-dev libomp5-18
+#6 8.927   libopenmpi3t64 libpciaccess0 libperl5.38t64 libpmix-dev libpmix2t64
+#6 8.927   libproc2-0 libpsl5t64 libpsm-infinipath1 libpsm2-2 libpython3.12-minimal
+#6 8.927   libpython3.12-stdlib libpython3.12t64 libquadmath0 librdmacm1t64
+#6 8.928   libreadline8t64 librtmp1 libsasl2-2 libsasl2-modules-db libsframe1
+#6 8.928   libsqlite3-0 libssh-4 libssl3t64 libstdc++-13-dev libtsan2 libubsan1 libucx0
+#6 8.928   libx11-6 libx11-data libxau6 libxcb1 libxdmcp6 libxext6 libxml2 libxnvctrl0
+#6 8.929   linux-libc-dev lto-disabled-list m4 make media-types netbase
+#6 8.929   ocl-icd-libopencl1 openmpi-bin openmpi-common openssh-client openssl patch
+#6 8.929   perl perl-base perl-modules-5.38 readline-common rpcsvc-proto tzdata
+#6 8.929   xz-utils zlib1g zlib1g-dev
+#6 8.932 Suggested packages:
+#6 8.932   liblocale-gettext-perl cron quota ecryptfs-utils autoconf-archive
+#6 8.932   gnu-standards autoconf-doc libtool gettext binutils-doc gprofng-gui
+#6 8.932   bzip2-doc cpp-doc gcc-13-locales cpp-13-doc debian-keyring g++-multilib
+#6 8.932   g++-13-multilib gcc-13-doc gcc-multilib manpages-dev flex bison gdb gcc-doc
+#6 8.932   gcc-13-multilib gdb-x86-64-linux-gnu gfortran-13-multilib gfortran-13-doc
+#6 8.932   libcoarrays-dev gettext-base git-daemon-run | git-daemon-sysvinit git-doc
+#6 8.932   git-email git-gui gitk gitweb git-cvs git-mediawiki git-svn glibc-doc gnupg
+#6 8.932   | sq | sqop | pgpainless-cli | sequoia-chameleon-gnupg bzr gdbm-l10n
+#6 8.932   krb5-doc krb5-user libhwloc-contrib-plugins libjs-jquery-ui-docs libtool-doc
+#6 8.932   libomp-18-doc openmpi-doc pciutils libstdc++-13-doc m4-doc make-doc
+#6 8.932   opencl-icd gfortran | fortran-compiler keychain libpam-ssh monkeysphere
+#6 8.932   ssh-askpass ed diffutils-doc perl-doc libterm-readline-gnu-perl
+#6 8.932   | libterm-readline-perl-perl libtap-harness-archive-perl readline-doc
+#6 8.932 Recommended packages:
+#6 8.932   fakeroot gnupg | sq | sqop | pgpainless-cli | sequoia-chameleon-gnupg
+#6 8.932   libalgorithm-merge-perl less manpages manpages-dev libc-devtools
+#6 8.932   libfile-fcntllock-perl liblocale-gettext-perl javascript-common krb5-locales
+#6 8.932   libldap-common libtool libcoarrays-openmpi-dev publicsuffix libsasl2-modules
+#6 8.932   xauth psmisc
+#6 9.416 The following NEW packages will be installed:
+#6 9.418   adduser autoconf automake autotools-dev binutils binutils-common
+#6 9.418   binutils-x86-64-linux-gnu build-essential bzip2 ca-certificates cpp cpp-13
+#6 9.418   cpp-13-x86-64-linux-gnu cpp-x86-64-linux-gnu curl dpkg-dev g++ g++-13
+#6 9.418   g++-13-x86-64-linux-gnu g++-x86-64-linux-gnu gcc gcc-13 gcc-13-base
+#6 9.418   gcc-13-x86-64-linux-gnu gcc-x86-64-linux-gnu gfortran-13
+#6 9.419   gfortran-13-x86-64-linux-gnu git git-man ibverbs-providers libamd-comgr2
+#6 9.419   libamdhip64-5 libasan8 libatomic1 libbinutils libbrotli1 libbsd0
+#6 9.419   libc-dev-bin libc6-dev libcbor0.10 libcc1-0 libcrypt-dev libctf-nobfd0
+#6 9.419   libctf0 libcurl3t64-gnutls libcurl4t64 libdpkg-perl libdrm-amdgpu1
+#6 9.419   libdrm-common libdrm2 libedit2 libelf1t64 liberror-perl libevent-2.1-7t64
+#6 9.419   libevent-core-2.1-7t64 libevent-dev libevent-extra-2.1-7t64
+#6 9.419   libevent-openssl-2.1-7t64 libevent-pthreads-2.1-7t64 libexpat1 libfabric1
+#6 9.419   libfido2-1 libgcc-13-dev libgdbm-compat4t64 libgdbm6t64 libgfortran-13-dev
+#6 9.420   libgfortran5 libgomp1 libgprofng0 libgssapi-krb5-2 libhsa-runtime64-1
+#6 9.420   libhsakmt1 libhwasan0 libhwloc-dev libhwloc-plugins libhwloc15
+#6 9.420   libibverbs-dev libibverbs1 libicu74 libisl23 libitm1 libjansson4
+#6 9.420   libjs-jquery libjs-jquery-ui libk5crypto3 libkeyutils1 libkrb5-3
+#6 9.420   libkrb5support0 libldap2 libllvm17t64 libllvm18 liblsan0 libltdl-dev
+#6 9.420   libltdl7 libmpc3 libmpfr6 libmunge2 libnghttp2-14 libnl-3-200 libnl-3-dev
+#6 9.420   libnl-route-3-200 libnl-route-3-dev libnuma-dev libnuma1 libomp-18-dev
+#6 9.420   libomp-dev libomp5-18 libopenmpi-dev libopenmpi3t64 libpciaccess0
+#6 9.420   libperl5.38t64 libpmix-dev libpmix2t64 libpsl5t64 libpsm-infinipath1
+#6 9.420   libpsm2-2 libpython3.12-minimal libpython3.12-stdlib libpython3.12t64
+#6 9.421   libquadmath0 librdmacm1t64 libreadline8t64 librtmp1 libsasl2-2
+#6 9.421   libsasl2-modules-db libsframe1 libsqlite3-0 libssh-4 libstdc++-13-dev
+#6 9.421   libtsan2 libubsan1 libucx0 libx11-6 libx11-data libxau6 libxcb1 libxdmcp6
+#6 9.422   libxext6 libxml2 libxnvctrl0 linux-libc-dev lto-disabled-list m4 make
+#6 9.422   media-types netbase ocl-icd-libopencl1 openmpi-bin openmpi-common
+#6 9.423   openssh-client openssl patch perl perl-modules-5.38 readline-common
+#6 9.423   rpcsvc-proto tzdata xz-utils zlib1g-dev
+#6 9.425 The following packages will be upgraded:
+#6 9.427   libbz2-1.0 libproc2-0 libssl3t64 perl-base procps zlib1g
+#6 9.686 6 upgraded, 159 newly installed, 0 to remove and 22 not upgraded.
+#6 9.686 Need to get 223 MB of archives.
+#6 9.686 After this operation, 882 MB of additional disk space will be used.
+#6 9.686 Get:1 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 perl-base amd64 5.38.2-3.2ubuntu0.4 [1826 kB]
+#6 10.84 Get:2 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 perl-modules-5.38 all 5.38.2-3.2ubuntu0.4 [3110 kB]
+#6 11.12 Get:3 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libbz2-1.0 amd64 1.0.8-5.1ubuntu0.1 [34.6 kB]
+#6 11.12 Get:4 http://archive.ubuntu.com/ubuntu noble/main amd64 libgdbm6t64 amd64 1.23-5.1build1 [34.4 kB]
+#6 11.13 Get:5 http://archive.ubuntu.com/ubuntu noble/main amd64 libgdbm-compat4t64 amd64 1.23-5.1build1 [6710 B]
+#6 11.13 Get:6 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 zlib1g amd64 1:1.3.dfsg-3.1ubuntu2.2 [63.0 kB]
+#6 11.13 Get:7 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libperl5.38t64 amd64 5.38.2-3.2ubuntu0.4 [4870 kB]
+#6 11.35 Get:8 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 perl amd64 5.38.2-3.2ubuntu0.4 [231 kB]
+#6 11.35 Get:9 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libssl3t64 amd64 3.0.13-0ubuntu3.15 [1944 kB]
+#6 11.43 Get:10 http://archive.ubuntu.com/ubuntu noble/main amd64 adduser all 3.137ubuntu1 [101 kB]
+#6 11.43 Get:11 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libproc2-0 amd64 2:4.0.4-4ubuntu3.3 [58.9 kB]
+#6 11.43 Get:12 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 procps amd64 2:4.0.4-4ubuntu3.3 [707 kB]
+#6 11.45 Get:13 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 openssl amd64 3.0.13-0ubuntu3.15 [1003 kB]
+#6 11.50 Get:14 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 ca-certificates all 20260601~24.04.1 [139 kB]
+#6 11.50 Get:15 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libbsd0 amd64 0.12.1-1build1.1 [41.2 kB]
+#6 11.51 Get:16 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libelf1t64 amd64 0.190-1.1ubuntu0.1 [57.8 kB]
+#6 11.51 Get:17 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libexpat1 amd64 2.6.1-2ubuntu0.4 [88.2 kB]
+#6 11.57 Get:18 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libkrb5support0 amd64 1.20.1-6ubuntu2.8 [34.7 kB]
+#6 11.57 Get:19 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libk5crypto3 amd64 1.20.1-6ubuntu2.8 [81.9 kB]
+#6 11.57 Get:20 http://archive.ubuntu.com/ubuntu noble/main amd64 libkeyutils1 amd64 1.6.3-3build1 [9490 B]
+#6 11.57 Get:21 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libkrb5-3 amd64 1.20.1-6ubuntu2.8 [348 kB]
+#6 11.58 Get:22 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libgssapi-krb5-2 amd64 1.20.1-6ubuntu2.8 [143 kB]
+#6 11.68 Get:23 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libicu74 amd64 74.2-1ubuntu3.1 [10.9 MB]
+#6 11.84 Get:24 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libpython3.12-minimal amd64 3.12.3-1ubuntu0.16 [838 kB]
+#6 11.85 Get:25 http://archive.ubuntu.com/ubuntu noble/main amd64 media-types all 10.1.0 [27.5 kB]
+#6 11.85 Get:26 http://archive.ubuntu.com/ubuntu noble/main amd64 netbase all 6.4 [13.1 kB]
+#6 11.85 Get:27 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 tzdata all 2026c-0ubuntu0.24.04.1 [280 kB]
+#6 11.85 Get:28 http://archive.ubuntu.com/ubuntu noble/main amd64 readline-common all 8.2-4build1 [56.5 kB]
+#6 11.85 Get:29 http://archive.ubuntu.com/ubuntu noble/main amd64 libreadline8t64 amd64 8.2-4build1 [153 kB]
+#6 11.86 Get:30 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libsqlite3-0 amd64 3.45.1-1ubuntu2.7 [701 kB]
+#6 11.90 Get:31 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libpython3.12-stdlib amd64 3.12.3-1ubuntu0.16 [2070 kB]
+#6 11.92 Get:32 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libxml2 amd64 2.9.14+dfsg-1.3ubuntu3.8 [764 kB]
+#6 11.95 Get:33 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libnl-3-200 amd64 3.7.0-0.3build1.1 [55.7 kB]
+#6 12.06 Get:34 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libnl-route-3-200 amd64 3.7.0-0.3build1.1 [189 kB]
+#6 12.06 Get:35 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libibverbs1 amd64 50.0-2ubuntu0.2 [68.0 kB]
+#6 12.06 Get:36 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 ibverbs-providers amd64 50.0-2ubuntu0.2 [381 kB]
+#6 12.07 Get:37 http://archive.ubuntu.com/ubuntu noble/main amd64 libcbor0.10 amd64 0.10.2-1.2ubuntu2 [25.8 kB]
+#6 12.07 Get:38 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libdrm-common all 2.4.125-1ubuntu0.1~24.04.2 [9250 B]
+#6 12.07 Get:39 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libdrm2 amd64 2.4.125-1ubuntu0.1~24.04.2 [41.4 kB]
+#6 12.07 Get:40 http://archive.ubuntu.com/ubuntu noble/main amd64 libedit2 amd64 3.1-20230828-1build1 [97.6 kB]
+#6 12.07 Get:41 http://archive.ubuntu.com/ubuntu noble/main amd64 libfido2-1 amd64 1.14.0-1build3 [83.5 kB]
+#6 12.07 Get:42 http://archive.ubuntu.com/ubuntu noble/main amd64 libjansson4 amd64 2.14-2build2 [32.8 kB]
+#6 12.17 Get:43 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libnghttp2-14 amd64 1.59.0-1ubuntu0.4 [74.6 kB]
+#6 12.28 Get:44 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libnuma1 amd64 2.0.18-1ubuntu0.24.04.1 [23.4 kB]
+#6 12.28 Get:45 http://archive.ubuntu.com/ubuntu noble/main amd64 libpsl5t64 amd64 0.21.2-1.1build1 [57.1 kB]
+#6 12.28 Get:46 http://archive.ubuntu.com/ubuntu noble/main amd64 libxau6 amd64 1:1.0.9-1build6 [7160 B]
+#6 12.28 Get:47 http://archive.ubuntu.com/ubuntu noble/main amd64 libxdmcp6 amd64 1:1.1.3-0ubuntu6 [10.3 kB]
+#6 12.28 Get:48 http://archive.ubuntu.com/ubuntu noble/main amd64 libxcb1 amd64 1.15-1ubuntu2 [47.7 kB]
+#6 12.28 Get:49 http://archive.ubuntu.com/ubuntu noble/main amd64 libx11-data all 2:1.8.7-1build1 [115 kB]
+#6 12.28 Get:50 http://archive.ubuntu.com/ubuntu noble/main amd64 libx11-6 amd64 2:1.8.7-1build1 [650 kB]
+#6 12.29 Get:51 http://archive.ubuntu.com/ubuntu noble/main amd64 libxext6 amd64 2:1.3.4-1build2 [30.4 kB]
+#6 12.29 Get:52 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 openssh-client amd64 1:9.6p1-3ubuntu13.19 [908 kB]
+#6 12.39 Get:53 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 xz-utils amd64 5.6.1+really5.4.5-1ubuntu0.3 [267 kB]
+#6 12.49 Get:54 http://archive.ubuntu.com/ubuntu noble/main amd64 m4 amd64 1.4.19-4build1 [244 kB]
+#6 12.50 Get:55 http://archive.ubuntu.com/ubuntu noble/main amd64 autoconf all 2.71-3 [339 kB]
+#6 12.50 Get:56 http://archive.ubuntu.com/ubuntu noble/main amd64 autotools-dev all 20220109.1 [44.9 kB]
+#6 12.50 Get:57 http://archive.ubuntu.com/ubuntu noble/main amd64 automake all 1:1.16.5-1.3ubuntu1 [558 kB]
+#6 12.51 Get:58 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 binutils-common amd64 2.42-4ubuntu2.10 [240 kB]
+#6 12.51 Get:59 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libsframe1 amd64 2.42-4ubuntu2.10 [15.7 kB]
+#6 12.51 Get:60 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libbinutils amd64 2.42-4ubuntu2.10 [577 kB]
+#6 12.52 Get:61 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libctf-nobfd0 amd64 2.42-4ubuntu2.10 [98.0 kB]
+#6 12.52 Get:62 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libctf0 amd64 2.42-4ubuntu2.10 [94.5 kB]
+#6 12.60 Get:63 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libgprofng0 amd64 2.42-4ubuntu2.10 [849 kB]
+#6 12.71 Get:64 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 binutils-x86-64-linux-gnu amd64 2.42-4ubuntu2.10 [2463 kB]
+#6 12.75 Get:65 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 binutils amd64 2.42-4ubuntu2.10 [18.2 kB]
+#6 12.75 Get:66 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libc-dev-bin amd64 2.39-0ubuntu8.8 [20.4 kB]
+#6 12.75 Get:67 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 linux-libc-dev amd64 6.8.0-139.139 [1527 kB]
+#6 12.76 Get:68 http://archive.ubuntu.com/ubuntu noble/main amd64 libcrypt-dev amd64 1:4.4.36-4build1 [112 kB]
+#6 12.77 Get:69 http://archive.ubuntu.com/ubuntu noble/main amd64 rpcsvc-proto amd64 1.4.2-0ubuntu7 [67.4 kB]
+#6 12.77 Get:70 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libc6-dev amd64 2.39-0ubuntu8.8 [2125 kB]
+#6 12.79 Get:71 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 gcc-13-base amd64 13.3.0-6ubuntu2~24.04.1 [51.6 kB]
+#6 12.79 Get:72 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libisl23 amd64 0.26-3build1.1 [680 kB]
+#6 12.82 Get:73 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libmpfr6 amd64 4.2.1-1build1.1 [353 kB]
+#6 12.93 Get:74 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libmpc3 amd64 1.3.1-1build1.1 [54.6 kB]
+#6 12.93 Get:75 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 cpp-13-x86-64-linux-gnu amd64 13.3.0-6ubuntu2~24.04.1 [10.7 MB]
+#6 13.05 Get:76 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 cpp-13 amd64 13.3.0-6ubuntu2~24.04.1 [1042 B]
+#6 13.05 Get:77 http://archive.ubuntu.com/ubuntu noble/main amd64 cpp-x86-64-linux-gnu amd64 4:13.2.0-7ubuntu1 [5326 B]
+#6 13.06 Get:78 http://archive.ubuntu.com/ubuntu noble/main amd64 cpp amd64 4:13.2.0-7ubuntu1 [22.4 kB]
+#6 13.06 Get:79 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libcc1-0 amd64 14.2.0-4ubuntu2~24.04.1 [48.0 kB]
+#6 13.06 Get:80 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libgomp1 amd64 14.2.0-4ubuntu2~24.04.1 [148 kB]
+#6 13.06 Get:81 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libitm1 amd64 14.2.0-4ubuntu2~24.04.1 [29.7 kB]
+#6 13.06 Get:82 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libatomic1 amd64 14.2.0-4ubuntu2~24.04.1 [10.5 kB]
+#6 13.06 Get:83 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libasan8 amd64 14.2.0-4ubuntu2~24.04.1 [3027 kB]
+#6 13.15 Get:84 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 liblsan0 amd64 14.2.0-4ubuntu2~24.04.1 [1322 kB]
+#6 13.20 Get:85 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libtsan2 amd64 14.2.0-4ubuntu2~24.04.1 [2772 kB]
+#6 13.24 Get:86 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libubsan1 amd64 14.2.0-4ubuntu2~24.04.1 [1184 kB]
+#6 13.25 Get:87 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libhwasan0 amd64 14.2.0-4ubuntu2~24.04.1 [1641 kB]
+#6 13.27 Get:88 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libquadmath0 amd64 14.2.0-4ubuntu2~24.04.1 [153 kB]
+#6 13.27 Get:89 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libgcc-13-dev amd64 13.3.0-6ubuntu2~24.04.1 [2681 kB]
+#6 13.31 Get:90 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 gcc-13-x86-64-linux-gnu amd64 13.3.0-6ubuntu2~24.04.1 [21.1 MB]
+#6 13.55 Get:91 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 gcc-13 amd64 13.3.0-6ubuntu2~24.04.1 [494 kB]
+#6 13.55 Get:92 http://archive.ubuntu.com/ubuntu noble/main amd64 gcc-x86-64-linux-gnu amd64 4:13.2.0-7ubuntu1 [1212 B]
+#6 13.55 Get:93 http://archive.ubuntu.com/ubuntu noble/main amd64 gcc amd64 4:13.2.0-7ubuntu1 [5018 B]
+#6 13.55 Get:94 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libstdc++-13-dev amd64 13.3.0-6ubuntu2~24.04.1 [2420 kB]
+#6 13.58 Get:95 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 g++-13-x86-64-linux-gnu amd64 13.3.0-6ubuntu2~24.04.1 [12.2 MB]
+#6 13.70 Get:96 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 g++-13 amd64 13.3.0-6ubuntu2~24.04.1 [16.0 kB]
+#6 13.70 Get:97 http://archive.ubuntu.com/ubuntu noble/main amd64 g++-x86-64-linux-gnu amd64 4:13.2.0-7ubuntu1 [964 B]
+#6 13.70 Get:98 http://archive.ubuntu.com/ubuntu noble/main amd64 g++ amd64 4:13.2.0-7ubuntu1 [1100 B]
+#6 13.71 Get:99 http://archive.ubuntu.com/ubuntu noble/main amd64 make amd64 4.3-4.1build2 [180 kB]
+#6 13.71 Get:100 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libdpkg-perl all 1.22.6ubuntu6.6 [268 kB]
+#6 13.77 Get:101 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 bzip2 amd64 1.0.8-5.1ubuntu0.1 [34.6 kB]
+#6 13.99 Get:102 http://archive.ubuntu.com/ubuntu noble/main amd64 patch amd64 2.7.6-7build3 [104 kB]
+#6 14.44 Get:103 http://archive.ubuntu.com/ubuntu noble/main amd64 lto-disabled-list all 47 [12.4 kB]
+#6 14.45 Get:104 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 dpkg-dev all 1.22.6ubuntu6.6 [1074 kB]
+#6 14.99 Get:105 http://archive.ubuntu.com/ubuntu noble/main amd64 build-essential amd64 12.10ubuntu1 [4928 B]
+#6 15.00 Get:106 http://archive.ubuntu.com/ubuntu noble/main amd64 libbrotli1 amd64 1.1.0-2build2 [331 kB]
+#6 15.09 Get:107 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libsasl2-modules-db amd64 2.1.28+dfsg1-5ubuntu3.1 [20.4 kB]
+#6 15.09 Get:108 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libsasl2-2 amd64 2.1.28+dfsg1-5ubuntu3.1 [53.2 kB]
+#6 15.09 Get:109 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libldap2 amd64 2.6.10+dfsg-0ubuntu0.24.04.1 [198 kB]
+#6 15.11 Get:110 http://archive.ubuntu.com/ubuntu noble/main amd64 librtmp1 amd64 2.4+20151223.gitfa8646d.1-2build7 [56.3 kB]
+#6 15.12 Get:111 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libssh-4 amd64 0.10.6-2ubuntu0.5 [191 kB]
+#6 15.13 Get:112 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libcurl4t64 amd64 8.5.0-2ubuntu10.13 [343 kB]
+#6 15.20 Get:113 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 curl amd64 8.5.0-2ubuntu10.13 [226 kB]
+#6 15.22 Get:114 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libgfortran5 amd64 14.2.0-4ubuntu2~24.04.1 [916 kB]
+#6 15.33 Get:115 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libgfortran-13-dev amd64 13.3.0-6ubuntu2~24.04.1 [928 kB]
+#6 15.38 Get:116 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 gfortran-13-x86-64-linux-gnu amd64 13.3.0-6ubuntu2~24.04.1 [11.4 MB]
+#6 15.81 Get:117 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 gfortran-13 amd64 13.3.0-6ubuntu2~24.04.1 [13.9 kB]
+#6 15.81 Get:118 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libcurl3t64-gnutls amd64 8.5.0-2ubuntu10.13 [335 kB]
+#6 15.81 Get:119 http://archive.ubuntu.com/ubuntu noble/main amd64 liberror-perl all 0.17029-2 [25.6 kB]
+#6 15.82 Get:120 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 git-man all 1:2.43.0-1ubuntu7.3 [1100 kB]
+#6 15.83 Get:121 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 git amd64 1:2.43.0-1ubuntu7.3 [3680 kB]
+#6 15.87 Get:122 http://archive.ubuntu.com/ubuntu noble/main amd64 libllvm17t64 amd64 1:17.0.6-9ubuntu1 [26.2 MB]
+#6 16.23 Get:123 http://archive.ubuntu.com/ubuntu noble/universe amd64 libamd-comgr2 amd64 6.0+git20231212.4510c28+dfsg-3build2 [14.4 MB]
+#6 16.38 Get:124 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libdrm-amdgpu1 amd64 2.4.125-1ubuntu0.1~24.04.2 [21.4 kB]
+#6 16.38 Get:125 http://archive.ubuntu.com/ubuntu noble/universe amd64 libhsakmt1 amd64 5.7.0-1build1 [62.9 kB]
+#6 16.39 Get:126 http://archive.ubuntu.com/ubuntu noble/universe amd64 libhsa-runtime64-1 amd64 5.7.1-2build1 [491 kB]
+#6 16.39 Get:127 http://archive.ubuntu.com/ubuntu noble/universe amd64 libamdhip64-5 amd64 5.7.1-3 [9621 kB]
+#6 16.50 Get:128 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libevent-2.1-7t64 amd64 2.1.12-stable-9ubuntu2.1 [146 kB]
+#6 16.50 Get:129 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libevent-core-2.1-7t64 amd64 2.1.12-stable-9ubuntu2.1 [91.8 kB]
+#6 16.50 Get:130 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libevent-extra-2.1-7t64 amd64 2.1.12-stable-9ubuntu2.1 [64.6 kB]
+#6 16.50 Get:131 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libevent-pthreads-2.1-7t64 amd64 2.1.12-stable-9ubuntu2.1 [7984 B]
+#6 16.50 Get:132 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libevent-openssl-2.1-7t64 amd64 2.1.12-stable-9ubuntu2.1 [15.7 kB]
+#6 16.50 Get:133 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libevent-dev amd64 2.1.12-stable-9ubuntu2.1 [274 kB]
+#6 16.60 Get:134 http://archive.ubuntu.com/ubuntu noble/universe amd64 libpsm-infinipath1 amd64 3.3+20.604758e7-6.3build1 [178 kB]
+#6 16.60 Get:135 http://archive.ubuntu.com/ubuntu noble/universe amd64 libpsm2-2 amd64 11.2.185-2build1 [194 kB]
+#6 16.61 Get:136 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 librdmacm1t64 amd64 50.0-2ubuntu0.2 [70.7 kB]
+#6 16.71 Get:137 http://archive.ubuntu.com/ubuntu noble/universe amd64 libfabric1 amd64 1.17.0-3build2 [657 kB]
+#6 16.72 Get:138 http://archive.ubuntu.com/ubuntu noble/universe amd64 libhwloc15 amd64 2.10.0-1build1 [172 kB]
+#6 16.72 Get:139 http://archive.ubuntu.com/ubuntu noble/main amd64 libjs-jquery all 3.6.1+dfsg+~3.5.14-1 [328 kB]
+#6 16.72 Get:140 http://archive.ubuntu.com/ubuntu noble/universe amd64 libjs-jquery-ui all 1.13.2+dfsg-1 [252 kB]
+#6 16.73 Get:141 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libllvm18 amd64 1:18.1.3-1ubuntu1 [27.5 MB]
+#6 17.04 Get:142 http://archive.ubuntu.com/ubuntu noble/main amd64 libltdl7 amd64 2.4.7-7build1 [40.3 kB]
+#6 17.04 Get:143 http://archive.ubuntu.com/ubuntu noble/main amd64 libltdl-dev amd64 2.4.7-7build1 [168 kB]
+#6 17.04 Get:144 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libnl-3-dev amd64 3.7.0-0.3build1.1 [99.5 kB]
+#6 17.04 Get:145 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libnl-route-3-dev amd64 3.7.0-0.3build1.1 [216 kB]
+#6 17.05 Get:146 http://archive.ubuntu.com/ubuntu noble-updates/universe amd64 libomp5-18 amd64 1:18.1.3-1ubuntu1 [608 kB]
+#6 17.05 Get:147 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libpython3.12t64 amd64 3.12.3-1ubuntu0.16 [2339 kB]
+#6 17.08 Get:148 http://archive.ubuntu.com/ubuntu noble-updates/universe amd64 libomp-18-dev amd64 1:18.1.3-1ubuntu1 [968 kB]
+#6 17.09 Get:149 http://archive.ubuntu.com/ubuntu noble-updates/universe amd64 libmunge2 amd64 0.5.15-4ubuntu0.1 [14.8 kB]
+#6 17.09 Get:150 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libpciaccess0 amd64 0.17-3ubuntu0.24.04.2 [18.9 kB]
+#6 17.15 Get:151 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libxnvctrl0 amd64 510.47.03-0ubuntu4.24.04.1 [12.7 kB]
+#6 17.25 Get:152 http://archive.ubuntu.com/ubuntu noble/universe amd64 ocl-icd-libopencl1 amd64 2.3.2-1build1 [38.5 kB]
+#6 17.26 Get:153 http://archive.ubuntu.com/ubuntu noble/universe amd64 libhwloc-plugins amd64 2.10.0-1build1 [15.7 kB]
+#6 17.26 Get:154 http://archive.ubuntu.com/ubuntu noble/universe amd64 libpmix2t64 amd64 5.0.1-4.1build1 [697 kB]
+#6 17.26 Get:155 http://archive.ubuntu.com/ubuntu noble/universe amd64 libucx0 amd64 1.16.0+ds-5ubuntu1 [1140 kB]
+#6 17.28 Get:156 http://archive.ubuntu.com/ubuntu noble/universe amd64 libopenmpi3t64 amd64 4.1.6-7ubuntu2 [2563 kB]
+#6 17.31 Get:157 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libnuma-dev amd64 2.0.18-1ubuntu0.24.04.1 [37.0 kB]
+#6 17.31 Get:158 http://archive.ubuntu.com/ubuntu noble/universe amd64 libhwloc-dev amd64 2.10.0-1build1 [268 kB]
+#6 17.31 Get:159 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 zlib1g-dev amd64 1:1.3.dfsg-3.1ubuntu2.2 [894 kB]
+#6 17.32 Get:160 http://archive.ubuntu.com/ubuntu noble/universe amd64 libpmix-dev amd64 5.0.1-4.1build1 [4018 kB]
+#6 17.36 Get:161 http://archive.ubuntu.com/ubuntu noble/universe amd64 openmpi-common all 4.1.6-7ubuntu2 [170 kB]
+#6 17.47 Get:162 http://archive.ubuntu.com/ubuntu noble/universe amd64 openmpi-bin amd64 4.1.6-7ubuntu2 [114 kB]
+#6 17.47 Get:163 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 libibverbs-dev amd64 50.0-2ubuntu0.2 [686 kB]
+#6 17.48 Get:164 http://archive.ubuntu.com/ubuntu noble/universe amd64 libomp-dev amd64 1:18.0-59~exp2 [5366 B]
+#6 17.48 Get:165 http://archive.ubuntu.com/ubuntu noble/universe amd64 libopenmpi-dev amd64 4.1.6-7ubuntu2 [864 kB]
+#6 17.85 debconf: delaying package configuration, since apt-utils is not installed
+#6 17.90 Fetched 223 MB in 8s (27.7 MB/s)
+#6 17.95 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 4381 files and directories currently installed.)
+#6 17.96 Preparing to unpack .../perl-base_5.38.2-3.2ubuntu0.4_amd64.deb ...
+#6 17.99 Unpacking perl-base (5.38.2-3.2ubuntu0.4) over (5.38.2-3.2ubuntu0.3) ...
+#6 20.09 Setting up perl-base (5.38.2-3.2ubuntu0.4) ...
+#6 20.13 Selecting previously unselected package perl-modules-5.38.
+#6 20.13 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 4381 files and directories currently installed.)
+#6 20.14 Preparing to unpack .../perl-modules-5.38_5.38.2-3.2ubuntu0.4_all.deb ...
+#6 20.14 Unpacking perl-modules-5.38 (5.38.2-3.2ubuntu0.4) ...
+#6 20.47 Preparing to unpack .../libbz2-1.0_1.0.8-5.1ubuntu0.1_amd64.deb ...
+#6 20.48 Unpacking libbz2-1.0:amd64 (1.0.8-5.1ubuntu0.1) over (1.0.8-5.1build0.1) ...
+#6 20.53 Setting up libbz2-1.0:amd64 (1.0.8-5.1ubuntu0.1) ...
+#6 20.57 Selecting previously unselected package libgdbm6t64:amd64.
+#6 20.57 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 5794 files and directories currently installed.)
+#6 20.58 Preparing to unpack .../libgdbm6t64_1.23-5.1build1_amd64.deb ...
+#6 20.59 Unpacking libgdbm6t64:amd64 (1.23-5.1build1) ...
+#6 20.62 Selecting previously unselected package libgdbm-compat4t64:amd64.
+#6 20.62 Preparing to unpack .../libgdbm-compat4t64_1.23-5.1build1_amd64.deb ...
+#6 20.63 Unpacking libgdbm-compat4t64:amd64 (1.23-5.1build1) ...
+#6 20.66 Preparing to unpack .../zlib1g_1%3a1.3.dfsg-3.1ubuntu2.2_amd64.deb ...
+#6 20.67 Unpacking zlib1g:amd64 (1:1.3.dfsg-3.1ubuntu2.2) over (1:1.3.dfsg-3.1ubuntu2.1) ...
+#6 20.72 Setting up zlib1g:amd64 (1:1.3.dfsg-3.1ubuntu2.2) ...
+#6 20.76 Selecting previously unselected package libperl5.38t64:amd64.
+#6 20.76 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 5806 files and directories currently installed.)
+#6 20.77 Preparing to unpack .../libperl5.38t64_5.38.2-3.2ubuntu0.4_amd64.deb ...
+#6 20.78 Unpacking libperl5.38t64:amd64 (5.38.2-3.2ubuntu0.4) ...
+#6 21.33 Selecting previously unselected package perl.
+#6 21.33 Preparing to unpack .../perl_5.38.2-3.2ubuntu0.4_amd64.deb ...
+#6 21.35 Unpacking perl (5.38.2-3.2ubuntu0.4) ...
+#6 21.56 Preparing to unpack .../libssl3t64_3.0.13-0ubuntu3.15_amd64.deb ...
+#6 21.57 Unpacking libssl3t64:amd64 (3.0.13-0ubuntu3.15) over (3.0.13-0ubuntu3.12) ...
+#6 21.73 Setting up libssl3t64:amd64 (3.0.13-0ubuntu3.15) ...
+#6 21.77 Selecting previously unselected package adduser.
+#6 21.77 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 6393 files and directories currently installed.)
+#6 21.78 Preparing to unpack .../adduser_3.137ubuntu1_all.deb ...
+#6 21.79 Unpacking adduser (3.137ubuntu1) ...
+#6 21.84 Setting up adduser (3.137ubuntu1) ...
+#6 21.89 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 6441 files and directories currently installed.)
+#6 21.90 Preparing to unpack .../000-libproc2-0_2%3a4.0.4-4ubuntu3.3_amd64.deb ...
+#6 21.91 Unpacking libproc2-0:amd64 (2:4.0.4-4ubuntu3.3) over (2:4.0.4-4ubuntu3.2) ...
+#6 21.97 Preparing to unpack .../001-procps_2%3a4.0.4-4ubuntu3.3_amd64.deb ...
+#6 22.01 Unpacking procps (2:4.0.4-4ubuntu3.3) over (2:4.0.4-4ubuntu3.2) ...
+#6 22.15 Selecting previously unselected package openssl.
+#6 22.16 Preparing to unpack .../002-openssl_3.0.13-0ubuntu3.15_amd64.deb ...
+#6 22.16 Unpacking openssl (3.0.13-0ubuntu3.15) ...
+#6 22.22 Selecting previously unselected package ca-certificates.
+#6 22.23 Preparing to unpack .../003-ca-certificates_20260601~24.04.1_all.deb ...
+#6 22.23 Unpacking ca-certificates (20260601~24.04.1) ...
+#6 22.29 Selecting previously unselected package libbsd0:amd64.
+#6 22.29 Preparing to unpack .../004-libbsd0_0.12.1-1build1.1_amd64.deb ...
+#6 22.30 Unpacking libbsd0:amd64 (0.12.1-1build1.1) ...
+#6 22.33 Selecting previously unselected package libelf1t64:amd64.
+#6 22.33 Preparing to unpack .../005-libelf1t64_0.190-1.1ubuntu0.1_amd64.deb ...
+#6 22.34 Unpacking libelf1t64:amd64 (0.190-1.1ubuntu0.1) ...
+#6 22.37 Selecting previously unselected package libexpat1:amd64.
+#6 22.37 Preparing to unpack .../006-libexpat1_2.6.1-2ubuntu0.4_amd64.deb ...
+#6 22.38 Unpacking libexpat1:amd64 (2.6.1-2ubuntu0.4) ...
+#6 22.42 Selecting previously unselected package libkrb5support0:amd64.
+#6 22.42 Preparing to unpack .../007-libkrb5support0_1.20.1-6ubuntu2.8_amd64.deb ...
+#6 22.42 Unpacking libkrb5support0:amd64 (1.20.1-6ubuntu2.8) ...
+#6 22.46 Selecting previously unselected package libk5crypto3:amd64.
+#6 22.46 Preparing to unpack .../008-libk5crypto3_1.20.1-6ubuntu2.8_amd64.deb ...
+#6 22.46 Unpacking libk5crypto3:amd64 (1.20.1-6ubuntu2.8) ...
+#6 22.50 Selecting previously unselected package libkeyutils1:amd64.
+#6 22.50 Preparing to unpack .../009-libkeyutils1_1.6.3-3build1_amd64.deb ...
+#6 22.50 Unpacking libkeyutils1:amd64 (1.6.3-3build1) ...
+#6 22.53 Selecting previously unselected package libkrb5-3:amd64.
+#6 22.54 Preparing to unpack .../010-libkrb5-3_1.20.1-6ubuntu2.8_amd64.deb ...
+#6 22.54 Unpacking libkrb5-3:amd64 (1.20.1-6ubuntu2.8) ...
+#6 22.58 Selecting previously unselected package libgssapi-krb5-2:amd64.
+#6 22.58 Preparing to unpack .../011-libgssapi-krb5-2_1.20.1-6ubuntu2.8_amd64.deb ...
+#6 22.59 Unpacking libgssapi-krb5-2:amd64 (1.20.1-6ubuntu2.8) ...
+#6 22.62 Selecting previously unselected package libicu74:amd64.
+#6 22.62 Preparing to unpack .../012-libicu74_74.2-1ubuntu3.1_amd64.deb ...
+#6 22.63 Unpacking libicu74:amd64 (74.2-1ubuntu3.1) ...
+#6 22.89 Selecting previously unselected package libpython3.12-minimal:amd64.
+#6 22.89 Preparing to unpack .../013-libpython3.12-minimal_3.12.3-1ubuntu0.16_amd64.deb ...
+#6 22.90 Unpacking libpython3.12-minimal:amd64 (3.12.3-1ubuntu0.16) ...
+#6 22.99 Selecting previously unselected package media-types.
+#6 22.99 Preparing to unpack .../014-media-types_10.1.0_all.deb ...
+#6 23.00 Unpacking media-types (10.1.0) ...
+#6 23.03 Selecting previously unselected package netbase.
+#6 23.03 Preparing to unpack .../015-netbase_6.4_all.deb ...
+#6 23.03 Unpacking netbase (6.4) ...
+#6 23.07 Selecting previously unselected package tzdata.
+#6 23.07 Preparing to unpack .../016-tzdata_2026c-0ubuntu0.24.04.1_all.deb ...
+#6 23.08 Unpacking tzdata (2026c-0ubuntu0.24.04.1) ...
+#6 23.19 Selecting previously unselected package readline-common.
+#6 23.19 Preparing to unpack .../017-readline-common_8.2-4build1_all.deb ...
+#6 23.19 Unpacking readline-common (8.2-4build1) ...
+#6 23.23 Selecting previously unselected package libreadline8t64:amd64.
+#6 23.23 Preparing to unpack .../018-libreadline8t64_8.2-4build1_amd64.deb ...
+#6 23.25 Adding 'diversion of /lib/x86_64-linux-gnu/libhistory.so.8 to /lib/x86_64-linux-gnu/libhistory.so.8.usr-is-merged by libreadline8t64'
+#6 23.26 Adding 'diversion of /lib/x86_64-linux-gnu/libhistory.so.8.2 to /lib/x86_64-linux-gnu/libhistory.so.8.2.usr-is-merged by libreadline8t64'
+#6 23.27 Adding 'diversion of /lib/x86_64-linux-gnu/libreadline.so.8 to /lib/x86_64-linux-gnu/libreadline.so.8.usr-is-merged by libreadline8t64'
+#6 23.28 Adding 'diversion of /lib/x86_64-linux-gnu/libreadline.so.8.2 to /lib/x86_64-linux-gnu/libreadline.so.8.2.usr-is-merged by libreadline8t64'
+#6 23.28 Unpacking libreadline8t64:amd64 (8.2-4build1) ...
+#6 23.32 Selecting previously unselected package libsqlite3-0:amd64.
+#6 23.32 Preparing to unpack .../019-libsqlite3-0_3.45.1-1ubuntu2.7_amd64.deb ...
+#6 23.32 Unpacking libsqlite3-0:amd64 (3.45.1-1ubuntu2.7) ...
+#6 23.37 Selecting previously unselected package libpython3.12-stdlib:amd64.
+#6 23.37 Preparing to unpack .../020-libpython3.12-stdlib_3.12.3-1ubuntu0.16_amd64.deb ...
+#6 23.37 Unpacking libpython3.12-stdlib:amd64 (3.12.3-1ubuntu0.16) ...
+#6 23.51 Selecting previously unselected package libxml2:amd64.
+#6 23.52 Preparing to unpack .../021-libxml2_2.9.14+dfsg-1.3ubuntu3.8_amd64.deb ...
+#6 23.52 Unpacking libxml2:amd64 (2.9.14+dfsg-1.3ubuntu3.8) ...
+#6 23.57 Selecting previously unselected package libnl-3-200:amd64.
+#6 23.57 Preparing to unpack .../022-libnl-3-200_3.7.0-0.3build1.1_amd64.deb ...
+#6 23.58 Unpacking libnl-3-200:amd64 (3.7.0-0.3build1.1) ...
+#6 23.61 Selecting previously unselected package libnl-route-3-200:amd64.
+#6 23.61 Preparing to unpack .../023-libnl-route-3-200_3.7.0-0.3build1.1_amd64.deb ...
+#6 23.62 Unpacking libnl-route-3-200:amd64 (3.7.0-0.3build1.1) ...
+#6 23.66 Selecting previously unselected package libibverbs1:amd64.
+#6 23.66 Preparing to unpack .../024-libibverbs1_50.0-2ubuntu0.2_amd64.deb ...
+#6 23.66 Unpacking libibverbs1:amd64 (50.0-2ubuntu0.2) ...
+#6 23.71 Selecting previously unselected package ibverbs-providers:amd64.
+#6 23.71 Preparing to unpack .../025-ibverbs-providers_50.0-2ubuntu0.2_amd64.deb ...
+#6 23.73 Unpacking ibverbs-providers:amd64 (50.0-2ubuntu0.2) ...
+#6 23.78 Selecting previously unselected package libcbor0.10:amd64.
+#6 23.78 Preparing to unpack .../026-libcbor0.10_0.10.2-1.2ubuntu2_amd64.deb ...
+#6 23.78 Unpacking libcbor0.10:amd64 (0.10.2-1.2ubuntu2) ...
+#6 23.81 Selecting previously unselected package libdrm-common.
+#6 23.82 Preparing to unpack .../027-libdrm-common_2.4.125-1ubuntu0.1~24.04.2_all.deb ...
+#6 23.82 Unpacking libdrm-common (2.4.125-1ubuntu0.1~24.04.2) ...
+#6 23.85 Selecting previously unselected package libdrm2:amd64.
+#6 23.86 Preparing to unpack .../028-libdrm2_2.4.125-1ubuntu0.1~24.04.2_amd64.deb ...
+#6 23.86 Unpacking libdrm2:amd64 (2.4.125-1ubuntu0.1~24.04.2) ...
+#6 23.90 Selecting previously unselected package libedit2:amd64.
+#6 23.90 Preparing to unpack .../029-libedit2_3.1-20230828-1build1_amd64.deb ...
+#6 23.90 Unpacking libedit2:amd64 (3.1-20230828-1build1) ...
+#6 23.94 Selecting previously unselected package libfido2-1:amd64.
+#6 23.94 Preparing to unpack .../030-libfido2-1_1.14.0-1build3_amd64.deb ...
+#6 23.94 Unpacking libfido2-1:amd64 (1.14.0-1build3) ...
+#6 23.98 Selecting previously unselected package libjansson4:amd64.
+#6 23.98 Preparing to unpack .../031-libjansson4_2.14-2build2_amd64.deb ...
+#6 23.98 Unpacking libjansson4:amd64 (2.14-2build2) ...
+#6 24.02 Selecting previously unselected package libnghttp2-14:amd64.
+#6 24.02 Preparing to unpack .../032-libnghttp2-14_1.59.0-1ubuntu0.4_amd64.deb ...
+#6 24.02 Unpacking libnghttp2-14:amd64 (1.59.0-1ubuntu0.4) ...
+#6 24.06 Selecting previously unselected package libnuma1:amd64.
+#6 24.06 Preparing to unpack .../033-libnuma1_2.0.18-1ubuntu0.24.04.1_amd64.deb ...
+#6 24.06 Unpacking libnuma1:amd64 (2.0.18-1ubuntu0.24.04.1) ...
+#6 24.10 Selecting previously unselected package libpsl5t64:amd64.
+#6 24.10 Preparing to unpack .../034-libpsl5t64_0.21.2-1.1build1_amd64.deb ...
+#6 24.10 Unpacking libpsl5t64:amd64 (0.21.2-1.1build1) ...
+#6 24.13 Selecting previously unselected package libxau6:amd64.
+#6 24.14 Preparing to unpack .../035-libxau6_1%3a1.0.9-1build6_amd64.deb ...
+#6 24.14 Unpacking libxau6:amd64 (1:1.0.9-1build6) ...
+#6 24.17 Selecting previously unselected package libxdmcp6:amd64.
+#6 24.17 Preparing to unpack .../036-libxdmcp6_1%3a1.1.3-0ubuntu6_amd64.deb ...
+#6 24.18 Unpacking libxdmcp6:amd64 (1:1.1.3-0ubuntu6) ...
+#6 24.21 Selecting previously unselected package libxcb1:amd64.
+#6 24.21 Preparing to unpack .../037-libxcb1_1.15-1ubuntu2_amd64.deb ...
+#6 24.21 Unpacking libxcb1:amd64 (1.15-1ubuntu2) ...
+#6 24.24 Selecting previously unselected package libx11-data.
+#6 24.25 Preparing to unpack .../038-libx11-data_2%3a1.8.7-1build1_all.deb ...
+#6 24.25 Unpacking libx11-data (2:1.8.7-1build1) ...
+#6 24.32 Selecting previously unselected package libx11-6:amd64.
+#6 24.32 Preparing to unpack .../039-libx11-6_2%3a1.8.7-1build1_amd64.deb ...
+#6 24.33 Unpacking libx11-6:amd64 (2:1.8.7-1build1) ...
+#6 24.37 Selecting previously unselected package libxext6:amd64.
+#6 24.37 Preparing to unpack .../040-libxext6_2%3a1.3.4-1build2_amd64.deb ...
+#6 24.38 Unpacking libxext6:amd64 (2:1.3.4-1build2) ...
+#6 24.41 Selecting previously unselected package openssh-client.
+#6 24.42 Preparing to unpack .../041-openssh-client_1%3a9.6p1-3ubuntu13.19_amd64.deb ...
+#6 24.43 Unpacking openssh-client (1:9.6p1-3ubuntu13.19) ...
+#6 24.49 Selecting previously unselected package xz-utils.
+#6 24.49 Preparing to unpack .../042-xz-utils_5.6.1+really5.4.5-1ubuntu0.3_amd64.deb ...
+#6 24.50 Unpacking xz-utils (5.6.1+really5.4.5-1ubuntu0.3) ...
+#6 24.54 Selecting previously unselected package m4.
+#6 24.54 Preparing to unpack .../043-m4_1.4.19-4build1_amd64.deb ...
+#6 24.54 Unpacking m4 (1.4.19-4build1) ...
+#6 24.58 Selecting previously unselected package autoconf.
+#6 24.58 Preparing to unpack .../044-autoconf_2.71-3_all.deb ...
+#6 24.58 Unpacking autoconf (2.71-3) ...
+#6 24.63 Selecting previously unselected package autotools-dev.
+#6 24.63 Preparing to unpack .../045-autotools-dev_20220109.1_all.deb ...
+#6 24.64 Unpacking autotools-dev (20220109.1) ...
+#6 24.68 Selecting previously unselected package automake.
+#6 24.68 Preparing to unpack .../046-automake_1%3a1.16.5-1.3ubuntu1_all.deb ...
+#6 24.68 Unpacking automake (1:1.16.5-1.3ubuntu1) ...
+#6 24.74 Selecting previously unselected package binutils-common:amd64.
+#6 24.74 Preparing to unpack .../047-binutils-common_2.42-4ubuntu2.10_amd64.deb ...
+#6 24.75 Unpacking binutils-common:amd64 (2.42-4ubuntu2.10) ...
+#6 24.78 Selecting previously unselected package libsframe1:amd64.
+#6 24.79 Preparing to unpack .../048-libsframe1_2.42-4ubuntu2.10_amd64.deb ...
+#6 24.79 Unpacking libsframe1:amd64 (2.42-4ubuntu2.10) ...
+#6 24.82 Selecting previously unselected package libbinutils:amd64.
+#6 24.82 Preparing to unpack .../049-libbinutils_2.42-4ubuntu2.10_amd64.deb ...
+#6 24.83 Unpacking libbinutils:amd64 (2.42-4ubuntu2.10) ...
+#6 24.88 Selecting previously unselected package libctf-nobfd0:amd64.
+#6 24.88 Preparing to unpack .../050-libctf-nobfd0_2.42-4ubuntu2.10_amd64.deb ...
+#6 24.88 Unpacking libctf-nobfd0:amd64 (2.42-4ubuntu2.10) ...
+#6 24.92 Selecting previously unselected package libctf0:amd64.
+#6 24.92 Preparing to unpack .../051-libctf0_2.42-4ubuntu2.10_amd64.deb ...
+#6 24.92 Unpacking libctf0:amd64 (2.42-4ubuntu2.10) ...
+#6 24.96 Selecting previously unselected package libgprofng0:amd64.
+#6 24.96 Preparing to unpack .../052-libgprofng0_2.42-4ubuntu2.10_amd64.deb ...
+#6 24.96 Unpacking libgprofng0:amd64 (2.42-4ubuntu2.10) ...
+#6 25.02 Selecting previously unselected package binutils-x86-64-linux-gnu.
+#6 25.02 Preparing to unpack .../053-binutils-x86-64-linux-gnu_2.42-4ubuntu2.10_amd64.deb ...
+#6 25.02 Unpacking binutils-x86-64-linux-gnu (2.42-4ubuntu2.10) ...
+#6 25.15 Selecting previously unselected package binutils.
+#6 25.15 Preparing to unpack .../054-binutils_2.42-4ubuntu2.10_amd64.deb ...
+#6 25.15 Unpacking binutils (2.42-4ubuntu2.10) ...
+#6 25.19 Selecting previously unselected package libc-dev-bin.
+#6 25.19 Preparing to unpack .../055-libc-dev-bin_2.39-0ubuntu8.8_amd64.deb ...
+#6 25.19 Unpacking libc-dev-bin (2.39-0ubuntu8.8) ...
+#6 25.22 Selecting previously unselected package linux-libc-dev:amd64.
+#6 25.22 Preparing to unpack .../056-linux-libc-dev_6.8.0-139.139_amd64.deb ...
+#6 25.23 Unpacking linux-libc-dev:amd64 (6.8.0-139.139) ...
+#6 25.45 Selecting previously unselected package libcrypt-dev:amd64.
+#6 25.46 Preparing to unpack .../057-libcrypt-dev_1%3a4.4.36-4build1_amd64.deb ...
+#6 25.47 Unpacking libcrypt-dev:amd64 (1:4.4.36-4build1) ...
+#6 25.50 Selecting previously unselected package rpcsvc-proto.
+#6 25.50 Preparing to unpack .../058-rpcsvc-proto_1.4.2-0ubuntu7_amd64.deb ...
+#6 25.50 Unpacking rpcsvc-proto (1.4.2-0ubuntu7) ...
+#6 25.54 Selecting previously unselected package libc6-dev:amd64.
+#6 25.54 Preparing to unpack .../059-libc6-dev_2.39-0ubuntu8.8_amd64.deb ...
+#6 25.54 Unpacking libc6-dev:amd64 (2.39-0ubuntu8.8) ...
+#6 25.74 Selecting previously unselected package gcc-13-base:amd64.
+#6 25.74 Preparing to unpack .../060-gcc-13-base_13.3.0-6ubuntu2~24.04.1_amd64.deb ...
+#6 25.74 Unpacking gcc-13-base:amd64 (13.3.0-6ubuntu2~24.04.1) ...
+#6 25.78 Selecting previously unselected package libisl23:amd64.
+#6 25.78 Preparing to unpack .../061-libisl23_0.26-3build1.1_amd64.deb ...
+#6 25.78 Unpacking libisl23:amd64 (0.26-3build1.1) ...
+#6 25.84 Selecting previously unselected package libmpfr6:amd64.
+#6 25.84 Preparing to unpack .../062-libmpfr6_4.2.1-1build1.1_amd64.deb ...
+#6 25.84 Unpacking libmpfr6:amd64 (4.2.1-1build1.1) ...
+#6 25.89 Selecting previously unselected package libmpc3:amd64.
+#6 25.89 Preparing to unpack .../063-libmpc3_1.3.1-1build1.1_amd64.deb ...
+#6 25.89 Unpacking libmpc3:amd64 (1.3.1-1build1.1) ...
+#6 25.92 Selecting previously unselected package cpp-13-x86-64-linux-gnu.
+#6 25.92 Preparing to unpack .../064-cpp-13-x86-64-linux-gnu_13.3.0-6ubuntu2~24.04.1_amd64.deb ...
+#6 25.93 Unpacking cpp-13-x86-64-linux-gnu (13.3.0-6ubuntu2~24.04.1) ...
+#6 26.18 Selecting previously unselected package cpp-13.
+#6 26.18 Preparing to unpack .../065-cpp-13_13.3.0-6ubuntu2~24.04.1_amd64.deb ...
+#6 26.18 Unpacking cpp-13 (13.3.0-6ubuntu2~24.04.1) ...
+#6 26.21 Selecting previously unselected package cpp-x86-64-linux-gnu.
+#6 26.22 Preparing to unpack .../066-cpp-x86-64-linux-gnu_4%3a13.2.0-7ubuntu1_amd64.deb ...
+#6 26.22 Unpacking cpp-x86-64-linux-gnu (4:13.2.0-7ubuntu1) ...
+#6 26.26 Selecting previously unselected package cpp.
+#6 26.26 Preparing to unpack .../067-cpp_4%3a13.2.0-7ubuntu1_amd64.deb ...
+#6 26.27 Unpacking cpp (4:13.2.0-7ubuntu1) ...
+#6 26.31 Selecting previously unselected package libcc1-0:amd64.
+#6 26.31 Preparing to unpack .../068-libcc1-0_14.2.0-4ubuntu2~24.04.1_amd64.deb ...
+#6 26.31 Unpacking libcc1-0:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+#6 26.35 Selecting previously unselected package libgomp1:amd64.
+#6 26.35 Preparing to unpack .../069-libgomp1_14.2.0-4ubuntu2~24.04.1_amd64.deb ...
+#6 26.36 Unpacking libgomp1:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+#6 26.40 Selecting previously unselected package libitm1:amd64.
+#6 26.40 Preparing to unpack .../070-libitm1_14.2.0-4ubuntu2~24.04.1_amd64.deb ...
+#6 26.40 Unpacking libitm1:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+#6 26.44 Selecting previously unselected package libatomic1:amd64.
+#6 26.44 Preparing to unpack .../071-libatomic1_14.2.0-4ubuntu2~24.04.1_amd64.deb ...
+#6 26.45 Unpacking libatomic1:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+#6 26.48 Selecting previously unselected package libasan8:amd64.
+#6 26.48 Preparing to unpack .../072-libasan8_14.2.0-4ubuntu2~24.04.1_amd64.deb ...
+#6 26.49 Unpacking libasan8:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+#6 26.59 Selecting previously unselected package liblsan0:amd64.
+#6 26.59 Preparing to unpack .../073-liblsan0_14.2.0-4ubuntu2~24.04.1_amd64.deb ...
+#6 26.60 Unpacking liblsan0:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+#6 26.66 Selecting previously unselected package libtsan2:amd64.
+#6 26.66 Preparing to unpack .../074-libtsan2_14.2.0-4ubuntu2~24.04.1_amd64.deb ...
+#6 26.67 Unpacking libtsan2:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+#6 26.77 Selecting previously unselected package libubsan1:amd64.
+#6 26.77 Preparing to unpack .../075-libubsan1_14.2.0-4ubuntu2~24.04.1_amd64.deb ...
+#6 26.77 Unpacking libubsan1:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+#6 26.84 Selecting previously unselected package libhwasan0:amd64.
+#6 26.84 Preparing to unpack .../076-libhwasan0_14.2.0-4ubuntu2~24.04.1_amd64.deb ...
+#6 26.84 Unpacking libhwasan0:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+#6 26.91 Selecting previously unselected package libquadmath0:amd64.
+#6 26.92 Preparing to unpack .../077-libquadmath0_14.2.0-4ubuntu2~24.04.1_amd64.deb ...
+#6 26.92 Unpacking libquadmath0:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+#6 26.95 Selecting previously unselected package libgcc-13-dev:amd64.
+#6 26.96 Preparing to unpack .../078-libgcc-13-dev_13.3.0-6ubuntu2~24.04.1_amd64.deb ...
+#6 26.96 Unpacking libgcc-13-dev:amd64 (13.3.0-6ubuntu2~24.04.1) ...
+#6 27.32 Selecting previously unselected package gcc-13-x86-64-linux-gnu.
+#6 27.32 Preparing to unpack .../079-gcc-13-x86-64-linux-gnu_13.3.0-6ubuntu2~24.04.1_amd64.deb ...
+#6 27.35 Unpacking gcc-13-x86-64-linux-gnu (13.3.0-6ubuntu2~24.04.1) ...
+#6 27.82 Selecting previously unselected package gcc-13.
+#6 27.82 Preparing to unpack .../080-gcc-13_13.3.0-6ubuntu2~24.04.1_amd64.deb ...
+#6 27.82 Unpacking gcc-13 (13.3.0-6ubuntu2~24.04.1) ...
+#6 27.86 Selecting previously unselected package gcc-x86-64-linux-gnu.
+#6 27.86 Preparing to unpack .../081-gcc-x86-64-linux-gnu_4%3a13.2.0-7ubuntu1_amd64.deb ...
+#6 27.87 Unpacking gcc-x86-64-linux-gnu (4:13.2.0-7ubuntu1) ...
+#6 27.92 Selecting previously unselected package gcc.
+#6 27.92 Preparing to unpack .../082-gcc_4%3a13.2.0-7ubuntu1_amd64.deb ...
+#6 27.93 Unpacking gcc (4:13.2.0-7ubuntu1) ...
+#6 27.95 Selecting previously unselected package libstdc++-13-dev:amd64.
+#6 27.96 Preparing to unpack .../083-libstdc++-13-dev_13.3.0-6ubuntu2~24.04.1_amd64.deb ...
+#6 27.96 Unpacking libstdc++-13-dev:amd64 (13.3.0-6ubuntu2~24.04.1) ...
+#6 28.21 Selecting previously unselected package g++-13-x86-64-linux-gnu.
+#6 28.21 Preparing to unpack .../084-g++-13-x86-64-linux-gnu_13.3.0-6ubuntu2~24.04.1_amd64.deb ...
+#6 28.22 Unpacking g++-13-x86-64-linux-gnu (13.3.0-6ubuntu2~24.04.1) ...
+#6 28.48 Selecting previously unselected package g++-13.
+#6 28.48 Preparing to unpack .../085-g++-13_13.3.0-6ubuntu2~24.04.1_amd64.deb ...
+#6 28.48 Unpacking g++-13 (13.3.0-6ubuntu2~24.04.1) ...
+#6 28.51 Selecting previously unselected package g++-x86-64-linux-gnu.
+#6 28.51 Preparing to unpack .../086-g++-x86-64-linux-gnu_4%3a13.2.0-7ubuntu1_amd64.deb ...
+#6 28.51 Unpacking g++-x86-64-linux-gnu (4:13.2.0-7ubuntu1) ...
+#6 28.54 Selecting previously unselected package g++.
+#6 28.55 Preparing to unpack .../087-g++_4%3a13.2.0-7ubuntu1_amd64.deb ...
+#6 28.55 Unpacking g++ (4:13.2.0-7ubuntu1) ...
+#6 28.58 Selecting previously unselected package make.
+#6 28.58 Preparing to unpack .../088-make_4.3-4.1build2_amd64.deb ...
+#6 28.58 Unpacking make (4.3-4.1build2) ...
+#6 28.62 Selecting previously unselected package libdpkg-perl.
+#6 28.62 Preparing to unpack .../089-libdpkg-perl_1.22.6ubuntu6.6_all.deb ...
+#6 28.62 Unpacking libdpkg-perl (1.22.6ubuntu6.6) ...
+#6 28.67 Selecting previously unselected package bzip2.
+#6 28.68 Preparing to unpack .../090-bzip2_1.0.8-5.1ubuntu0.1_amd64.deb ...
+#6 28.68 Unpacking bzip2 (1.0.8-5.1ubuntu0.1) ...
+#6 28.71 Selecting previously unselected package patch.
+#6 28.72 Preparing to unpack .../091-patch_2.7.6-7build3_amd64.deb ...
+#6 28.72 Unpacking patch (2.7.6-7build3) ...
+#6 28.75 Selecting previously unselected package lto-disabled-list.
+#6 28.75 Preparing to unpack .../092-lto-disabled-list_47_all.deb ...
+#6 28.76 Unpacking lto-disabled-list (47) ...
+#6 28.79 Selecting previously unselected package dpkg-dev.
+#6 28.79 Preparing to unpack .../093-dpkg-dev_1.22.6ubuntu6.6_all.deb ...
+#6 28.79 Unpacking dpkg-dev (1.22.6ubuntu6.6) ...
+#6 28.85 Selecting previously unselected package build-essential.
+#6 28.85 Preparing to unpack .../094-build-essential_12.10ubuntu1_amd64.deb ...
+#6 28.86 Unpacking build-essential (12.10ubuntu1) ...
+#6 28.89 Selecting previously unselected package libbrotli1:amd64.
+#6 28.89 Preparing to unpack .../095-libbrotli1_1.1.0-2build2_amd64.deb ...
+#6 28.90 Unpacking libbrotli1:amd64 (1.1.0-2build2) ...
+#6 28.93 Selecting previously unselected package libsasl2-modules-db:amd64.
+#6 28.94 Preparing to unpack .../096-libsasl2-modules-db_2.1.28+dfsg1-5ubuntu3.1_amd64.deb ...
+#6 28.94 Unpacking libsasl2-modules-db:amd64 (2.1.28+dfsg1-5ubuntu3.1) ...
+#6 28.97 Selecting previously unselected package libsasl2-2:amd64.
+#6 28.97 Preparing to unpack .../097-libsasl2-2_2.1.28+dfsg1-5ubuntu3.1_amd64.deb ...
+#6 28.98 Unpacking libsasl2-2:amd64 (2.1.28+dfsg1-5ubuntu3.1) ...
+#6 29.02 Selecting previously unselected package libldap2:amd64.
+#6 29.02 Preparing to unpack .../098-libldap2_2.6.10+dfsg-0ubuntu0.24.04.1_amd64.deb ...
+#6 29.02 Unpacking libldap2:amd64 (2.6.10+dfsg-0ubuntu0.24.04.1) ...
+#6 29.06 Selecting previously unselected package librtmp1:amd64.
+#6 29.06 Preparing to unpack .../099-librtmp1_2.4+20151223.gitfa8646d.1-2build7_amd64.deb ...
+#6 29.07 Unpacking librtmp1:amd64 (2.4+20151223.gitfa8646d.1-2build7) ...
+#6 29.10 Selecting previously unselected package libssh-4:amd64.
+#6 29.10 Preparing to unpack .../100-libssh-4_0.10.6-2ubuntu0.5_amd64.deb ...
+#6 29.11 Unpacking libssh-4:amd64 (0.10.6-2ubuntu0.5) ...
+#6 29.15 Selecting previously unselected package libcurl4t64:amd64.
+#6 29.15 Preparing to unpack .../101-libcurl4t64_8.5.0-2ubuntu10.13_amd64.deb ...
+#6 29.16 Unpacking libcurl4t64:amd64 (8.5.0-2ubuntu10.13) ...
+#6 29.19 Selecting previously unselected package curl.
+#6 29.19 Preparing to unpack .../102-curl_8.5.0-2ubuntu10.13_amd64.deb ...
+#6 29.20 Unpacking curl (8.5.0-2ubuntu10.13) ...
+#6 29.24 Selecting previously unselected package libgfortran5:amd64.
+#6 29.24 Preparing to unpack .../103-libgfortran5_14.2.0-4ubuntu2~24.04.1_amd64.deb ...
+#6 29.24 Unpacking libgfortran5:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+#6 29.29 Selecting previously unselected package libgfortran-13-dev:amd64.
+#6 29.29 Preparing to unpack .../104-libgfortran-13-dev_13.3.0-6ubuntu2~24.04.1_amd64.deb ...
+#6 29.29 Unpacking libgfortran-13-dev:amd64 (13.3.0-6ubuntu2~24.04.1) ...
+#6 29.35 Selecting previously unselected package gfortran-13-x86-64-linux-gnu.
+#6 29.36 Preparing to unpack .../105-gfortran-13-x86-64-linux-gnu_13.3.0-6ubuntu2~24.04.1_amd64.deb ...
+#6 29.36 Unpacking gfortran-13-x86-64-linux-gnu (13.3.0-6ubuntu2~24.04.1) ...
+#6 29.61 Selecting previously unselected package gfortran-13.
+#6 29.61 Preparing to unpack .../106-gfortran-13_13.3.0-6ubuntu2~24.04.1_amd64.deb ...
+#6 29.61 Unpacking gfortran-13 (13.3.0-6ubuntu2~24.04.1) ...
+#6 29.65 Selecting previously unselected package libcurl3t64-gnutls:amd64.
+#6 29.65 Preparing to unpack .../107-libcurl3t64-gnutls_8.5.0-2ubuntu10.13_amd64.deb ...
+#6 29.65 Unpacking libcurl3t64-gnutls:amd64 (8.5.0-2ubuntu10.13) ...
+#6 29.69 Selecting previously unselected package liberror-perl.
+#6 29.69 Preparing to unpack .../108-liberror-perl_0.17029-2_all.deb ...
+#6 29.70 Unpacking liberror-perl (0.17029-2) ...
+#6 29.73 Selecting previously unselected package git-man.
+#6 29.73 Preparing to unpack .../109-git-man_1%3a2.43.0-1ubuntu7.3_all.deb ...
+#6 29.73 Unpacking git-man (1:2.43.0-1ubuntu7.3) ...
+#6 29.78 Selecting previously unselected package git.
+#6 29.78 Preparing to unpack .../110-git_1%3a2.43.0-1ubuntu7.3_amd64.deb ...
+#6 29.79 Unpacking git (1:2.43.0-1ubuntu7.3) ...
+#6 29.99 Selecting previously unselected package libllvm17t64:amd64.
+#6 29.99 Preparing to unpack .../111-libllvm17t64_1%3a17.0.6-9ubuntu1_amd64.deb ...
+#6 29.99 Unpacking libllvm17t64:amd64 (1:17.0.6-9ubuntu1) ...
+#6 30.72 Selecting previously unselected package libamd-comgr2:amd64.
+#6 30.72 Preparing to unpack .../112-libamd-comgr2_6.0+git20231212.4510c28+dfsg-3build2_amd64.deb ...
+#6 30.72 Unpacking libamd-comgr2:amd64 (6.0+git20231212.4510c28+dfsg-3build2) ...
+#6 31.20 Selecting previously unselected package libdrm-amdgpu1:amd64.
+#6 31.20 Preparing to unpack .../113-libdrm-amdgpu1_2.4.125-1ubuntu0.1~24.04.2_amd64.deb ...
+#6 31.21 Unpacking libdrm-amdgpu1:amd64 (2.4.125-1ubuntu0.1~24.04.2) ...
+#6 31.29 Selecting previously unselected package libhsakmt1:amd64.
+#6 31.29 Preparing to unpack .../114-libhsakmt1_5.7.0-1build1_amd64.deb ...
+#6 31.29 Unpacking libhsakmt1:amd64 (5.7.0-1build1) ...
+#6 31.33 Selecting previously unselected package libhsa-runtime64-1.
+#6 31.34 Preparing to unpack .../115-libhsa-runtime64-1_5.7.1-2build1_amd64.deb ...
+#6 31.34 Unpacking libhsa-runtime64-1 (5.7.1-2build1) ...
+#6 31.40 Selecting previously unselected package libamdhip64-5.
+#6 31.40 Preparing to unpack .../116-libamdhip64-5_5.7.1-3_amd64.deb ...
+#6 31.41 Unpacking libamdhip64-5 (5.7.1-3) ...
+#6 31.59 Selecting previously unselected package libevent-2.1-7t64:amd64.
+#6 31.60 Preparing to unpack .../117-libevent-2.1-7t64_2.1.12-stable-9ubuntu2.1_amd64.deb ...
+#6 31.60 Unpacking libevent-2.1-7t64:amd64 (2.1.12-stable-9ubuntu2.1) ...
+#6 31.64 Selecting previously unselected package libevent-core-2.1-7t64:amd64.
+#6 31.64 Preparing to unpack .../118-libevent-core-2.1-7t64_2.1.12-stable-9ubuntu2.1_amd64.deb ...
+#6 31.64 Unpacking libevent-core-2.1-7t64:amd64 (2.1.12-stable-9ubuntu2.1) ...
+#6 31.69 Selecting previously unselected package libevent-extra-2.1-7t64:amd64.
+#6 31.69 Preparing to unpack .../119-libevent-extra-2.1-7t64_2.1.12-stable-9ubuntu2.1_amd64.deb ...
+#6 31.69 Unpacking libevent-extra-2.1-7t64:amd64 (2.1.12-stable-9ubuntu2.1) ...
+#6 31.73 Selecting previously unselected package libevent-pthreads-2.1-7t64:amd64.
+#6 31.73 Preparing to unpack .../120-libevent-pthreads-2.1-7t64_2.1.12-stable-9ubuntu2.1_amd64.deb ...
+#6 31.74 Unpacking libevent-pthreads-2.1-7t64:amd64 (2.1.12-stable-9ubuntu2.1) ...
+#6 31.77 Selecting previously unselected package libevent-openssl-2.1-7t64:amd64.
+#6 31.78 Preparing to unpack .../121-libevent-openssl-2.1-7t64_2.1.12-stable-9ubuntu2.1_amd64.deb ...
+#6 31.78 Unpacking libevent-openssl-2.1-7t64:amd64 (2.1.12-stable-9ubuntu2.1) ...
+#6 31.81 Selecting previously unselected package libevent-dev.
+#6 31.81 Preparing to unpack .../122-libevent-dev_2.1.12-stable-9ubuntu2.1_amd64.deb ...
+#6 31.82 Unpacking libevent-dev (2.1.12-stable-9ubuntu2.1) ...
+#6 31.87 Selecting previously unselected package libpsm-infinipath1.
+#6 31.88 Preparing to unpack .../123-libpsm-infinipath1_3.3+20.604758e7-6.3build1_amd64.deb ...
+#6 31.88 Unpacking libpsm-infinipath1 (3.3+20.604758e7-6.3build1) ...
+#6 31.92 Selecting previously unselected package libpsm2-2.
+#6 31.92 Preparing to unpack .../124-libpsm2-2_11.2.185-2build1_amd64.deb ...
+#6 31.93 Unpacking libpsm2-2 (11.2.185-2build1) ...
+#6 31.97 Selecting previously unselected package librdmacm1t64:amd64.
+#6 31.97 Preparing to unpack .../125-librdmacm1t64_50.0-2ubuntu0.2_amd64.deb ...
+#6 31.98 Unpacking librdmacm1t64:amd64 (50.0-2ubuntu0.2) ...
+#6 32.02 Selecting previously unselected package libfabric1:amd64.
+#6 32.02 Preparing to unpack .../126-libfabric1_1.17.0-3build2_amd64.deb ...
+#6 32.02 Unpacking libfabric1:amd64 (1.17.0-3build2) ...
+#6 32.07 Selecting previously unselected package libhwloc15:amd64.
+#6 32.07 Preparing to unpack .../127-libhwloc15_2.10.0-1build1_amd64.deb ...
+#6 32.08 Unpacking libhwloc15:amd64 (2.10.0-1build1) ...
+#6 32.12 Selecting previously unselected package libjs-jquery.
+#6 32.12 Preparing to unpack .../128-libjs-jquery_3.6.1+dfsg+~3.5.14-1_all.deb ...
+#6 32.13 Unpacking libjs-jquery (3.6.1+dfsg+~3.5.14-1) ...
+#6 32.17 Selecting previously unselected package libjs-jquery-ui.
+#6 32.17 Preparing to unpack .../129-libjs-jquery-ui_1.13.2+dfsg-1_all.deb ...
+#6 32.17 Unpacking libjs-jquery-ui (1.13.2+dfsg-1) ...
+#6 32.27 Selecting previously unselected package libllvm18:amd64.
+#6 32.27 Preparing to unpack .../130-libllvm18_1%3a18.1.3-1ubuntu1_amd64.deb ...
+#6 32.27 Unpacking libllvm18:amd64 (1:18.1.3-1ubuntu1) ...
+#6 33.09 Selecting previously unselected package libltdl7:amd64.
+#6 33.09 Preparing to unpack .../131-libltdl7_2.4.7-7build1_amd64.deb ...
+#6 33.09 Unpacking libltdl7:amd64 (2.4.7-7build1) ...
+#6 33.13 Selecting previously unselected package libltdl-dev:amd64.
+#6 33.13 Preparing to unpack .../132-libltdl-dev_2.4.7-7build1_amd64.deb ...
+#6 33.13 Unpacking libltdl-dev:amd64 (2.4.7-7build1) ...
+#6 33.18 Selecting previously unselected package libnl-3-dev:amd64.
+#6 33.18 Preparing to unpack .../133-libnl-3-dev_3.7.0-0.3build1.1_amd64.deb ...
+#6 33.18 Unpacking libnl-3-dev:amd64 (3.7.0-0.3build1.1) ...
+#6 33.24 Selecting previously unselected package libnl-route-3-dev:amd64.
+#6 33.24 Preparing to unpack .../134-libnl-route-3-dev_3.7.0-0.3build1.1_amd64.deb ...
+#6 33.24 Unpacking libnl-route-3-dev:amd64 (3.7.0-0.3build1.1) ...
+#6 33.29 Selecting previously unselected package libomp5-18:amd64.
+#6 33.29 Preparing to unpack .../135-libomp5-18_1%3a18.1.3-1ubuntu1_amd64.deb ...
+#6 33.30 Unpacking libomp5-18:amd64 (1:18.1.3-1ubuntu1) ...
+#6 33.35 Selecting previously unselected package libpython3.12t64:amd64.
+#6 33.36 Preparing to unpack .../136-libpython3.12t64_3.12.3-1ubuntu0.16_amd64.deb ...
+#6 33.36 Unpacking libpython3.12t64:amd64 (3.12.3-1ubuntu0.16) ...
+#6 33.45 Selecting previously unselected package libomp-18-dev.
+#6 33.45 Preparing to unpack .../137-libomp-18-dev_1%3a18.1.3-1ubuntu1_amd64.deb ...
+#6 33.46 Unpacking libomp-18-dev (1:18.1.3-1ubuntu1) ...
+#6 33.62 Selecting previously unselected package libmunge2:amd64.
+#6 33.62 Preparing to unpack .../138-libmunge2_0.5.15-4ubuntu0.1_amd64.deb ...
+#6 33.62 Unpacking libmunge2:amd64 (0.5.15-4ubuntu0.1) ...
+#6 33.66 Selecting previously unselected package libpciaccess0:amd64.
+#6 33.66 Preparing to unpack .../139-libpciaccess0_0.17-3ubuntu0.24.04.2_amd64.deb ...
+#6 33.66 Unpacking libpciaccess0:amd64 (0.17-3ubuntu0.24.04.2) ...
+#6 33.70 Selecting previously unselected package libxnvctrl0:amd64.
+#6 33.70 Preparing to unpack .../140-libxnvctrl0_510.47.03-0ubuntu4.24.04.1_amd64.deb ...
+#6 33.71 Unpacking libxnvctrl0:amd64 (510.47.03-0ubuntu4.24.04.1) ...
+#6 33.74 Selecting previously unselected package ocl-icd-libopencl1:amd64.
+#6 33.74 Preparing to unpack .../141-ocl-icd-libopencl1_2.3.2-1build1_amd64.deb ...
+#6 33.75 Unpacking ocl-icd-libopencl1:amd64 (2.3.2-1build1) ...
+#6 33.78 Selecting previously unselected package libhwloc-plugins:amd64.
+#6 33.78 Preparing to unpack .../142-libhwloc-plugins_2.10.0-1build1_amd64.deb ...
+#6 33.79 Unpacking libhwloc-plugins:amd64 (2.10.0-1build1) ...
+#6 33.82 Selecting previously unselected package libpmix2t64:amd64.
+#6 33.82 Preparing to unpack .../143-libpmix2t64_5.0.1-4.1build1_amd64.deb ...
+#6 33.82 Unpacking libpmix2t64:amd64 (5.0.1-4.1build1) ...
+#6 33.88 Selecting previously unselected package libucx0:amd64.
+#6 33.89 Preparing to unpack .../144-libucx0_1.16.0+ds-5ubuntu1_amd64.deb ...
+#6 33.89 Unpacking libucx0:amd64 (1.16.0+ds-5ubuntu1) ...
+#6 33.95 Selecting previously unselected package libopenmpi3t64:amd64.
+#6 33.95 Preparing to unpack .../145-libopenmpi3t64_4.1.6-7ubuntu2_amd64.deb ...
+#6 33.95 Unpacking libopenmpi3t64:amd64 (4.1.6-7ubuntu2) ...
+#6 34.07 Selecting previously unselected package libnuma-dev:amd64.
+#6 34.07 Preparing to unpack .../146-libnuma-dev_2.0.18-1ubuntu0.24.04.1_amd64.deb ...
+#6 34.08 Unpacking libnuma-dev:amd64 (2.0.18-1ubuntu0.24.04.1) ...
+#6 34.11 Selecting previously unselected package libhwloc-dev:amd64.
+#6 34.11 Preparing to unpack .../147-libhwloc-dev_2.10.0-1build1_amd64.deb ...
+#6 34.12 Unpacking libhwloc-dev:amd64 (2.10.0-1build1) ...
+#6 34.16 Selecting previously unselected package zlib1g-dev:amd64.
+#6 34.16 Preparing to unpack .../148-zlib1g-dev_1%3a1.3.dfsg-3.1ubuntu2.2_amd64.deb ...
+#6 34.16 Unpacking zlib1g-dev:amd64 (1:1.3.dfsg-3.1ubuntu2.2) ...
+#6 34.20 Selecting previously unselected package libpmix-dev:amd64.
+#6 34.20 Preparing to unpack .../149-libpmix-dev_5.0.1-4.1build1_amd64.deb ...
+#6 34.21 Unpacking libpmix-dev:amd64 (5.0.1-4.1build1) ...
+#6 34.32 Selecting previously unselected package openmpi-common.
+#6 34.32 Preparing to unpack .../150-openmpi-common_4.1.6-7ubuntu2_all.deb ...
+#6 34.32 Unpacking openmpi-common (4.1.6-7ubuntu2) ...
+#6 34.38 Selecting previously unselected package openmpi-bin.
+#6 34.38 Preparing to unpack .../151-openmpi-bin_4.1.6-7ubuntu2_amd64.deb ...
+#6 34.38 Unpacking openmpi-bin (4.1.6-7ubuntu2) ...
+#6 34.42 Selecting previously unselected package libibverbs-dev:amd64.
+#6 34.43 Preparing to unpack .../152-libibverbs-dev_50.0-2ubuntu0.2_amd64.deb ...
+#6 34.43 Unpacking libibverbs-dev:amd64 (50.0-2ubuntu0.2) ...
+#6 34.49 Selecting previously unselected package libomp-dev:amd64.
+#6 34.49 Preparing to unpack .../153-libomp-dev_1%3a18.0-59~exp2_amd64.deb ...
+#6 34.49 Unpacking libomp-dev:amd64 (1:18.0-59~exp2) ...
+#6 34.53 Selecting previously unselected package libopenmpi-dev:amd64.
+#6 34.53 Preparing to unpack .../154-libopenmpi-dev_4.1.6-7ubuntu2_amd64.deb ...
+#6 34.56 Unpacking libopenmpi-dev:amd64 (4.1.6-7ubuntu2) ...
+#6 34.85 Setting up libexpat1:amd64 (2.6.1-2ubuntu0.4) ...
+#6 34.86 Setting up media-types (10.1.0) ...
+#6 34.87 Setting up libpciaccess0:amd64 (0.17-3ubuntu0.24.04.2) ...
+#6 34.88 Setting up libxau6:amd64 (1:1.0.9-1build6) ...
+#6 34.89 Setting up libkeyutils1:amd64 (1.6.3-3build1) ...
+#6 34.90 Setting up lto-disabled-list (47) ...
+#6 34.91 Setting up libgdbm6t64:amd64 (1.23-5.1build1) ...
+#6 34.91 Setting up libgdbm-compat4t64:amd64 (1.23-5.1build1) ...
+#6 34.92 Setting up libcbor0.10:amd64 (0.10.2-1.2ubuntu2) ...
+#6 34.93 Setting up libbrotli1:amd64 (1.1.0-2build2) ...
+#6 34.94 Setting up libsqlite3-0:amd64 (3.45.1-1ubuntu2.7) ...
+#6 34.95 Setting up libpython3.12-minimal:amd64 (3.12.3-1ubuntu0.16) ...
+#6 34.96 Setting up binutils-common:amd64 (2.42-4ubuntu2.10) ...
+#6 34.98 Setting up libpsl5t64:amd64 (0.21.2-1.1build1) ...
+#6 34.98 Setting up libnghttp2-14:amd64 (1.59.0-1ubuntu0.4) ...
+#6 34.99 Setting up linux-libc-dev:amd64 (6.8.0-139.139) ...
+#6 35.00 Setting up libctf-nobfd0:amd64 (2.42-4ubuntu2.10) ...
+#6 35.01 Setting up m4 (1.4.19-4build1) ...
+#6 35.02 Setting up libevent-2.1-7t64:amd64 (2.1.12-stable-9ubuntu2.1) ...
+#6 35.03 Setting up libgomp1:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+#6 35.04 Setting up bzip2 (1.0.8-5.1ubuntu0.1) ...
+#6 35.05 Setting up libsframe1:amd64 (2.42-4ubuntu2.10) ...
+#6 35.06 Setting up libelf1t64:amd64 (0.190-1.1ubuntu0.1) ...
+#6 35.07 Setting up libjansson4:amd64 (2.14-2build2) ...
+#6 35.08 Setting up libkrb5support0:amd64 (1.20.1-6ubuntu2.8) ...
+#6 35.09 Setting up libsasl2-modules-db:amd64 (2.1.28+dfsg1-5ubuntu3.1) ...
+#6 35.09 Setting up tzdata (2026c-0ubuntu0.24.04.1) ...
+#6 35.19 debconf: unable to initialize frontend: Dialog
+#6 35.19 debconf: (TERM is not set, so the dialog frontend is not usable.)
+#6 35.19 debconf: falling back to frontend: Readline
+#6 35.21 debconf: unable to initialize frontend: Readline
+#6 35.21 debconf: (This frontend requires a controlling tty.)
+#6 35.21 debconf: falling back to frontend: Teletype
+#6 35.26 Configuring tzdata
+#6 35.26 ------------------
+#6 35.26 
+#6 35.26 Please select the geographic area in which you live. Subsequent configuration
+#6 35.26 questions will narrow this down by presenting a list of cities, representing
+#6 35.26 the time zones in which they are located.
+#6 35.26 
+#6 35.26   1. Africa      4. Arctic    7. Australia  10. Pacific
+#6 35.26   2. America     5. Asia      8. Europe     11. Etc
+#6 35.26   3. Antarctica  6. Atlantic  9. Indian     12. Legacy
+#6 35.26 Geographic area: 
+#6 35.26 Use of uninitialized value $_[1] in join or string at /usr/share/perl5/Debconf/DbDriver/Stack.pm line 112.
+#6 35.27 
+#6 35.27 Current default time zone: '/UTC'
+#6 35.27 Local time is now:      Mon Sep  7 17:51:23 UTC 2026.
+#6 35.27 Universal Time is now:  Mon Sep  7 17:51:23 UTC 2026.
+#6 35.27 Run 'dpkg-reconfigure tzdata' if you wish to change it.
+#6 35.27 
+#6 35.27 Use of uninitialized value $val in substitution (s///) at /usr/share/perl5/Debconf/Format/822.pm line 84, <GEN6> line 4.
+#6 35.27 Use of uninitialized value $val in concatenation (.) or string at /usr/share/perl5/Debconf/Format/822.pm line 85, <GEN6> line 4.
+#6 35.30 Setting up autotools-dev (20220109.1) ...
+#6 35.31 Setting up rpcsvc-proto (1.4.2-0ubuntu7) ...
+#6 35.32 Setting up gcc-13-base:amd64 (13.3.0-6ubuntu2~24.04.1) ...
+#6 35.32 Setting up libmunge2:amd64 (0.5.15-4ubuntu0.1) ...
+#6 35.33 Setting up libx11-data (2:1.8.7-1build1) ...
+#6 35.34 Setting up make (4.3-4.1build2) ...
+#6 35.35 Setting up libmpfr6:amd64 (4.2.1-1build1.1) ...
+#6 35.36 Setting up librtmp1:amd64 (2.4+20151223.gitfa8646d.1-2build7) ...
+#6 35.37 Setting up xz-utils (5.6.1+really5.4.5-1ubuntu0.3) ...
+#6 35.38 update-alternatives: using /usr/bin/xz to provide /usr/bin/lzma (lzma) in auto mode
+#6 35.39 update-alternatives: warning: skip creation of /usr/share/man/man1/lzma.1.gz because associated file /usr/share/man/man1/xz.1.gz (of link group lzma) doesn't exist
+#6 35.39 update-alternatives: warning: skip creation of /usr/share/man/man1/unlzma.1.gz because associated file /usr/share/man/man1/unxz.1.gz (of link group lzma) doesn't exist
+#6 35.39 update-alternatives: warning: skip creation of /usr/share/man/man1/lzcat.1.gz because associated file /usr/share/man/man1/xzcat.1.gz (of link group lzma) doesn't exist
+#6 35.39 update-alternatives: warning: skip creation of /usr/share/man/man1/lzmore.1.gz because associated file /usr/share/man/man1/xzmore.1.gz (of link group lzma) doesn't exist
+#6 35.39 update-alternatives: warning: skip creation of /usr/share/man/man1/lzless.1.gz because associated file /usr/share/man/man1/xzless.1.gz (of link group lzma) doesn't exist
+#6 35.39 update-alternatives: warning: skip creation of /usr/share/man/man1/lzdiff.1.gz because associated file /usr/share/man/man1/xzdiff.1.gz (of link group lzma) doesn't exist
+#6 35.39 update-alternatives: warning: skip creation of /usr/share/man/man1/lzcmp.1.gz because associated file /usr/share/man/man1/xzcmp.1.gz (of link group lzma) doesn't exist
+#6 35.39 update-alternatives: warning: skip creation of /usr/share/man/man1/lzgrep.1.gz because associated file /usr/share/man/man1/xzgrep.1.gz (of link group lzma) doesn't exist
+#6 35.39 update-alternatives: warning: skip creation of /usr/share/man/man1/lzegrep.1.gz because associated file /usr/share/man/man1/xzegrep.1.gz (of link group lzma) doesn't exist
+#6 35.39 update-alternatives: warning: skip creation of /usr/share/man/man1/lzfgrep.1.gz because associated file /usr/share/man/man1/xzfgrep.1.gz (of link group lzma) doesn't exist
+#6 35.40 Setting up perl-modules-5.38 (5.38.2-3.2ubuntu0.4) ...
+#6 35.40 Setting up libquadmath0:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+#6 35.41 Setting up libproc2-0:amd64 (2:4.0.4-4ubuntu3.3) ...
+#6 35.42 Setting up libhwloc15:amd64 (2.10.0-1build1) ...
+#6 35.43 Setting up libmpc3:amd64 (1.3.1-1build1.1) ...
+#6 35.44 Setting up libatomic1:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+#6 35.45 Setting up patch (2.7.6-7build3) ...
+#6 35.46 Setting up libk5crypto3:amd64 (1.20.1-6ubuntu2.8) ...
+#6 35.47 Setting up libltdl7:amd64 (2.4.7-7build1) ...
+#6 35.48 Setting up libsasl2-2:amd64 (2.1.28+dfsg1-5ubuntu3.1) ...
+#6 35.49 Setting up libgfortran5:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+#6 35.49 Setting up libubsan1:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+#6 35.50 Setting up libicu74:amd64 (74.2-1ubuntu3.1) ...
+#6 35.51 Setting up libnuma1:amd64 (2.0.18-1ubuntu0.24.04.1) ...
+#6 35.52 Setting up ocl-icd-libopencl1:amd64 (2.3.2-1build1) ...
+#6 35.53 Setting up libhwasan0:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+#6 35.54 Setting up libcrypt-dev:amd64 (1:4.4.36-4build1) ...
+#6 35.56 Setting up libasan8:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+#6 35.57 Setting up procps (2:4.0.4-4ubuntu3.3) ...
+#6 35.65 Setting up libnl-3-200:amd64 (3.7.0-0.3build1.1) ...
+#6 35.67 Setting up libpsm2-2 (11.2.185-2build1) ...
+#6 35.68 Setting up openmpi-common (4.1.6-7ubuntu2) ...
+#6 35.69 Setting up git-man (1:2.43.0-1ubuntu7.3) ...
+#6 35.69 Setting up netbase (6.4) ...
+#6 35.72 Setting up libkrb5-3:amd64 (1.20.1-6ubuntu2.8) ...
+#6 35.73 Setting up libevent-core-2.1-7t64:amd64 (2.1.12-stable-9ubuntu2.1) ...
+#6 35.74 Setting up libperl5.38t64:amd64 (5.38.2-3.2ubuntu0.4) ...
+#6 35.74 Setting up libpsm-infinipath1 (3.3+20.604758e7-6.3build1) ...
+#6 35.75 update-alternatives: using /usr/lib/libpsm1/libpsm_infinipath.so.1.16 to provide /usr/lib/x86_64-linux-gnu/libpsm_infinipath.so.1 (libpsm_infinipath.so.1) in auto mode
+#6 35.76 Setting up libtsan2:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+#6 35.77 Setting up libjs-jquery (3.6.1+dfsg+~3.5.14-1) ...
+#6 35.78 Setting up libbinutils:amd64 (2.42-4ubuntu2.10) ...
+#6 35.79 Setting up libfido2-1:amd64 (1.14.0-1build3) ...
+#6 35.80 Setting up libisl23:amd64 (0.26-3build1.1) ...
+#6 35.81 Setting up libc-dev-bin (2.39-0ubuntu8.8) ...
+#6 35.82 Setting up openssl (3.0.13-0ubuntu3.15) ...
+#6 35.83 Setting up libbsd0:amd64 (0.12.1-1build1.1) ...
+#6 35.84 Setting up libdrm-common (2.4.125-1ubuntu0.1~24.04.2) ...
+#6 35.85 Setting up readline-common (8.2-4build1) ...
+#6 35.87 Setting up libxml2:amd64 (2.9.14+dfsg-1.3ubuntu3.8) ...
+#6 35.88 Setting up libcc1-0:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+#6 35.89 Setting up libldap2:amd64 (2.6.10+dfsg-0ubuntu0.24.04.1) ...
+#6 35.91 Setting up liblsan0:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+#6 35.92 Setting up libitm1:amd64 (14.2.0-4ubuntu2~24.04.1) ...
+#6 35.93 Setting up libctf0:amd64 (2.42-4ubuntu2.10) ...
+#6 35.94 Setting up libxdmcp6:amd64 (1:1.1.3-0ubuntu6) ...
+#6 35.95 Setting up libxcb1:amd64 (1.15-1ubuntu2) ...
+#6 35.96 Setting up cpp-13-x86-64-linux-gnu (13.3.0-6ubuntu2~24.04.1) ...
+#6 35.97 Setting up libevent-pthreads-2.1-7t64:amd64 (2.1.12-stable-9ubuntu2.1) ...
+#6 35.98 Setting up libedit2:amd64 (3.1-20230828-1build1) ...
+#6 35.98 Setting up libevent-openssl-2.1-7t64:amd64 (2.1.12-stable-9ubuntu2.1) ...
+#6 35.99 Setting up libnl-route-3-200:amd64 (3.7.0-0.3build1.1) ...
+#6 36.00 Setting up ca-certificates (20260601~24.04.1) ...
+#6 36.11 debconf: unable to initialize frontend: Dialog
+#6 36.11 debconf: (TERM is not set, so the dialog frontend is not usable.)
+#6 36.11 debconf: falling back to frontend: Readline
+#6 36.12 debconf: unable to initialize frontend: Readline
+#6 36.12 debconf: (This frontend requires a controlling tty.)
+#6 36.12 debconf: falling back to frontend: Teletype
+#6 36.67 Updating certificates in /etc/ssl/certs...
+#6 37.43 121 added, 0 removed; done.
+#6 37.47 Setting up perl (5.38.2-3.2ubuntu0.4) ...
+#6 37.49 Setting up libgprofng0:amd64 (2.42-4ubuntu2.10) ...
+#6 37.50 Setting up libjs-jquery-ui (1.13.2+dfsg-1) ...
+#6 37.51 Setting up libllvm17t64:amd64 (1:17.0.6-9ubuntu1) ...
+#6 37.52 Setting up libgssapi-krb5-2:amd64 (1.20.1-6ubuntu2.8) ...
+#6 37.53 Setting up libdpkg-perl (1.22.6ubuntu6.6) ...
+#6 37.54 Setting up libssh-4:amd64 (0.10.6-2ubuntu0.5) ...
+#6 37.55 Setting up autoconf (2.71-3) ...
+#6 37.56 Setting up libevent-extra-2.1-7t64:amd64 (2.1.12-stable-9ubuntu2.1) ...
+#6 37.57 Setting up libreadline8t64:amd64 (8.2-4build1) ...
+#6 37.58 Setting up libdrm2:amd64 (2.4.125-1ubuntu0.1~24.04.2) ...
+#6 37.59 Setting up libnl-3-dev:amd64 (3.7.0-0.3build1.1) ...
+#6 37.60 Setting up libgcc-13-dev:amd64 (13.3.0-6ubuntu2~24.04.1) ...
+#6 37.61 Setting up libc6-dev:amd64 (2.39-0ubuntu8.8) ...
+#6 37.62 Setting up libx11-6:amd64 (2:1.8.7-1build1) ...
+#6 37.63 Setting up libamd-comgr2:amd64 (6.0+git20231212.4510c28+dfsg-3build2) ...
+#6 37.64 Setting up libgfortran-13-dev:amd64 (13.3.0-6ubuntu2~24.04.1) ...
+#6 37.65 Setting up libstdc++-13-dev:amd64 (13.3.0-6ubuntu2~24.04.1) ...
+#6 37.66 Setting up libllvm18:amd64 (1:18.1.3-1ubuntu1) ...
+#6 37.67 Setting up binutils-x86-64-linux-gnu (2.42-4ubuntu2.10) ...
+#6 37.68 Setting up libdrm-amdgpu1:amd64 (2.4.125-1ubuntu0.1~24.04.2) ...
+#6 37.68 Setting up cpp-x86-64-linux-gnu (4:13.2.0-7ubuntu1) ...
+#6 37.69 Setting up automake (1:1.16.5-1.3ubuntu1) ...
+#6 37.70 update-alternatives: using /usr/bin/automake-1.16 to provide /usr/bin/automake (automake) in auto mode
+#6 37.70 update-alternatives: warning: skip creation of /usr/share/man/man1/automake.1.gz because associated file /usr/share/man/man1/automake-1.16.1.gz (of link group automake) doesn't exist
+#6 37.70 update-alternatives: warning: skip creation of /usr/share/man/man1/aclocal.1.gz because associated file /usr/share/man/man1/aclocal-1.16.1.gz (of link group automake) doesn't exist
+#6 37.71 Setting up libibverbs1:amd64 (50.0-2ubuntu0.2) ...
+#6 37.80 Setting up libpython3.12-stdlib:amd64 (3.12.3-1ubuntu0.16) ...
+#6 37.82 Setting up cpp-13 (13.3.0-6ubuntu2~24.04.1) ...
+#6 37.82 Setting up libcurl4t64:amd64 (8.5.0-2ubuntu10.13) ...
+#6 37.83 Setting up ibverbs-providers:amd64 (50.0-2ubuntu0.2) ...
+#6 37.92 Setting up openssh-client (1:9.6p1-3ubuntu13.19) ...
+#6 38.01 Setting up gcc-13-x86-64-linux-gnu (13.3.0-6ubuntu2~24.04.1) ...
+#6 38.02 Setting up libomp5-18:amd64 (1:18.1.3-1ubuntu1) ...
+#6 38.03 Setting up libcurl3t64-gnutls:amd64 (8.5.0-2ubuntu10.13) ...
+#6 38.04 Setting up libxext6:amd64 (2:1.3.4-1build2) ...
+#6 38.05 Setting up binutils (2.42-4ubuntu2.10) ...
+#6 38.06 Setting up gfortran-13-x86-64-linux-gnu (13.3.0-6ubuntu2~24.04.1) ...
+#6 38.07 Setting up dpkg-dev (1.22.6ubuntu6.6) ...
+#6 38.09 Setting up libnuma-dev:amd64 (2.0.18-1ubuntu0.24.04.1) ...
+#6 38.10 Setting up libxnvctrl0:amd64 (510.47.03-0ubuntu4.24.04.1) ...
+#6 38.11 Setting up liberror-perl (0.17029-2) ...
+#6 38.11 Setting up libpython3.12t64:amd64 (3.12.3-1ubuntu0.16) ...
+#6 38.12 Setting up libnl-route-3-dev:amd64 (3.7.0-0.3build1.1) ...
+#6 38.14 Setting up libltdl-dev:amd64 (2.4.7-7build1) ...
+#6 38.14 Setting up libevent-dev (2.1.12-stable-9ubuntu2.1) ...
+#6 38.16 Setting up gcc-13 (13.3.0-6ubuntu2~24.04.1) ...
+#6 38.17 Setting up git (1:2.43.0-1ubuntu7.3) ...
+#6 38.19 Setting up zlib1g-dev:amd64 (1:1.3.dfsg-3.1ubuntu2.2) ...
+#6 38.20 Setting up cpp (4:13.2.0-7ubuntu1) ...
+#6 38.22 Setting up librdmacm1t64:amd64 (50.0-2ubuntu0.2) ...
+#6 38.23 Setting up libhwloc-dev:amd64 (2.10.0-1build1) ...
+#6 38.24 Setting up curl (8.5.0-2ubuntu10.13) ...
+#6 38.25 Setting up libhsakmt1:amd64 (5.7.0-1build1) ...
+#6 38.26 Setting up libomp-18-dev (1:18.1.3-1ubuntu1) ...
+#6 38.27 Setting up libfabric1:amd64 (1.17.0-3build2) ...
+#6 38.28 Setting up g++-13-x86-64-linux-gnu (13.3.0-6ubuntu2~24.04.1) ...
+#6 38.29 Setting up gcc-x86-64-linux-gnu (4:13.2.0-7ubuntu1) ...
+#6 38.30 Setting up libibverbs-dev:amd64 (50.0-2ubuntu0.2) ...
+#6 38.31 Setting up libhwloc-plugins:amd64 (2.10.0-1build1) ...
+#6 38.32 Setting up gcc (4:13.2.0-7ubuntu1) ...
+#6 38.35 Setting up gfortran-13 (13.3.0-6ubuntu2~24.04.1) ...
+#6 38.36 Setting up libpmix2t64:amd64 (5.0.1-4.1build1) ...
+#6 38.37 Setting up libhsa-runtime64-1 (5.7.1-2build1) ...
+#6 38.38 Setting up g++-x86-64-linux-gnu (4:13.2.0-7ubuntu1) ...
+#6 38.39 Setting up libpmix-dev:amd64 (5.0.1-4.1build1) ...
+#6 38.40 Setting up libomp-dev:amd64 (1:18.0-59~exp2) ...
+#6 38.43 Setting up g++-13 (13.3.0-6ubuntu2~24.04.1) ...
+#6 38.44 Setting up libamdhip64-5 (5.7.1-3) ...
+#6 38.45 Setting up g++ (4:13.2.0-7ubuntu1) ...
+#6 38.46 update-alternatives: using /usr/bin/g++ to provide /usr/bin/c++ (c++) in auto mode
+#6 38.46 update-alternatives: warning: skip creation of /usr/share/man/man1/c++.1.gz because associated file /usr/share/man/man1/g++.1.gz (of link group c++) doesn't exist
+#6 38.47 Setting up build-essential (12.10ubuntu1) ...
+#6 38.48 Setting up libucx0:amd64 (1.16.0+ds-5ubuntu1) ...
+#6 38.49 Setting up libopenmpi3t64:amd64 (4.1.6-7ubuntu2) ...
+#6 38.50 Setting up openmpi-bin (4.1.6-7ubuntu2) ...
+#6 38.52 update-alternatives: using /usr/bin/mpirun.openmpi to provide /usr/bin/mpirun (mpirun) in auto mode
+#6 38.52 update-alternatives: warning: skip creation of /usr/share/man/man1/mpirun.1.gz because associated file /usr/share/man/man1/mpirun.openmpi.1.gz (of link group mpirun) doesn't exist
+#6 38.52 update-alternatives: warning: skip creation of /usr/share/man/man1/mpiexec.1.gz because associated file /usr/share/man/man1/mpiexec.openmpi.1.gz (of link group mpirun) doesn't exist
+#6 38.53 update-alternatives: using /usr/bin/mpicc.openmpi to provide /usr/bin/mpicc (mpi) in auto mode
+#6 38.53 update-alternatives: warning: skip creation of /usr/share/man/man1/mpicc.1.gz because associated file /usr/share/man/man1/mpicc.openmpi.1.gz (of link group mpi) doesn't exist
+#6 38.53 update-alternatives: warning: skip creation of /usr/share/man/man1/mpic++.1.gz because associated file /usr/share/man/man1/mpic++.openmpi.1.gz (of link group mpi) doesn't exist
+#6 38.53 update-alternatives: warning: skip creation of /usr/share/man/man1/mpicxx.1.gz because associated file /usr/share/man/man1/mpicxx.openmpi.1.gz (of link group mpi) doesn't exist
+#6 38.53 update-alternatives: warning: skip creation of /usr/share/man/man1/mpiCC.1.gz because associated file /usr/share/man/man1/mpiCC.openmpi.1.gz (of link group mpi) doesn't exist
+#6 38.53 update-alternatives: warning: skip creation of /usr/share/man/man1/mpif77.1.gz because associated file /usr/share/man/man1/mpif77.openmpi.1.gz (of link group mpi) doesn't exist
+#6 38.53 update-alternatives: warning: skip creation of /usr/share/man/man1/mpif90.1.gz because associated file /usr/share/man/man1/mpif90.openmpi.1.gz (of link group mpi) doesn't exist
+#6 38.53 update-alternatives: warning: skip creation of /usr/share/man/man1/mpifort.1.gz because associated file /usr/share/man/man1/mpifort.openmpi.1.gz (of link group mpi) doesn't exist
+#6 38.53 Setting up libopenmpi-dev:amd64 (4.1.6-7ubuntu2) ...
+#6 38.54 update-alternatives: using /usr/lib/x86_64-linux-gnu/openmpi/include to provide /usr/include/x86_64-linux-gnu/mpi (mpi-x86_64-linux-gnu) in auto mode
+#6 38.55 Processing triggers for libc-bin (2.39-0ubuntu8.8) ...
+#6 38.66 Processing triggers for ca-certificates (20260601~24.04.1) ...
+#6 38.67 Updating certificates in /etc/ssl/certs...
+#6 39.25 0 added, 0 removed; done.
+#6 39.25 Running hooks in /etc/ca-certificates/update.d...
+#6 39.26 done.
+#6 DONE 40.2s
+
+#7 [ 3/10] COPY environment/ /home/ymu_google_com/miniconda3/envs/vllm12/
+#7 DONE 137.5s
+
+#8 [ 4/10] RUN python3 -m pip install --no-cache-dir --no-deps --force-reinstall     --index-url https://download.pytorch.org/whl/cpu     torch==2.10.0+cpu torchvision==0.25.0+cpu
+#8 2.343 Looking in indexes: https://download.pytorch.org/whl/cpu
+#8 2.615 Collecting torch==2.10.0+cpu
+#8 2.741   Downloading torch-2.10.0%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl.metadata (29 kB)
+#8 2.897 Collecting torchvision==0.25.0+cpu
+#8 2.919   Downloading torchvision-0.25.0%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl.metadata (5.4 kB)
+#8 2.944 Downloading torch-2.10.0%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl (188.9 MB)
+#8 3.809    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 188.9/188.9 MB 228.0 MB/s  0:00:00
+#8 3.835 Downloading torchvision-0.25.0%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl (1.9 MB)
+#8 3.850    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.9/1.9 MB 162.7 MB/s  0:00:00
+#8 4.588 Installing collected packages: torchvision, torch
+#8 4.589   Attempting uninstall: torchvision
+#8 4.594     Found existing installation: torchvision 0.25.0
+#8 4.618     Uninstalling torchvision-0.25.0:
+#8 4.850       Successfully uninstalled torchvision-0.25.0
+#8 5.511   Attempting uninstall: torch
+#8 5.527     Found existing installation: torch 2.10.0
+#8 6.091     Uninstalling torch-2.10.0:
+#8 16.86       Successfully uninstalled torch-2.10.0
+#8 35.14 
+#8 35.17 Successfully installed torch-2.10.0+cpu torchvision-0.25.0+cpu
+#8 35.17 WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+#8 DONE 36.5s
+
+#9 [ 5/10] COPY vllm/ /opt/vllm/
+#9 DONE 4.0s
+
+#10 [ 6/10] COPY tpu-inference/ /opt/tpu-inference/
+#10 DONE 0.4s
+
+#11 [ 7/10] COPY InferenceX/ /opt/InferenceX/
+#11 DONE 0.2s
+
+#12 [ 8/10] COPY image-source.json /opt/jobset/image-source.json
+#12 DONE 0.0s
+
+#13 [ 9/10] WORKDIR /opt/tpu-inference
+#13 DONE 0.0s
+
+#14 [10/10] RUN mkdir -p /tmp/jobset-image-check &&     RUN_METADATA_DIR=/tmp/jobset-image-check JAX_PLATFORMS=cpu     bash tmp/jobset_bootstrap.sh /opt/tpu-inference/tmp/jobset_smoke.sh
+#14 0.290 Source: /opt/vllm; packaged Git revision: 12a8c9e4a51b8b7a4a8bd40f7b31f3275f9c3beb
+#14 0.296 Source: /opt/tpu-inference; packaged Git revision: 0c9e000400e13914ec8ebb3c18b9062d9a268334
+#14 0.296 + [[ -f /opt/vllm/JOBSET_VERSION ]]
+#14 0.296 + VLLM_TARGET_DEVICE=tpu
+#14 0.297 ++ cat /opt/vllm/JOBSET_VERSION
+#14 0.298 + VLLM_VERSION_OVERRIDE=0.23.1rc1.dev581+g12a8c9e4a5.tpu
+#14 0.298 + python3 -m pip install --no-deps --no-build-isolation -e /opt/vllm
+#14 0.870 Obtaining file:///opt/vllm
+#14 0.873   Checking if build backend supports build_editable: started
+#14 1.098   Checking if build backend supports build_editable: finished with status 'done'
+#14 1.099   Preparing editable metadata (pyproject.toml): started
+#14 4.971   Preparing editable metadata (pyproject.toml): finished with status 'done'
+#14 4.985 Building wheels for collected packages: vllm
+#14 4.986   Building editable for vllm (pyproject.toml): started
+#14 15.25   Building editable for vllm (pyproject.toml): finished with status 'done'
+#14 15.25   Created wheel for vllm: filename=vllm-0.23.1rc1.dev581+g12a8c9e4a5.tpu-0.editable-cp312-cp312-linux_x86_64.whl size=11955 sha256=229138eeb00c2bb564cb207a7a8886a42369db5b6dc42917817db83dee18075c
+#14 15.25   Stored in directory: /tmp/pip-ephem-wheel-cache-4o9vog87/wheels/8c/1b/b0/3190842921e7e9172b98f9e3765ffaeb5a0b7269bfe0dd9357
+#14 15.26 Successfully built vllm
+#14 15.27 Installing collected packages: vllm
+#14 15.27   Attempting uninstall: vllm
+#14 15.28     Found existing installation: vllm 0.1.dev1+g251f7e4.tpu
+#14 15.28     Uninstalling vllm-0.1.dev1+g251f7e4.tpu:
+#14 15.97       Successfully uninstalled vllm-0.1.dev1+g251f7e4.tpu
+#14 16.01 Successfully installed vllm-0.23.1rc1.dev581+g12a8c9e4a5.tpu
+#14 16.01 WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+#14 16.09 + python3 -m pip install --no-deps --no-build-isolation -e /opt/tpu-inference
+#14 16.53 Obtaining file:///opt/tpu-inference
+#14 16.53   Checking if build backend supports build_editable: started
+#14 16.74   Checking if build backend supports build_editable: finished with status 'done'
+#14 16.74   Preparing editable metadata (pyproject.toml): started
+#14 17.46   Preparing editable metadata (pyproject.toml): finished with status 'done'
+#14 17.48 Building wheels for collected packages: tpu_inference
+#14 17.48   Building editable for tpu_inference (pyproject.toml): started
+#14 18.49   Building editable for tpu_inference (pyproject.toml): finished with status 'done'
+#14 18.49   Created wheel for tpu_inference: filename=tpu_inference-0.0.0-0.editable-py3-none-any.whl size=18367 sha256=f9022cfe04e3d34c414fe8a9db702a765b2f2891f386ad296cdc5705c1dd6183
+#14 18.49   Stored in directory: /tmp/pip-ephem-wheel-cache-czx0ut10/wheels/c1/73/5e/ddbd82269c49f584c143ab5aeb72ef79125cff1b25d0a9244c
+#14 18.50 Successfully built tpu_inference
+#14 18.52 Installing collected packages: tpu_inference
+#14 18.52   Attempting uninstall: tpu_inference
+#14 18.53     Found existing installation: tpu_inference 0.0.0
+#14 18.53     Uninstalling tpu_inference-0.0.0:
+#14 19.17       Successfully uninstalled tpu_inference-0.0.0
+#14 19.21 Successfully installed tpu_inference-0.0.0
+#14 19.21 WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+#14 19.30 + set +x
+#14 21.65 ERROR 09-07 17:54:49 [tpu_info.py:40] Unable to poll TPU GCE Metadata. Got status code: 404 and content: <!DOCTYPE html>
+#14 21.65 ERROR 09-07 17:54:49 [tpu_info.py:40] <html lang=en>
+#14 21.65 ERROR 09-07 17:54:49 [tpu_info.py:40]   <meta charset=utf-8>
+#14 21.65 ERROR 09-07 17:54:49 [tpu_info.py:40]   <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
+#14 21.65 ERROR 09-07 17:54:49 [tpu_info.py:40]   <title>Error 404 (Not Found)!!1</title>
+#14 21.65 ERROR 09-07 17:54:49 [tpu_info.py:40]   <style>
+#14 21.65 ERROR 09-07 17:54:49 [tpu_info.py:40]     *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}
+#14 21.65 ERROR 09-07 17:54:49 [tpu_info.py:40]   </style>
+#14 21.65 ERROR 09-07 17:54:49 [tpu_info.py:40]   <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+#14 21.65 ERROR 09-07 17:54:49 [tpu_info.py:40]   <p><b>404.</b> <ins>That’s an error.</ins>
+#14 21.65 ERROR 09-07 17:54:49 [tpu_info.py:40]   <p>The requested URL <code>/computeMetadata/v1/instance/attributes/instance-id</code> was not found on this server.  <ins>That’s all we know.</ins>
+#14 21.65 ERROR 09-07 17:54:49 [tpu_info.py:40] 
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40] Unable to poll TPU GCE Metadata. Got status code: 404 and content: <!DOCTYPE html>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40] <html lang=en>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]   <meta charset=utf-8>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]   <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]   <title>Error 404 (Not Found)!!1</title>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]   <style>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]     *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]   </style>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]   <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]   <p><b>404.</b> <ins>That’s an error.</ins>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]   <p>The requested URL <code>/computeMetadata/v1/instance/attributes/accelerator-type</code> was not found on this server.  <ins>That’s all we know.</ins>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40] 
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40] Unable to poll TPU GCE Metadata. Got status code: 404 and content: <!DOCTYPE html>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40] <html lang=en>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]   <meta charset=utf-8>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]   <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]   <title>Error 404 (Not Found)!!1</title>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]   <style>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]     *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]   </style>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]   <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]   <p><b>404.</b> <ins>That’s an error.</ins>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]   <p>The requested URL <code>/computeMetadata/v1/instance/attributes/agent-worker-number</code> was not found on this server.  <ins>That’s all we know.</ins>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40] 
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:91] Failed to detect number of TPUs: [Errno 2] No such file or directory: '/dev/vfio'
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40] Unable to poll TPU GCE Metadata. Got status code: 404 and content: <!DOCTYPE html>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40] <html lang=en>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]   <meta charset=utf-8>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]   <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]   <title>Error 404 (Not Found)!!1</title>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]   <style>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]     *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]   </style>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]   <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]   <p><b>404.</b> <ins>That’s an error.</ins>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40]   <p>The requested URL <code>/computeMetadata/v1/instance/attributes/accelerator-type</code> was not found on this server.  <ins>That’s all we know.</ins>
+#14 21.66 ERROR 09-07 17:54:49 [tpu_info.py:40] 
+#14 21.66 ERROR 09-07 17:54:49 [__init__.py:82] Error occurred while logging TPU info: 'NoneType' object has no attribute 'startswith'. Are you running on CPU?
+#14 23.54 WARNING 09-07 17:54:51 [tpu_platform.py:447] Pin memory is not supported on TPU.
+#14 26.46 {
+#14 26.46   "python": "3.12.12 | packaged by Anaconda, Inc. | (main, Oct 21 2025, 20:16:04) [GCC 11.2.0]",
+#14 26.46   "vllm_runtime_version": "0.23.1rc1.dev581+g12a8c9e4a5.tpu",
+#14 26.46   "packages": {
+#14 26.46     "vllm": {
+#14 26.46       "distribution_version": "0.23.1rc1.dev581+g12a8c9e4a5.tpu",
+#14 26.46       "import_path": "/opt/vllm/vllm/__init__.py"
+#14 26.46     },
+#14 26.46     "tpu_inference": {
+#14 26.46       "distribution_version": "0.0.0",
+#14 26.46       "import_path": "/opt/tpu-inference/tpu_inference/__init__.py"
+#14 26.46     }
+#14 26.46   }
+#14 26.46 }
+#14 27.66 + python3 -
+#14 30.24 {"module": "torch", "version": "2.10.0+cpu", "path": "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/__init__.py"}
+#14 31.80 {"module": "torchvision", "version": "0.25.0+cpu", "path": "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torchvision/__init__.py"}
+#14 31.80 {"module": "jax", "version": "0.10.2", "path": "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/__init__.py"}
+#14 31.81 {"module": "torchax", "version": "0.0.13", "path": "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torchax/__init__.py"}
+#14 34.13 {"module": "transformers", "version": "5.14.1", "path": "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/transformers/__init__.py"}
+#14 34.39 ERROR 09-07 17:55:01 [tpu_info.py:40] Unable to poll TPU GCE Metadata. Got status code: 404 and content: <!DOCTYPE html>
+#14 34.39 ERROR 09-07 17:55:01 [tpu_info.py:40] <html lang=en>
+#14 34.39 ERROR 09-07 17:55:01 [tpu_info.py:40]   <meta charset=utf-8>
+#14 34.39 ERROR 09-07 17:55:01 [tpu_info.py:40]   <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
+#14 34.39 ERROR 09-07 17:55:01 [tpu_info.py:40]   <title>Error 404 (Not Found)!!1</title>
+#14 34.39 ERROR 09-07 17:55:01 [tpu_info.py:40]   <style>
+#14 34.39 ERROR 09-07 17:55:01 [tpu_info.py:40]     *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}
+#14 34.39 ERROR 09-07 17:55:01 [tpu_info.py:40]   </style>
+#14 34.39 ERROR 09-07 17:55:01 [tpu_info.py:40]   <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+#14 34.39 ERROR 09-07 17:55:01 [tpu_info.py:40]   <p><b>404.</b> <ins>That’s an error.</ins>
+#14 34.39 ERROR 09-07 17:55:01 [tpu_info.py:40]   <p>The requested URL <code>/computeMetadata/v1/instance/attributes/instance-id</code> was not found on this server.  <ins>That’s all we know.</ins>
+#14 34.39 ERROR 09-07 17:55:01 [tpu_info.py:40] 
+#14 34.40 ERROR 09-07 17:55:01 [tpu_info.py:40] Unable to poll TPU GCE Metadata. Got status code: 404 and content: <!DOCTYPE html>
+#14 34.40 ERROR 09-07 17:55:01 [tpu_info.py:40] <html lang=en>
+#14 34.40 ERROR 09-07 17:55:01 [tpu_info.py:40]   <meta charset=utf-8>
+#14 34.40 ERROR 09-07 17:55:01 [tpu_info.py:40]   <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
+#14 34.40 ERROR 09-07 17:55:01 [tpu_info.py:40]   <title>Error 404 (Not Found)!!1</title>
+#14 34.40 ERROR 09-07 17:55:01 [tpu_info.py:40]   <style>
+#14 34.40 ERROR 09-07 17:55:01 [tpu_info.py:40]     *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}
+#14 34.40 ERROR 09-07 17:55:01 [tpu_info.py:40]   </style>
+#14 34.40 ERROR 09-07 17:55:01 [tpu_info.py:40]   <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+#14 34.40 ERROR 09-07 17:55:01 [tpu_info.py:40]   <p><b>404.</b> <ins>That’s an error.</ins>
+#14 34.40 ERROR 09-07 17:55:01 [tpu_info.py:40]   <p>The requested URL <code>/computeMetadata/v1/instance/attributes/accelerator-type</code> was not found on this server.  <ins>That’s all we know.</ins>
+#14 34.40 ERROR 09-07 17:55:01 [tpu_info.py:40] 
+#14 34.40 ERROR 09-07 17:55:01 [tpu_info.py:40] Unable to poll TPU GCE Metadata. Got status code: 404 and content: <!DOCTYPE html>
+#14 34.40 ERROR 09-07 17:55:01 [tpu_info.py:40] <html lang=en>
+#14 34.40 ERROR 09-07 17:55:01 [tpu_info.py:40]   <meta charset=utf-8>
+#14 34.40 ERROR 09-07 17:55:01 [tpu_info.py:40]   <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
+#14 34.40 ERROR 09-07 17:55:01 [tpu_info.py:40]   <title>Error 404 (Not Found)!!1</title>
+#14 34.40 ERROR 09-07 17:55:01 [tpu_info.py:40]   <style>
+#14 34.40 ERROR 09-07 17:55:01 [tpu_info.py:40]     *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}
+#14 34.40 ERROR 09-07 17:55:01 [tpu_info.py:40]   </style>
+#14 34.40 ERROR 09-07 17:55:01 [tpu_info.py:40]   <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+#14 34.40 ERROR 09-07 17:55:01 [tpu_info.py:40]   <p><b>404.</b> <ins>That’s an error.</ins>
+#14 34.40 ERROR 09-07 17:55:01 [tpu_info.py:40]   <p>The requested URL <code>/computeMetadata/v1/instance/attributes/agent-worker-number</code> was not found on this server.  <ins>That’s all we know.</ins>
+#14 34.40 ERROR 09-07 17:55:01 [tpu_info.py:40] 
+#14 34.40 ERROR 09-07 17:55:01 [tpu_info.py:91] Failed to detect number of TPUs: [Errno 2] No such file or directory: '/dev/vfio'
+#14 34.41 ERROR 09-07 17:55:01 [tpu_info.py:40] Unable to poll TPU GCE Metadata. Got status code: 404 and content: <!DOCTYPE html>
+#14 34.41 ERROR 09-07 17:55:01 [tpu_info.py:40] <html lang=en>
+#14 34.41 ERROR 09-07 17:55:01 [tpu_info.py:40]   <meta charset=utf-8>
+#14 34.41 ERROR 09-07 17:55:01 [tpu_info.py:40]   <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
+#14 34.41 ERROR 09-07 17:55:01 [tpu_info.py:40]   <title>Error 404 (Not Found)!!1</title>
+#14 34.41 ERROR 09-07 17:55:01 [tpu_info.py:40]   <style>
+#14 34.41 ERROR 09-07 17:55:01 [tpu_info.py:40]     *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}
+#14 34.41 ERROR 09-07 17:55:01 [tpu_info.py:40]   </style>
+#14 34.41 ERROR 09-07 17:55:01 [tpu_info.py:40]   <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+#14 34.41 ERROR 09-07 17:55:01 [tpu_info.py:40]   <p><b>404.</b> <ins>That’s an error.</ins>
+#14 34.41 ERROR 09-07 17:55:01 [tpu_info.py:40]   <p>The requested URL <code>/computeMetadata/v1/instance/attributes/accelerator-type</code> was not found on this server.  <ins>That’s all we know.</ins>
+#14 34.41 ERROR 09-07 17:55:01 [tpu_info.py:40] 
+#14 34.41 ERROR 09-07 17:55:01 [__init__.py:82] Error occurred while logging TPU info: 'NoneType' object has no attribute 'startswith'. Are you running on CPU?
+#14 34.42 WARNING 09-07 17:55:01 [tpu_platform.py:447] Pin memory is not supported on TPU.
+#14 35.60 {"module": "vllm", "version": "0.23.1rc1.dev581+g12a8c9e4a5.tpu", "path": "/opt/vllm/vllm/__init__.py"}
+#14 35.60 {"module": "vllm.spinloop", "version": null, "path": "/opt/vllm/vllm/spinloop.abi3.so"}
+#14 35.60 {"module": "vllm.fs_io_C", "version": null, "path": "/opt/vllm/vllm/fs_io_C.abi3.so"}
+#14 35.60 {"module": "tpu_inference", "version": null, "path": "/opt/tpu-inference/tpu_inference/__init__.py"}
+#14 35.65 CPU backend initialized
+#14 36.99 + vllm --help
+#14 39.16 ERROR 09-07 17:55:06 [tpu_info.py:40] Unable to poll TPU GCE Metadata. Got status code: 404 and content: <!DOCTYPE html>
+#14 39.16 ERROR 09-07 17:55:06 [tpu_info.py:40] <html lang=en>
+#14 39.16 ERROR 09-07 17:55:06 [tpu_info.py:40]   <meta charset=utf-8>
+#14 39.16 ERROR 09-07 17:55:06 [tpu_info.py:40]   <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
+#14 39.16 ERROR 09-07 17:55:06 [tpu_info.py:40]   <title>Error 404 (Not Found)!!1</title>
+#14 39.16 ERROR 09-07 17:55:06 [tpu_info.py:40]   <style>
+#14 39.16 ERROR 09-07 17:55:06 [tpu_info.py:40]     *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}
+#14 39.16 ERROR 09-07 17:55:06 [tpu_info.py:40]   </style>
+#14 39.16 ERROR 09-07 17:55:06 [tpu_info.py:40]   <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+#14 39.16 ERROR 09-07 17:55:06 [tpu_info.py:40]   <p><b>404.</b> <ins>That’s an error.</ins>
+#14 39.16 ERROR 09-07 17:55:06 [tpu_info.py:40]   <p>The requested URL <code>/computeMetadata/v1/instance/attributes/instance-id</code> was not found on this server.  <ins>That’s all we know.</ins>
+#14 39.16 ERROR 09-07 17:55:06 [tpu_info.py:40] 
+#14 39.17 ERROR 09-07 17:55:06 [tpu_info.py:40] Unable to poll TPU GCE Metadata. Got status code: 404 and content: <!DOCTYPE html>
+#14 39.17 ERROR 09-07 17:55:06 [tpu_info.py:40] <html lang=en>
+#14 39.17 ERROR 09-07 17:55:06 [tpu_info.py:40]   <meta charset=utf-8>
+#14 39.17 ERROR 09-07 17:55:06 [tpu_info.py:40]   <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
+#14 39.17 ERROR 09-07 17:55:06 [tpu_info.py:40]   <title>Error 404 (Not Found)!!1</title>
+#14 39.17 ERROR 09-07 17:55:06 [tpu_info.py:40]   <style>
+#14 39.17 ERROR 09-07 17:55:06 [tpu_info.py:40]     *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}
+#14 39.17 ERROR 09-07 17:55:06 [tpu_info.py:40]   </style>
+#14 39.17 ERROR 09-07 17:55:06 [tpu_info.py:40]   <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+#14 39.17 ERROR 09-07 17:55:06 [tpu_info.py:40]   <p><b>404.</b> <ins>That’s an error.</ins>
+#14 39.17 ERROR 09-07 17:55:06 [tpu_info.py:40]   <p>The requested URL <code>/computeMetadata/v1/instance/attributes/accelerator-type</code> was not found on this server.  <ins>That’s all we know.</ins>
+#14 39.17 ERROR 09-07 17:55:06 [tpu_info.py:40] 
+#14 39.17 ERROR 09-07 17:55:06 [tpu_info.py:40] Unable to poll TPU GCE Metadata. Got status code: 404 and content: <!DOCTYPE html>
+#14 39.17 ERROR 09-07 17:55:06 [tpu_info.py:40] <html lang=en>
+#14 39.17 ERROR 09-07 17:55:06 [tpu_info.py:40]   <meta charset=utf-8>
+#14 39.17 ERROR 09-07 17:55:06 [tpu_info.py:40]   <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
+#14 39.17 ERROR 09-07 17:55:06 [tpu_info.py:40]   <title>Error 404 (Not Found)!!1</title>
+#14 39.17 ERROR 09-07 17:55:06 [tpu_info.py:40]   <style>
+#14 39.17 ERROR 09-07 17:55:06 [tpu_info.py:40]     *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}
+#14 39.17 ERROR 09-07 17:55:06 [tpu_info.py:40]   </style>
+#14 39.17 ERROR 09-07 17:55:06 [tpu_info.py:40]   <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+#14 39.17 ERROR 09-07 17:55:06 [tpu_info.py:40]   <p><b>404.</b> <ins>That’s an error.</ins>
+#14 39.17 ERROR 09-07 17:55:06 [tpu_info.py:40]   <p>The requested URL <code>/computeMetadata/v1/instance/attributes/agent-worker-number</code> was not found on this server.  <ins>That’s all we know.</ins>
+#14 39.17 ERROR 09-07 17:55:06 [tpu_info.py:40] 
+#14 39.17 ERROR 09-07 17:55:06 [tpu_info.py:91] Failed to detect number of TPUs: [Errno 2] No such file or directory: '/dev/vfio'
+#14 39.18 ERROR 09-07 17:55:06 [tpu_info.py:40] Unable to poll TPU GCE Metadata. Got status code: 404 and content: <!DOCTYPE html>
+#14 39.18 ERROR 09-07 17:55:06 [tpu_info.py:40] <html lang=en>
+#14 39.18 ERROR 09-07 17:55:06 [tpu_info.py:40]   <meta charset=utf-8>
+#14 39.18 ERROR 09-07 17:55:06 [tpu_info.py:40]   <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
+#14 39.18 ERROR 09-07 17:55:06 [tpu_info.py:40]   <title>Error 404 (Not Found)!!1</title>
+#14 39.18 ERROR 09-07 17:55:06 [tpu_info.py:40]   <style>
+#14 39.18 ERROR 09-07 17:55:06 [tpu_info.py:40]     *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}
+#14 39.18 ERROR 09-07 17:55:06 [tpu_info.py:40]   </style>
+#14 39.18 ERROR 09-07 17:55:06 [tpu_info.py:40]   <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+#14 39.18 ERROR 09-07 17:55:06 [tpu_info.py:40]   <p><b>404.</b> <ins>That’s an error.</ins>
+#14 39.18 ERROR 09-07 17:55:06 [tpu_info.py:40]   <p>The requested URL <code>/computeMetadata/v1/instance/attributes/accelerator-type</code> was not found on this server.  <ins>That’s all we know.</ins>
+#14 39.18 ERROR 09-07 17:55:06 [tpu_info.py:40] 
+#14 39.18 ERROR 09-07 17:55:06 [__init__.py:82] Error occurred while logging TPU info: 'NoneType' object has no attribute 'startswith'. Are you running on CPU?
+#14 39.98 WARNING 09-07 17:55:07 [tpu_platform.py:447] Pin memory is not supported on TPU.
+#14 47.35 WARNING 09-07 17:55:14 [tpu_platform.py:171] Error getting device name: 'NoneType' object has no attribute 'name'
+#14 50.62 INFO 09-07 17:55:18 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+#14 50.62 INFO 09-07 17:55:18 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+#14 54.15 INFO 09-07 17:55:21 [attention_interface.py:58] Using default RPA kernel
+#14 54.24 WARNING 09-07 17:55:21 [interface.py:358] Failed to import from vllm._C: ModuleNotFoundError("No module named 'vllm._C'")
+#14 54.33 WARNING 09-07 17:55:21 [tpu_platform.py:171] Error getting device name: 'NoneType' object has no attribute 'name'
+#14 54.33 WARNING 09-07 17:55:21 [tpu_platform.py:171] Error getting device name: 'NoneType' object has no attribute 'name'
+#14 54.33 WARNING 09-07 17:55:21 [tpu_platform.py:171] Error getting device name: 'NoneType' object has no attribute 'name'
+#14 54.36 WARNING 09-07 17:55:21 [tpu_platform.py:171] Error getting device name: 'NoneType' object has no attribute 'name'
+#14 54.38 WARNING 09-07 17:55:21 [interface.py:358] Failed to import from vllm._C: ModuleNotFoundError("No module named 'vllm._C'")
+#14 54.40 WARNING 09-07 17:55:21 [interface.py:358] Failed to import from vllm._C: ModuleNotFoundError("No module named 'vllm._C'")
+#14 54.40 WARNING 09-07 17:55:21 [interface.py:358] Failed to import from vllm._C: ModuleNotFoundError("No module named 'vllm._C'")
+#14 54.41 WARNING 09-07 17:55:21 [tpu_platform.py:171] Error getting device name: 'NoneType' object has no attribute 'name'
+#14 54.42 WARNING 09-07 17:55:21 [tpu_platform.py:171] Error getting device name: 'NoneType' object has no attribute 'name'
+#14 54.43 WARNING 09-07 17:55:21 [tpu_platform.py:171] Error getting device name: 'NoneType' object has no attribute 'name'
+#14 55.85 INFO 09-07 17:55:23 [__init__.py:112] Registered model loader `<class 'tpu_inference.models.jax.utils.weight_utils.JaxDummyModelLoader'>` with load format `jax_dummy`
+#14 55.85 INFO 09-07 17:55:23 [__init__.py:112] Registered model loader `<class 'tpu_inference.models.common.pathways_dummy_loader.PathwaysDummyModelLoader'>` with load format `pathways_dummy`
+#14 56.19 INFO 09-07 17:55:23 [__init__.py:112] Registered model loader `<class 'tpu_inference.models.vllm.vllm_model_loader.IncrementalModelLoader'>` with load format `tpu_streaming_loader`
+#14 56.19 WARNING 09-07 17:55:23 [__init__.py:101] Load format `runai_streamer` is already registered, and will be overwritten by the new loader class `<class 'tpu_inference.models.vllm.vllm_model_loader.RunaiIncrementalModelLoader'>`.
+#14 56.19 INFO 09-07 17:55:23 [__init__.py:112] Registered model loader `<class 'tpu_inference.models.vllm.vllm_model_loader.RunaiIncrementalModelLoader'>` with load format `runai_streamer`
+#14 56.70 usage: vllm [-h] [-v]
+#14 56.70             {chat,complete,serve,launch,bench,collect-env,run-batch} ...
+#14 56.70 
+#14 56.70 vLLM CLI
+#14 56.70 
+#14 56.70 positional arguments:
+#14 56.70   {chat,complete,serve,launch,bench,collect-env,run-batch}
+#14 56.70     chat                Generate chat completions via the running API server.
+#14 56.70     complete            Generate text completions based on the given prompt
+#14 56.70                         via the running API server.
+#14 56.70     serve               Launch a local OpenAI-compatible API server to serve
+#14 56.70                         LLM completions via HTTP.
+#14 56.70     launch              Launch individual vLLM components.
+#14 56.70     bench               vLLM bench subcommand.
+#14 56.70     collect-env         Start collecting environment information.
+#14 56.70     run-batch           Run batch prompts and write results to file.
+#14 56.70 
+#14 56.70 options:
+#14 56.70   -h, --help            show this help message and exit
+#14 56.70   -v, --version         show program's version number and exit
+#14 56.70 
+#14 56.70 For full list:            vllm [subcommand] --help=all
+#14 56.70 For a section:            vllm [subcommand] --help=ModelConfig    (case-insensitive)
+#14 56.70 For a flag:               vllm [subcommand] --help=max-model-len  (_ or - accepted)
+#14 56.70 Documentation:            https://docs.vllm.ai
+#14 59.23 + python3 /opt/InferenceX/utils/bench_serving/benchmark_serving.py --help
+#14 67.13 ERROR 09-07 17:55:34 [tpu_info.py:40] Unable to poll TPU GCE Metadata. Got status code: 404 and content: <!DOCTYPE html>
+#14 67.13 ERROR 09-07 17:55:34 [tpu_info.py:40] <html lang=en>
+#14 67.13 ERROR 09-07 17:55:34 [tpu_info.py:40]   <meta charset=utf-8>
+#14 67.13 ERROR 09-07 17:55:34 [tpu_info.py:40]   <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
+#14 67.13 ERROR 09-07 17:55:34 [tpu_info.py:40]   <title>Error 404 (Not Found)!!1</title>
+#14 67.13 ERROR 09-07 17:55:34 [tpu_info.py:40]   <style>
+#14 67.13 ERROR 09-07 17:55:34 [tpu_info.py:40]     *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}
+#14 67.13 ERROR 09-07 17:55:34 [tpu_info.py:40]   </style>
+#14 67.13 ERROR 09-07 17:55:34 [tpu_info.py:40]   <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+#14 67.13 ERROR 09-07 17:55:34 [tpu_info.py:40]   <p><b>404.</b> <ins>That’s an error.</ins>
+#14 67.13 ERROR 09-07 17:55:34 [tpu_info.py:40]   <p>The requested URL <code>/computeMetadata/v1/instance/attributes/instance-id</code> was not found on this server.  <ins>That’s all we know.</ins>
+#14 67.13 ERROR 09-07 17:55:34 [tpu_info.py:40] 
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40] Unable to poll TPU GCE Metadata. Got status code: 404 and content: <!DOCTYPE html>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40] <html lang=en>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]   <meta charset=utf-8>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]   <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]   <title>Error 404 (Not Found)!!1</title>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]   <style>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]     *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]   </style>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]   <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]   <p><b>404.</b> <ins>That’s an error.</ins>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]   <p>The requested URL <code>/computeMetadata/v1/instance/attributes/accelerator-type</code> was not found on this server.  <ins>That’s all we know.</ins>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40] 
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40] Unable to poll TPU GCE Metadata. Got status code: 404 and content: <!DOCTYPE html>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40] <html lang=en>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]   <meta charset=utf-8>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]   <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]   <title>Error 404 (Not Found)!!1</title>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]   <style>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]     *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]   </style>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]   <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]   <p><b>404.</b> <ins>That’s an error.</ins>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]   <p>The requested URL <code>/computeMetadata/v1/instance/attributes/agent-worker-number</code> was not found on this server.  <ins>That’s all we know.</ins>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40] 
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:91] Failed to detect number of TPUs: [Errno 2] No such file or directory: '/dev/vfio'
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40] Unable to poll TPU GCE Metadata. Got status code: 404 and content: <!DOCTYPE html>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40] <html lang=en>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]   <meta charset=utf-8>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]   <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]   <title>Error 404 (Not Found)!!1</title>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]   <style>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]     *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]   </style>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]   <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]   <p><b>404.</b> <ins>That’s an error.</ins>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40]   <p>The requested URL <code>/computeMetadata/v1/instance/attributes/accelerator-type</code> was not found on this server.  <ins>That’s all we know.</ins>
+#14 67.14 ERROR 09-07 17:55:34 [tpu_info.py:40] 
+#14 67.14 ERROR 09-07 17:55:34 [__init__.py:82] Error occurred while logging TPU info: 'NoneType' object has no attribute 'startswith'. Are you running on CPU?
+#14 68.05 WARNING 09-07 17:55:35 [tpu_platform.py:447] Pin memory is not supported on TPU.
+#14 69.04 usage: benchmark_serving.py [-h]
+#14 69.04                             [--backend {tgi,vllm,lmdeploy,deepspeed-mii,openai,openai-chat,tensorrt-llm,scalellm,sglang}]
+#14 69.04                             [--base-url BASE_URL] [--host HOST] [--port PORT]
+#14 69.04                             [--endpoint ENDPOINT] [--dataset-name {random}]
+#14 69.04                             [--dataset-path DATASET_PATH]
+#14 69.04                             [--max-concurrency MAX_CONCURRENCY] --model MODEL
+#14 69.04                             [--tokenizer TOKENIZER] [--best-of BEST_OF]
+#14 69.04                             [--use-beam-search] [--num-prompts NUM_PROMPTS]
+#14 69.04                             [--logprobs LOGPROBS]
+#14 69.04                             [--request-rate REQUEST_RATE]
+#14 69.04                             [--burstiness BURSTINESS] [--seed SEED]
+#14 69.04                             [--trust-remote-code] [--disable-tqdm] [--profile]
+#14 69.04                             [--save-result] [--save-detailed]
+#14 69.04                             [--metadata [KEY=VALUE ...]]
+#14 69.04                             [--result-dir RESULT_DIR]
+#14 69.04                             [--result-filename RESULT_FILENAME] [--ignore-eos]
+#14 69.04                             [--percentile-metrics PERCENTILE_METRICS]
+#14 69.04                             [--metric-percentiles METRIC_PERCENTILES]
+#14 69.04                             [--goodput GOODPUT [GOODPUT ...]]
+#14 69.04                             [--sonnet-input-len SONNET_INPUT_LEN]
+#14 69.04                             [--sonnet-output-len SONNET_OUTPUT_LEN]
+#14 69.04                             [--sonnet-prefix-len SONNET_PREFIX_LEN]
+#14 69.04                             [--sharegpt-output-len SHAREGPT_OUTPUT_LEN]
+#14 69.04                             [--random-input-len RANDOM_INPUT_LEN]
+#14 69.04                             [--random-output-len RANDOM_OUTPUT_LEN]
+#14 69.04                             [--random-range-ratio RANDOM_RANGE_RATIO]
+#14 69.04                             [--random-prefix-len RANDOM_PREFIX_LEN]
+#14 69.04                             [--use-chat-template]
+#14 69.04                             [--random-num-workers RANDOM_NUM_WORKERS] [--dsv4]
+#14 69.04                             [--hf-subset HF_SUBSET] [--hf-split HF_SPLIT]
+#14 69.04                             [--hf-output-len HF_OUTPUT_LEN]
+#14 69.04                             [--tokenizer-mode {auto,slow,mistral,custom,deepseek_v4}]
+#14 69.04                             [--served-model-name SERVED_MODEL_NAME]
+#14 69.04                             [--lora-modules LORA_MODULES [LORA_MODULES ...]]
+#14 69.04                             [--num-warmups NUM_WARMUPS]
+#14 69.04 
+#14 69.04 Benchmark the online serving throughput.
+#14 69.04 
+#14 69.04 options:
+#14 69.04   -h, --help            show this help message and exit
+#14 69.04   --backend {tgi,vllm,lmdeploy,deepspeed-mii,openai,openai-chat,tensorrt-llm,scalellm,sglang}
+#14 69.04   --base-url BASE_URL   Server or API base url if not using http host and
+#14 69.04                         port.
+#14 69.04   --host HOST
+#14 69.04   --port PORT
+#14 69.04   --endpoint ENDPOINT   API endpoint.
+#14 69.04   --dataset-name {random}
+#14 69.04                         Name of the dataset to benchmark on.
+#14 69.04   --dataset-path DATASET_PATH
+#14 69.04                         Path to the sharegpt/sonnet dataset. Or the
+#14 69.04                         huggingface dataset ID if using HF dataset.
+#14 69.04   --max-concurrency MAX_CONCURRENCY
+#14 69.04                         Maximum number of concurrent requests. This can be
+#14 69.04                         used to help simulate an environment where a higher
+#14 69.04                         level component is enforcing a maximum number of
+#14 69.04                         concurrent requests. While the --request-rate argument
+#14 69.04                         controls the rate at which requests are initiated,
+#14 69.04                         this argument will control how many are actually
+#14 69.04                         allowed to execute at a time. This means that when
+#14 69.04                         used in combination, the actual request rate may be
+#14 69.04                         lower than specified with --request-rate, if the
+#14 69.04                         server is not processing requests fast enough to keep
+#14 69.04                         up.
+#14 69.04   --model MODEL         Name of the model.
+#14 69.04   --tokenizer TOKENIZER
+#14 69.04                         Name or path of the tokenizer, if not using the
+#14 69.04                         default tokenizer.
+#14 69.04   --best-of BEST_OF     Generates `best_of` sequences per prompt and returns
+#14 69.04                         the best one.
+#14 69.04   --use-beam-search
+#14 69.04   --num-prompts NUM_PROMPTS
+#14 69.04                         Number of prompts to process.
+#14 69.04   --logprobs LOGPROBS   Number of logprobs-per-token to compute & return as
+#14 69.04                         part of the request. If unspecified, then either (1)
+#14 69.04                         if beam search is disabled, no logprobs are computed &
+#14 69.04                         a single dummy logprob is returned for each token; or
+#14 69.04                         (2) if beam search is enabled 1 logprob per token is
+#14 69.04                         computed
+#14 69.04   --request-rate REQUEST_RATE
+#14 69.04                         Number of requests per second. If this is inf, then
+#14 69.04                         all the requests are sent at time 0. Otherwise, we use
+#14 69.04                         Poisson process or gamma distribution to synthesize
+#14 69.04                         the request arrival times.
+#14 69.04   --burstiness BURSTINESS
+#14 69.04                         Burstiness factor of the request generation. Only take
+#14 69.04                         effect when request_rate is not inf. Default value is
+#14 69.04                         1, which follows Poisson process. Otherwise, the
+#14 69.04                         request intervals follow a gamma distribution. A lower
+#14 69.04                         burstiness value (0 < burstiness < 1) results in more
+#14 69.04                         bursty requests. A higher burstiness value (burstiness
+#14 69.04                         > 1) results in a more uniform arrival of requests.
+#14 69.04   --seed SEED
+#14 69.04   --trust-remote-code   Trust remote code from huggingface
+#14 69.04   --disable-tqdm        Specify to disable tqdm progress bar.
+#14 69.04   --profile             Use Torch Profiler. The endpoint must be launched with
+#14 69.04                         VLLM_TORCH_PROFILER_DIR to enable profiler.
+#14 69.04   --save-result         Specify to save benchmark results to a json file
+#14 69.04   --save-detailed       When saving results, include detailed per-request data
+#14 69.04                         (input_lens, output_lens, ttfts, itls,
+#14 69.04                         generated_texts, errors). By default, only aggregated
+#14 69.04                         metrics are saved to reduce file size.
+#14 69.04   --metadata [KEY=VALUE ...]
+#14 69.04                         Key-value pairs (e.g, --metadata version=0.3.3 tp=1)
+#14 69.04                         for metadata of this run to be saved in the result
+#14 69.04                         JSON file for record keeping purposes.
+#14 69.04   --result-dir RESULT_DIR
+#14 69.04                         Specify directory to save benchmark json results.If
+#14 69.04                         not specified, results are saved in the current
+#14 69.04                         directory.
+#14 69.04   --result-filename RESULT_FILENAME
+#14 69.04                         Specify the filename to save benchmark json results.If
+#14 69.04                         not specified, results will be saved in {backend}-
+#14 69.04                         {args.request_rate}qps-{base_model_id}-
+#14 69.04                         {current_dt}.json format.
+#14 69.04   --ignore-eos          Set ignore_eos flag when sending the benchmark
+#14 69.04                         request.Warning: ignore_eos is not supported in
+#14 69.04                         deepspeed_mii and tgi.
+#14 69.04   --percentile-metrics PERCENTILE_METRICS
+#14 69.04                         Comma-seperated list of selected metrics to report
+#14 69.04                         percentils. This argument specifies the metrics to
+#14 69.04                         report percentiles. Allowed metric names are "ttft",
+#14 69.04                         "tpot", "itl", "e2el". Default value is
+#14 69.04                         "ttft,tpot,itl,e2el".
+#14 69.04   --metric-percentiles METRIC_PERCENTILES
+#14 69.04                         Comma-seperated list of percentiles for selected
+#14 69.04                         metrics. To report 25-th, 50-th, and 75-th
+#14 69.04                         percentiles, use "25,50,75". Default value is
+#14 69.04                         "90,99,99.9". Use "--percentile-metrics" to select
+#14 69.04                         metrics.
+#14 69.04   --goodput GOODPUT [GOODPUT ...]
+#14 69.04                         Specify service level objectives for goodput as
+#14 69.04                         "KEY:VALUE" pairs, where the key is a metric name, and
+#14 69.04                         the value is in milliseconds. Multiple "KEY:VALUE"
+#14 69.04                         pairs can be provided, separated by spaces. Allowed
+#14 69.04                         request level metric names are "ttft", "tpot", "e2el".
+#14 69.04                         For more context on the definition of goodput, refer
+#14 69.04                         to DistServe paper: https://arxiv.org/pdf/2401.09670
+#14 69.04                         and the blog: https://hao-ai-
+#14 69.04                         lab.github.io/blogs/distserve
+#14 69.04   --tokenizer-mode {auto,slow,mistral,custom,deepseek_v4}
+#14 69.04                         The tokenizer mode. * "auto" will use the fast
+#14 69.04                         tokenizer if available. * "slow" will always use the
+#14 69.04                         slow tokenizer. * "mistral" will always use the
+#14 69.04                         `mistral_common` tokenizer. *"custom" will use
+#14 69.04                         --tokenizer to select the preregistered tokenizer.
+#14 69.04   --served-model-name SERVED_MODEL_NAME
+#14 69.04                         The model name used in the API. If not specified, the
+#14 69.04                         model name will be the same as the ``--model``
+#14 69.04                         argument.
+#14 69.04   --lora-modules LORA_MODULES [LORA_MODULES ...]
+#14 69.04                         A subset of LoRA module names passed in when launching
+#14 69.04                         the server. For each request, the script chooses a
+#14 69.04                         LoRA module at random.
+#14 69.04   --num-warmups NUM_WARMUPS
+#14 69.04 
+#14 69.04 sonnet dataset options:
+#14 69.04   --sonnet-input-len SONNET_INPUT_LEN
+#14 69.04                         Number of input tokens per request, used only for
+#14 69.04                         sonnet dataset.
+#14 69.04   --sonnet-output-len SONNET_OUTPUT_LEN
+#14 69.04                         Number of output tokens per request, used only for
+#14 69.04                         sonnet dataset.
+#14 69.04   --sonnet-prefix-len SONNET_PREFIX_LEN
+#14 69.04                         Number of prefix tokens per request, used only for
+#14 69.04                         sonnet dataset.
+#14 69.04 
+#14 69.04 sharegpt dataset options:
+#14 69.04   --sharegpt-output-len SHAREGPT_OUTPUT_LEN
+#14 69.04                         Output length for each request. Overrides the output
+#14 69.04                         length from the ShareGPT dataset.
+#14 69.04 
+#14 69.04 random dataset options:
+#14 69.04   --random-input-len RANDOM_INPUT_LEN
+#14 69.04                         Number of input tokens per request, used only for
+#14 69.04                         random sampling.
+#14 69.04   --random-output-len RANDOM_OUTPUT_LEN
+#14 69.04                         Number of output tokens per request, used only for
+#14 69.04                         random sampling.
+#14 69.04   --random-range-ratio RANDOM_RANGE_RATIO
+#14 69.04                         Range of sampled ratio of input/output length, used
+#14 69.04                         only for random sampling.
+#14 69.04   --random-prefix-len RANDOM_PREFIX_LEN
+#14 69.04                         Number of fixed prefix tokens before random context.
+#14 69.04                         The length range of context in a random request is
+#14 69.04                         [random-prefix-len, random-prefix-len + random-prefix-
+#14 69.04                         len * random-range-ratio).
+#14 69.04   --use-chat-template   Use chat template to format the prompt.
+#14 69.04   --random-num-workers RANDOM_NUM_WORKERS
+#14 69.04                         Number of worker processes for parallel random prompt
+#14 69.04                         generation. Only used with --dataset-name random. 0
+#14 69.04                         (default) = auto (min(cpu_count, 8)). 1 = serial (no
+#14 69.04                         multiprocessing).
+#14 69.04 
+#14 69.04 DeepSeek-V4 chat template options:
+#14 69.04   --dsv4                Use the DeepSeek-V4 chat template (encoding_dsv4.py)
+#14 69.04                         instead of the tokenizer's built-in jinja chat
+#14 69.04                         template. Requires --use-chat-template to also be set.
+#14 69.04                         Applies to the random dataset.
+#14 69.04 
+#14 69.04 hf dataset options:
+#14 69.04   --hf-subset HF_SUBSET
+#14 69.04                         Subset of the HF dataset.
+#14 69.04   --hf-split HF_SPLIT   Split of the HF dataset.
+#14 69.04   --hf-output-len HF_OUTPUT_LEN
+#14 69.04                         Output length for each request. Overrides the output
+#14 69.04                         lengths from the sampled HF dataset.
+#14 70.65 + set +x
+#14 71.56 quack-kernels 0.2.10 requires torch-c-dlpack-ext, which is not installed.
+#14 71.56 flax 0.12.4 has requirement numpy<2.4.0,>=1.23.2; python_version >= "3.11", but you have numpy 2.5.2.
+#14 71.56 flax 0.12.4 has requirement numpy<2.4.0,>=1.26.0; python_version >= "3.12", but you have numpy 2.5.2.
+#14 71.56 mistral-common 1.11.5 has requirement numpy<2.4,>=1.25; python_version <= "3.12", but you have numpy 2.5.2.
+#14 71.56 datasets 4.0.0 has requirement fsspec[http]<=2025.3.0,>=2023.1.0, but you have fsspec 2026.1.0.
+#14 71.56 tpu-inference 0.0.0 has requirement flax==0.12.8, but you have flax 0.12.4.
+#14 71.56 tpu-inference 0.0.0 has requirement jax==0.11.0, but you have jax 0.10.2.
+#14 71.56 tpu-inference 0.0.0 has requirement jaxlib==0.11.0, but you have jaxlib 0.10.2.
+#14 71.56 tpu-inference 0.0.0 has requirement libtpu==0.0.44, but you have libtpu 0.0.47.
+#14 71.56 tpu-inference 0.0.0 has requirement numba==0.62.1, but you have numba 0.67.0.
+#14 71.56 tpu-inference 0.0.0 has requirement tpu-info==0.7.1, but you have tpu-info 0.14.2.
+#14 71.56 vllm 0.23.1rc1.dev581+g12a8c9e4a5.tpu has requirement tpu-inference==0.23.0, but you have tpu-inference 0.0.0.
+#14 71.64 Dependency metadata check: conflicts remain; review the build log
+#14 DONE 71.8s
+
+#15 exporting to image
+#15 exporting layers
+#15 exporting layers 669.0s done
+#15 exporting manifest sha256:4c0c0ee4d774aa6099f5d790853c90930355af0e2334edf1eae5d4e29198084c 0.0s done
+#15 exporting config sha256:7ea90f3455d688f298ffddaa7e6fe26a89f016b2e69164587720ea20fdaf3d66 0.0s done
+#15 exporting attestation manifest sha256:c80a0f29b1de67fbffe591bd39188e145a14dea1f8cc899e6ae924b65e882052 0.0s done
+#15 exporting manifest list sha256:a8d7f3e6fcecdddd1aab9b49a99c23400e98ef736f69194a8d9eca45bb50fb42 0.0s done
+#15 naming to docker.io/library/vllm12:topk-0c9e000400e1 done
+#15 unpacking to docker.io/library/vllm12:topk-0c9e000400e1
+#15 unpacking to docker.io/library/vllm12:topk-0c9e000400e1 146.9s done
+#15 DONE 816.1s
++ docker run --rm --network=none -e JAX_PLATFORMS=cpu vllm12:topk-0c9e000400e1 bash /opt/tpu-inference/tmp/jobset_smoke.sh 
++ python3 -
+{"module": "torch", "version": "2.10.0+cpu", "path": "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torch/__init__.py"}
+{"module": "torchvision", "version": "0.25.0+cpu", "path": "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torchvision/__init__.py"}
+{"module": "jax", "version": "0.10.2", "path": "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/jax/__init__.py"}
+{"module": "torchax", "version": "0.0.13", "path": "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/torchax/__init__.py"}
+{"module": "transformers", "version": "5.14.1", "path": "/home/ymu_google_com/miniconda3/envs/vllm12/lib/python3.12/site-packages/transformers/__init__.py"}
+ERROR 09-07 18:09:25 [tpu_info.py:45] Unable to poll the TPU GCE Metadata: HTTPConnectionPool(host='metadata.google.internal', port=80): Max retries exceeded with url: /computeMetadata/v1/instance/attributes/instance-id (Caused by NameResolutionError("<urllib3.connection.HTTPConnection object at 0x7ac47add7cb0>: Failed to resolve 'metadata.google.internal' ([Errno -3] Temporary failure in name resolution)"))
+ERROR 09-07 18:09:25 [tpu_info.py:45] Unable to poll the TPU GCE Metadata: HTTPConnectionPool(host='metadata.google.internal', port=80): Max retries exceeded with url: /computeMetadata/v1/instance/attributes/accelerator-type (Caused by NameResolutionError("<urllib3.connection.HTTPConnection object at 0x7ac47ac43530>: Failed to resolve 'metadata.google.internal' ([Errno -3] Temporary failure in name resolution)"))
+ERROR 09-07 18:09:25 [tpu_info.py:45] Unable to poll the TPU GCE Metadata: HTTPConnectionPool(host='metadata.google.internal', port=80): Max retries exceeded with url: /computeMetadata/v1/instance/attributes/agent-worker-number (Caused by NameResolutionError("<urllib3.connection.HTTPConnection object at 0x7ac47ac43d10>: Failed to resolve 'metadata.google.internal' ([Errno -3] Temporary failure in name resolution)"))
+ERROR 09-07 18:09:25 [tpu_info.py:91] Failed to detect number of TPUs: [Errno 2] No such file or directory: '/dev/vfio'
+ERROR 09-07 18:09:25 [tpu_info.py:45] Unable to poll the TPU GCE Metadata: HTTPConnectionPool(host='metadata.google.internal', port=80): Max retries exceeded with url: /computeMetadata/v1/instance/attributes/accelerator-type (Caused by NameResolutionError("<urllib3.connection.HTTPConnection object at 0x7ac47aa8c4a0>: Failed to resolve 'metadata.google.internal' ([Errno -3] Temporary failure in name resolution)"))
+ERROR 09-07 18:09:25 [__init__.py:82] Error occurred while logging TPU info: 'NoneType' object has no attribute 'startswith'. Are you running on CPU?
+WARNING 09-07 18:09:25 [tpu_platform.py:447] Pin memory is not supported on TPU.
+{"module": "vllm", "version": "0.23.1rc1.dev581+g12a8c9e4a5.tpu", "path": "/opt/vllm/vllm/__init__.py"}
+{"module": "vllm.spinloop", "version": null, "path": "/opt/vllm/vllm/spinloop.abi3.so"}
+{"module": "vllm.fs_io_C", "version": null, "path": "/opt/vllm/vllm/fs_io_C.abi3.so"}
+{"module": "tpu_inference", "version": null, "path": "/opt/tpu-inference/tpu_inference/__init__.py"}
+CPU backend initialized
++ vllm --help
+ERROR 09-07 18:09:30 [tpu_info.py:45] Unable to poll the TPU GCE Metadata: HTTPConnectionPool(host='metadata.google.internal', port=80): Max retries exceeded with url: /computeMetadata/v1/instance/attributes/instance-id (Caused by NameResolutionError("<urllib3.connection.HTTPConnection object at 0x7786a19ea390>: Failed to resolve 'metadata.google.internal' ([Errno -3] Temporary failure in name resolution)"))
+ERROR 09-07 18:09:30 [tpu_info.py:45] Unable to poll the TPU GCE Metadata: HTTPConnectionPool(host='metadata.google.internal', port=80): Max retries exceeded with url: /computeMetadata/v1/instance/attributes/accelerator-type (Caused by NameResolutionError("<urllib3.connection.HTTPConnection object at 0x7786a133a4b0>: Failed to resolve 'metadata.google.internal' ([Errno -3] Temporary failure in name resolution)"))
+ERROR 09-07 18:09:30 [tpu_info.py:45] Unable to poll the TPU GCE Metadata: HTTPConnectionPool(host='metadata.google.internal', port=80): Max retries exceeded with url: /computeMetadata/v1/instance/attributes/agent-worker-number (Caused by NameResolutionError("<urllib3.connection.HTTPConnection object at 0x7786a1434650>: Failed to resolve 'metadata.google.internal' ([Errno -3] Temporary failure in name resolution)"))
+ERROR 09-07 18:09:30 [tpu_info.py:91] Failed to detect number of TPUs: [Errno 2] No such file or directory: '/dev/vfio'
+ERROR 09-07 18:09:30 [tpu_info.py:45] Unable to poll the TPU GCE Metadata: HTTPConnectionPool(host='metadata.google.internal', port=80): Max retries exceeded with url: /computeMetadata/v1/instance/attributes/accelerator-type (Caused by NameResolutionError("<urllib3.connection.HTTPConnection object at 0x7786a133aa50>: Failed to resolve 'metadata.google.internal' ([Errno -3] Temporary failure in name resolution)"))
+ERROR 09-07 18:09:30 [__init__.py:82] Error occurred while logging TPU info: 'NoneType' object has no attribute 'startswith'. Are you running on CPU?
+WARNING 09-07 18:09:31 [tpu_platform.py:447] Pin memory is not supported on TPU.
+WARNING 09-07 18:09:38 [tpu_platform.py:171] Error getting device name: 'NoneType' object has no attribute 'name'
+INFO 09-07 18:09:41 [importing.py:53] Triton is installed but 0 active driver(s) found (expected 1). Disabling Triton to prevent runtime errors.
+INFO 09-07 18:09:41 [importing.py:88] Triton not installed or not compatible; certain GPU-related functions will not be available.
+INFO 09-07 18:09:43 [attention_interface.py:58] Using default RPA kernel
+WARNING 09-07 18:09:43 [interface.py:358] Failed to import from vllm._C: ModuleNotFoundError("No module named 'vllm._C'")
+WARNING 09-07 18:09:43 [tpu_platform.py:171] Error getting device name: 'NoneType' object has no attribute 'name'
+WARNING 09-07 18:09:43 [tpu_platform.py:171] Error getting device name: 'NoneType' object has no attribute 'name'
+WARNING 09-07 18:09:43 [tpu_platform.py:171] Error getting device name: 'NoneType' object has no attribute 'name'
+WARNING 09-07 18:09:43 [tpu_platform.py:171] Error getting device name: 'NoneType' object has no attribute 'name'
+WARNING 09-07 18:09:43 [interface.py:358] Failed to import from vllm._C: ModuleNotFoundError("No module named 'vllm._C'")
+WARNING 09-07 18:09:43 [interface.py:358] Failed to import from vllm._C: ModuleNotFoundError("No module named 'vllm._C'")
+WARNING 09-07 18:09:43 [interface.py:358] Failed to import from vllm._C: ModuleNotFoundError("No module named 'vllm._C'")
+WARNING 09-07 18:09:43 [tpu_platform.py:171] Error getting device name: 'NoneType' object has no attribute 'name'
+WARNING 09-07 18:09:43 [tpu_platform.py:171] Error getting device name: 'NoneType' object has no attribute 'name'
+WARNING 09-07 18:09:43 [tpu_platform.py:171] Error getting device name: 'NoneType' object has no attribute 'name'
+INFO 09-07 18:09:44 [__init__.py:112] Registered model loader `<class 'tpu_inference.models.jax.utils.weight_utils.JaxDummyModelLoader'>` with load format `jax_dummy`
+INFO 09-07 18:09:44 [__init__.py:112] Registered model loader `<class 'tpu_inference.models.common.pathways_dummy_loader.PathwaysDummyModelLoader'>` with load format `pathways_dummy`
+INFO 09-07 18:09:44 [__init__.py:112] Registered model loader `<class 'tpu_inference.models.vllm.vllm_model_loader.IncrementalModelLoader'>` with load format `tpu_streaming_loader`
+WARNING 09-07 18:09:44 [__init__.py:101] Load format `runai_streamer` is already registered, and will be overwritten by the new loader class `<class 'tpu_inference.models.vllm.vllm_model_loader.RunaiIncrementalModelLoader'>`.
+INFO 09-07 18:09:44 [__init__.py:112] Registered model loader `<class 'tpu_inference.models.vllm.vllm_model_loader.RunaiIncrementalModelLoader'>` with load format `runai_streamer`
+usage: vllm [-h] [-v]
+            {chat,complete,serve,launch,bench,collect-env,run-batch} ...
+
+vLLM CLI
+
+positional arguments:
+  {chat,complete,serve,launch,bench,collect-env,run-batch}
+    chat                Generate chat completions via the running API server.
+    complete            Generate text completions based on the given prompt
+                        via the running API server.
+    serve               Launch a local OpenAI-compatible API server to serve
+                        LLM completions via HTTP.
+    launch              Launch individual vLLM components.
+    bench               vLLM bench subcommand.
+    collect-env         Start collecting environment information.
+    run-batch           Run batch prompts and write results to file.
+
+options:
+  -h, --help            show this help message and exit
+  -v, --version         show program's version number and exit
+
+For full list:            vllm [subcommand] --help=all
+For a section:            vllm [subcommand] --help=ModelConfig    (case-insensitive)
+For a flag:               vllm [subcommand] --help=max-model-len  (_ or - accepted)
+Documentation:            https://docs.vllm.ai
++ python3 /opt/InferenceX/utils/bench_serving/benchmark_serving.py --help
+ERROR 09-07 18:09:55 [tpu_info.py:45] Unable to poll the TPU GCE Metadata: HTTPConnectionPool(host='metadata.google.internal', port=80): Max retries exceeded with url: /computeMetadata/v1/instance/attributes/instance-id (Caused by NameResolutionError("<urllib3.connection.HTTPConnection object at 0x7635f6a70cb0>: Failed to resolve 'metadata.google.internal' ([Errno -3] Temporary failure in name resolution)"))
+ERROR 09-07 18:09:55 [tpu_info.py:45] Unable to poll the TPU GCE Metadata: HTTPConnectionPool(host='metadata.google.internal', port=80): Max retries exceeded with url: /computeMetadata/v1/instance/attributes/accelerator-type (Caused by NameResolutionError("<urllib3.connection.HTTPConnection object at 0x7635f60b9dc0>: Failed to resolve 'metadata.google.internal' ([Errno -3] Temporary failure in name resolution)"))
+ERROR 09-07 18:09:55 [tpu_info.py:45] Unable to poll the TPU GCE Metadata: HTTPConnectionPool(host='metadata.google.internal', port=80): Max retries exceeded with url: /computeMetadata/v1/instance/attributes/agent-worker-number (Caused by NameResolutionError("<urllib3.connection.HTTPConnection object at 0x7635f60ba5a0>: Failed to resolve 'metadata.google.internal' ([Errno -3] Temporary failure in name resolution)"))
+ERROR 09-07 18:09:55 [tpu_info.py:91] Failed to detect number of TPUs: [Errno 2] No such file or directory: '/dev/vfio'
+ERROR 09-07 18:09:55 [tpu_info.py:45] Unable to poll the TPU GCE Metadata: HTTPConnectionPool(host='metadata.google.internal', port=80): Max retries exceeded with url: /computeMetadata/v1/instance/attributes/accelerator-type (Caused by NameResolutionError("<urllib3.connection.HTTPConnection object at 0x7635f60babd0>: Failed to resolve 'metadata.google.internal' ([Errno -3] Temporary failure in name resolution)"))
+ERROR 09-07 18:09:55 [__init__.py:82] Error occurred while logging TPU info: 'NoneType' object has no attribute 'startswith'. Are you running on CPU?
+WARNING 09-07 18:09:56 [tpu_platform.py:447] Pin memory is not supported on TPU.
+usage: benchmark_serving.py [-h]
+                            [--backend {tgi,vllm,lmdeploy,deepspeed-mii,openai,openai-chat,tensorrt-llm,scalellm,sglang}]
+                            [--base-url BASE_URL] [--host HOST] [--port PORT]
+                            [--endpoint ENDPOINT] [--dataset-name {random}]
+                            [--dataset-path DATASET_PATH]
+                            [--max-concurrency MAX_CONCURRENCY] --model MODEL
+                            [--tokenizer TOKENIZER] [--best-of BEST_OF]
+                            [--use-beam-search] [--num-prompts NUM_PROMPTS]
+                            [--logprobs LOGPROBS]
+                            [--request-rate REQUEST_RATE]
+                            [--burstiness BURSTINESS] [--seed SEED]
+                            [--trust-remote-code] [--disable-tqdm] [--profile]
+                            [--save-result] [--save-detailed]
+                            [--metadata [KEY=VALUE ...]]
+                            [--result-dir RESULT_DIR]
+                            [--result-filename RESULT_FILENAME] [--ignore-eos]
+                            [--percentile-metrics PERCENTILE_METRICS]
+                            [--metric-percentiles METRIC_PERCENTILES]
+                            [--goodput GOODPUT [GOODPUT ...]]
+                            [--sonnet-input-len SONNET_INPUT_LEN]
+                            [--sonnet-output-len SONNET_OUTPUT_LEN]
+                            [--sonnet-prefix-len SONNET_PREFIX_LEN]
+                            [--sharegpt-output-len SHAREGPT_OUTPUT_LEN]
+                            [--random-input-len RANDOM_INPUT_LEN]
+                            [--random-output-len RANDOM_OUTPUT_LEN]
+                            [--random-range-ratio RANDOM_RANGE_RATIO]
+                            [--random-prefix-len RANDOM_PREFIX_LEN]
+                            [--use-chat-template]
+                            [--random-num-workers RANDOM_NUM_WORKERS] [--dsv4]
+                            [--hf-subset HF_SUBSET] [--hf-split HF_SPLIT]
+                            [--hf-output-len HF_OUTPUT_LEN]
+                            [--tokenizer-mode {auto,slow,mistral,custom,deepseek_v4}]
+                            [--served-model-name SERVED_MODEL_NAME]
+                            [--lora-modules LORA_MODULES [LORA_MODULES ...]]
+                            [--num-warmups NUM_WARMUPS]
+
+Benchmark the online serving throughput.
+
+options:
+  -h, --help            show this help message and exit
+  --backend {tgi,vllm,lmdeploy,deepspeed-mii,openai,openai-chat,tensorrt-llm,scalellm,sglang}
+  --base-url BASE_URL   Server or API base url if not using http host and
+                        port.
+  --host HOST
+  --port PORT
+  --endpoint ENDPOINT   API endpoint.
+  --dataset-name {random}
+                        Name of the dataset to benchmark on.
+  --dataset-path DATASET_PATH
+                        Path to the sharegpt/sonnet dataset. Or the
+                        huggingface dataset ID if using HF dataset.
+  --max-concurrency MAX_CONCURRENCY
+                        Maximum number of concurrent requests. This can be
+                        used to help simulate an environment where a higher
+                        level component is enforcing a maximum number of
+                        concurrent requests. While the --request-rate argument
+                        controls the rate at which requests are initiated,
+                        this argument will control how many are actually
+                        allowed to execute at a time. This means that when
+                        used in combination, the actual request rate may be
+                        lower than specified with --request-rate, if the
+                        server is not processing requests fast enough to keep
+                        up.
+  --model MODEL         Name of the model.
+  --tokenizer TOKENIZER
+                        Name or path of the tokenizer, if not using the
+                        default tokenizer.
+  --best-of BEST_OF     Generates `best_of` sequences per prompt and returns
+                        the best one.
+  --use-beam-search
+  --num-prompts NUM_PROMPTS
+                        Number of prompts to process.
+  --logprobs LOGPROBS   Number of logprobs-per-token to compute & return as
+                        part of the request. If unspecified, then either (1)
+                        if beam search is disabled, no logprobs are computed &
+                        a single dummy logprob is returned for each token; or
+                        (2) if beam search is enabled 1 logprob per token is
+                        computed
+  --request-rate REQUEST_RATE
+                        Number of requests per second. If this is inf, then
+                        all the requests are sent at time 0. Otherwise, we use
+                        Poisson process or gamma distribution to synthesize
+                        the request arrival times.
+  --burstiness BURSTINESS
+                        Burstiness factor of the request generation. Only take
+                        effect when request_rate is not inf. Default value is
+                        1, which follows Poisson process. Otherwise, the
+                        request intervals follow a gamma distribution. A lower
+                        burstiness value (0 < burstiness < 1) results in more
+                        bursty requests. A higher burstiness value (burstiness
+                        > 1) results in a more uniform arrival of requests.
+  --seed SEED
+  --trust-remote-code   Trust remote code from huggingface
+  --disable-tqdm        Specify to disable tqdm progress bar.
+  --profile             Use Torch Profiler. The endpoint must be launched with
+                        VLLM_TORCH_PROFILER_DIR to enable profiler.
+  --save-result         Specify to save benchmark results to a json file
+  --save-detailed       When saving results, include detailed per-request data
+                        (input_lens, output_lens, ttfts, itls,
+                        generated_texts, errors). By default, only aggregated
+                        metrics are saved to reduce file size.
+  --metadata [KEY=VALUE ...]
+                        Key-value pairs (e.g, --metadata version=0.3.3 tp=1)
+                        for metadata of this run to be saved in the result
+                        JSON file for record keeping purposes.
+  --result-dir RESULT_DIR
+                        Specify directory to save benchmark json results.If
+                        not specified, results are saved in the current
+                        directory.
+  --result-filename RESULT_FILENAME
+                        Specify the filename to save benchmark json results.If
+                        not specified, results will be saved in {backend}-
+                        {args.request_rate}qps-{base_model_id}-
+                        {current_dt}.json format.
+  --ignore-eos          Set ignore_eos flag when sending the benchmark
+                        request.Warning: ignore_eos is not supported in
+                        deepspeed_mii and tgi.
+  --percentile-metrics PERCENTILE_METRICS
+                        Comma-seperated list of selected metrics to report
+                        percentils. This argument specifies the metrics to
+                        report percentiles. Allowed metric names are "ttft",
+                        "tpot", "itl", "e2el". Default value is
+                        "ttft,tpot,itl,e2el".
+  --metric-percentiles METRIC_PERCENTILES
+                        Comma-seperated list of percentiles for selected
+                        metrics. To report 25-th, 50-th, and 75-th
+                        percentiles, use "25,50,75". Default value is
+                        "90,99,99.9". Use "--percentile-metrics" to select
+                        metrics.
+  --goodput GOODPUT [GOODPUT ...]
+                        Specify service level objectives for goodput as
+                        "KEY:VALUE" pairs, where the key is a metric name, and
+                        the value is in milliseconds. Multiple "KEY:VALUE"
+                        pairs can be provided, separated by spaces. Allowed
+                        request level metric names are "ttft", "tpot", "e2el".
+                        For more context on the definition of goodput, refer
+                        to DistServe paper: https://arxiv.org/pdf/2401.09670
+                        and the blog: https://hao-ai-
+                        lab.github.io/blogs/distserve
+  --tokenizer-mode {auto,slow,mistral,custom,deepseek_v4}
+                        The tokenizer mode. * "auto" will use the fast
+                        tokenizer if available. * "slow" will always use the
+                        slow tokenizer. * "mistral" will always use the
+                        `mistral_common` tokenizer. *"custom" will use
+                        --tokenizer to select the preregistered tokenizer.
+  --served-model-name SERVED_MODEL_NAME
+                        The model name used in the API. If not specified, the
+                        model name will be the same as the ``--model``
+                        argument.
+  --lora-modules LORA_MODULES [LORA_MODULES ...]
+                        A subset of LoRA module names passed in when launching
+                        the server. For each request, the script chooses a
+                        LoRA module at random.
+  --num-warmups NUM_WARMUPS
+
+sonnet dataset options:
+  --sonnet-input-len SONNET_INPUT_LEN
+                        Number of input tokens per request, used only for
+                        sonnet dataset.
+  --sonnet-output-len SONNET_OUTPUT_LEN
+                        Number of output tokens per request, used only for
+                        sonnet dataset.
+  --sonnet-prefix-len SONNET_PREFIX_LEN
+                        Number of prefix tokens per request, used only for
+                        sonnet dataset.
+
+sharegpt dataset options:
+  --sharegpt-output-len SHAREGPT_OUTPUT_LEN
+                        Output length for each request. Overrides the output
+                        length from the ShareGPT dataset.
+
+random dataset options:
+  --random-input-len RANDOM_INPUT_LEN
+                        Number of input tokens per request, used only for
+                        random sampling.
+  --random-output-len RANDOM_OUTPUT_LEN
+                        Number of output tokens per request, used only for
+                        random sampling.
+  --random-range-ratio RANDOM_RANGE_RATIO
+                        Range of sampled ratio of input/output length, used
+                        only for random sampling.
+  --random-prefix-len RANDOM_PREFIX_LEN
+                        Number of fixed prefix tokens before random context.
+                        The length range of context in a random request is
+                        [random-prefix-len, random-prefix-len + random-prefix-
+                        len * random-range-ratio).
+  --use-chat-template   Use chat template to format the prompt.
+  --random-num-workers RANDOM_NUM_WORKERS
+                        Number of worker processes for parallel random prompt
+                        generation. Only used with --dataset-name random. 0
+                        (default) = auto (min(cpu_count, 8)). 1 = serial (no
+                        multiprocessing).
+
+DeepSeek-V4 chat template options:
+  --dsv4                Use the DeepSeek-V4 chat template (encoding_dsv4.py)
+                        instead of the tokenizer's built-in jinja chat
+                        template. Requires --use-chat-template to also be set.
+                        Applies to the random dataset.
+
+hf dataset options:
+  --hf-subset HF_SUBSET
+                        Subset of the HF dataset.
+  --hf-split HF_SPLIT   Split of the HF dataset.
+  --hf-output-len HF_OUTPUT_LEN
+                        Output length for each request. Overrides the output
+                        lengths from the sampled HF dataset.
++ set +x
+quack-kernels 0.2.10 requires torch-c-dlpack-ext, which is not installed.
+flax 0.12.4 has requirement numpy<2.4.0,>=1.23.2; python_version >= "3.11", but you have numpy 2.5.2.
+flax 0.12.4 has requirement numpy<2.4.0,>=1.26.0; python_version >= "3.12", but you have numpy 2.5.2.
+mistral-common 1.11.5 has requirement numpy<2.4,>=1.25; python_version <= "3.12", but you have numpy 2.5.2.
+datasets 4.0.0 has requirement fsspec[http]<=2025.3.0,>=2023.1.0, but you have fsspec 2026.1.0.
+tpu-inference 0.0.0 has requirement flax==0.12.8, but you have flax 0.12.4.
+tpu-inference 0.0.0 has requirement jax==0.11.0, but you have jax 0.10.2.
+tpu-inference 0.0.0 has requirement jaxlib==0.11.0, but you have jaxlib 0.10.2.
+tpu-inference 0.0.0 has requirement libtpu==0.0.44, but you have libtpu 0.0.47.
+tpu-inference 0.0.0 has requirement numba==0.62.1, but you have numba 0.67.0.
+tpu-inference 0.0.0 has requirement tpu-info==0.7.1, but you have tpu-info 0.14.2.
+vllm 0.23.1rc1.dev581+g12a8c9e4a5.tpu has requirement tpu-inference==0.23.0, but you have tpu-inference 0.0.0.
+Dependency metadata check: conflicts remain; review the build log
+Local image built and CPU checks passed: vllm12:topk-0c9e000400e1
+Build exit status: 0
+Diagnostics retained at /home/ymu_google_com/tpu-inference/tmp/vllm_logs/jobset-build-20260907T174732Z-XeyMvsye
+After reviewing the diagnostics: git add -- tmp/vllm_logs/jobset-build-20260907T174732Z-XeyMvsye

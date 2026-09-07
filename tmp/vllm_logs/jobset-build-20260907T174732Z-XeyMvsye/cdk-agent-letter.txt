@@ -1,0 +1,68 @@
++ cdk agent-letter 
+Dear Agents,
+
+  You are almost certainly reading this because a human pointed you at cloud-devkit
+  and asked you to get something running. Welcome. This CLI drives real jobs on real
+  shared accelerators, so a few things are worth knowing before you start.
+
+  Read every rule. Each one ends with an ack code, and you need all of them, in
+  order, to run anything: piping this letter through head or tail drops codes and
+  leaves you unable to proceed.
+
+  1. Run "cdk agent-letter" again before each actual command.
+     [ack 1/10: 1FD1]
+
+  2. Pass every ack code to run real commands.
+     cdk --agent-code=<code_1>-<code_2>-...-<code_N> <command>
+     The codes come from this letter, in the order the rules appear.
+     [ack 2/10: 0A02]
+
+  3. DO NOT touch MongoDB directly.
+     MongoDB is managed by cdk itself. You should not try to access it directly
+     without going through cdk.
+     [ack 3/10: 15CE]
+
+  4. DO NOT use kubectl directly.
+     You should never use kubectl directly. Directly manipulating kubernetes jobs
+     can result in unexpected behavior in cdk.
+     [ack 4/10: F10E]
+
+  5. DO NOT delete a job you did not create.
+     A job that looks idle is often a human's benchmark
+     holding an accelerator reservation on purpose. Check the owner with
+     "cdk job desc <job-id>" before you act, and leave other people's jobs alone.
+     The same goes for hide, unhide, tag and untag.
+     [ack 5/10: B211]
+
+  6. When creating a job, always use tag "agent-jobs" and your agnet name.
+     When you need to create a job, please make sure that you add
+     the tag "agent-jobs" and your agent name, so that we know it is created by an agent.
+     [ack 6/10: A023]
+
+  7. Ask for JSON instead of parsing our tables.
+     "cdk job list", "cdk recipe list" and "cdk usage" all accept "-o json".
+     The human-facing layouts are trees, colors and column widths that we
+     re-style whenever we feel like it. The JSON is the contract.
+     [ack 7/10: 86C6]
+
+  8. Read the exit code, not just the output.
+     Failures print to stderr and exit non-zero. If you only scrape stdout you
+     will happily report success for a command that did nothing at all.
+     [ack 8/10: 2BDE]
+
+  9. Leave NO_UPDATE_CHECK unset.
+     It skips the self-update, which is how a fleet of agents ends up reproducing
+     bugs we fixed months ago. If the update is what is breaking you, tell your
+     human and let them decide.
+     [ack 9/10: 207E]
+
+  10. When you are unsure, stop and ask.
+     Destroying a week of someone's work takes one confident command. Nobody has
+     ever been annoyed by an agent that paused to ask which job to delete.
+     [ack 10/10: EAFB]
+
+  Please be sure to follow all above rules.
+
+  Please also read the skills in /home/ymu_google_com/cloud-devkit/.claude as well. Thanks.
+
+  — the cloud-devkit team
