@@ -1,0 +1,29 @@
+{
+  "source_revision": "1a42db278d012f276fab929f2b6b51c3e17fc053",
+  "files": [
+    {
+      "path": ".claude/skills/cdk/SKILL.md",
+      "sha256": "777ec5d9bcaea5f807083a2eab2ca8b8c739a9998b12e5d32672ccabd10164c1"
+    },
+    {
+      "path": ".claude/skills/cdk/references/capacity.md",
+      "sha256": "300a9c9fafadb8d56af0089621566a055b8d58be59ddd80c4ee8885917367a5f"
+    },
+    {
+      "path": ".claude/skills/cdk/references/jobs.md",
+      "sha256": "dac3a3968551c159ecca85a20d5cda685173343e4fc57a253bd1021c9d691df5"
+    },
+    {
+      "path": ".claude/skills/cdk/references/profiling.md",
+      "sha256": "0835b74ff6bc8637ddf279eb9400a9fdf9968ff7a0d5a15cc5b24e9182fde795"
+    },
+    {
+      "path": ".claude/skills/cdk/references/recipes.md",
+      "sha256": "3212fbd65716804dfbdd4a223f640553f19857448f0de9658e521abfd9fa019d"
+    },
+    {
+      "path": "README.md",
+      "sha256": "500364cbc2b10f7e25e6dabadf8c9da8d9bc57cedb2c52b686158760a8455c57"
+    }
+  ]
+}

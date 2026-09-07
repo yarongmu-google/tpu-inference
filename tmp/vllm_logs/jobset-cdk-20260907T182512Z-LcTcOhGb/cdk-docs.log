@@ -1,0 +1,867 @@
+CDK documentation: /home/ymu_google_com/tpu-inference/tmp/vllm_logs/jobset-cdk-20260907T182512Z-LcTcOhGb
++ cdk agent-letter
+Dear Agents,
+
+  You are almost certainly reading this because a human pointed you at cloud-devkit
+  and asked you to get something running. Welcome. This CLI drives real jobs on real
+  shared accelerators, so a few things are worth knowing before you start.
+
+  Read every rule. Each one ends with an ack code, and you need all of them, in
+  order, to run anything: piping this letter through head or tail drops codes and
+  leaves you unable to proceed.
+
+  1. Run "cdk agent-letter" again before each actual command.
+     [ack 1/10: 1FD1]
+
+  2. Pass every ack code to run real commands.
+     cdk --agent-code=<code_1>-<code_2>-...-<code_N> <command>
+     The codes come from this letter, in the order the rules appear.
+     [ack 2/10: 0A02]
+
+  3. DO NOT touch MongoDB directly.
+     MongoDB is managed by cdk itself. You should not try to access it directly
+     without going through cdk.
+     [ack 3/10: 15CE]
+
+  4. DO NOT use kubectl directly.
+     You should never use kubectl directly. Directly manipulating kubernetes jobs
+     can result in unexpected behavior in cdk.
+     [ack 4/10: F10E]
+
+  5. DO NOT delete a job you did not create.
+     A job that looks idle is often a human's benchmark
+     holding an accelerator reservation on purpose. Check the owner with
+     "cdk job desc <job-id>" before you act, and leave other people's jobs alone.
+     The same goes for hide, unhide, tag and untag.
+     [ack 5/10: B211]
+
+  6. When creating a job, always use tag "agent-jobs" and your agnet name.
+     When you need to create a job, please make sure that you add
+     the tag "agent-jobs" and your agent name, so that we know it is created by an agent.
+     [ack 6/10: A023]
+
+  7. Ask for JSON instead of parsing our tables.
+     "cdk job list", "cdk recipe list" and "cdk usage" all accept "-o json".
+     The human-facing layouts are trees, colors and column widths that we
+     re-style whenever we feel like it. The JSON is the contract.
+     [ack 7/10: 86C6]
+
+  8. Read the exit code, not just the output.
+     Failures print to stderr and exit non-zero. If you only scrape stdout you
+     will happily report success for a command that did nothing at all.
+     [ack 8/10: 2BDE]
+
+  9. Leave NO_UPDATE_CHECK unset.
+     It skips the self-update, which is how a fleet of agents ends up reproducing
+     bugs we fixed months ago. If the update is what is breaking you, tell your
+     human and let them decide.
+     [ack 9/10: 207E]
+
+  10. When you are unsure, stop and ask.
+     Destroying a week of someone's work takes one confident command. Nobody has
+     ever been annoyed by an agent that paused to ask which job to delete.
+     [ack 10/10: EAFB]
+
+  Please be sure to follow all above rules.
+
+  Please also read the skills in /home/ymu_google_com/cloud-devkit/.claude as well. Thanks.
+
+  — the cloud-devkit team
++ collect Markdown documentation from the cloud-devkit checkout
+
+===== .claude/skills/cdk/SKILL.md =====
+---
+name: cdk
+description: Drive the `cdk` CLI for Cloud DevKit — the shared TPU cluster used for vLLM/SGLang/TorchTPU development. Use for anything involving cdk jobs (create, list, log, exec, attach, delete, desc, tag, sync-outputs), recipes, cluster capacity (`cdk usage`, `cdk queue`), Perfetto/xprof profiling, or debugging why a CDK job is stuck, failing, or unschedulable.
+---
+
+# Cloud DevKit (`cdk`)
+
+`cdk` submits and manages jobs on a shared GKE TPU (v7x) cluster used by ~40 engineers.
+Everything runs in the `cloud-devkit-jobs` namespace, is admitted by Kueue, and is
+described by a **recipe** — a Go-templated Kubernetes JobSet.
+
+```
+recipe (JobSet template)  ──cdk job create──>  Kueue queue  ──admission──>  pods on TPU nodes
+                                                                                  │
+                                          job_manager watches ─── archives logs, generates traces
+```
+
+## Mental model
+
+- **Recipe** — a JobSet YAML + Go template, registered in `recipes.yml` at the root of
+  **this** repo. `cdk job create <recipe> KEY=VALUE...` renders and submits it.
+- **Job** — one submission, id `j-xxxxxxxx-xxxx-xxxx-xxxx`. A JobSet fans out to
+  replicatedJobs → pods → containers, so "one job" is usually several pods.
+- **Two independent status fields**, and confusing them is the most common mistake:
+  - **JobStatus** — the Kubernetes/Kueue view: `InQueue` → `Pending` → `Running` →
+    `Succeeded`/`Failed`, or `Deleted`. This is what `cdk job list` shows by default.
+  - **State** — CDK's own post-processing lifecycle: `Active` → `ExecutionComplete` →
+    `LogArchiveSucceeded` → `Finalizing` → `Complete` (plus `*Failed` variants). Only
+    visible with `cdk job list -o wide` or `cdk job desc`. A job can be `Succeeded` for
+    minutes while State is still working through log archiving and trace generation.
+- **Kueue** — every user gets a LocalQueue `lq-<$USER with _ → ->`, auto-created against
+  cluster queue `tpu7x-cq`. `JobStatus=InQueue` means waiting for admission, not broken.
+
+## Command map
+
+| Goal | Command | Notes |
+|---|---|---|
+| Cluster capacity | `cdk usage [-o json]` | tree of NodePool → Node → Pod → [references/capacity.md](references/capacity.md) |
+| Queue / quota pressure | `cdk queue [-o json]` | pending & admitted workloads per user |
+| List recipes | `cdk recipe list [-o json]` | name, owner, YAML path |
+| Submit | `cdk job create <recipe> [K=V...]` | → [references/jobs.md](references/jobs.md) |
+| List jobs | `cdk job list [-a -A -n N -u USER -t TAG -r RECIPE -o wide\|debug\|json]` | |
+| Inspect | `cdk job desc <id> --no-color` / `cdk job recipe <id> --no-color` | DB record / rendered JobSet |
+| Logs | `cdk job log <id> [-p POD -c CONTAINER] [-f] [-e] [-P]` | `-p`/`-c` only when ambiguous |
+| Shell in | `cdk job exec <id> [-p POD -c CONTAINER]` | needs a TTY |
+| Attach stdio | `cdk job attach <id> [-p POD -c CONTAINER]` | needs a TTY |
+| Kill | `cdk job delete <id> [-f]` | releases the TPUs |
+| Organize | `cdk job tag\|untag <id> tag1,tag2`, `cdk job hide\|unhide <id>` | `hide` is just a tag |
+| Pull artifacts | `cdk job sync-outputs <id>` | → `$HOME/cloud-devkit-data/job-outputs/<id>` |
+| Profiling | `cdk job trace <id>`, `cdk job xprof <id> [-a]` | → [references/profiling.md](references/profiling.md) |
+
+Hidden but real: `cdk update`, and `cdk job reset-state <id> <state>` (advanced — forces the
+CDK State field in MongoDB; only for unwedging a stuck job).
+
+## Rules for running cdk non-interactively
+
+These matter more than anything else in this file when you are the one running the commands.
+
+1. **Parse `-o json`, never the tables.** `usage`, `queue`, `recipe list` and `job list` all
+   support it, and it is the only stable contract — table columns are formatted for humans
+   and shift between releases. JSON also carries fields the tables drop, notably per-node
+   `topology` in `cdk usage`. Everything else (`desc`, `recipe`, `log`) is text-only.
+2. **`desc` and `recipe` still emit ANSI colors when piped** — they use chroma, which does
+   not check for a TTY, and nothing auto-detects it. Both now take `--no-color`; pass it
+   whenever you are parsing. (`sed 's/\x1b\[[0-9;]*m//g'` still works but is no longer
+   needed.) The four commands above strip color on pipe, so `grep`/`awk` is safe there.
+3. **`log`, `exec` and `attach` resolve the pod and container themselves.** With one
+   candidate container you need no flags at all. With several, the command exits **1** and
+   prints the valid pairs to stderr, ready to paste back:
+   ```
+   job j-... has 5 containers, select one with -p and -c:
+     -p j-...-prefill-0-0-8zsn -c vllm-tpu-prefill
+   ```
+   It only prompts interactively when stdin is a TTY, so it can no longer hang or
+   silently do nothing under an agent.
+4. **Exit codes are meaningful; errors go to stderr.** A failure exits non-zero and writes
+   the diagnostic to stderr, leaving stdout empty — so `if ! out=$(cdk ...)` and
+   `2>/dev/null` both behave. One exception survives, rule 5.
+5. **A `log` read that fails still falls back to a Log Explorer URL on stdout** (`-e` does
+   this deliberately). A URL where you expected log text means the read failed, even though
+   the command succeeded.
+6. **`cdk job desc` is enormous** — it embeds every k8s event for every pod. Pipe to
+   `head`, or grep for the field you want, rather than dumping it.
+7. **Confirm before `cdk job create` and `cdk job delete`.** Both mutate shared cluster
+   state; `create` takes scarce TPU chips from other engineers and `delete` is not
+   restricted to your own jobs. Never delete a job you didn't launch without being asked to.
+8. **Don't print or commit `~/.cdk.ini`.** It holds the MongoDB connection string with
+   credentials. (Its other keys: `cdk_root_dir`, `cdk_job_outputs_dir`.)
+9. **Let cdk auto-update.** It checks for a new release on nearly every invocation and
+   replaces its own binary in place. That is fine to leave on when scripting: the "a new
+   version is found" notice is written only when stdout is a TTY and erased afterwards, so
+   it never contaminates piped output. **The one exception is testing a local build** —
+   `make build-cli` stamps `VERSION` from `git describe --always`, which is a commit hash
+   rather than the literal `dev` that would skip the check, so your fresh `bin/cdk` reverts
+   to the published release on first run. Use `NO_UPDATE_CHECK=1` for that case only.
+
+> [!NOTE]
+> Verified against `cdk b5bcf4d` (2026-07-31), which is the tip of `cloud-devkit-admin`
+> master — the `agent-friendly-cli` work is merged and released. Rules 2 and 5 are the
+> workarounds that survived it; rules 1, 3 and 4 describe what it fixed.
+
+## Triage playbook
+
+**"My job isn't starting."**
+```bash
+cdk job list -A                 # JobStatus: InQueue = waiting on Kueue; Pending = scheduling
+cdk usage                       # are there actually free TPU chips?
+cdk queue                       # how deep is the backlog, per user
+```
+`InQueue` + free chips usually means a quota/flavor problem, not a hardware one — check
+`cloud-devkit-admin/config/cloud-devkit-jobs/tpu7x-cluster-queue.yaml`. See
+[references/capacity.md](references/capacity.md).
+
+**"My job failed."**
+```bash
+cdk job desc <id> --no-color | grep -A3 -i "reason\|event" | head -40
+cdk job log <id>                 # add -p/-c only if it tells you to
+cdk job recipe <id> --no-color   # what actually got submitted after templating
+```
+An *unguarded* missing template variable now aborts the submission, so a job that exists at
+all rendered cleanly. The trap that survives is the opposite one: a typo'd `KEY=VALUE` for a
+variable the recipe guards with `| default` is silently ignored and you get the default.
+Check `cdk job recipe` against what you meant to pass. See
+[references/jobs.md](references/jobs.md) for that and for State vs JobStatus.
+
+**"I need the outputs / a profile."**
+```bash
+cdk job sync-outputs <id>       # required before `cdk job trace`
+cdk job xprof <id>              # device-level, needs .xplane.pb in $CDK_OUTPUT_DIR
+cdk job list -o wide            # Perfetto trace URLs (go/cdk-perfetto/<id>)
+```
+
+## Reference files
+
+- [references/jobs.md](references/jobs.md) — job lifecycle, every flag, templating and
+  validation rules, log modes, states.
+- [references/capacity.md](references/capacity.md) — reading `cdk usage` and `cdk queue`,
+  TPU slice math, tested one-liners.
+- [references/recipes.md](references/recipes.md) — writing/registering recipes, the NFS
+  fast dev loop, Docker images.
+- [references/profiling.md](references/profiling.md) — Perfetto and xprof.
+
+## Two repos
+
+This skill ships in **`cloud-devkit-recipes`** (checked out at `$HOME/cloud-devkit`, which
+is cdk's `cdk_root_dir`). Unqualified paths in these files — `recipes.yml`,
+`recipes/golden/`, `dockerfiles/`, `lib/src/cdk/` — are in this repo.
+
+The cdk CLI and the cluster config live in a **separate** repo, `cloud-devkit-admin`
+(on this VM: `~/data/cloud-devkit-admin`). Paths into it are written with a
+`cloud-devkit-admin/` prefix throughout. Note that both repos have a `lib/`, and they are
+unrelated: Go here, Python there.
+
+Code of record, all in `cloud-devkit-admin`: `cli/` (commands), `lib/` (k8s, db, logs,
+tracegen), `services/job_manager/` (post-completion state machine),
+`config/cloud-devkit-jobs/` (Kueue quota). User docs: `docs/content/`, published at
+go/cdk-doc.
+
+
+===== .claude/skills/cdk/references/capacity.md =====
+# Cluster capacity: `cdk usage` and `cdk queue`
+
+`cdk usage` prints the whole cluster as a tree: **NodePool → Node → Pod**. It is the answer
+to "is there room for my job?" and "who has the TPUs?". Its only flag is `-o default|json`;
+it hits the live GKE cluster and MongoDB, takes a few seconds, and needs working `kubectl`
+credentials. Colors are stripped when piped, so `grep`/`awk` is safe.
+
+> [!IMPORTANT]
+> **Use `cdk usage -o json` for anything you compute on.** It is released, and it emits raw
+> `{requests, allocatable}` per node instead of rounded percentages — plus a per-node
+> `topology` field the tree only shows on the NodePool header. The `awk` recipes further
+> down still work and are kept for reading by eye, but JSON is both easier and more correct.
+>
+> ```json
+> { "node_pool": "tpu7x-multihost-8chip-2025-1",
+>   "name": "gke-tpu-6700501d-8272",
+>   "status": "Ready",
+>   "topology": "tpu-slice=2x2x2",          // absent on non-TPU nodes
+>   "cpu":    { "requests": 220618, "allocatable": 223370 },        // millicores
+>   "memory": { "requests": 860446085376, "allocatable": 985587040256 },
+>   "tpu":    { "requests": 4, "allocatable": 4 },                  // absent on non-TPU nodes
+>   "pods": [ { "name": "...", "status": "Running", "job_id": "j-...",
+>               "user": "...", "recipe": "..." } ] }
+> ```
+>
+> `cdk queue -o json` gives `{name, cluster_queue, pending_workloads, admitted_workloads,
+> reserving_workloads, consumed_resources{cpu, memory, google.com/tpu, ephemeral-storage}}`.
+>
+> **JSON does not report cordons** — `status` is the kubelet Ready condition and a
+> `Ready,SchedulingDisabled` node still says `"Ready"`. There is no `unschedulable` field
+> anywhere in `cli/nodes.go`. Interpretation rule 7 below still applies in full.
+
+Source, in the `cloud-devkit-admin` repo: `cli/nodes.go` (rendering), `lib.K8sGetNodeTree`
+in `lib/kubernetes.go` (data collection).
+
+## Anatomy
+
+```
++-- NodePool: tpu7x-singlehost-2025 (tpu-slice=2x2x1)
+|   +-- Node: gke-tpu-dff5da07-1qlq (Ready) [CPU: 32.6/223.4 cores (15%), RAM: 901.4/917.9 GiB (98%), TPU: 4/4]
+|   |   \-- Pod: j-3c5bf4dd-...-server-0-0-ktrxm (Running) [JobId=j-3c5bf4dd-479b-44ae-a0a1, User=pyc_google_com, Recipe=sglang-...]
+|   +-- Node: gke-tpu-dff5da07-kj9z (Ready) [... TPU: 0/4]
+|   |   \-- no active CDK jobs
+```
+
+- **NodePool** — grouped by the `cloud.google.com/gke-nodepool` label; `tpu-slice=` is the
+  GKE TPU topology label.
+- **Node** — readiness, then `requests/allocatable` for CPU and RAM, plus `TPU:`/`GPU:`
+  chip counts on accelerator nodes.
+- **Pod** — only pods in the `cloud-devkit-jobs` namespace, with `JobId`, `User`, `Recipe`
+  resolved from MongoDB.
+
+## Interpretation rules
+
+1. **`TPU: X/Y` is the number that matters, not CPU%.** A node at `TPU: 0/4` is free even
+   if CPU/RAM look busy; `TPU: 4/4` is fully claimed even at 0% CPU. Free is not the same
+   as schedulable — see rule 7.
+
+2. **CPU/RAM percentages count every active pod cluster-wide** — `kube-system` daemonsets,
+   `cloud-devkit-services`, other namespaces — not just CDK jobs. That's why an idle node
+   still shows ~0.6 cores / 1.4 GiB, and why `default-pool` nodes sit at 83%.
+
+3. **`TPU: 4/4` with "no active CDK jobs" means something outside `cloud-devkit-jobs` holds
+   the chips.** Requests sum over all non-terminal pods **including Pending** ones, but only
+   `cloud-devkit-jobs` pods are listed. Confirm with:
+   ```bash
+   kubectl get pods -A --field-selector spec.nodeName=<node> \
+     -o custom-columns=NS:.metadata.namespace,NAME:.metadata.name,PHASE:.status.phase
+   ```
+
+4. **Terminal pods are listed (dimmed) but consume nothing.** `Succeeded`/`Failed` pods are
+   excluded from request totals, so a node can show `TPU: 0/4` and still list a `Succeeded`
+   pod. Don't count those as active users.
+
+5. **`JobId=`, `User=unknown`, `Recipe=unknown`** means the pod isn't a CDK-tracked job — a
+   hand-made pod (`debug-pod`), a support job (`sj-weights-loader-*`), or a failed DB
+   lookup. Don't attribute it to a person.
+
+6. **Free capacity is per-slice, not per-node, on multihost pools.** A `2x2x2` multihost
+   pool is 2 nodes × 4 chips = one 8-chip slice and a job needs the whole slice; one free
+   node in a busy multihost pool is not usable capacity. `2x2x1` singlehost = 4 chips on one
+   node, allocatable individually.
+
+7. **`cdk usage` hides two things that decide schedulability: cordons and per-node
+   topology — and JSON only fixes one of them.** Topology *is* in `-o json` per node, so
+   that half is solved if you parse JSON; in the tree it appears only on the **NodePool**
+   header, so any `grep` over *node* lines (including `grep "TPU: 0/"`) throws it away.
+   **Cordons are invisible in both.** A node that `kubectl` reports as
+   `Ready,SchedulingDisabled` renders as `(Ready)` in the tree and `"status": "Ready"` in
+   JSON, so neither the `grep -v "(Ready)"` one-liner below nor any JSON filter will find
+   it — `kubectl` is still required. Both losses push the same direction: `TPU: 0/4`
+   overstates available capacity. One sample taken while writing this: 7 nodes at
+   `TPU: 0/`, of which 4 were `2x2x2` (wrong topology for a singlehost job), 1 was
+   cordoned, and **2** were genuinely usable. Verify with the intersection one-liner below
+   before concluding there is room.
+
+## Tested one-liners
+
+### JSON (preferred for anything scripted)
+
+**Free nodes a singlehost job can actually land on** — free chips ∩ right topology ∩ not
+cordoned. This is the JSON equivalent of the `awk` version below, and the one to reach for.
+The `kubectl` half is not optional: cordons are absent from the cdk output entirely.
+```bash
+comm -12 \
+  <(cdk usage -o json | python3 -c "
+import sys, json
+for n in json.load(sys.stdin):
+    t = n.get('tpu')
+    if t and t['requests'] == 0 and n.get('topology') == 'tpu-slice=2x2x1':
+        print(n['name'])" | sort) \
+  <(kubectl get nodes -o custom-columns='N:.metadata.name,U:.spec.unschedulable' --no-headers \
+    | awk '$2!="true"{print $1}' | sort)
+```
+Run while writing this: 5 nodes in `tpu7x-singlehost-2026` had free chips, 4 survived the
+topology and cordon filters — the dropped one was cordoned and looked `Ready` in both the
+tree and the JSON.
+
+**Free vs. total TPU nodes per pool**
+```bash
+cdk usage -o json | python3 -c "
+import sys, json, collections
+free, tot = collections.Counter(), collections.Counter()
+for n in json.load(sys.stdin):
+    if not n.get('tpu'): continue
+    tot[n['node_pool']] += 1
+    if n['tpu']['requests'] == 0: free[n['node_pool']] += 1
+for p in sorted(tot): print(f'{p:<34} free {free[p]}/{tot[p]}')"
+```
+
+### Text tree (for reading by eye)
+
+**Free TPU nodes** — raw, and overstates capacity; see interpretation rule 7
+```bash
+cdk usage | grep "TPU: 0/"
+```
+
+**Free nodes a singlehost job can actually land on** — free chips ∩ right topology ∩ not
+cordoned. Change the topology label to match your recipe's `nodeSelector`.
+```bash
+comm -12 \
+  <(cdk usage | grep -oP 'Node: \K[^ ]+(?= .*TPU: 0/)' | sort) \
+  <(kubectl get nodes -l cloud.google.com/gke-tpu-topology=2x2x1 \
+      -o custom-columns='N:.metadata.name,U:.spec.unschedulable' --no-headers \
+    | awk '$2!="true"{print $1}' | sort)
+```
+The obvious-looking `-o jsonpath='{range .items[?(@.spec.unschedulable!=true)]}'` is wrong
+here: the field is *absent* on schedulable nodes, so the comparison matches nothing and you
+get an empty list that reads like "zero capacity" instead of "all of them".
+
+**Why one specific "free" node was passed over**
+```bash
+kubectl get nodes <node> -o custom-columns='NODE:.metadata.name,TOPO:.metadata.labels.cloud\.google\.com/gke-tpu-topology,CORDONED:.spec.unschedulable'
+```
+
+**Free vs. total TPU nodes per pool** (read multihost results in whole slices)
+```bash
+cdk usage | awk '
+/NodePool:/ { pool=$0; sub(/.*NodePool: /,"",pool); sub(/ .*/,"",pool); next }
+/Node: / && /TPU: / { total[pool]++; if ($0 ~ /TPU: 0\//) free[pool]++ }
+END { for (p in total) printf "%-32s free %d / %d nodes\n", p, free[p]+0, total[p] }' | sort
+```
+
+**Who is holding TPU nodes** (skips terminal pods; ×4 chips per node)
+```bash
+cdk usage | awk '
+/Node: / && /TPU: [1-9]/ { node=$0; sub(/.*Node: /,"",node); sub(/ .*/,"",node); next }
+/Node: / { node=""; next }
+/Pod: / && node!="" && $0 !~ /(Succeeded|Failed)\)/ {
+  u=$0; sub(/.*User=/,"",u); sub(/,.*/,"",u); c[u]++ }
+END { for (u in c) printf "%-28s %d TPU nodes (%d chips)\n", u, c[u], c[u]*4 }' | sort -k2 -rn
+```
+
+**Everything one user is running / non-Ready nodes**
+```bash
+cdk usage | grep "User=<ldap>"
+cdk usage | grep "Node: " | grep -v "(Ready)"
+```
+
+## `cdk queue` — the admission side
+
+A table of every Kueue LocalQueue: **Pending / Admitted / Reserving** workload counts plus
+consumed CPU, memory, TPU, ephemeral storage. Queues are named `lq-<user>`.
+
+- Pending > 0 means workloads are waiting for admission — the cluster is oversubscribed for
+  that flavor, regardless of what `cdk usage` shows.
+- Memory and CPU are raw Kueue quantities (`373783m` = millicores; memory in milli-bytes),
+  so they read strangely. Compare relative magnitudes rather than parsing units.
+- The same person often shows up twice (`lq-jane`, `lq-jane-google-com`) because the queue
+  name is derived from `$USER` at submit time and differs between VMs.
+
+## When free chips still won't schedule
+
+There are two independent gates — Kueue **admission**, then kube-scheduler **placement** —
+and the fix is different for each. Check which one you are stuck behind before digging into
+quota YAML.
+
+### Admitted, but never placed
+
+`JobStatus=Pending` together with `Started / Admitted by clusterQueue tpu7x-cq` in the
+events means Kueue already let the job through and the *scheduler* could not place the pod.
+That is a node-level problem — topology, cordon, memory — not a quota one. The event says
+which, with a per-reason node census:
+
+```bash
+cdk job desc <id> --no-color | grep -A2 FailedScheduling
+```
+```
+0/49 nodes are available: 1 node(s) were unschedulable, 12 Insufficient google.com/tpu,
+36 node(s) didn't match Pod's node affinity/selector, 5 Insufficient memory.
+```
+
+The counts are tags, not a partition — a node can be listed under several reasons, so they
+sum past the node total. `didn't match Pod's node affinity/selector` is almost always your
+`nodeSelector` topology; `node(s) were unschedulable` is a cordon.
+
+### Never admitted: quota
+
+If the events show no `Admitted by clusterQueue` at all, you are stuck at the first gate.
+`cdk usage` is physical capacity; admission is Kueue's call. Quota lives in
+`cloud-devkit-admin/config/cloud-devkit-jobs/tpu7x-cluster-queue.yaml` (per-flavor `nominalQuota` under cluster
+queue `tpu7x-cq`), and the flavor→nodepool mapping in
+`cloud-devkit-admin/config/cloud-devkit-jobs/tpu7x-flavors.yaml`.
+
+**A flavor with no `nominalQuota` entry in the cluster queue can never be admitted to, so
+its nodes sit permanently idle no matter what `cdk usage` reports.** At the time of writing
+`tpu7x-multihost-8chip-2026` is commented out of the cluster queue, and its two nodes are
+correspondingly unused.
+
+Don't read the YAML as the live state. `make k8s-deploy` (in `cloud-devkit-admin`) runs
+`kubectl apply -k config`,
+which **does not prune** — commenting a ResourceFlavor out of `tpu7x-flavors.yaml` leaves
+the object in the cluster. `tpu7x-singlehost-2026` is commented out in the file yet still
+exists and carries the largest quota (52 chips) and the heaviest load. Check reality with:
+
+```bash
+kubectl get resourceflavors
+kubectl get clusterqueue tpu7x-cq \
+  -o jsonpath='{range .spec.resourceGroups[*].flavors[*]}{.name}{"\t"}{.resources[0].nominalQuota}{"\n"}{end}'
+```
+
+
+===== .claude/skills/cdk/references/jobs.md =====
+# CDK jobs
+
+Source of record, in the `cloud-devkit-admin` repo: `cli/jobs.go`, `cli/main.go` (flag
+registration), `lib/db.go` (job states), `services/job_manager/main.go` (post-completion
+state machine).
+
+## `cdk job create <recipe> [KEY=VALUE ...]`
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--ttl`, `-l` | `600` | Seconds the finished JobSet lingers before k8s GC. **Silently clamped to [300, 3600]** — 300 is the floor so CDK can archive logs; 3600 the ceiling because resources aren't released until deletion. |
+| `--tags`, `-t` | — | Comma-separated. Spaces are a fatal error. |
+| `--mount-gcs` | `true` | Mounts the job's GCS prefix at `/cdk-outputs` and sets `$CDK_OUTPUT_DIR`. Forced on if the recipe sets `require_gcs_mount: true`. |
+| `--log-mode` | `k8s-sync-log` | `k8s-sync-log` \| `gcs-redirect` \| `log-transport` (see below). |
+| `--backoff-limit-override` | `true` | Forces `backoffLimit: 0` on replicatedJobs that don't set one, so failed jobs don't silently retry. |
+
+### Templating — the trap that survives
+
+Recipes are Go templates rendered with the `KEY=VALUE` pairs before submission. Two former
+traps are now fixed in the CLI: only the positional args after the recipe name are scanned
+for `KEY=VALUE` (so `--tags=a` is no longer registered as a variable named `--tags`), and an
+**unguarded** `{{ .FOO }}` you forgot to supply aborts the submission — `findUnresolvedVars`
+in `cli/jobs.go` catches the rendered `<no value>`, prints the offending lines to stderr and
+exits 1.
+
+What remains, and it is the more likely mistake in practice:
+
+> **A typo'd key for a variable the recipe guards with `| default` is silently ignored.**
+> The unresolved-variable check skips any template action containing `default`, because such
+> an action can never render `<no value>`. So with `{{ .PROMPT_LEN | default "0" }}` in the
+> recipe, `cdk job create ttpu-dev PROMPT_LNE=8192` submits happily and runs with
+> `PROMPT_LEN=0`. Since the standing advice is to give *every* variable a default, this
+> covers essentially every well-written recipe.
+
+There is no validation against a declared parameter list — the recipe never declares one.
+The only defence is to read back what was submitted:
+
+```bash
+cdk job recipe <id> --no-color | grep -n "PROMPT_LEN" -A1
+```
+
+Keep writing variables as `{{ .FOO | default "x" }}` anyway; the custom `default` helper
+catches both the missing-key and the empty-string case, and an undefaulted variable is a
+submission-time failure rather than a silently wrong run.
+
+### Validation — rejected at submit time
+
+- `serviceAccountName` set anywhere → fatal. CDK assigns the service account itself.
+- `hostNetwork: true` → fatal (incompatible with the GCS FUSE mount).
+- `restartPolicy` other than `Never` → fatal; empty is rewritten to `Never`.
+
+### What CDK injects
+
+- `terminationGracePeriodSeconds: 180` on every pod spec.
+- Label `kueue.x-k8s.io/queue-name: lq-<$USER with _ → ->`, and the LocalQueue is created
+  on demand against cluster queue `tpu7x-cq`.
+- Annotation `cloud-devkit.google.com/username: $USER`.
+- Per log mode: a preStop hook (180 s for `k8s-sync-log`, 60 s for `gcs-redirect`), a
+  pod finalizer `kubernetes.io/custom-debugging-hook` for `k8s-sync-log`, or the label
+  `cloud-devkit/log-transport: "true"` for `log-transport`.
+
+Because the queue name is derived from `$USER`, the same person appears under two queues
+(`lq-jane` and `lq-jane-google-com`) if their VMs disagree about `$USER`. That's why
+`cdk queue` lists near-duplicate rows.
+
+The rendered JobSet is uploaded to GCS at submit time, which is what `cdk job recipe`
+reads back later.
+
+## Log modes
+
+| Mode | How logs reach you | Trade-off |
+|---|---|---|
+| `k8s-sync-log` (default) | job_manager pulls container logs from the k8s API and archives to GCS; a pod finalizer keeps pods around long enough to do it | Reliable, but the finalizer is why a deleted job can hang — that's what `cdk job delete -f` clears |
+| `gcs-redirect` | container command is wrapped to write straight to the GCS mount | Requires `--mount-gcs`; no k8s log retention limits |
+| `log-transport` | pod is labelled and the log-transport service ships logs out | No preStop hook or wrapper applied |
+
+## `cdk job list`
+
+| Flag | Effect |
+|---|---|
+| `-a` | All users (default: only `$USER`) |
+| `-H` | Include `hide`-tagged jobs |
+| `-n N` | Most recent N (default 32) |
+| `-o wide` | Adds **State** and the Perfetto trace URL |
+| `-o debug` | Adds Hostname and the cdk version that submitted (useful for "did an old client do this?") |
+| `-o json` | Machine-readable; one object per job with `id, user, hostname, recipe, tags, create_time, complete_time, job_status, state, active, cdk_version, cdk_built_time`. Use this for any scripted filtering — note it carries `state` and `active` that the default table omits, but **not** the Perfetto URL, which only `-o wide` prints. |
+| `-t/-u/-r` | Filter by tag / user / recipe |
+| `-A` | Only non-terminal jobs |
+
+Behaviours worth knowing:
+- Sorted by create time **ascending** — newest rows are at the bottom.
+- `-n` truncates *after* filtering, keeping the newest N.
+- `-u <user>` implicitly enables all-users; you don't also need `-a`.
+- `-A` filters on **JobStatus** terminality (`Succeeded`/`Failed`/`Deleted`), not on State.
+  A job that finished executing but is still archiving logs is excluded by `-A` even though
+  CDK is still working on it.
+
+## Reading logs
+
+`cdk job log <id> [-p POD -c CONTAINER] [-f] [-e] [-P]`
+
+- **`-p`/`-c` are optional.** `resolvePodAndContainer` fills in whichever you omit: a single
+  candidate container needs nothing, and a real choice exits 1 with the valid pairs on
+  stderr (it only prompts when stdin is a TTY).
+- Routing is decided by **State**, not JobStatus: once State reaches `LogArchiveSucceeded`,
+  `TraceGenFailed`, `Finalizing`, `FinalizingFailed`, or `Complete`, logs are read from
+  GCS. Before that, cdk shells out to `kubectl logs -n cloud-devkit-jobs`.
+- `-f` (follow) is only meaningful pre-archive — after archiving there's nothing to stream.
+- `-e` prints a Cloud Logging Log Explorer URL instead of the logs. cdk also falls back to
+  this URL automatically whenever a read fails — printed to stdout, mixed in with the log
+  output, and this path still succeeds. A URL where you expected logs means something went
+  wrong; it is the one failure the exit code does not tell you about.
+- `-P` re-executes cdk and pipes into `$PAGER` (default `less -R -S`) — never use this
+  non-interactively.
+
+## Job states (`State`, from `cdk job desc` / `list -o wide`)
+
+Driven by `cloud-devkit-admin/services/job_manager/main.go`:
+
+```
+Active ──k8s terminal──> ExecutionComplete ──archive logs──> LogArchiveSucceeded
+                                    │                              │
+                            LogArchiveFailed              gen Perfetto trace
+                                    │                              │
+                                    │                      TraceGenFailed
+                                    ▼                              ▼
+                                 Finalizing ──remove pod finalizers──> Complete
+                                    └── FinalizingFailed
+```
+Plus `K8sJobDeleted` when the JobSet is deleted before finishing.
+
+`Finalizing` is where pod finalizers get removed. A job stuck in `Finalizing` or
+`FinalizingFailed` is holding pods — that's the case for `cdk job delete -f`, and, as a last
+resort, `cdk job reset-state <id> <state>`.
+
+## Other commands
+
+- `cdk job delete <id> [-f]` — deletes the JobSet and marks the DB record deleted. `-f`
+  first strips the debug finalizer from every pod so deletion isn't blocked.
+- `cdk job desc <id> [--no-color]` — the full MongoDB record as YAML: user, hostname, the
+  exact `cmd` that submitted it, tags, State, JobStatus, the jobs/pods/containers tree with
+  node names, every k8s event, and CDK's own event log. Colored even when piped — pass
+  `--no-color` when parsing.
+- `cdk job recipe <id> [--no-color]` — the rendered JobSet as submitted, from GCS. Same
+  colour caveat.
+- `cdk job tag|untag <id> tag1,tag2` — second positional arg is comma-separated.
+  `hide`/`unhide` just add or remove the `hide` tag.
+- `cdk job sync-outputs <id>` — syncs GCS outputs to `$HOME/cloud-devkit-data/job-outputs/<id>`
+  (configurable via `cdk_job_outputs_dir`). If logs aren't archived yet it also pulls live
+  container logs from the k8s API into `logs/<job>/<pod>/<container>.log`.
+- `cdk job reset-state <id> <state>` — hidden. Forces the State field in MongoDB and appends
+  an audit event. Valid values are in `lib.AllJobStates`.
+
+## Agent-friendly CLI changes (released in `b5bcf4d`, 2026-07-31)
+
+All merged to `cloud-devkit-admin` master and live in the published binary:
+
+- `-o json` on `job list`, `usage`, `queue` and `recipe list`.
+- Unresolved *unguarded* template variables abort the submission (see the templating
+  section for the defaulted-variable case, which they do not catch).
+- Only positional args after the recipe name are scanned for `KEY=VALUE`.
+- Pod and container resolve automatically; ambiguity exits 1 listing the valid pairs.
+- Failures exit non-zero with diagnostics on stderr.
+- `desc` gained `--no-color`.
+
+One prediction did **not** land: neither `desc` nor `recipe` drops color when piped. There
+is no TTY detection on that path, so `--no-color` remains mandatory for parsing.
+
+
+===== .claude/skills/cdk/references/profiling.md =====
+# Profiling CDK jobs
+
+Two complementary tools. **Perfetto = host-level, end-to-end, automatic.**
+**Xprof = device-level, opt-in, you instrument the capture.**
+
+Source, all in the `cloud-devkit-admin` repo: `lib/tracegen.go`, `cli/jobs.go`,
+`services/job_manager/main.go`, `services/xprof_uploader/`, `services/trace_loader/`;
+user docs `docs/content/profiling/`.
+
+## Perfetto (host)
+
+Generated automatically. After a job's logs are archived, job_manager parses the logs from
+**all** containers and pattern-matches known events into a single trace covering every
+process, then hosts it permanently.
+
+```bash
+cdk job list -o wide          # PfTraceUrl column → http://go/cdk-perfetto/<job-id>
+```
+
+The URL only appears when the job's `PfEventNumber > 0`, i.e. the parser actually matched
+events. **No URL means no matching log lines were found — you probably didn't enable the
+VLOGs.** Add to the container running the server:
+
+```yaml
+- { name: TPU_VMODULE, value: "tpu_pjrt_client=1,pjrt_stream_executor_client=1,tpu_pjrt_compiler_utils=1" }
+- { name: TPU_STDERR_LOG_LEVEL, value: "0" }
+- { name: VLLM_LOGGING_LEVEL, value: "DEBUG" }
+```
+
+With an old libtpu these VLOGs may not exist; copy a newer one in and point
+`TPU_LIBRARY_PATH` at it (`gs://cloud-devkit/libs/libtpu/20260521/libtpu.so`).
+
+That covers HLO and MapDmaBuffer events. For application-level spans, use the `cdk.trace`
+Python library from `lib/src` in this repo (put it on `PYTHONPATH`) — it writes
+structured markers to stdout/stderr that the parser picks up:
+
+```python
+from cdk import trace
+
+@trace.trace_func()              # or trace.trace_func("CustomName")
+def my_function(): ...
+
+with trace.trace_me("DataProcessing"):   # end event emitted even on exception
+    ...
+
+trace.trace_start("Request-1"); trace.trace_end("Request-1")   # across call stacks
+```
+
+### Local trace generation
+
+```bash
+cdk job sync-outputs <id>     # REQUIRED first — trace gen reads the local sync dir
+cdk job trace <id>            # prints the local trace file path and event count
+```
+
+`cdk job trace` fails with a confusing error if you skip `sync-outputs`. Note the automatic
+pipeline already does this server-side; the local command is for when trace gen failed
+(State `TraceGenFailed`) or you want to iterate on parsing.
+
+## Xprof (device)
+
+You implement the capture in your code; CDK only handles distribution. Write the dumps
+under `$CDK_OUTPUT_DIR` (requires GCS mounting, on by default). After completion CDK scans
+`gs://cloud-devkit/jobs/<id>/outputs` for `*.xplane.pb`.
+
+```bash
+cdk job xprof <id>            # prints every link when non-interactive or single-file
+cdk job xprof <id> -a         # force all links even at a terminal
+```
+
+Links are `go/cdk-xprof?<relative-path>`. **`-a` is no longer required when scripting.** The
+picker is now gated on `showAll || len(files) == 1 || !term.IsTerminal(os.Stdin)`, so with
+no TTY it prints every link instead of opening a `promptui` selector that could not be
+answered. Passing `-a` anyway is harmless and makes the intent explicit. Only the
+interactive path copies to the clipboard via an OSC-52 escape sequence, so that noise no
+longer reaches captured output.
+
+"No `.xplane.pb` files found" means either the capture never ran or it wrote somewhere
+other than `$CDK_OUTPUT_DIR`.
+
+## Choosing
+
+| Question | Tool |
+|---|---|
+| Where did wall-clock time go across the whole run? | Perfetto |
+| Why is disagg prefill/decode coordination slow? | Perfetto (single trace, all processes) |
+| What is the TPU actually doing per op? | Xprof |
+| Does profiling perturb my benchmark numbers? | Perfetto is lightweight; xprof is not |
+
+
+===== .claude/skills/cdk/references/recipes.md =====
+# Recipes and the development loop
+
+A recipe is a Kubernetes **JobSet** template plus a registration entry. JobSet (not plain
+Job) is used because CDK workloads are multi-pod: multi-host TPU training, or disaggregated
+serving with separate prefill/decode replica groups.
+
+Source, in the `cloud-devkit-admin` repo: `lib/recipes.go`, `cli/jobs.go`; user doc
+`docs/content/write-a-new-recipe.md`.
+
+## Where recipes live
+
+In **this** repo — `cloud-devkit-recipes`, which cdk reads as `cdk_root_dir` (default
+`$HOME/cloud-devkit`, overridable in `~/.cdk.ini`).
+
+```
+$HOME/cloud-devkit/          # this repo
+├── recipes.yml              # the registry cdk reads
+├── recipes/golden/          # stable, peer-reviewed, shared
+├── recipes/experimental/    # your own work in progress
+├── dockerfiles/             # base, vllm-torchax, bench, eval, ...
+└── lib/src/cdk/trace.py     # the cdk.trace Python tracing helpers
+```
+
+`cdk recipe list` reads `recipes.yml` and prints name / owner / YAML path. Adding a recipe
+means editing that file — there is no `cdk recipe add`.
+
+## Registration entry
+
+```yaml
+- name: "my-awesome-recipe"          # what users type in `cdk job create`
+  owner: "your_ldap_google_com"
+  k8s_file: "recipes/experimental/my-awesome-recipe/values.yml"   # relative to repo root
+  require_gcs_mount: true            # optional; forces --mount-gcs on
+```
+
+## Template contract
+
+Go templating, rendered against the `KEY=VALUE` pairs from the command line:
+
+```yaml
+args:
+  - |
+    mkdir -p $CDK_OUTPUT_DIR
+    while [ $elapsed -lt {{ .SLEEPTIME | default "60" }} ]; do ...
+```
+
+**Always use `| default "..."`.** The template is parsed with `missingkey=zero`, so an
+unguarded `{{ .FOO }}` you never supplied renders as `<no value>` — the CLI now catches that
+and aborts the submission rather than shipping broken YAML, but a failed submit is still a
+wasted round trip. The custom `default` helper handles both the missing-key and
+empty-string cases.
+
+The flip side, and the one the CLI cannot catch: **a defaulted variable silently swallows a
+typo'd key.** `PROMPT_LNE=8192` against `{{ .PROMPT_LEN | default "0" }}` runs with `0` and
+no warning, because the check skips any action containing `default`. Read back the render
+before trusting a run — see [jobs.md](jobs.md) for the details.
+
+`$CDK_OUTPUT_DIR` is injected when GCS mounting is on (normally `/cdk-outputs`, backed by a
+GCS bucket). Anything written there is persisted, archived, and scanned for `.xplane.pb`
+profiles.
+
+## Hard restrictions (enforced at submit, fatal)
+
+1. No `serviceAccountName` — CDK assigns it.
+2. No `hostNetwork: true` — breaks the GCS FUSE mount.
+3. `restartPolicy` must be `Never` (empty is rewritten; anything else is rejected).
+4. Containers must actually exit, or TTL cleanup never runs and the TPUs stay held.
+
+CDK also forces `terminationGracePeriodSeconds: 180` and `backoffLimit: 0` (unless the
+recipe sets its own and `--backoff-limit-override=false`).
+
+## Testing a new recipe
+
+```bash
+cdk recipe list | grep my-awesome-recipe     # confirm registration parsed
+cdk job create my-awesome-recipe MY_VAR=test-value
+cdk job recipe <id> --no-color               # verify the render before debugging the run
+```
+
+## Fast iteration: NFS instead of image rebuilds
+
+The prebuilt images (`vllm-torchax`, `vllm-torchtpu`) clone `vllm` / `tpu-inference` into
+`/root/cloud-devkit/` and `pip install -e .` them. Mounting your working copy over those
+paths means containers run your latest edits with no rebuild:
+
+```yaml
+volumes:
+  - name: vllm-nfs
+    nfs: { server: <FILESTORE-IP>, path: /workspace/vllm }
+containers:
+  - name: vllm-server
+    volumeMounts:
+      - { name: vllm-nfs, mountPath: /root/cloud-devkit/vllm }
+```
+
+Set up once: create a Filestore instance, `mount -t nfs <IP>:/workspace /mnt/workspace` on
+your CPU VM, clone repos there. Full walkthrough in `cloud-devkit-admin/docs/content/dev-guide.md`.
+
+The resulting loop: edit on NFS → `cdk job create` → `cdk job log <id> -f`
+→ `cdk job exec <id>` to poke at a live container → repeat. Add `-p`/`-c` only when the
+job has more than one container and cdk asks you to.
+
+## Docker images
+
+Built from **this** repo's Makefile:
+
+```bash
+make push-vllm-torchax
+make push-vllm-torchax TPU_COMMIT_HASH=<sha> VLLM_COMMIT_HASH=<sha>
+make build-vllm-torchtpu     # needs `gh auth login` AND `gcloud auth login` first
+```
+
+Images land in `us-central1-docker.pkg.dev/cloud-tpu-inference-test/vllm-tpu-rdna/`.
+
+The `cloud-devkit-admin` repo has a separate Makefile that builds the CLI and services:
+`make build-cli`, `make install-cli`, `make cli-deploy` (publishes the binary that clients
+auto-update to), `make k8s-deploy`, `make docs-serve`.
+
+
+===== README.md =====
+# Cloud Devkit
+
+This project helps you to run cloud jobs in a GKE cluster. This project targets at:
+
+* Allowing engineers to do dev work in a GKE cluster with shared TPU/GPU resources.
+* Allowing engineers to easily share the recipes for all tests.
+
+Please go to [go/cdk-doc](http://go/cdk-doc) for more details.
+
+
+Collected 6 documentation files; source revision: 1a42db278d012f276fab929f2b6b51c3e17fc053
