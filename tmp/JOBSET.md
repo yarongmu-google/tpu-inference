@@ -1,90 +1,117 @@
 # Sweep jobs
 
-Docker provides the runtime. CDK/GKE still provides TPU allocation and a mounted
-persistent output directory. Do not use the container's writable layer as the
-only copy of results.
-
-The launcher expects an immutable image containing the reviewed repository at
-`/opt/tpu-inference`, a pinned InferenceX checkout at `/opt/InferenceX`, and the
-complete Python environment. The source must be installed from that same
-repository. Do not map an input directory over either installed checkout.
-
-On the CPU VM with `vllm12` active, build and check the local image:
+On the CPU VM with `vllm12` active, run the complete workflow:
 
 ```bash
-bash tmp/build_jobset_image.sh
+bash tmp/run.sh
 ```
 
-This records CDK's agent letter, snapshots the current environment and tracked
-source files, builds `vllm12:topk-COMMIT`, and runs CPU import/CLI checks. Native
-libraries and Python scripts retain their original environment prefix inside
-the image. Source changes must be committed before taking the snapshot.
-Inside the image, Torch 2.10.0 and Torchvision 0.25.0 are replaced with their
-CPU wheels so vLLM's C++ helpers build without a CUDA toolkit. TPU execution
-still uses JAX/libtpu. `image-source.json` describes the input environment;
-the smoke-check log records the installed Torch/Torchvision versions.
-Existing environment dependency conflicts remain visible in the build log;
-passing import checks does not establish that these conflicts are harmless.
+The runner builds or reuses a verified local image, publishes it by digest,
+registers a dedicated CDK recipe, submits one JobSet, polls execution and log
+archiving, and downloads results and errors. Commands, stdout, stderr, exit
+codes and the submitted job ID are retained under
+`tmp/vllm_logs/jobset-workflows/run-*`. The terminal transcript is also saved
+as `tmp/vllm_logs/jobset-launch-*.log`.
 
-The builder uses `INFERENCEX_REPO` or `/tmp/InferenceX` when available. Otherwise
-it downloads InferenceX once and records the selected revision in the image.
-Both comparison runs must use the same resulting image.
+The default sweep runs the remaining 1k/8k C256 DP8_EP point, matched 4I
+points at C256 and C128, and the failed 1k/1k C256 DP4TP2_EP retry, in that
+order. Earlier successful configurations remain omitted from the sweep.
 
-Each attempt saves `build.log`, the agent letter, source/environment metadata,
-and the build exit code under `tmp/vllm_logs/jobset-build-*`, including failed
-attempts. The temporary environment copy is removed after building. An image
-registry is not required for this local check. Publishing the image and checking
-CDK's instructions are subsequent steps before submitting a TPU job. The local
-`image-id.txt` is not a registry digest accepted by `tmp/run.sh`.
+## Images and registration
 
-Before submission, confirm the installed CDK version's recipe discovery,
-`IMAGE`/`SCRIPT`/`RESUME_DIR` substitutions and injected writable
-`CDK_OUTPUT_DIR` mount. The recipe must resolve `tmp/jobset.yml`. Check the
-rendered manifest against the cluster's accelerator labels, resource capacity,
-service account, model access and cache mounts. The supplied template targets
-one TPU7x host with four physical chips. Verify eight local TPU JAX devices
-before spending time on model loading. CPU/RAM/scratch sizing and persistent
-model-cache configuration depend on the available node pool.
+The default image destination is the registry documented by CDK:
+`us-central1-docker.pkg.dev/cloud-tpu-inference-test/vllm-tpu-rdna/qwen-sweep-USER`,
+where USER is the normalized submitting username. Each workflow gets a unique
+tag; the JobSet uses the published registry digest. The account must already
+have permission to push there, and GKE must be able to pull it. The runner
+configures Docker's gcloud credential helper for that registry host. It does
+not create a registry, change IAM, or print access tokens.
 
-After the image has been built and published to the chosen registry:
+Images contain tracked vLLM, TPU-inference and InferenceX sources plus the
+captured Python environment. Torch 2.10.0 and Torchvision 0.25.0 use CPU wheels.
+Editable installation happens at image build time; TPU jobs check installed
+source paths and start the sweep without reinstalling packages. CPU import and
+CLI checks run during the build and in a fresh container. Existing dependency
+conflicts remain reported; those checks do not prove TPU compatibility.
+
+A successful local build can be reused when its source revisions and relevant
+image inputs still match. Use `--rebuild` to incorporate environment/package
+changes. The InferenceX revision selected by the build stays pinned in that
+image. Both sides of a benchmark comparison must use the same image.
+
+CDK reads the registry in its own checkout, not this repository's `tmp` directory.
+The runner adds one uniquely named recipe under `recipes/experimental/` and
+appends its registration to CDK's `recipes.yml`, preserving existing entries.
+A conflicting recipe is rejected. These are local CDK checkout edits; they are
+not committed or pushed by the runner. CDK's restrictions are respected: no
+explicit service account, no host networking, and restart policy `Never`.
+The template requests one TPU7x host with four physical chips (`2x2x1`).
+
+CDK's current agent letter is read before every CDK command, and all acknowledgement
+codes are passed in order. Changed instructions stop the workflow for review.
+Jobs carry only their unique workflow tag. `kubectl` and direct MongoDB access
+are not used. Leave `NO_UPDATE_CHECK` unset.
+
+## Interruptions, failures and another run
+
+Rerun the same command after an interruption. The saved workflow resumes the
+same job by its unique tag, including when submission succeeded remotely but
+its response was interrupted. An uncertain submission is never automatically
+repeated. The runner does not cancel a remote job when local polling stops.
+Commands have timeouts; status reads and output synchronization retry transient
+failures. A submission whose outcome is still unknown must be investigated
+before starting another workflow.
+
+A completed workflow is not automatically submitted again. To launch another:
 
 ```bash
-bash tmp/run.sh REGISTRY/IMAGE@sha256:DIGEST
+bash tmp/run.sh --new
 ```
 
-The image runs the remaining EP/4I sweep by default. A second argument replaces
-the script with another path inside the image. The current manifest assumes
-CDK's template conventions; it has not been validated against the installed CDK.
-
-Each attempt publishes under `$CDK_OUTPUT_DIR/attempts/ATTEMPT_ID`. It contains
-`job.log`, `environment.json`, per-config client JSON, server logs, `status.json`
-and a checksum manifest. Both successful and failed attempts are retained.
-The runner snapshots active logs every 30 seconds and publishes final status
-on normal exit or handled termination. A forced kill or storage outage can
-leave only an earlier snapshot; it is never classified as a completed run.
-
-For resumption, arrange for a previous attempt directory to be mounted read-only
-and supply its absolute mounted path as the third launcher argument. The runner
-checks the image identity and JSON hashes before restoring client results.
-The sweep then skips only results satisfying its existing completion checks.
-No previous attempt is assumed to be visible automatically in a new CDK job.
-
-Collect results on the machine with the local Git checkout:
+Add `--rebuild` to force a fresh image. To reuse verified successful client
+results from a previous attempt with the same image:
 
 ```bash
-bash tmp/cleanup.sh gs://BUCKET/JOB_OUTPUT_PREFIX NAMESPACE JOBSET_NAME
+bash tmp/run.sh --new --resume-from /absolute/path/to/collected/attempt
 ```
 
-Use the actual output prefix and Kubernetes JobSet name reported by CDK. The
-last two arguments are optional; with them, collection also attempts to capture
-pod state, current/previous container logs and pod events. These help diagnose
-failures before the runner starts, such as an image pull or mount failure.
-This requires local `gcloud` and, for cluster diagnostics, `kubectl` access.
-The image itself does not need gcloud when CDK supplies the filesystem mount.
+The attempt directory must contain `manifest.json` and its files. Only client
+JSON results and the manifest are copied into the new job's resume input;
+checksums and image identity are verified. The sweep's completion checks decide
+which configurations can be skipped.
 
-Downloads go to a fresh `tmp/vllm_logs/jobsets/collection-*` directory. Failed
-runs are valid diagnostic bundles and are collected like successful runs.
-Missing manifests, changed checksums and download failures cause a nonzero
-collector exit while preserving the available local files. Remote data is
-never deleted. Review the downloaded results, then stage and commit them
-locally; the collector prints the staging command and does not commit or push.
+Polling distinguishes `job_status` (execution) from `state` (CDK log archiving).
+Success requires successful execution, completed CDK processing, and downloaded
+sweep manifests with verified hashes and successful exit codes. Failed jobs,
+archive errors, timeouts, missing manifests, and failed downloads return nonzero
+while keeping every available diagnostic. A Log Explorer URL is identified as
+potentially missing container logs, not mistaken for log text.
+
+`cdk job sync-outputs` collects archived artifacts and available container logs.
+Files are copied from CDK's local output directory into the workflow directory.
+Partial copies are retained separately on retry. No remote output or job is
+deleted. To collect again without submitting:
+
+```bash
+bash tmp/cleanup.sh JOB_ID
+```
+
+The runner prints the local staging command. Review, stage, commit and push
+results manually; neither launcher nor collector performs Git writes.
+
+## Optional settings
+
+- `JOBSET_IMAGE_REPOSITORY`: Artifact Registry image path, without tag or digest.
+- `JOBSET_SCRIPT`: relative script path inside the image (default: the sweep above).
+- `CDK_SOURCE_DIR` and `CDK_JOB_OUTPUTS_DIR`: path overrides that must match CDK's
+  own configuration. Otherwise only those two path settings are read from
+  `~/.cdk.ini`, without printing or copying the credential-bearing file.
+- `JOBSET_POLL_SECONDS`: 30 by default.
+- `JOBSET_WAIT_SECONDS`: 86400 by default, including queue wait.
+- `JOBSET_ARCHIVE_SECONDS`: 1200 after execution ends. The submitted job's active
+  deadline is 43200 seconds. Polling timeouts leave the remote job available for
+  inspection and resumption.
+
+The standalone image builder remains available as `bash tmp/build_jobset_image.sh`.
+Model access, TPU device initialization, and the actual sweep are validated on
+the cluster; local mocked workflow tests do not establish those results.

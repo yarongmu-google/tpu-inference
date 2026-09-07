@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install the supplied source trees inside the runner's diagnostic capture.
+# Install at image build time; verify the installed source trees at job startup.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VLLM_SOURCE_DIR="${VLLM_SOURCE_DIR:-/opt/vllm}"
@@ -19,6 +19,7 @@ for source in "$VLLM_SOURCE_DIR" "$ROOT"; do
 done
 # Preserve the captured environment; missing build/runtime dependencies must
 # be resolved in the image rather than silently upgraded on each TPU attempt.
+if [[ "${JOBSET_INSTALL_SOURCES:-0}" == 1 ]]; then
 set -x
 if [[ -f "$VLLM_SOURCE_DIR/JOBSET_VERSION" ]]; then
   VLLM_TARGET_DEVICE=tpu VLLM_VERSION_OVERRIDE="$(cat "$VLLM_SOURCE_DIR/JOBSET_VERSION")" \
@@ -28,6 +29,10 @@ else
 fi
 python3 -m pip install --no-deps --no-build-isolation -e "$ROOT"
 set +x
+elif [[ "${JOBSET_INSTALL_SOURCES:-0}" != 0 ]]; then
+  echo "JOBSET_INSTALL_SOURCES must be 0 or 1" >&2
+  exit 2
+fi
 python3 - "$VLLM_SOURCE_DIR" "$ROOT" <<'PY_SOURCE'
 import importlib.metadata
 import json

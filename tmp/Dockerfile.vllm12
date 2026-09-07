@@ -19,6 +19,6 @@ COPY image-source.json /opt/jobset/image-source.json
 LABEL org.opencontainers.image.revision=$SOURCE_REVISION
 WORKDIR /opt/tpu-inference
 RUN mkdir -p /tmp/jobset-image-check && \
-    RUN_METADATA_DIR=/tmp/jobset-image-check JAX_PLATFORMS=cpu \
+    RUN_METADATA_DIR=/tmp/jobset-image-check JAX_PLATFORMS=cpu JOBSET_INSTALL_SOURCES=1 \
     bash tmp/jobset_bootstrap.sh /opt/tpu-inference/tmp/jobset_smoke.sh
 CMD ["/bin/bash"]

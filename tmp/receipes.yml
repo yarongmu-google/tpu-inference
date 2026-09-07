@@ -1,4 +1,0 @@
-- name: "v7-8-meta"
-  owner: "ymu_google_com"
-  k8s_file: "jobset.yml"
-  require_gcs_mount: true
