@@ -7,6 +7,11 @@ RUN test -n "$ENV_PREFIX" && apt-get update && apt-get install -y --no-install-r
 COPY environment/ ${ENV_PREFIX}/
 ENV PATH="${ENV_PREFIX}/bin:${PATH}"
 ENV VLLM_TARGET_DEVICE=tpu PYTHONUNBUFFERED=1 INFERENCEX_REPO=/opt/InferenceX
+# Keep the captured versions, using CPU wheels for the TPU host runtime.
+# CUDA-enabled Torch makes even vLLM's C++ helper build require a CUDA toolkit.
+RUN python3 -m pip install --no-cache-dir --no-deps --force-reinstall \
+    --index-url https://download.pytorch.org/whl/cpu \
+    torch==2.10.0+cpu torchvision==0.25.0+cpu
 COPY vllm/ /opt/vllm/
 COPY tpu-inference/ /opt/tpu-inference/
 COPY InferenceX/ /opt/InferenceX/

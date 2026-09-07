@@ -7,8 +7,12 @@ python3 - <<'PY'
 import importlib
 import json
 import jax
+import torch
 
-for name in ("torch", "jax", "torchax", "transformers", "vllm", "tpu_inference"):
+assert torch.version.cuda is None, "Expected CPU Torch in the TPU image"
+
+for name in ("torch", "torchvision", "jax", "torchax", "transformers", "vllm",
+             "vllm.spinloop", "vllm.fs_io_C", "tpu_inference"):
     module = importlib.import_module(name)
     print(json.dumps({"module": name, "version": getattr(module, "__version__", None),
                       "path": module.__file__}), flush=True)

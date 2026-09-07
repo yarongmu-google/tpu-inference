@@ -19,6 +19,10 @@ This records CDK's agent letter, snapshots the current environment and tracked
 source files, builds `vllm12:topk-COMMIT`, and runs CPU import/CLI checks. Native
 libraries and Python scripts retain their original environment prefix inside
 the image. Source changes must be committed before taking the snapshot.
+Inside the image, Torch 2.10.0 and Torchvision 0.25.0 are replaced with their
+CPU wheels so vLLM's C++ helpers build without a CUDA toolkit. TPU execution
+still uses JAX/libtpu. `image-source.json` describes the input environment;
+the smoke-check log records the installed Torch/Torchvision versions.
 Existing environment dependency conflicts remain visible in the build log;
 passing import checks does not establish that these conflicts are harmless.
 
