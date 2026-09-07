@@ -43,7 +43,8 @@ stop_server() {
 }
 
 start_server() {  # $1 = SHARDING (CONC/ISL/OSL come from the exported env)
-  SERVER_LOG="/tmp/qwen3.5_sweep_server_${1}_isl${ISL}_osl${OSL}_conc${CONC}_$(date +%m%d-%H%M).log"
+  mkdir -p "${SERVER_LOG_DIR:-/tmp}"
+  SERVER_LOG="${SERVER_LOG_DIR:-/tmp}/qwen3.5_sweep_server_${1}_isl${ISL}_osl${OSL}_conc${CONC}_$(date +%Y%m%d-%H%M%S)_${RUN_ATTEMPT:-local}.log"
   echo "--- starting server SHARDING=$1 ISL=$ISL OSL=$OSL CONC=$CONC (log: $SERVER_LOG) ---"
   echo "CFG sharding=$1 commit=$(git -C "$SCRIPT_DIR" rev-parse HEAD)" >> "$SERVER_LOG"
   SHARDING="$1" bash "${SCRIPT_DIR}/server.sh" >> "$SERVER_LOG" 2>&1 &
@@ -58,6 +59,8 @@ start_server() {  # $1 = SHARDING (CONC/ISL/OSL come from the exported env)
 }
 
 trap stop_server EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
 
 RESULT_ROOT="${RESULT_DIR:-/tmp/qwen3.5-inferencex-bench}"
 

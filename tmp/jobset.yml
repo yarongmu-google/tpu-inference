@@ -3,36 +3,46 @@ kind: JobSet
 metadata:
   name: v7-8-meta
 spec:
+  failurePolicy:
+    maxRestarts: 0
   replicatedJobs:
     - name: tpu-worker
-      replicas: 1  # 1 hosts * 8 chips = 8 chips
+      replicas: 1
       template:
         spec:
+          backoffLimit: 0
           parallelism: 1
           completions: 1
           template:
             spec:
               nodeSelector:
-                cloud.google.com/gke-tpu-topology: 2x2x2 # Adjust to your cluster's specific v7-8 topology string
+                cloud.google.com/gke-tpu-accelerator: tpu7x
+                cloud.google.com/gke-tpu-topology: 2x2x1
+              terminationGracePeriodSeconds: 120
               containers:
                 - name: runner
-                  image: {{ .IMAGE | default "ubuntu:24.04" }}
-                  command: ["/bin/bash", "-c"]
-                  args:
-                    - |
-		      # 1. Setup the GCS persistent directory 
-                      mkdir -p $CDK_OUTPUT_DIR/client
-                      mkdir -p $CDK_OUTPUT_DIR/server
-                      cd /workspace
-                      
-                      # Auto-install dependencies if a requirements file is mapped
-                      if [ -f "requirements.txt" ]; then pip install -r requirements.txt; fi
-                      
-                      # Run the dynamically provided script
-                      bash {{ .SCRIPT | default "tmp/sweep.sh" }} > $CDK_OUTPUT_DIR/job_logs.txt 2>&1
-
-		      # 3. Rescue the hardcoded outputs to GCS before the pod dies
-                      echo "Copying hardcoded logs to persistent storage..."
-                      cp -r /tmp/some_dir/*.log $CDK_OUTPUT_DIR/client/ 2>/dev/null || true
-                      cp -r /tmp/*sweep*.log $CDK_OUTPUT_DIR/server/ 2>/dev/null || true
+                  image: {{ .IMAGE }}
+                  workingDir: /opt/tpu-inference
+                  command: ["python3", "/opt/tpu-inference/tmp/jobset_runner.py"]
+                  env:
+                    - name: RUN_IMAGE
+                      value: "{{ .IMAGE }}"
+                    - name: SWEEP_SCRIPT
+                      value: "{{ .SCRIPT | default "tests/e2e/benchmarking/inferencex/qwen3.5/sweep.sh" }}"
+                    - name: RESUME_DIR
+                      value: "{{ .RESUME_DIR | default "" }}"
+                    - name: INFERENCEX_REPO
+                      value: /opt/InferenceX
+                  resources:
+                    requests:
+                      google.com/tpu: 4
+                    limits:
+                      google.com/tpu: 4
+                  volumeMounts:
+                    - name: shared-memory
+                      mountPath: /dev/shm
+              volumes:
+                - name: shared-memory
+                  emptyDir:
+                    medium: Memory
               restartPolicy: Never
