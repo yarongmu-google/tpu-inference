@@ -9,11 +9,29 @@ The launcher expects an immutable image containing the reviewed repository at
 complete Python environment. The source must be installed from that same
 repository. Do not map an input directory over either installed checkout.
 
-The old `vllm12` package export and source revisions are still needed before
-building its replacement. The existing `docker/Dockerfile` is a starting point,
-but its default vLLM checkout and unpinned requirements do not reproduce that
-environment. Record Python, package versions, editable source revisions and
-local changes; do not substitute current upstream requirements for that export.
+On the CPU VM with `vllm12` active, build and check the local image:
+
+```bash
+bash tmp/build_jobset_image.sh
+```
+
+This records CDK's agent letter, snapshots the current environment and tracked
+source files, builds `vllm12:topk-COMMIT`, and runs CPU import/CLI checks. Native
+libraries and Python scripts retain their original environment prefix inside
+the image. Source changes must be committed before taking the snapshot.
+Existing environment dependency conflicts remain visible in the build log;
+passing import checks does not establish that these conflicts are harmless.
+
+The builder uses `INFERENCEX_REPO` or `/tmp/InferenceX` when available. Otherwise
+it downloads InferenceX once and records the selected revision in the image.
+Both comparison runs must use the same resulting image.
+
+Each attempt saves `build.log`, the agent letter, source/environment metadata,
+and the build exit code under `tmp/vllm_logs/jobset-build-*`, including failed
+attempts. The temporary environment copy is removed after building. An image
+registry is not required for this local check. Publishing the image and checking
+CDK's instructions are subsequent steps before submitting a TPU job. The local
+`image-id.txt` is not a registry digest accepted by `tmp/run.sh`.
 
 Before submission, confirm the installed CDK version's recipe discovery,
 `IMAGE`/`SCRIPT`/`RESUME_DIR` substitutions and injected writable

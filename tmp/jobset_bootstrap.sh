@@ -11,6 +11,8 @@ for source in "$VLLM_SOURCE_DIR" "$ROOT"; do
   fi
   if revision="$(git -C "$source" rev-parse HEAD 2>/dev/null)"; then
     echo "Source: $source; Git revision: $revision"
+  elif [[ -f "$source/JOBSET_REVISION" ]]; then
+    echo "Source: $source; packaged Git revision: $(cat "$source/JOBSET_REVISION")"
   else
     echo "Source: $source; Git metadata unavailable; packaged image: ${RUN_IMAGE:-unknown}"
   fi
@@ -18,7 +20,12 @@ done
 # Preserve the captured environment; missing build/runtime dependencies must
 # be resolved in the image rather than silently upgraded on each TPU attempt.
 set -x
-VLLM_TARGET_DEVICE=tpu python3 -m pip install --no-deps --no-build-isolation -e "$VLLM_SOURCE_DIR"
+if [[ -f "$VLLM_SOURCE_DIR/JOBSET_VERSION" ]]; then
+  VLLM_TARGET_DEVICE=tpu VLLM_VERSION_OVERRIDE="$(cat "$VLLM_SOURCE_DIR/JOBSET_VERSION")" \
+    python3 -m pip install --no-deps --no-build-isolation -e "$VLLM_SOURCE_DIR"
+else
+  VLLM_TARGET_DEVICE=tpu python3 -m pip install --no-deps --no-build-isolation -e "$VLLM_SOURCE_DIR"
+fi
 python3 -m pip install --no-deps --no-build-isolation -e "$ROOT"
 set +x
 python3 - "$VLLM_SOURCE_DIR" "$ROOT" <<'PY_SOURCE'

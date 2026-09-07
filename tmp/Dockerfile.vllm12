@@ -1,0 +1,19 @@
+FROM ubuntu:24.04
+ARG ENV_PREFIX
+ARG SOURCE_REVISION
+RUN test -n "$ENV_PREFIX" && apt-get update && apt-get install -y --no-install-recommends \
+    bash ca-certificates curl git procps build-essential libgomp1 libnuma1 \
+    libopenmpi-dev libomp-dev && rm -rf /var/lib/apt/lists/*
+COPY environment/ ${ENV_PREFIX}/
+ENV PATH="${ENV_PREFIX}/bin:${PATH}"
+ENV VLLM_TARGET_DEVICE=tpu PYTHONUNBUFFERED=1 INFERENCEX_REPO=/opt/InferenceX
+COPY vllm/ /opt/vllm/
+COPY tpu-inference/ /opt/tpu-inference/
+COPY InferenceX/ /opt/InferenceX/
+COPY image-source.json /opt/jobset/image-source.json
+LABEL org.opencontainers.image.revision=$SOURCE_REVISION
+WORKDIR /opt/tpu-inference
+RUN mkdir -p /tmp/jobset-image-check && \
+    RUN_METADATA_DIR=/tmp/jobset-image-check JAX_PLATFORMS=cpu \
+    bash tmp/jobset_bootstrap.sh /opt/tpu-inference/tmp/jobset_smoke.sh
+CMD ["/bin/bash"]
