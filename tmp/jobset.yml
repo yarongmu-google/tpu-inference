@@ -21,7 +21,8 @@ spec:
                   args:
                     - |
 		      # 1. Setup the GCS persistent directory 
-                      mkdir -p $CDK_OUTPUT_DIR
+                      mkdir -p $CDK_OUTPUT_DIR/client
+                      mkdir -p $CDK_OUTPUT_DIR/server
                       cd /workspace
                       
                       # Auto-install dependencies if a requirements file is mapped
@@ -32,6 +33,6 @@ spec:
 
 		      # 3. Rescue the hardcoded outputs to GCS before the pod dies
                       echo "Copying hardcoded logs to persistent storage..."
-                      cp -r /tmp/some_dir/*.log $CDK_OUTPUT_DIR/ 2>/dev/null || true
-                      cp -r /tmp/*s2weep*.log $CDK_OUTPUT_DIR/ 2>/dev/null || true
+                      cp -r /tmp/some_dir/*.log $CDK_OUTPUT_DIR/client/ 2>/dev/null || true
+                      cp -r /tmp/*sweep*.log $CDK_OUTPUT_DIR/server/ 2>/dev/null || true
               restartPolicy: Never
