@@ -81,8 +81,10 @@ def main() -> None:
     metadata["source_revisions"]["vllm"] = snapshot(
         root=vllm, target=context / "vllm",
         keep=lambda p: p.split("/", 1)[0] not in {"tmp", "docs", "examples", ".github", ".buildkite"})
+    # The sweep uses bench_serving; the separate aiperf submodule is not needed.
     metadata["source_revisions"]["InferenceX"] = snapshot(
-        root=client, target=context / "InferenceX", keep=lambda p: p.startswith("utils/"))
+        root=client, target=context / "InferenceX",
+        keep=lambda p: p.startswith("utils/") and p != "utils/aiperf")
     # Preserve already-built native modules needed by the editable source tree.
     for artifact in (vllm / "vllm").rglob("*"):
         if artifact.is_file() and (artifact.name.endswith(".so") or ".so." in artifact.name or artifact.name == "vllm-rs"):
