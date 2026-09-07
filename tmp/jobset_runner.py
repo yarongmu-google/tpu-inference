@@ -118,7 +118,8 @@ def main() -> int:
             env["SERVER_LOG_DIR"] = str(local / "server")
             env["PYTHONUNBUFFERED"] = "1"
             env["RUN_ATTEMPT"] = attempt
-            child = subprocess.Popen(args=["bash", str(script)], cwd=root, env=env,
+            env["RUN_METADATA_DIR"] = str(local)
+            child = subprocess.Popen(args=["bash", str(root / "tmp/jobset_bootstrap.sh"), str(script)], cwd=root, env=env,
                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                      start_new_session=True)
 
