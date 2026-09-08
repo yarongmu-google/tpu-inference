@@ -6,7 +6,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || exit 1
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)" || exit 1
 cd "$ROOT" || exit 1
 mkdir -p "$ROOT/tmp/vllm_logs" || exit 1
-OUT="$(mktemp -d "$ROOT/tmp/vllm_logs/jobset-build-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXXXX")" || exit 1
+if [[ -n "${JOBSET_BUILD_DIAGNOSTICS:-}" ]]; then
+  OUT="$JOBSET_BUILD_DIAGNOSTICS"
+  mkdir "$OUT" || exit 1
+else
+  OUT="$(mktemp -d "$ROOT/tmp/vllm_logs/jobset-build-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXXXX")" || exit 1
+fi
 LOG="$OUT/build.log"
 
 run() {
@@ -40,7 +45,7 @@ run() {
   run python "$SCRIPT_DIR/prepare_jobset_image.py" "$BUILD_CONTEXT/image" "$ROOT" "$CLIENT" "$OUT"
   PREFIX="$(cat "$OUT/environment-prefix.txt")"
   REVISION="$(git rev-parse HEAD)"
-  IMAGE="vllm12:topk-${REVISION:0:12}"
+  IMAGE="${JOBSET_BUILD_IMAGE:-vllm12:topk-${REVISION:0:12}}"
   printf '%s\n' "$IMAGE" > "$OUT/image-tag.txt"
   run docker build --progress=plain --platform=linux/amd64 \
     --build-arg "ENV_PREFIX=$PREFIX" --build-arg "SOURCE_REVISION=$REVISION" \
@@ -55,6 +60,10 @@ result="${codes[0]}"
 printf 'Build exit status: %s\n' "$result" | tee -a "$LOG"
 printf '%s\n' "$result" > "$OUT/exit-code.txt"
 printf 'Diagnostics retained at %s\n' "$OUT" | tee -a "$LOG"
-printf -v stage_command 'git add -- %q' "tmp/vllm_logs/$(basename "$OUT")"
+if [[ -n "${JOBSET_BUILD_DIAGNOSTICS:-}" ]]; then
+  printf -v stage_command 'git add -f -- %q' "${OUT#"$ROOT"/}"
+else
+  printf -v stage_command 'git add -- %q' "tmp/vllm_logs/$(basename "$OUT")"
+fi
 printf 'After reviewing the diagnostics: %s\n' "$stage_command" | tee -a "$LOG"
 exit "$result"

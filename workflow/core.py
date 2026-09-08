@@ -168,7 +168,7 @@ def environment(data: dict) -> dict[str, str]:
 
 def load_description(path: Path) -> tuple[dict, dict]:
     data = read_document(path)
-    keys(data, {'version', 'profile', 'name', 'description', 'code', 'inputs', 'run', 'outputs', 'execution', 'cases'},
+    keys(data, {'version', 'profile', 'name', 'description', 'code', 'inputs', 'run', 'outputs', 'execution', 'cases', 'image_build'},
          {'version', 'profile', 'code', 'run', 'outputs'})
     if data['version'] != 1:
         raise ValueError('Unsupported description version')
@@ -185,8 +185,20 @@ def load_description(path: Path) -> tuple[dict, dict]:
     member = cloud['workload_iam_member']
     if not isinstance(member, str) or not (member.startswith('serviceAccount:') or member.startswith('principal://iam.googleapis.com/')) or any(c.isspace() for c in member):
         raise ValueError('Set the exact workload IAM member; broad or public principals are not accepted')
-    keys(profile['runtime'], {'image'}, {'image'})
-    if not re.fullmatch(r'[a-z0-9._:/-]+@sha256:[a-f0-9]{64}', profile['runtime']['image']):
+    keys(profile['runtime'], {'image', 'repository'})
+    if 'image_build' in data:
+        build = data['image_build']
+        keys(build, {'cwd', 'argv', 'timeout_seconds'}, {'cwd', 'argv'})
+        build['cwd'] = str((path.parent / build['cwd']).resolve())
+        if not Path(build['cwd']).is_dir():
+            raise ValueError('image_build.cwd must be an existing CPU-VM directory')
+        if not isinstance(build['argv'], list) or not build['argv'] or not all(isinstance(a, str) and '\0' not in a for a in build['argv']):
+            raise ValueError('image_build.argv must be a nonempty string list')
+        build['timeout_seconds'] = positive(build.get('timeout_seconds', 28800), maximum=86400)
+        from image_build import REPOSITORY
+        if not REPOSITORY.fullmatch(profile['runtime'].get('repository', '')):
+            raise ValueError('runtime.repository must be an Artifact Registry image path without a tag')
+    elif not re.fullmatch(r'[a-z0-9._:/-]+@sha256:[a-f0-9]{64}', profile['runtime'].get('image', '')):
         raise ValueError('runtime.image must be an immutable registry digest')
     hardware = profile['hardware']
     keys(hardware, {'accelerator', 'topology', 'chips_per_host'}, {'accelerator', 'topology', 'chips_per_host'})

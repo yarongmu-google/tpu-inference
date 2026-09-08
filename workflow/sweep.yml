@@ -1,6 +1,10 @@
 version: 1
 profile: ./local/environment.json
 name: null
+image_build:
+  cwd: ..
+  argv: [python, tmp/prepare_runtime_image.py]
+  timeout_seconds: 28800
 description: Run the current serving sweep and collect client results and server logs
 code:
   directory: ../tests/e2e/benchmarking/inferencex/qwen3.5

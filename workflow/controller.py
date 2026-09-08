@@ -454,20 +454,32 @@ def prepare(description_path: Path, name: str | None, dry_run: bool = False) -> 
     label = slug(name)
     campaign_id = identity(name)
     root = Path(data['outputs']['directory']) / campaign_id
-    # Freeze the whole campaign before allowing any cloud mutations.
+    # Freeze experiment files before image preparation or job submission.
     for source in [Path(data['code']['directory']), *(Path(item['source']) for item in data['inputs'].values())]:
         if root.is_relative_to(source):
             raise ValueError('Results directory must be outside all uploaded source/input directories')
     root.mkdir(parents=True, exist_ok=False)
     payload = {key: (ROOT / key).read_text() for key in ('core.py', 'runtime.py')}
     save(path=root / 'description.json', value=data)
-    save(path=root / 'profile.json', value=profile)
     shared = root / 'snapshot'
     bundles = [{'source': 'code', 'destination': data['code']['destination'],
                 'files': snapshot(source=Path(data['code']['directory']), target=shared / 'code', include=data['code']['include'])}]
     for key, item in data['inputs'].items():
         bundles.append({'source': 'inputs/' + key, 'destination': item['destination'],
                         'files': snapshot(source=Path(item['source']), target=shared / 'inputs' / key, include=['**'])})
+    if 'image_build' in data:
+        if dry_run:
+            save(path=root / 'profile.json', value=profile)
+            save(path=root / 'campaign.json', value={'name': name, 'jobs': [],
+                'max_in_flight': data['execution']['max_in_flight'], 'dry_run': True,
+                'image_build_pending': True})
+            print(f'Dry run at {root}: image preparation and cloud actions skipped; image is unresolved', flush=True)
+            return root
+        from image_build import resolve
+        resolved = resolve(build=data['image_build'], repository=profile['runtime']['repository'],
+                           directory=root / 'image', stop=STOP)
+        profile['runtime']['image'] = resolved['image']
+    save(path=root / 'profile.json', value=profile)
     user = os.environ.get('USER', '')
     if not re.fullmatch('[a-zA-Z0-9_.-]+', user):
         raise ValueError('USER must identify the submitting CDK user')
@@ -492,6 +504,8 @@ def prepare(description_path: Path, name: str | None, dry_run: bool = False) -> 
                  'config_sha256': digest, 'phase': 'PREPARED', 'dry_run': dry_run}
         save(path=folder / 'owner.json', value={'run_id': run_id, 'nonce': nonce, 'project': profile['cloud']['project']})
         save(path=folder / 'start.json', value={'run_id': run_id, 'config_sha256': digest})
+        if 'image_build' in data:
+            save(path=folder / 'image-build.json', value=resolved)
         save(path=folder / 'state.json', value=state)
         save(path=folder / 'recipe.json', value=recipe(state=state, payload=payload))
         jobs.append(run_id)
@@ -533,6 +547,8 @@ def locked_job(directory: Path, action: str = 'run', discard: bool = False) -> i
 
 def run_campaign(path: Path) -> int:
     campaign = json.loads((path / 'campaign.json').read_text())
+    if campaign.get('dry_run'):
+        raise ValueError('Dry-run campaigns cannot be submitted; start a new run from the description')
     with (path / '.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         # Count unresolved submissions as occupying a slot, even if a worker exits.

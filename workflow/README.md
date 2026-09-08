@@ -1,8 +1,8 @@
 # Described jobs
 
 A description supplies code, inputs, arguments, output locations and independent
-cases. An environment profile supplies the immutable runtime image, hardware,
-cloud project, storage region and workload identity. Each submitted job receives
+cases. An environment profile supplies the runtime image or image registry destination,
+hardware, cloud project, storage region and workload identity. Each submitted job receives
 its own named bucket and saved execution record. No application-specific
 completion rules are built into the controller.
 
@@ -11,7 +11,8 @@ resume executions created by another launcher.
 
 ## Serving sweep through this workflow
 
-From the repository root on the CPU VM:
+From the repository root on the CPU VM, with the existing Python 3.12
+`vllm12` environment active:
 
 ```bash
 bash workflow/run_sweep.sh
@@ -25,23 +26,47 @@ sweep's model, configurations or metrics. The first workload is the actual
 sweep; the example below remains an optional small storage check.
 
 On first use, the same logged command creates `workflow/local/environment.json`
-interactively. It offers the published image digest and assigned Kubernetes
-service-account name from the CPU VM's previous saved execution when available.
+interactively. It offers the image repository and assigned Kubernetes service-account name
+from the CPU VM's previous saved execution when available. Enter a registry image
+path without a tag or digest, such as
+`us-central1-docker.pkg.dev/PROJECT/REPOSITORY/runtime`. The launcher determines
+the digest automatically. Existing fixed-image profiles get a one-time prompt
+to add the repository; their cloud settings are preserved.
 The registry's project/region are suggestions that require confirmation for
 bucket storage. The workload's bucket-access IAM identity must be supplied or
 come from an existing profile; it is never guessed from the account name.
-Hardware settings are also confirmed once. A saved profile is reused without
-rewriting it. Then the controller asks for a run name.
+Hardware settings are also confirmed once. A profile with the repository saved is reused without rewriting it. Then the controller asks for a run name.
 
-The published image supplies the installed packages and benchmark client. The
-sweep description uses the image's existing source-verification bootstrap with
-installation disabled. This launches through the new controller and dedicated
-bucket path; it does not invoke the previous launcher. No image rebuild occurs.
-The profile must identify an image compatible with these scripts and containing
-the expected installed-source and benchmark-client paths.
+Before submission, the description's image preparation command checks the local
+source files, native modules, environment contents and build scripts. Matching
+inputs reuse a verified local image; changed inputs trigger the existing Docker
+builder and CPU smoke check. The first run after this upgrade builds once because
+older images lack the complete input fingerprint. Relevant tracked edits and
+untracked source files must be committed first so they cannot be silently omitted.
+The input check reads the environment files even on a cache hit; it may take time
+for a large environment, but avoids copying it or building again on a hit.
 
-`--dry-run --name check` can be passed to `run_sweep.sh` to prepare and inspect
-its actual snapshots and recipe without creating cloud resources. Each normal
+The helper finds editable vLLM in the active CPU-VM environment. It uses
+`INFERENCEX_REPO`, an existing `/tmp/InferenceX`, or a persistent checkout under
+`workflow/local/images/InferenceX`. That checkout is cloned once when needed;
+it is not automatically pulled on later runs. Source revisions and a build-input
+SHA256 are printed and saved. The launcher publishes to the configured repository
+and pins the returned digest for every job in the campaign. A cache hit still
+checks the local image ID and runs Docker push, which can reuse existing layers.
+No additional CUDA installation is introduced. The existing image build installs
+the editable projects and CPU Torch packages; TPU execution disables installation.
+
+Image preparation, publication and early errors are logged under the campaign's
+`image/` directory, including build diagnostics. Each job saves `image-build.json`
+with the exact digest and provenance. A failed build never submits a job; rerun
+the launcher after fixing it. Saved campaign/job resume uses the original pinned
+image and never rebuilds. The runtime image contains installed packages and the
+benchmark client; the three frozen sweep scripts are delivered separately.
+
+`--dry-run --name check` can be passed to `run_sweep.sh` to inspect its frozen
+scripts and build plan without building, publishing or creating cloud resources.
+For descriptions with image preparation, the digest and job recipe remain
+unresolved until a normal invocation. Each normal
 invocation starts a new campaign; use the generic `resume` command with its
 printed saved path to reconnect. It does not import results or resume jobs
 created by the previous launcher. The profile helper itself runs no cloud
@@ -95,6 +120,17 @@ All relative CPU-VM paths resolve against the description file, including its
 profile path. YAML and JSON are accepted, with duplicate and unknown keys
 rejected. See `examples/experiment.yml` for the minimal description.
 
+- `image_build` (optional): a local preparation command with `cwd`, `argv`, and
+  optional `timeout_seconds` (default 28800, maximum 86400). `cwd` resolves against
+  the description file. The command receives `IMAGE_REPOSITORY`, `IMAGE_RESULT`,
+  and `IMAGE_BUILD_LOG_DIR`. It must write a JSON object containing an immutable
+  `image` digest in that repository to `IMAGE_RESULT`; other fields record its
+  provenance. Output is streamed into local logs. Failures, interruption, timeout,
+  or an invalid digest block job preparation. The profile supplies
+  `runtime.repository`; without `image_build`, it supplies `runtime.image` as before.
+  Preparation runs once per new campaign, after experiment snapshots, and never
+  on resume. Use a command appropriate to your project; the controller contains
+  no application-specific build logic.
 - `code.directory`: one directory to freeze; `include` optionally selects paths
   relative to it using shell-style file patterns. The default is `['**']`.
   `.git`, `.venv`, and `__pycache__` directories are excluded. Symlinks and
