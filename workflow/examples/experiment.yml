@@ -1,0 +1,27 @@
+version: 1
+profile: ./environment.yml
+name: null
+description: Verify storage, script execution, and result collection
+code:
+  directory: ./experiment
+  delivery: snapshot
+  destination: /workspace/experiment
+  include: ["**"]
+inputs: {}
+run:
+  cwd: /workspace/experiment
+  argv: [python3, main.py, --output-dir, "${OUTPUT_DIR}"]
+  env:
+    PYTHONUNBUFFERED: "1"
+outputs:
+  directory: ./results
+  snapshot_seconds: 30
+execution:
+  timeout_seconds: 300
+  max_in_flight: 50
+# Optional independent jobs, with environment overrides for each case:
+# cases:
+#   - name: first
+#     env: {SIZE: 128}
+#   - name: second
+#     env: {SIZE: 256}

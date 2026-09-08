@@ -1,0 +1,38 @@
+version: 1
+profile: ./local/environment.json
+name: null
+description: Run the current serving sweep and collect client results and server logs
+code:
+  directory: ../tests/e2e/benchmarking/inferencex/qwen3.5
+  delivery: snapshot
+  destination: /workspace/experiment
+  include: [sweep.sh, server.sh, bench.sh]
+inputs: {}
+run:
+  cwd: /opt/tpu-inference
+  argv:
+    - bash
+    - -c
+    - |
+      set -euo pipefail
+      export RESULT_DIR="$OUTPUT_DIR/client"
+      export SERVER_LOG_DIR="$OUTPUT_DIR/server"
+      export RUN_METADATA_DIR="$OUTPUT_DIR/metadata"
+      export RUN_ATTEMPT="$RUN_ID"
+      mkdir -p "$RESULT_DIR" "$SERVER_LOG_DIR" "$RUN_METADATA_DIR"
+      test -f "$INFERENCEX_REPO/utils/bench_serving/benchmark_serving.py"
+      JOBSET_INSTALL_SOURCES=0 bash /opt/tpu-inference/tmp/jobset_bootstrap.sh /workspace/experiment/sweep.sh
+  env:
+    PYTHONUNBUFFERED: "1"
+    INFERENCEX_REPO: /opt/InferenceX
+  verify_imports:
+    vllm: /opt/vllm
+    tpu_inference: /opt/tpu-inference
+outputs:
+  directory: ./local/results
+  snapshot_seconds: 30
+execution:
+  timeout_seconds: 43200
+  max_in_flight: 1
+  wait_seconds: 86400
+  archive_seconds: 1200
