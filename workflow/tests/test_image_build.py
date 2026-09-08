@@ -1,4 +1,4 @@
-"""Check image selection, failure retention, and input-sensitive cache keys locally."""
+"""Check per-run builds, publication records, and failure retention locally."""
 from __future__ import annotations
 
 import io
@@ -32,14 +32,15 @@ class ImageBuildTests(unittest.TestCase):
         self.fixture = fixture
         self.base = fixture.base
         self.repository = 'us-central1-docker.pkg.dev/fixture-project/images/runtime'
-        self.image = self.repository + '@sha256:' + 'b' * 64
+        self.run_id = 'fixture-' + 'a' * 24
+        self.image = self.repository + '/' + self.run_id + '@sha256:' + 'b' * 64
         self.profile = {**fixture.profile, 'runtime': {'repository': self.repository}}
         self.profile_path = fixture.workflow / 'local/environment.json'
         core.save(path=self.profile_path, value=self.profile)
         self.hook = self.base / 'image hook.py'
         self.hook.write_text('import json, os\nfrom pathlib import Path\n'
             'print("image hook diagnostics", flush=True)\n'
-            'Path(os.environ["IMAGE_RESULT"]).write_text(json.dumps({"image":os.environ["IMAGE_REPOSITORY"]+"@sha256:"+"b"*64, "source_revisions":{"app":"fixture"}}))\n')
+            'Path(os.environ["IMAGE_RESULT"]).write_text(json.dumps({"image":os.environ["IMAGE_REPOSITORY"]+"@sha256:"+"b"*64, "owner_run_id":os.environ["IMAGE_RUN_ID"], "source_revisions":{"app":"fixture"}}))\n')
         self.description = {**fixture.description, 'image_build': {
             'cwd': '..', 'argv': [sys.executable, str(self.hook)], 'timeout_seconds': 10}}
         core.save(path=fixture.description_path, value=self.description)
@@ -54,36 +55,44 @@ class ImageBuildTests(unittest.TestCase):
         root = self.prepare()
         campaign = core.read_document(root / 'campaign.json')
         folder = root / campaign['jobs'][0]
+        with patch('sys.stdout', new=io.StringIO()):
+            controller.Job(folder).prepare_image()
+        self.image = core.read_document(folder / 'resources.json')['image'] + '@sha256:' + 'b' * 64
         self.assertEqual(core.read_document(folder / 'state.json')['image'], self.image)
         self.assertEqual(core.read_document(folder / 'input/run.json')['image'], self.image)
         self.assertEqual(core.read_document(folder / 'image-build.json')['source_revisions'], {'app': 'fixture'})
         self.assertIn(self.image, (folder / 'recipe.json').read_text())
-        self.assertIn('image hook diagnostics', (root / 'image/command.log').read_text())
+        self.assertIn('image hook diagnostics', (folder / 'image/command.log').read_text())
         self.assertEqual(self.profile_path.read_bytes(), before)
 
     def test_failed_hook_retains_logs_without_preparing_submission(self) -> None:
         self.hook.write_text('print("build broke", flush=True)\nraise SystemExit(42)\n')
-        with self.assertRaisesRegex(RuntimeError, '42'):
-            self.prepare()
-        root = next((self.fixture.workflow / 'local/results').iterdir())
-        self.assertEqual(core.read_document(root / 'image/status.json')['phase'], 'failed')
-        self.assertIn('build broke', (root / 'image/command.log').read_text())
-        self.assertFalse(list(root.glob('*/state.json')))
-        self.assertFalse((root / 'campaign.json').exists())
+        root = self.prepare()
+        folder = root / core.read_document(root / 'campaign.json')['jobs'][0]
+        with patch('sys.stdout', new=io.StringIO()), self.assertRaisesRegex(RuntimeError, '42'):
+            controller.Job(folder).prepare_image()
+        self.assertEqual(core.read_document(folder / 'image/status.json')['phase'], 'failed')
+        self.assertIn('build broke', (folder / 'image/command.log').read_text())
+        self.assertFalse(core.read_document(folder / 'state.json').get('submission_started'))
+        self.assertTrue((folder / 'resources.json').exists())
+        self.assertTrue((root / 'campaign.json').exists())
 
     def test_dry_run_does_not_invoke_builder_or_invent_an_image(self) -> None:
         self.hook.write_text('raise AssertionError("must not run")\n')
         root = self.prepare(dry_run=True)
         campaign = core.read_document(root / 'campaign.json')
-        self.assertTrue(campaign['image_build_pending'])
-        self.assertEqual(campaign['jobs'], [])
-        self.assertFalse((root / 'image').exists())
+        self.assertTrue(campaign['dry_run'])
+        folder = root / campaign['jobs'][0]
+        self.assertIsNone(core.read_document(folder / 'state.json')['image'])
+        self.assertFalse((folder / 'image').exists())
         self.assertNotIn('image', core.read_document(root / 'profile.json')['runtime'])
 
     def test_digest_from_wrong_repository_blocks_job_preparation(self) -> None:
         self.hook.write_text(self.hook.read_text().replace('os.environ["IMAGE_REPOSITORY"]', '"other/repo"'))
-        with self.assertRaisesRegex(ValueError, 'configured repository'):
-            self.prepare()
+        root = self.prepare()
+        folder = root / core.read_document(root / 'campaign.json')['jobs'][0]
+        with patch('sys.stdout', new=io.StringIO()), self.assertRaisesRegex(ValueError, 'configured repository'):
+            controller.Job(folder).prepare_image()
 
     def test_stop_cancels_image_preparation_and_records_failure(self) -> None:
         self.hook.write_text('import time\ntime.sleep(60)\n')
@@ -91,14 +100,14 @@ class ImageBuildTests(unittest.TestCase):
         stop.set()
         with patch('sys.stdout', new=io.StringIO()), self.assertRaisesRegex(RuntimeError, 'interrupted'):
             image_build.resolve(build={**self.description['image_build'], 'cwd': str(self.base)},
-                                repository=self.repository, directory=self.base / 'cancelled', stop=stop)
+                                repository=self.repository, directory=self.base / 'cancelled', stop=stop, run_id=self.run_id)
         self.assertEqual(core.read_document(self.base / 'cancelled/status.json')['phase'], 'failed')
 
     def test_timeout_preserves_diagnostics_without_a_result(self) -> None:
         self.hook.write_text('import time\nprint("waiting", flush=True)\ntime.sleep(60)\n')
         with patch('sys.stdout', new=io.StringIO()), self.assertRaises(TimeoutError):
             image_build.resolve(build={**self.description['image_build'], 'cwd': str(self.base), 'timeout_seconds': 1},
-                                repository=self.repository, directory=self.base / 'timeout', stop=threading.Event())
+                                repository=self.repository, directory=self.base / 'timeout', stop=threading.Event(), run_id=self.run_id)
         self.assertIn('waiting', (self.base / 'timeout/command.log').read_text())
         self.assertFalse((self.base / 'timeout/result.json').exists())
 
@@ -146,14 +155,16 @@ class ImageBuildTests(unittest.TestCase):
         def command(argv: list[str], *, capture: bool = False, check: bool = True, env=None):
             commands.append(argv)
             output = ''
-            if argv[0] == 'bash':
+            if argv[:6] == ['gcloud', '--project', 'fixture-project', 'artifacts', 'repositories', 'describe']:
+                output = 'DOCKER'
+            elif argv[0] == 'bash':
                 build = Path(env['JOBSET_BUILD_DIAGNOSTICS'])
                 build.mkdir()
                 (build / 'image-id.txt').write_text('sha256:' + 'c' * 64)
                 core.save(path=build / 'image-source.json', value={'source_revisions': {
                     name: 'fixture' for name in ('vllm', 'tpu_inference', 'InferenceX')}})
             elif argv[:3] == ['docker', 'image', 'inspect']:
-                output = 'sha256:' + 'c' * 64 if argv[4] == '{{.Id}}' else json.dumps([self.image])
+                output = 'sha256:' + 'c' * 64 if argv[4] == '{{.Id}}' else json.dumps([argv[-1].removesuffix(':run') + '@sha256:' + 'b' * 64])
             return subprocess.CompletedProcess(args=argv, returncode=0, stdout=output)
         for target, replacement in [
             ('platform.system', lambda: 'Linux'), ('platform.machine', lambda: 'x86_64'),
@@ -166,17 +177,18 @@ class ImageBuildTests(unittest.TestCase):
         stack.enter_context(patch('sys.stdout', new=io.StringIO()))
         return commands, value
 
-    def test_builder_reuses_matching_inputs_and_rebuilds_after_environment_change(self) -> None:
+    def test_builder_always_builds_identical_inputs_under_distinct_run_paths(self) -> None:
         with ExitStack() as stack:
             commands, inputs = self.builder_fixture(stack)
             for index in range(3):
                 diagnostics = self.base / f'build-{index}'
                 diagnostics.mkdir()
-                if index == 2:
-                    inputs['environment'] = 'changed'
-                value = prepare_runtime_image.prepare(repository=self.repository, diagnostics=diagnostics)
-                self.assertEqual(value['image'], self.image)
-            self.assertEqual(sum(argv[0] == 'bash' for argv in commands), 2)
+                run_id = 'fixture-' + f'{index:024x}'
+                destination = self.repository + '/' + run_id
+                value = prepare_runtime_image.prepare(repository=destination, diagnostics=diagnostics, run_id=run_id)
+                self.assertEqual(value['image'], destination + '@sha256:' + 'b' * 64)
+                self.assertEqual(value['owner_run_id'], run_id)
+            self.assertEqual(sum(argv[0] == 'bash' for argv in commands), 3)
             self.assertEqual(sum(argv[:2] == ['docker', 'push'] for argv in commands), 3)
 
     def test_concurrent_input_change_blocks_publication(self) -> None:
@@ -186,7 +198,7 @@ class ImageBuildTests(unittest.TestCase):
             diagnostics = self.base / 'racing-build'
             diagnostics.mkdir()
             with self.assertRaisesRegex(RuntimeError, 'inputs changed'):
-                prepare_runtime_image.prepare(repository=self.repository, diagnostics=diagnostics)
+                prepare_runtime_image.prepare(repository=self.repository + '/' + self.run_id, diagnostics=diagnostics, run_id=self.run_id)
             self.assertFalse(any(argv[:2] == ['docker', 'push'] for argv in commands))
             self.assertFalse(list((self.base / 'cache').glob('*.json')))
 
@@ -197,7 +209,7 @@ class ImageBuildTests(unittest.TestCase):
             diagnostics = self.base / 'failed-build'
             diagnostics.mkdir()
             with self.assertRaises(subprocess.CalledProcessError):
-                prepare_runtime_image.prepare(repository=self.repository, diagnostics=diagnostics)
+                prepare_runtime_image.prepare(repository=self.repository + '/' + self.run_id, diagnostics=diagnostics, run_id=self.run_id)
             self.assertEqual(failed.call_count, 1)
             self.assertFalse(list((self.base / 'cache').glob('*.json')))
 

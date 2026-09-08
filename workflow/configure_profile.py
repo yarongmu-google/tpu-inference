@@ -107,7 +107,7 @@ def configure(description: Path, source: Path | None) -> Path:
                  'workload_iam_member': member}, 'runtime': runtime,
                  'hardware': {'accelerator': accelerator, 'topology': topology, 'chips_per_host': int(chips)},
                  'storage': {'dedicated_bucket': True, 'deletion': 'manual', 'soft_delete_days': 0}}
-        print(f'Profile: {profile}\nStorage: project={project}, region={region}, dedicated bucket, manual cleanup, soft delete disabled', flush=True)
+        print(f'Profile: {profile}\nStorage: project={project}, region={region}, dedicated bucket, cleanup={data.get("execution", {}).get("cleanup", "manual")}, soft delete disabled', flush=True)
         if input('Save this local profile? [y/N]: ').strip().lower() not in {'y', 'yes'}:
             raise ValueError('Profile was not saved')
         save(path=profile, value=value)

@@ -256,7 +256,12 @@ def load_description(path: Path) -> tuple[dict, dict]:
             raise ValueError('Invalid or reserved extra-output name')
         absolute(value)
     execution = data.setdefault('execution', {})
-    keys(execution, {'timeout_seconds', 'max_in_flight', 'poll_seconds', 'archive_seconds', 'wait_seconds'})
+    keys(execution, {'timeout_seconds', 'max_in_flight', 'poll_seconds', 'archive_seconds', 'wait_seconds', 'cleanup'})
+    cleanup = execution.setdefault('cleanup', 'manual')
+    if cleanup not in {'manual', 'after_collection'}:
+        raise ValueError('execution.cleanup must be manual or after_collection')
+    if cleanup == 'after_collection' and 'image_build' not in data:
+        raise ValueError('Automatic resource cleanup requires a run-owned image build')
     for key, default, maximum in [('timeout_seconds', 43200, 604800), ('max_in_flight', 50, 50),
                                   ('poll_seconds', 30, 600), ('archive_seconds', 1200, 86400), ('wait_seconds', 86400, 604800)]:
         execution[key] = positive(execution.get(key, default), maximum=maximum)

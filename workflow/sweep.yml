@@ -36,6 +36,7 @@ outputs:
   directory: ./local/results
   snapshot_seconds: 30
 execution:
+  cleanup: after_collection
   timeout_seconds: 43200
   max_in_flight: 1
   wait_seconds: 86400

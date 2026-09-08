@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import fcntl
 from pathlib import Path
 import re
 import shlex
@@ -15,7 +16,7 @@ IMAGE = re.compile(r'[a-z0-9._:/-]+@sha256:[a-f0-9]{64}')
 REPOSITORY = re.compile(r'[a-z0-9-]+-docker\.pkg\.dev/[a-z0-9-]+/[a-z0-9._-]+/[a-z0-9._/-]+')
 
 
-def resolve(build: dict, repository: str, directory: Path, stop: threading.Event) -> dict:
+def resolve(build: dict, repository: str, directory: Path, stop: threading.Event, run_id: str) -> dict:
     directory.mkdir(parents=True, exist_ok=False)
     result = directory / 'result.json'
     state = directory / 'status.json'
@@ -25,11 +26,13 @@ def resolve(build: dict, repository: str, directory: Path, stop: threading.Event
     process = None
     pump = None
     log = (directory / 'command.log').open('w')
+    lock = (directory / '.lock').open('a')
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     try:
         process = subprocess.Popen(args=build['argv'], cwd=build['cwd'],
             env={**os.environ, 'IMAGE_REPOSITORY': repository, 'IMAGE_RESULT': str(result),
-                 'IMAGE_BUILD_LOG_DIR': str(directory)},
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
+                 'IMAGE_BUILD_LOG_DIR': str(directory), 'IMAGE_RUN_ID': run_id},
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True, pass_fds=(lock.fileno(),))
         def stream() -> None:
             for line in process.stdout:
                 log.write(line)
@@ -53,6 +56,8 @@ def resolve(build: dict, repository: str, directory: Path, stop: threading.Event
         image = value.get('image', '')
         if not isinstance(image, str) or not IMAGE.fullmatch(image) or not image.startswith(repository + '@'):
             raise ValueError('Image preparation did not return a digest in the configured repository')
+        if value.get('owner_run_id') != run_id:
+            raise ValueError('Image preparation returned a different owner run ID')
         save(path=state, value={**value, 'phase': 'ready'})
         print(f'Runtime image: {image}', flush=True)
         return value
@@ -82,3 +87,4 @@ def resolve(build: dict, repository: str, directory: Path, stop: threading.Event
         if process is not None and process.stdout is not None:
             process.stdout.close()
         log.close()
+        lock.close()

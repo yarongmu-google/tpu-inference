@@ -34,6 +34,7 @@ class SweepIntegrationTests(unittest.TestCase):
         self.description = core.read_document(controller.ROOT / 'sweep.yml')
         # Existing snapshot-only checks also cover compatibility with fixed images.
         self.description.pop('image_build', None)
+        self.description['execution'].pop('cleanup', None)
         self.description['code']['directory'] = '../scripts'
         self.description_path = self.workflow / 'sweep.json'
         core.save(path=self.description_path, value=self.description)

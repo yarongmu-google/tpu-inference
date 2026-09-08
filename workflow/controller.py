@@ -1,4 +1,4 @@
-"""Submit, resume, monitor, collect, and manually clean described jobs."""
+"""Submit, resume, monitor, collect, and clean described jobs."""
 from __future__ import annotations
 
 import argparse
@@ -339,9 +339,55 @@ class Job:
                     STOP.wait(5)
         return False
 
+    def prepare_image(self) -> None:
+        if not self.state.get('owned_image'):
+            return
+        if self.state.get('resources_cleaned'):
+            raise ValueError('Run resources were cleaned; start a new run to rebuild')
+        from image_build import IMAGE, resolve
+        if not self.state.get('image_ready'):
+            if self.state.get('image_build_started'):
+                result = self.directory / 'image/result.json'
+                if not result.is_file():
+                    raise RuntimeError('Previous image preparation did not finish; clean this run and start a new one')
+                value = read_document(result)
+            else:
+                self.phase('BUILDING_IMAGE')
+                self.save(image_build_started=True)
+                value = resolve(build=self.state['image_build'], repository=self.state['owned_image'],
+                    directory=self.directory / 'image', stop=STOP, run_id=self.state['run_id'])
+            image = value.get('image', '')
+            if (not isinstance(image, str) or not IMAGE.fullmatch(image)
+                    or not image.startswith(self.state['owned_image'] + '@')
+                    or value.get('owner_run_id') != self.state['run_id']):
+                raise ValueError('Image result does not belong to this run')
+            save(path=self.directory / 'image-build.json', value=value)
+            self.save(image=image, image_ready=True)
+        config = read_document(self.directory / 'run-template.json')
+        payload = read_document(self.directory / 'runtime-payload.json')
+        if hashlib.sha256(json_bytes(payload)).hexdigest() != config['runtime_sha256']:
+            raise ValueError('Saved runtime payload changed')
+        config['image'] = self.state['image']
+        expected = hashlib.sha256(json_bytes(config)).hexdigest()
+        if self.state.get('config_sha256') not in {None, expected}:
+            raise ValueError('Saved configuration changed after image preparation')
+        save(path=self.directory / 'input/run.json', value=config)
+        self.save(config_sha256=checksum(self.directory / 'input/run.json'), phase='PREPARED')
+        save(path=self.directory / 'start.json', value={'run_id': self.state['run_id'],
+                                                     'config_sha256': self.state['config_sha256']})
+        save(path=self.directory / 'recipe.json', value=recipe(state=self.state, payload=payload))
+
+    def finish_cleanup(self) -> None:
+        if self.state['execution'].get('cleanup') == 'after_collection' and not self.state.get('resources_cleaned'):
+            self.cleanup(discard=False, automatic=True)
+
     def run(self) -> int:
         if self.state.get('finished'):
+            if not self.state.get('artifacts_verified') and self.state.get('submission_started'):
+                self.collect()
+            self.finish_cleanup()
             return self.state['exit_code']
+        self.prepare_image()
         config = self.state['execution']
         wait_started = time.monotonic()
         job = None
@@ -392,6 +438,7 @@ class Job:
                     success = self.collect()
                     code = 0 if status == 'Succeeded' and archive == 'Complete' and success else 1
                     self.save(finished=True, exit_code=code, phase='VERIFIED' if code == 0 else 'FAILED')
+                    self.finish_cleanup()
                     return code
                 if time.monotonic() - terminal_since > config['archive_seconds']:
                     raise TimeoutError('Archive wait expired; resume to continue collection')
@@ -411,7 +458,12 @@ class Job:
                     raise
         raise InterruptedError('Controller interrupted; resume the saved run')
 
-    def cleanup(self, discard: bool) -> int:
+    def cleanup(self, discard: bool, automatic: bool = False) -> int:
+        if self.state.get('owned_image'):
+            from resources import cleanup
+            return cleanup(job=self, discard=discard, automatic=automatic)
+        if automatic:
+            raise ValueError('Automatic cleanup cannot adopt resources from an older run')
         if self.state.get('deleted'):
             print('Bucket already recorded as deleted')
             return 0
@@ -467,18 +519,6 @@ def prepare(description_path: Path, name: str | None, dry_run: bool = False) -> 
     for key, item in data['inputs'].items():
         bundles.append({'source': 'inputs/' + key, 'destination': item['destination'],
                         'files': snapshot(source=Path(item['source']), target=shared / 'inputs' / key, include=['**'])})
-    if 'image_build' in data:
-        if dry_run:
-            save(path=root / 'profile.json', value=profile)
-            save(path=root / 'campaign.json', value={'name': name, 'jobs': [],
-                'max_in_flight': data['execution']['max_in_flight'], 'dry_run': True,
-                'image_build_pending': True})
-            print(f'Dry run at {root}: image preparation and cloud actions skipped; image is unresolved', flush=True)
-            return root
-        from image_build import resolve
-        resolved = resolve(build=data['image_build'], repository=profile['runtime']['repository'],
-                           directory=root / 'image', stop=STOP)
-        profile['runtime']['image'] = resolved['image']
     save(path=root / 'profile.json', value=profile)
     user = os.environ.get('USER', '')
     if not re.fullmatch('[a-zA-Z0-9_.-]+', user):
@@ -492,22 +532,29 @@ def prepare(description_path: Path, name: str | None, dry_run: bool = False) -> 
         nonce = uuid.uuid4().hex
         run = {**data['run'], 'env': {**data['run']['env'], **case['env']}}
         config = {'format': 'run-description-v1', 'run_id': run_id, 'name': name, 'nonce': nonce,
-                  'image': profile['runtime']['image'], 'run': run,
+                  'image': None if 'image_build' in data else profile['runtime']['image'], 'run': run,
                   'inputs': {key: {'destination': item['destination']} for key, item in data['inputs'].items()},
                   'outputs': {key: data['outputs'][key] for key in ('extra', 'snapshot_seconds')},
                   'bundles': bundles, 'runtime_sha256': hashlib.sha256(json_bytes(payload)).hexdigest(), 'timeout_seconds': data['execution']['timeout_seconds']}
-        save(path=folder / 'input/run.json', value=config)
-        digest = checksum(folder / 'input/run.json')
+        save(path=folder / 'run-template.json', value=config)
+        save(path=folder / 'runtime-payload.json', value=payload)
+        if 'image_build' not in data:
+            save(path=folder / 'input/run.json', value=config)
+        digest = None if 'image_build' in data else checksum(folder / 'input/run.json')
         state = {'run_id': run_id, 'name': name, 'label': label, 'case': case['name'],
                  'bucket': run_id, 'uri': 'gs://' + run_id, 'recipe': run_id, 'user': user,
-                 'image': profile['runtime']['image'], 'profile': profile, 'execution': data['execution'],
+                 'image': config['image'], 'profile': profile, 'execution': data['execution'],
                  'config_sha256': digest, 'phase': 'PREPARED', 'dry_run': dry_run}
         save(path=folder / 'owner.json', value={'run_id': run_id, 'nonce': nonce, 'project': profile['cloud']['project']})
-        save(path=folder / 'start.json', value={'run_id': run_id, 'config_sha256': digest})
         if 'image_build' in data:
-            save(path=folder / 'image-build.json', value=resolved)
+            state.update(image_build=data['image_build'],
+                         owned_image=profile['runtime']['repository'].rstrip('/') + '/' + run_id)
+            save(path=folder / 'resources.json', value={'run_id': run_id, 'bucket': run_id,
+                'image': state['owned_image'], 'local_tags': ['runtime:' + run_id, state['owned_image'] + ':run']})
+        else:
+            save(path=folder / 'start.json', value={'run_id': run_id, 'config_sha256': digest})
+            save(path=folder / 'recipe.json', value=recipe(state=state, payload=payload))
         save(path=folder / 'state.json', value=state)
-        save(path=folder / 'recipe.json', value=recipe(state=state, payload=payload))
         jobs.append(run_id)
     save(path=root / 'campaign.json', value={'name': name, 'jobs': jobs, 'max_in_flight': data['execution']['max_in_flight'], 'dry_run': dry_run})
     print(f'Prepared {len(jobs)} jobs at {root}', flush=True)
@@ -528,17 +575,33 @@ def locked_job(directory: Path, action: str = 'run', discard: bool = False) -> i
             if action == 'cleanup':
                 return job.cleanup(discard=discard)
             if action == 'collect':
-                return 0 if job.collect() else 1
+                if job.state.get('owned_image') and job.state.get('deleted'):
+                    from resources import verify_collected
+                    verify_collected(job=job)
+                    job.finish_cleanup()
+                    return 0 if job.state.get('artifact_exit_code') == 0 else 1
+                success = job.collect()
+                if job.state.get('artifacts_verified'):
+                    job.finish_cleanup()
+                return 0 if success else 1
             return job.run()
         except Exception as error:
             job.save(last_error=str(error))
             (directory / 'error.txt').write_text(traceback.format_exc())
             print(f'[{job.state["run_id"]}] stopped: {error}', file=sys.stderr, flush=True)
-            if action == 'run' and not STOP.is_set() and job.state.get('bucket_marked'):
+            if (action == 'run' and not STOP.is_set() and job.state.get('bucket_marked')
+                    and not job.state.get('artifacts_verified') and not job.state.get('deleted')):
                 try:
                     job.collect()
                 except Exception:
                     (directory / 'collection-error.txt').write_text(traceback.format_exc())
+            if (action == 'run' and job.state.get('owned_image') and not STOP.is_set()
+                    and not job.state.get('submission_started') and not job.state.get('bucket_creation_started')):
+                job.save(finished=True, exit_code=1)
+                try:
+                    job.finish_cleanup()
+                except Exception as cleanup_error:
+                    job.save(cleanup_error=str(cleanup_error))
             return 1
         finally:
             print(f'Results and diagnostics: {directory}', flush=True)
@@ -607,7 +670,7 @@ def main() -> int:
             jobs = [path / n for n in json.loads((path / 'campaign.json').read_text())['jobs']] if (path / 'campaign.json').exists() else [path]
             for directory in jobs:
                 state = json.loads((directory / 'state.json').read_text())
-                print(f'{state["run_id"]}: {state["phase"]}; job={state.get("job_id", "unassigned")}; {state["uri"]}')
+                print(f'{state["run_id"]}: {state["phase"]}; job={state.get("job_id", "unassigned")}; {state["uri"]}; resources_cleaned={state.get("resources_cleaned", False)}')
             return 0
         if (path / 'campaign.json').exists():
             if args.target != 'resume':

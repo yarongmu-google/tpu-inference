@@ -37,36 +37,57 @@ bucket storage. The workload's bucket-access IAM identity must be supplied or
 come from an existing profile; it is never guessed from the account name.
 Hardware settings are also confirmed once. A profile with the repository saved is reused without rewriting it. Then the controller asks for a run name.
 
-Before submission, the description's image preparation command checks the local
-source files, native modules, environment contents and build scripts. Matching
-inputs reuse a verified local image; changed inputs trigger the existing Docker
-builder and CPU smoke check. The first run after this upgrade builds once because
-older images lack the complete input fingerprint. Relevant tracked edits and
-untracked source files must be committed first so they cannot be silently omitted.
-The input check reads the environment files even on a cache hit; it may take time
-for a large environment, but avoids copying it or building again on a hit.
+Every new TPU job invokes the Docker builder and CPU smoke check, even when the
+source and environment match a previous job. The configured image repository is
+a prefix: the launcher appends the unique run ID as a separate image path. Its
+GCS bucket uses that same run ID. Independent cases each build and own their own
+image; no completed image is selected from a shared-image cache. Docker may reuse
+build layers, and the local image-preparation lock serializes builds on this CPU
+VM while already submitted TPU jobs continue concurrently.
 
 The helper finds editable vLLM in the active CPU-VM environment. It uses
 `INFERENCEX_REPO`, an existing `/tmp/InferenceX`, or a persistent checkout under
 `workflow/local/images/InferenceX`. That checkout is cloned once when needed;
-it is not automatically pulled on later runs. Source revisions and a build-input
-SHA256 are printed and saved. The launcher publishes to the configured repository
-and pins the returned digest for every job in the campaign. A cache hit still
-checks the local image ID and runs Docker push, which can reuse existing layers.
-No additional CUDA installation is introduced. The existing image build installs
-the editable projects and CPU Torch packages; TPU execution disables installation.
+it is not automatically pulled on later runs. Relevant tracked edits and
+untracked source files must be committed before building so they cannot be
+silently omitted. Source revisions, a build-input fingerprint and the published
+digest are saved for each run. The existing image build installs editable
+projects and CPU Torch packages; TPU execution disables installation.
 
-Image preparation, publication and early errors are logged under the campaign's
-`image/` directory, including build diagnostics. Each job saves `image-build.json`
-with the exact digest and provenance. A failed build never submits a job; rerun
-the launcher after fixing it. Saved campaign/job resume uses the original pinned
-image and never rebuilds. The runtime image contains installed packages and the
-benchmark client; the three frozen sweep scripts are delivered separately.
+The run's `resources.json` is written before any build or submission. Its
+`image/` directory retains build logs, publication progress and early errors.
+`image-build.json` records the final image digest and source provenance. A failed
+build never submits a TPU job. After an interrupted build, resume can recover an
+already saved publication result; it never silently starts another build under
+the same run ID. Start a new run to rebuild.
+
+The sweep selects `execution.cleanup: after_collection`. Once the job is terminal
+and archiving has completed or failed, the controller verifies the downloaded
+final artifact bundle before deleting that run's bucket and complete registry
+image package, including its tags and versions. This applies to both successful
+and failed workloads. Active jobs, unknown submissions and incomplete or damaged
+local collections retain their resources. Resume retries collection and cleanup;
+it does not resubmit the completed job. Cleanup of a failed pre-submission build
+also removes its owned image resources once local error logs are saved.
+
+Cleanup removes only the two local Docker tags belonging to the run. Shared
+Docker build layers, the persistent benchmark-client checkout, older images,
+local results and CDK service metadata are preserved. Local Docker build-cache
+pruning is a separate operation. The parent Artifact Registry repository is not
+deleted or automatically created; it must already exist and permit the CPU VM
+to publish, list and delete the run's image packages. The helper checks that the
+repository exists and uses Docker format before starting the expensive build.
+
+Cleanup progress is saved after each resource. If deletion completes just before
+the controller is interrupted, a successful resource listing confirms absence on
+resume. Permission and network errors do not count as absence. `cleanup.json`
+keeps the run ID, image digest, deleted resource paths, outcome and cleanup time.
+A fresh retry after cleanup always builds a new image under a new run ID.
 
 `--dry-run --name check` can be passed to `run_sweep.sh` to inspect its frozen
 scripts and build plan without building, publishing or creating cloud resources.
 For descriptions with image preparation, the digest and job recipe remain
-unresolved until a normal invocation. Each normal
+unresolved until each job builds its image. Dry-run records cannot be submitted. Each normal
 invocation starts a new campaign; use the generic `resume` command with its
 printed saved path to reconnect. It does not import results or resume jobs
 created by the previous launcher. The profile helper itself runs no cloud
@@ -128,8 +149,10 @@ rejected. See `examples/experiment.yml` for the minimal description.
   provenance. Output is streamed into local logs. Failures, interruption, timeout,
   or an invalid digest block job preparation. The profile supplies
   `runtime.repository`; without `image_build`, it supplies `runtime.image` as before.
-  Preparation runs once per new campaign, after experiment snapshots, and never
-  on resume. Use a command appropriate to your project; the controller contains
+  Preparation runs once per new job, after experiment snapshots. The command
+  also receives `IMAGE_RUN_ID` and must return that ID as `owner_run_id`. Its
+  destination already includes the unique run ID. Resume reuses only that same
+  run's saved result; it never starts a second build under the run ID. Use a command appropriate to your project; the controller contains
   no application-specific build logic.
 - `code.directory`: one directory to freeze; `include` optionally selects paths
   relative to it using shell-style file patterns. The default is `['**']`.
@@ -175,16 +198,15 @@ Do not edit files inside saved execution directories. Source edits after
 preparation do not change a queued job. Hashes are checked before upload and
 again before running. No Git commit or push is performed by this workflow.
 
-## Image reuse
+## Runtime images
 
-The environment profile specifies a published image digest. The launcher never
-builds or retags it. Standalone script changes are sent as code snapshots. For
-Python package changes, make the intended source importable and use
-`verify_imports` to catch an unexpected import path. The runner does not run
-package installers or rebuild native extensions. Changes to dependencies,
-package metadata/entry points, compiled modules or ABI requirements need an
-updated compatible image or separately prepared artifact. A fresh TPU job may
-still need model loading and JIT compilation when the image is reused.
+With `image_build`, each new job builds and publishes into its own run-specific
+image path. Code or dependency changes are included by rebuilding; a digest is
+used only to pin that job's actual image. Without `image_build`, a description
+can still use a supplied immutable `runtime.image`; such images are externally
+managed and are never automatically deleted by this workflow. Existing saved
+runs keep their original image and cleanup behavior. Fresh TPU jobs still need
+model loading and JIT compilation even when Docker reuses build layers.
 
 The small generic wrapper is embedded in each generated recipe. It does not
 require rebuilding the runtime image or CDK's directory-mapping feature.
@@ -228,7 +250,7 @@ manifest.json           current snapshot and execution status
 Artifacts are copied to container-local scratch, then published periodically.
 The manifest references closed objects and records hashes, sizes, image digest,
 configuration identity and exit status. Repeated identical files reuse objects;
-changed or growing files produce new objects until manual bucket cleanup.
+changed or growing files produce new objects until bucket cleanup.
 Abrupt container loss may lose writes since the latest successful snapshot.
 A final publication failure returns a nonzero exit code. Checksums detect an
 incomplete upload rather than presenting it as a complete result.
@@ -241,6 +263,16 @@ GCS. Full collection also attempts CDK description and console-log retrieval,
 including for jobs that never started their program.
 
 ## Resume, collect, and cleanup
+
+For newly built images, `execution.cleanup: after_collection` opts each run into
+automatic image and bucket cleanup after verified collection. It overrides the
+profile's manual-storage default for that run. The default for other descriptions
+is `manual`. The same description can select `manual` to retain its owned image
+and bucket until explicit cleanup. Automatic cleanup requires a run-owned build.
+Existing saved runs are not retroactively opted into deletion.
+
+After automatic cleanup, `resume` returns the recorded outcome and `collect`
+verifies the retained local bundle. To execute again, start a new named run.
 
 Each new invocation with a description creates a new campaign. Saved execution
 paths are explicit, so concurrent campaigns cannot accidentally resume each
@@ -261,15 +293,21 @@ stdout/stderr, exit codes and controller errors are retained per job. Job-local
 and campaign-local locks prevent competing controllers; independent campaigns
 can run simultaneously.
 
-Cleanup requires one exact job directory, confirms the remote job has stopped
-and archival has finished (or failed), checks ownership, and re-verifies the
-local downloaded files. It asks the user to type `DELETE <run-id>` before
-removing the bucket and all of its objects. Local results, runtime images and
-CDK-managed metadata/logs are preserved. `--discard-incomplete` explicitly
-permits cleanup without a verified result bundle; it still requires ownership,
-terminal job state and typed confirmation. Cleanup never automatically runs
-when the workload finishes. If cloud policy prevents deletion, its error is
-retained and the bucket is not reported as deleted.
+The explicit `cleanup` command requires one exact job directory and typed
+`DELETE <run-id>` confirmation. It checks terminal/archive state, resource
+ownership and local artifact hashes. For an owned-image run it deletes the
+bucket, the run's complete image package, and its local Docker tags. Older
+and fixed-image runs keep the original bucket-only manual cleanup behavior.
+`--discard-incomplete` explicitly permits manual cleanup without a verified
+result bundle; it still checks ownership and terminal job state when submitted.
+
+Automatic cleanup is selected only by `execution.cleanup: after_collection`;
+it never discards incomplete results. If deletion fails, its error and progress
+are retained and the controller returns nonzero. Resume continues collection
+or cleanup from that same run record. The run image is removed through the
+[Artifact Registry package deletion command](https://docs.cloud.google.com/sdk/gcloud/reference/artifacts/packages/delete),
+scoped to its unique image path. No global image, bucket, or Docker-cache
+pruning is performed. Local results and CDK-managed metadata/logs are preserved.
 
 The launcher returns nonzero for failed workloads, missing/corrupt final
 artifacts, unresolved submissions and archive failures. Available partial

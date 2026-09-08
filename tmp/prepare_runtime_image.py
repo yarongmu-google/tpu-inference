@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build or reuse a verified local runtime and publish its immutable reference."""
+"""Build a run-owned runtime and publish its immutable reference."""
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -75,7 +75,7 @@ def sources(root: Path, keep: Callable[[str], bool]) -> dict:
 
 
 def inventory(vllm: Path, client: Path) -> dict:
-    print('Checking source and environment contents for image reuse...', flush=True)
+    print('Recording source and environment contents for this build...', flush=True)
     environment = {name: tree(root=Path(sys.prefix) / name) for name in snapshot.RUNTIME_DIRECTORIES
                    if (Path(sys.prefix) / name).exists() or (Path(sys.prefix) / name).is_symlink()}
     code = {
@@ -97,7 +97,9 @@ def fingerprint(value: dict) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
-def prepare(repository: str, diagnostics: Path) -> dict:
+def prepare(repository: str, diagnostics: Path, run_id: str) -> dict:
+    if not re.fullmatch(r'[a-z0-9-]+-[a-f0-9]{24}', run_id) or not repository.endswith('/' + run_id):
+        raise RuntimeError('Image path must belong to this run ID')
     if platform.system() != 'Linux' or platform.machine() != 'x86_64':
         raise RuntimeError('Build on the Linux x86_64 CPU VM')
     if sys.version_info[:2] != (3, 12) or os.environ.get('CONDA_DEFAULT_ENV') != 'vllm12' or not (Path(sys.prefix) / 'conda-meta').is_dir():
@@ -106,6 +108,11 @@ def prepare(repository: str, diagnostics: Path) -> dict:
     if spec is None or spec.origin is None:
         raise RuntimeError('Cannot locate the editable vLLM source in the active environment')
     vllm = Path(snapshot.git(Path(spec.origin).resolve().parent, 'rev-parse', '--show-toplevel'))
+    host, project, registry, _ = repository.split('/', 3)
+    response = run(argv=['gcloud', '--project', project, 'artifacts', 'repositories', 'describe', registry,
+        '--location', host.removesuffix('-docker.pkg.dev'), '--format=value(format)'], capture=True)
+    if response.stdout.strip() != 'DOCKER':
+        raise RuntimeError('The configured Artifact Registry repository must already exist and use Docker format')
     if os.environ.get('INFERENCEX_REPO'):
         client = Path(os.environ['INFERENCEX_REPO']).resolve()
     elif Path('/tmp/InferenceX/.git').exists():
@@ -120,31 +127,27 @@ def prepare(repository: str, diagnostics: Path) -> dict:
     save(path=diagnostics / 'inputs.json', value=before)
     print('Source revisions: ' + json.dumps(revisions, sort_keys=True), flush=True)
     print('Build input SHA256: ' + digest, flush=True)
-    cached = CACHE / (digest + '.json')
-    record = json.loads(cached.read_text()) if cached.is_file() else {}
-    local = record.get('local_image_id', '')
-    if not IMAGE_ID.fullmatch(local) or run(argv=['docker', 'image', 'inspect', '--format', '{{.Id}}', local], capture=True, check=False).stdout.strip() != local:
-        build = diagnostics / 'build'
-        run(argv=['bash', str(ROOT / 'tmp/build_jobset_image.sh')], env={**os.environ,
-            'INFERENCEX_REPO': str(client), 'JOBSET_BUILD_DIAGNOSTICS': str(build),
-            'JOBSET_BUILD_IMAGE': 'runtime:inputs-' + digest})
-        local = (build / 'image-id.txt').read_text().strip()
-        if not IMAGE_ID.fullmatch(local):
-            raise RuntimeError('Builder did not return a Docker image ID')
-        metadata = json.loads((build / 'image-source.json').read_text())
-        if metadata['source_revisions'] != revisions:
-            raise RuntimeError('Source revisions changed during the image build; rerun after edits finish')
-        record = {'local_image_id': local, 'input_sha256': digest, 'source_revisions': revisions,
-                  'build_directory': str(build)}
-    else:
-        print('Reusing verified local image: ' + local, flush=True)
-    # Detect concurrent edits or environment installs before caching/publishing.
+    build = diagnostics / 'build'
+    local_tag = 'runtime:' + run_id
+    run(argv=['bash', str(ROOT / 'tmp/build_jobset_image.sh')], env={**os.environ,
+        'INFERENCEX_REPO': str(client), 'JOBSET_BUILD_DIAGNOSTICS': str(build),
+        'JOBSET_BUILD_IMAGE': local_tag})
+    local = (build / 'image-id.txt').read_text().strip()
+    if not IMAGE_ID.fullmatch(local):
+        raise RuntimeError('Builder did not return a Docker image ID')
+    metadata = json.loads((build / 'image-source.json').read_text())
+    if metadata['source_revisions'] != revisions:
+        raise RuntimeError('Source revisions changed during the image build; start a new run after edits finish')
+    tag = repository + ':run'
+    record = {'local_image_id': local, 'input_sha256': digest, 'source_revisions': revisions,
+              'build_directory': str(build), 'owner_run_id': run_id, 'registry_image': repository,
+              'local_tags': [local_tag, tag]}
+    # Detect concurrent edits or environment installs before publishing.
     if fingerprint(value=inventory(vllm=vllm, client=client)) != digest:
         raise RuntimeError('Build inputs changed during preparation; rerun after edits or installs finish')
-    save(path=cached, value=record)
-    tag = repository + ':inputs-' + digest
     run(argv=['gcloud', 'auth', 'configure-docker', repository.split('/')[0], '--quiet'])
     run(argv=['docker', 'tag', local, tag])
+    save(path=diagnostics / 'publication.json', value={**record, 'publication_started': True})
     run(argv=['docker', 'push', tag])
     response = run(argv=['docker', 'image', 'inspect', '--format', '{{json .RepoDigests}}', tag], capture=True)
     digests = [d for d in json.loads(response.stdout) if d.startswith(repository + '@sha256:')
@@ -158,13 +161,14 @@ def main() -> None:
     repository = os.environ.get('IMAGE_REPOSITORY', '')
     if not re.fullmatch(r'[a-z0-9-]+-docker\.pkg\.dev/[a-z0-9-]+/[a-z0-9._-]+/[a-z0-9._/-]+', repository):
         raise RuntimeError('IMAGE_REPOSITORY must be an Artifact Registry image path without a tag')
+    run_id = os.environ['IMAGE_RUN_ID']
     diagnostics = Path(os.environ['IMAGE_BUILD_LOG_DIR']).resolve()
     result = Path(os.environ['IMAGE_RESULT']).resolve()
     CACHE.mkdir(parents=True, exist_ok=True)
     print('Waiting for the local image preparation lock...', flush=True)
     with (CACHE / '.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        save(path=result, value=prepare(repository=repository, diagnostics=diagnostics))
+        save(path=result, value=prepare(repository=repository, diagnostics=diagnostics, run_id=run_id))
 
 
 if __name__ == '__main__':
