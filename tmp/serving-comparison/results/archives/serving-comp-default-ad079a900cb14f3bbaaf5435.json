@@ -1,0 +1,10 @@
+{
+  "archive": "serving-comp-default-ad079a900cb14f3bbaaf5435.tar.gz",
+  "artifact_exit_code": null,
+  "bytes": 5161279,
+  "exit_code": null,
+  "phase": "COLLECTING",
+  "resources_cleaned": false,
+  "run_id": "serving-comp-default-ad079a900cb14f3bbaaf5435",
+  "sha256": "289f3c7f976a59252c817c1f8529dc0e7fd0faf42ef97ad83401467add5df073"
+}
