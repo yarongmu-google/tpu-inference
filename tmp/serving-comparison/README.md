@@ -74,3 +74,9 @@ python3 -m unittest discover -s tmp/serving-comparison -p test_compare.py -v
 ```
 
 Use an interpreter with the workflow YAML dependency installed.
+
+Before starting any server, the job validates the exact client arguments and
+tokenizer access, parses each server command without loading model weights, and
+executes a small operation on all eight TPU devices. These checks and captured
+versions are saved under metadata in the final archive. They do not establish
+full-model memory fit, JIT correctness, or benchmark throughput.

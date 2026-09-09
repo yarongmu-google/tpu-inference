@@ -170,6 +170,15 @@ def uses_cdk_storage(profile: dict) -> bool:
     return profile['storage'].get('mode') == 'cdk'
 
 
+CDK_MOUNT_ROOT = Path('/cdk-outputs')
+
+
+def cdk_storage_directory(run_id: str) -> Path:
+    if not re.fullmatch(r'[a-z0-9-]+-[a-f0-9]{24}', run_id):
+        raise ValueError('Invalid run ID')
+    return CDK_MOUNT_ROOT / 'outputs' / ('workflow-' + run_id)
+
+
 def cdk_storage_uri(state: dict) -> str | None:
     if not state.get('job_id'):
         return None

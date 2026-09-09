@@ -92,6 +92,9 @@ class CdkStorageTests(unittest.TestCase):
         for quantities in pod['containers'][0]['resources'].values():
             for key, count in quantities.items():
                 quantities[key] = str(count)
+        from test_end_to_end import mounted_recipe
+        core.save(path=self.directory / 'recipe.json', value=actual)
+        actual = mounted_recipe(job=self.job, mount=core.CDK_MOUNT_ROOT)
         with patch.object(self.job, 'cdk', return_value=(0, json.dumps(actual))) as cdk, \
                 patch.object(self.job, 'gcloud', return_value=(0, '')) as cloud:
             self.job.authorize()
@@ -145,6 +148,8 @@ class CdkStorageTests(unittest.TestCase):
                 patch.object(self.job, 'cdk', side_effect=submit), \
                 patch.object(self.job, 'ensure_bucket', side_effect=AssertionError('no bucket creation')), \
                 patch.object(self.job, 'register'), \
+                patch.object(self.job, 'discover', side_effect=[{'job_status': 'Pending', 'id': 'j-fixture'}, self.fixture.remote]), \
+                patch.object(controller.STOP, 'wait'), \
                 patch.object(self.job, 'authorize', side_effect=lambda: events.append('authorize')), \
                 patch.object(self.job, 'collect', return_value=True), \
                 patch.object(self.job, 'finish_cleanup'):
@@ -208,7 +213,7 @@ class CdkStorageTests(unittest.TestCase):
         digest = core.checksum(source / 'run.json')
         delivered = threading.Event()
         def deliver() -> None:
-            shutil.copytree(src=source, dst=bucket / 'input')
+            shutil.copytree(src=source, dst=bucket / 'input', dirs_exist_ok=True)
             shutil.copyfile(src=self.directory / 'owner.json', dst=bucket / 'owner.json')
             core.save(path=bucket / 'control/start.json', value={'run_id': config['run_id'], 'config_sha256': digest})
             delivered.set()

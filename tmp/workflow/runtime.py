@@ -15,7 +15,7 @@ import threading
 import time
 import traceback
 
-from core import checksum, json_bytes, safe_path, verify
+from core import CDK_MOUNT_ROOT, cdk_storage_directory, checksum, json_bytes, safe_path, verify
 
 
 def write_remote(path: Path, value: dict) -> None:
@@ -97,6 +97,10 @@ def publish_final(local: Path, bucket: Path, status: dict, extras: dict[str, str
 def materialize(bundle: Path, items: list[dict]) -> None:
     for item in items:
         source = safe_path(root=bundle, relative=item['source'])
+        # Flat buckets may not expose uploaded directories without markers.
+        source.mkdir(parents=True, exist_ok=True)
+        for entry in item['files']:
+            safe_path(root=source, relative=entry['path']).parent.mkdir(parents=True, exist_ok=True)
         verify(root=source, entries=item['files'])
         target = Path(item['destination'])
         for parent in [target, *target.parents]:
@@ -121,7 +125,9 @@ def expand(value: str, variables: dict[str, str]) -> str:
 
 def execute(bucket: Path, local: Path, expected: str, require_mount: bool = True, mount_root: Path | None = None, input_wait_seconds: int = 0) -> int:
     local.mkdir(parents=True, exist_ok=True)
-    status = {'run_id': os.environ['RUN_ID'], 'state': 'starting', 'exit_code': None, 'updated': time.time()}
+    status = {'run_id': os.environ['RUN_ID'], 'image': os.environ.get('RUN_IMAGE'),
+              'config_sha256': expected, 'state': 'starting', 'exit_code': None, 'updated': time.time()}
+    storage_ready = False
     child = None
     interrupted = threading.Event()
     signum = [0]
@@ -145,6 +151,8 @@ def execute(bucket: Path, local: Path, expected: str, require_mount: bool = True
             if not any(line.split()[4] == str(mount_root or bucket) and 'fuse' in line for line in mounts):
                 raise RuntimeError('Storage mount is missing; workload will not start')
         bucket.mkdir(parents=True, exist_ok=True)
+        storage_ready = True
+        (bucket / 'input').mkdir(parents=True, exist_ok=True)
         config_path = bucket / 'input/run.json'
         if input_wait_seconds:
             print('WAITING_FOR_INPUTS: controller is preparing this job folder', flush=True)
@@ -256,10 +264,16 @@ def execute(bucket: Path, local: Path, expected: str, require_mount: bool = True
             child.wait()
         for thread in threads:
             thread.join(timeout=10)
+        if child is not None:
+            child.stdout.close()
+            child.stderr.close()
         status.update(state='succeeded' if code == 0 else 'failed', exit_code=code, updated=time.time())
         write_remote(path=local / 'status.json', value=status)
         try:
-            publish_final(local=local, bucket=bucket, status=status, extras=extras)
+            if storage_ready:
+                publish_final(local=local, bucket=bucket, status=status, extras=extras)
+            else:
+                print('Storage unavailable; startup diagnostics remain in the container log', file=sys.stderr, flush=True)
         except Exception:
             print('Final artifact publication failed:\n' + traceback.format_exc(), file=sys.stderr, flush=True)
             code = code or 1
@@ -268,14 +282,15 @@ def execute(bucket: Path, local: Path, expected: str, require_mount: bool = True
     return code
 
 
-if __name__ == '__main__':
+def main(local: Path = Path('/run-work')) -> int:
     if os.environ.get('WORKFLOW_STORAGE_MODE') == 'cdk':
-        mount = Path(os.environ['CDK_OUTPUT_DIR'])
-        if not mount.is_absolute() or '..' in mount.parts or mount == Path('/'):
-            raise ValueError('Invalid CDK output mount')
-        run_id = os.environ['RUN_ID']
-        if not re.fullmatch(r'[a-z0-9-]+-[a-f0-9]{24}', run_id):
-            raise ValueError('Invalid run ID')
-        sys.exit(execute(bucket=mount / ('workflow-' + run_id), mount_root=mount,
-            local=Path('/run-work'), expected=os.environ['RUN_CONFIG_SHA256'], input_wait_seconds=900))
-    sys.exit(execute(bucket=Path('/run-storage'), local=Path('/run-work'), expected=os.environ['RUN_CONFIG_SHA256']))
+        # CDK_OUTPUT_DIR is a per-container output directory, not the FUSE mount.
+        bucket = cdk_storage_directory(run_id=os.environ['RUN_ID'])
+        print(f'RUN_STORAGE: mount={CDK_MOUNT_ROOT}; run directory={bucket}', flush=True)
+        return execute(bucket=bucket, mount_root=CDK_MOUNT_ROOT, local=local,
+                       expected=os.environ['RUN_CONFIG_SHA256'], input_wait_seconds=900)
+    return execute(bucket=Path('/run-storage'), local=local, expected=os.environ['RUN_CONFIG_SHA256'])
+
+
+if __name__ == '__main__':
+    sys.exit(main())

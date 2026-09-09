@@ -222,9 +222,12 @@ CDK job root. In this mode the profile needs only `cloud.project`, runtime and
 hardware settings. The controller submits with CDK's output mount enabled,
 resolves the confirmed job ID, then uploads the frozen inputs into that job's
 unique workflow subfolder. The container waits for these inputs at
-`$CDK_OUTPUT_DIR/workflow-<run-id>` before checking ownership, hashes and storage
-read/write access. The controller checks the rendered image, command and
-hardware before authorizing the workload. The observed service account is
+`/cdk-outputs/outputs/workflow-<run-id>` before checking ownership, hashes and storage
+read/write access. `/cdk-outputs` is the FUSE mount; CDK_OUTPUT_DIR is a
+per-container descendant and is not used for shared input delivery. The
+runtime creates explicit input-directory markers so uploaded files remain
+visible even without implicit-directory inference. The controller checks the rendered image, command, hardware, bucket and job mount
+prefix before authorizing the workload. Terminal jobs go directly to collection. The observed service account is
 recorded, with no manual identity configuration.
 
 After verified collection, cleanup checks the owner marker and empties only
@@ -233,8 +236,11 @@ that run's subfolder using a scoped
 from an empty local directory. Interrupted deletion can be retried. It does not
 delete the shared bucket, other runs, or CDK's own logs and metadata. The shared
 bucket's retention and soft-delete policies remain under CDK administration.
-Local tests mock cloud commands; CPU-VM access to this prefix and the live CDK
-mount still require verification on the first run.
+Local integration tests replay the mounted directory structure through input
+delivery, workload execution, compressed collection and scoped cleanup. A live
+run still has to validate cluster storage access and model execution. If the
+runtime cannot publish a final bundle, container logs are retained and displayed;
+cleanup stays pending without obscuring the workload error.
 
 The older dedicated-bucket mode remains supported for other descriptions and
 saved runs. Its behavior is described below.

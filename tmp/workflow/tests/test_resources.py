@@ -247,8 +247,8 @@ class ResourceTests(unittest.TestCase):
     def test_collection_failure_retains_resources_then_resume_collects_and_cleans(self) -> None:
         self.job.save(finished=False, authorized=True, artifacts_verified=False)
         with self.mocked(), patch.object(self.job, 'collect', return_value=False):
-            with self.assertRaisesRegex(ValueError, 'not verified'):
-                self.job.run()
+            self.assertEqual(self.job.run(), 1)
+        self.assertTrue(self.job.state['cleanup_pending'])
         self.assertTrue(self.bucket)
         self.assertTrue(self.image_exists)
         def collected() -> bool:

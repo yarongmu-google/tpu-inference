@@ -1,6 +1,7 @@
 """Local checks for workload matching, failure retention and process cleanup."""
 from __future__ import annotations
 
+import argparse
 import contextlib
 import io
 import json
@@ -12,9 +13,11 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'payload'))
 import compare
+import preflight
 
 REPO = Path(os.environ.get('COMPARISON_TEST_REPO', str(Path(__file__).resolve().parents[2])))
 
@@ -125,6 +128,9 @@ class ComparisonTests(unittest.TestCase):
             self.assertEqual(compare.main(), 0)
         self.assertEqual(sum(argv[:2] == ['git', 'clone'] for argv in calls), 1)
         self.assertEqual(comparison.call_args.kwargs['client'], client)
+        modes = [argv[index + 1] for argv in calls for index, value in enumerate(argv)
+                 if value.endswith('/preflight.py')]
+        self.assertEqual(modes, ['client', 'server', 'hardware', 'server', 'hardware', 'server', 'hardware'])
         metadata = json.loads((output / 'metadata/comparison.json').read_text())
         self.assertEqual(metadata['client_revision'], 'a' * 40)
         self.assertTrue((output / 'metadata/client-source/benchmark_serving.py').is_file())
@@ -161,9 +167,70 @@ class ComparisonTests(unittest.TestCase):
         self.assertEqual(state['execution']['cleanup'], 'after_collection')
         template = core.read_document(root / campaign['jobs'][0] / 'run-template.json')
         self.assertEqual({entry['path'] for entry in template['bundles'][0]['files']},
-                         {'compare.py'})
+                         {'compare.py', 'preflight.py'})
         self.assertEqual({entry['path'] for entry in template['bundles'][1]['files']},
                          {'bench_throughput_qwen_server.sh'})
+
+
+    def test_client_preflight_parses_exact_arguments_without_running_benchmark(self) -> None:
+        script = self.root / 'client.py'
+        marker = self.root / 'benchmark-started'
+        script.write_text('import argparse; from pathlib import Path\n'
+            'p=argparse.ArgumentParser(); p.add_argument("--model",required=True); '
+            'p.add_argument("--tokenizer"); args=p.parse_args(); '
+            'Path(' + repr(str(marker)) + ').write_text("started")\n')
+        tokenizer = SimpleNamespace(encode=lambda *args, **kwargs: [1])
+        factory = SimpleNamespace(from_pretrained=lambda model: tokenizer)
+        with patch.dict(sys.modules, {'transformers': SimpleNamespace(AutoTokenizer=factory)}), \
+                contextlib.redirect_stdout(io.StringIO()):
+            preflight.client(script=script, argv=['--model', 'fixture'])
+        self.assertFalse(marker.exists())
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            preflight.client(script=script, argv=['--model', 'fixture', '--unknown'])
+        self.assertFalse(marker.exists())
+
+    def test_server_preflight_validates_without_starting_server(self) -> None:
+        validated = []
+        class Command:
+            def subparser_init(self, parsers):
+                parser = parsers.add_parser('serve')
+                parser.add_argument('model')
+                parser.add_argument('--max-model-len', type=int)
+            def validate(self, args):
+                validated.append(args)
+            def cmd(self, args):
+                raise AssertionError('Server must not start during preflight')
+        modules = {'vllm.entrypoints.cli.serve': SimpleNamespace(ServeSubcommand=Command),
+                   'vllm.utils.argparse_utils': SimpleNamespace(FlexibleArgumentParser=argparse.ArgumentParser)}
+        with patch.dict(sys.modules, modules), contextlib.redirect_stdout(io.StringIO()):
+            preflight.server(argv=['fixture', '--max-model-len=9216'])
+        self.assertEqual(validated[0].max_model_len, 9216)
+        with patch.dict(sys.modules, modules), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            preflight.server(argv=['fixture', '--unknown'])
+
+    def test_hardware_preflight_checks_all_devices_and_rejects_cpu(self) -> None:
+        devices = [SimpleNamespace(platform='tpu') for _ in range(8)]
+        visited = []
+        class Value:
+            def __add__(self, other):
+                return self
+            def block_until_ready(self):
+                return [2]
+        def put(value, device):
+            visited.append(device)
+            return Value()
+        jax = SimpleNamespace(devices=lambda: devices, device_put=put, jit=lambda function: function)
+        numpy = SimpleNamespace(array=lambda value, **kwargs: value, asarray=lambda value: value, int32=int)
+        with patch.dict(sys.modules, {'jax': jax, 'numpy': numpy}), \
+                patch.object(preflight.importlib.metadata, 'version', return_value='fixture'), \
+                patch.object(preflight.importlib, 'import_module') as imports, \
+                contextlib.redirect_stdout(io.StringIO()):
+            preflight.hardware(expected_devices=8)
+            self.assertEqual(visited, devices)
+            self.assertEqual(imports.call_count, 2)
+            devices[0].platform = 'cpu'
+            with self.assertRaisesRegex(RuntimeError, 'Expected 8 TPU devices'):
+                preflight.hardware(expected_devices=8)
 
 
 if __name__ == '__main__':

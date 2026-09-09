@@ -102,6 +102,12 @@ def run_command(argv: list[str], log: Path, timeout: int, env: dict | None = Non
                     print(f'RUNNING: {log.name}; log: {log}', flush=True)
             if process.returncode:
                 raise RuntimeError(f'Command exited {process.returncode}; see {log}')
+        except Exception:
+            stream.flush()
+            with log.open('rb') as saved:
+                saved.seek(max(0, log.stat().st_size - 4096))
+                print(saved.read().decode(errors='replace'), file=sys.stderr, flush=True)
+            raise
         finally:
             stop(process=process)
 
@@ -245,6 +251,16 @@ def main() -> int:
             raise ValueError('Upstream sampler changed; inspect the saved client before benchmarking')
         run_command(argv=[sys.executable, str(client / 'benchmark_serving.py'), '--help'],
                     log=metadata / 'client-help.log', timeout=120, env=env)
+        preflight = str(Path(__file__).with_name('preflight.py'))
+        print('PREFLIGHT: validating client, server arguments and TPU execution before model loading', flush=True)
+        run_command(argv=[sys.executable, preflight, 'client', *client_command(client=client, output=output)[1:]],
+                    log=metadata / 'client-preflight.log', timeout=300, env=env)
+        for label, argv in commands.items():
+            index = argv.index('vllm')
+            run_command(argv=['env', *argv[1:index], sys.executable, preflight, 'server', *argv[index + 2:]],
+                        log=metadata / (label + '-preflight.log'), timeout=180, env=env)
+            run_command(argv=['env', *argv[1:index], sys.executable, preflight, 'hardware', '8'],
+                        log=metadata / (label + '-hardware-preflight.log'), timeout=300, env=env)
         return compare(commands=commands, client=client, output=output, env=env)
     except Exception:
         detail = traceback.format_exc()

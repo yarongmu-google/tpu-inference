@@ -22,7 +22,7 @@ import time
 import traceback
 import uuid
 
-from core import cdk_storage_uri, uses_cdk_storage, checksum, identity, json_bytes, load_description, read_document, safe_path, save, slug, snapshot, verify
+from core import CDK_MOUNT_ROOT, cdk_storage_uri, uses_cdk_storage, checksum, identity, json_bytes, load_description, read_document, safe_path, save, slug, snapshot, verify
 
 ROOT = Path(__file__).resolve().parent
 LETTER_HASH = '4093b4cb6404558219be50b15b409be1485fd7f64405eb20030c0e9b062ce31f'
@@ -54,6 +54,7 @@ def recipe(state: dict, payload: dict[str, str]) -> dict:
                                           'containers': [{'name': 'runner', 'image': state['image'],
                                                           'command': ['python3', '-u', '-c', bootstrap, encoded],
                                                           'env': [{'name': 'RUN_ID', 'value': state['run_id']},
+                                                                  {'name': 'RUN_IMAGE', 'value': state['image']},
                                                                   {'name': 'RUN_CONFIG_SHA256', 'value': state['config_sha256']}],
                                                           'resources': {'requests': {'google.com/tpu': hardware['chips_per_host']},
                                                                         'limits': {'google.com/tpu': hardware['chips_per_host']}},
@@ -118,6 +119,27 @@ def validate_recipe(actual: dict, expected: dict, service_account: str | None) -
         raise ValueError('Dedicated output mount missing or changed')
     if sum(v == epod['volumes'][0] for v in pod.get('volumes', [])) != 1:
         raise ValueError('Dedicated output bucket missing or changed')
+
+
+def validate_cdk_storage(actual: dict, state: dict) -> None:
+    root = state['profile']['storage']['outputs_root'].removeprefix('gs://')
+    bucket, prefix = root.split('/', 1)
+    pod = actual['spec']['replicatedJobs'][0]['template']['spec']['template']['spec']
+    runner = next(c for c in pod['containers'] if c['name'] == 'runner')
+    mounts = [m for m in runner.get('volumeMounts', []) if m.get('mountPath') == str(CDK_MOUNT_ROOT)]
+    if len(mounts) != 1 or mounts[0].get('readOnly', False):
+        raise ValueError('CDK storage mount is missing, repeated, or read-only')
+    volumes = [v for v in pod.get('volumes', []) if v.get('name') == mounts[0]['name']]
+    if len(volumes) != 1:
+        raise ValueError('CDK storage volume is missing or repeated')
+    csi = volumes[0].get('csi', {})
+    attributes = csi.get('volumeAttributes', {})
+    options = attributes.get('mountOptions', '').split(',')
+    directories = [value.split('=', 1)[1] for value in options if value.startswith('only-dir=')]
+    if (csi.get('driver') != 'gcsfuse.csi.storage.gke.io' or csi.get('readOnly', False)
+            or attributes.get('bucketName') != bucket or 'ro' in options
+            or directories != [prefix + '/' + state['job_id']]):
+        raise ValueError('CDK storage bucket, job prefix, or access mode differs')
 
 
 class Job:
@@ -312,6 +334,8 @@ class Job:
         validate_recipe(actual=read_document(path), expected=json.loads((self.directory / 'recipe.json').read_text()),
                         service_account=self.state['profile']['cloud'].get('service_account'))
         rendered = read_document(path)
+        if uses_cdk_storage(self.state['profile']):
+            validate_cdk_storage(actual=rendered, state=self.state)
         account = rendered['spec']['replicatedJobs'][0]['template']['spec']['template']['spec'].get('serviceAccountName')
         self.save(assigned_service_account=account)
         self.gcloud(args=['storage', 'cp', str(self.directory / 'start.json'), self.state['uri'] + '/control/start.json'])
@@ -329,6 +353,8 @@ class Job:
                     try:
                         _, text = self.cdk(args=args, check=False)
                         (destination / filename).write_text(text)
+                        if filename == 'container.log' and text.strip():
+                            print(f'[{self.state["run_id"]}] Container log (last 4096 characters):\n{text[-4096:]}', flush=True)
                     except Exception:
                         (destination / (filename + '.error')).write_text(traceback.format_exc())
         for attempt in range(1 if live else 3):
@@ -457,7 +483,13 @@ class Job:
 
     def finish_cleanup(self) -> None:
         if self.state['execution'].get('cleanup') == 'after_collection' and not self.state.get('resources_cleaned'):
+            if self.state.get('submission_started') and not self.state.get('artifacts_verified'):
+                self.save(cleanup_pending=True)
+                print(f'[{self.state["run_id"]}] Final results are unverified; saved CDK diagnostics at '
+                      f'{self.directory / "collected"}; image and storage retained', flush=True)
+                return
             self.cleanup(discard=False, automatic=True)
+            self.save(cleanup_pending=False)
 
     def run(self) -> int:
         if self.state.get('finished'):
@@ -502,10 +534,11 @@ class Job:
                 STOP.wait(5)
             if job is None:
                 raise RuntimeError('No confirmed job ID; resume to reconcile submission')
-        if uses_cdk_storage(self.state['profile']):
-            self.upload_cdk_inputs()
-        if not self.state.get('authorized'):
-            self.authorize()
+        if job.get('job_status') not in TERMINAL:
+            if uses_cdk_storage(self.state['profile']):
+                self.upload_cdk_inputs()
+            if not self.state.get('authorized'):
+                self.authorize()
         terminal_since = None
         errors = 0
         while not STOP.is_set():
