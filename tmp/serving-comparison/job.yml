@@ -1,0 +1,34 @@
+version: 1
+profile: ../../workflow/sweep-environment.yml
+name: null
+description: Compare three serving configurations with the original benchmark client
+image_build:
+  cwd: ../..
+  argv: [python, tmp/prepare_runtime_image.py]
+  timeout_seconds: 28800
+code:
+  directory: ./payload
+  delivery: snapshot
+  destination: /workspace/experiment
+  include: [compare.py]
+inputs:
+  server_commands:
+    source: ../../scripts/vllm/benchmarking
+    destination: /workspace/server-commands
+run:
+  cwd: /opt/tpu-inference
+  argv: [python3, -u, /workspace/experiment/compare.py]
+  env:
+    PYTHONUNBUFFERED: "1"
+  verify_imports:
+    vllm: /opt/vllm
+    tpu_inference: /opt/tpu-inference
+outputs:
+  directory: ./results
+  snapshot_seconds: 30
+execution:
+  cleanup: after_collection
+  timeout_seconds: 43200
+  max_in_flight: 1
+  wait_seconds: 86400
+  archive_seconds: 1200
