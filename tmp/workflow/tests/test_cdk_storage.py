@@ -84,6 +84,39 @@ class CdkStorageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'image differs'):
             controller.validate_recipe(actual=actual, expected=expected, service_account=None)
 
+    def test_string_resource_counts_allow_existing_job_authorization(self) -> None:
+        expected = controller.recipe(state=self.job.state, payload={'runtime.py': '# fixture'})
+        core.save(path=self.directory / 'recipe.json', value=expected)
+        actual = copy.deepcopy(expected)
+        pod = actual['spec']['replicatedJobs'][0]['template']['spec']['template']['spec']
+        for quantities in pod['containers'][0]['resources'].values():
+            for key, count in quantities.items():
+                quantities[key] = str(count)
+        with patch.object(self.job, 'cdk', return_value=(0, json.dumps(actual))) as cdk, \
+                patch.object(self.job, 'gcloud', return_value=(0, '')) as cloud:
+            self.job.authorize()
+        self.assertTrue(self.job.state['authorized'])
+        cdk.assert_called_once_with(args=['job', 'recipe', 'j-fixture', '--no-color'])
+        cloud.assert_called_once_with(args=['storage', 'cp', str(self.directory / 'start.json'),
+                                           self.job.state['uri'] + '/control/start.json'])
+
+    def test_resource_changes_and_malformed_quantities_are_rejected(self) -> None:
+        expected = controller.recipe(state=self.job.state, payload={'runtime.py': '# fixture'})
+        original = expected['spec']['replicatedJobs'][0]['template']['spec']['template']['spec']['containers'][0]['resources']
+        variants = [None, {}, {'limits': original['limits']},
+                    {**original, 'claims': []}, {**original, 'requests': None},
+                    {**original, 'requests': {**original['requests'], 'cpu': '1'}}]
+        for kind in ('requests', 'limits'):
+            for count in (99, '99', 0, 'four', None, True, 4.0, {}, []):
+                variants.append({**original, kind: {'google.com/tpu': count}})
+        for resources in variants:
+            with self.subTest(resources=resources):
+                actual = copy.deepcopy(expected)
+                pod = actual['spec']['replicatedJobs'][0]['template']['spec']['template']['spec']
+                pod['containers'][0]['resources'] = resources
+                with self.assertRaisesRegex(ValueError, 'Rendered runner'):
+                    controller.validate_recipe(actual=actual, expected=expected, service_account=None)
+
     def test_discovery_resolves_only_confirmed_job_prefix(self) -> None:
         row = {**self.fixture.remote, 'user': self.job.state['user'],
             'recipe': self.job.state['recipe'], 'tags': [self.job.state['run_id']]}

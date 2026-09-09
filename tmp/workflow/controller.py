@@ -94,9 +94,22 @@ def validate_recipe(actual: dict, expected: dict, service_account: str | None) -
     containers = [c for c in pod['containers'] if c['name'] == 'runner']
     if len(containers) != 1:
         raise ValueError('Rendered runner container missing or duplicated')
-    for key in ('image', 'command', 'resources'):
+    for key in ('image', 'command'):
         if containers[0].get(key) != epod['containers'][0][key]:
             raise ValueError(f'Rendered runner {key} differs')
+    resources = containers[0].get('resources')
+    wanted = epod['containers'][0]['resources']
+    if not isinstance(resources, dict) or resources.keys() != wanted.keys():
+        raise ValueError('Rendered runner resource sections differ')
+    for kind, quantities in wanted.items():
+        values = resources[kind]
+        if not isinstance(values, dict) or values.keys() != quantities.keys():
+            raise ValueError(f'Rendered runner {kind} resource names differ')
+        for resource, count in quantities.items():
+            value = values[resource]
+            # CDK serializes integer resource quantities as decimal strings.
+            if type(value) not in (int, str) or str(value) != str(count):
+                raise ValueError(f'Rendered runner {kind}.{resource} differs: expected {count}, got {value!r}')
     for item in epod['containers'][0]['env']:
         if sum(v == item for v in containers[0].get('env', [])) != 1:
             raise ValueError('Rendered execution identity differs')
