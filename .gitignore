@@ -207,3 +207,6 @@ csrc/moe/marlin_moe_wna16/kernel_*
 # keep tmp/ tracked (VM bench logs + mosaic pass dumps are committed here)
 !tmp/
 !tmp/**
+
+# Legacy local workflow state stays on the CPU VM after the launcher move.
+/workflow/

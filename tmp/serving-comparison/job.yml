@@ -1,5 +1,5 @@
 version: 1
-profile: ../../workflow/sweep-environment.yml
+profile: ../workflow/sweep-environment.yml
 name: null
 description: Compare three serving configurations with the original benchmark client
 image_build:

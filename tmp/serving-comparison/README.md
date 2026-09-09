@@ -53,7 +53,10 @@ also retains its per-run build records. Each configuration starts a new server;
 Docker and compilation caches may still be reused within the container.
 
 After terminal-state collection and artifact verification, the workflow deletes
-this run's image and CDK storage subfolder. Local results and errors remain.
+this run's image and CDK storage subfolder. Local results and errors remain. Each controller attempt also writes a verified
+archive and JSON index under `results/archives/`; Git shows these compressed
+exports while the raw resume directories stay ignored. Launcher logs are
+compressed under `tmp/workflow/local/logs/`.
 A failed comparison can still have a verified, collected artifact bundle; its
 resources can be cleaned while its failed status and error logs are retained.
 Incomplete collection retains resources for recovery. Resume reconnects the

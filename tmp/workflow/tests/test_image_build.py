@@ -16,7 +16,7 @@ from types import SimpleNamespace
 import test_sweep_integration
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tmp'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import configure_profile
 import controller
 import core

@@ -14,4 +14,18 @@ echo "Launcher log: $LOG"
 ) 2>&1 | tee "$LOG"
 codes=("${PIPESTATUS[@]}")
 [[ "${codes[1]}" -eq 0 ]] || exit 1
-exit "${codes[0]}"
+result="${codes[0]}"
+if [[ "$result" -eq 0 ]]; then
+  outcome="Launcher completed (exit 0)"
+else
+  outcome="Launcher FAILED (exit $result)"
+fi
+printf '%s\n' "$outcome" | tee -a "$LOG" || exit 1
+if gzip -c -- "$LOG" > "$LOG.gz.partial"; then
+  mv -- "$LOG.gz.partial" "$LOG.gz" || exit 1
+  echo "Compressed launcher log: $LOG.gz"
+else
+  echo "Launcher log compression failed; raw log retained at $LOG" >&2
+  result=1
+fi
+exit "$result"

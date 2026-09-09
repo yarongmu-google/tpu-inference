@@ -67,6 +67,33 @@ def publish(local: Path, bucket: Path, status: dict, extras: dict[str, str]) -> 
     write_remote(path=bucket / 'manifest.json', value={'format': 'run-artifacts-v1', **status, 'files': entries})
 
 
+def publish_final(local: Path, bucket: Path, status: dict, extras: dict[str, str]) -> None:
+    from artifacts import make_bundle
+    files = {}
+    roots = {'diagnostics': local, **{f'artifacts/{key}': Path(value) for key, value in extras.items()}}
+    for prefix, root in roots.items():
+        if not root.exists():
+            continue
+        if root.is_symlink() or not root.is_dir():
+            raise ValueError(f'Invalid output directory: {root}')
+        for path in sorted(root.rglob('*')):
+            if path.is_symlink():
+                raise ValueError(f'Output symlink is not collected: {path}')
+            if path.is_file() and not (root == local and path.is_relative_to(local / 'artifacts')):
+                files[prefix + '/' + path.relative_to(root).as_posix()] = path
+    print('COMPRESSING_RESULTS: preparing the final artifact bundle', flush=True)
+    with tempfile.TemporaryDirectory(prefix='final-artifacts-') as temporary:
+        archive = Path(temporary) / 'artifacts.tar.gz'
+        manifest = make_bundle(destination=archive, files=files, metadata={'format': 'run-artifacts-v1', **status})
+        digest = checksum(archive)
+        destination = bucket / 'archives' / (digest + '.tar.gz')
+        destination.parent.mkdir(exist_ok=True)
+        shutil.copyfile(src=archive, dst=destination)
+        manifest['archive'] = {'path': 'archives/' + destination.name, 'sha256': digest, 'bytes': archive.stat().st_size}
+        write_remote(path=bucket / 'manifest.json', value=manifest)
+    print('RESULTS_COMPRESSED: final artifact bundle published', flush=True)
+
+
 def materialize(bundle: Path, items: list[dict]) -> None:
     for item in items:
         source = safe_path(root=bundle, relative=item['source'])
@@ -232,7 +259,7 @@ def execute(bucket: Path, local: Path, expected: str, require_mount: bool = True
         status.update(state='succeeded' if code == 0 else 'failed', exit_code=code, updated=time.time())
         write_remote(path=local / 'status.json', value=status)
         try:
-            publish(local=local, bucket=bucket, status=status, extras=extras)
+            publish_final(local=local, bucket=bucket, status=status, extras=extras)
         except Exception:
             print('Final artifact publication failed:\n' + traceback.format_exc(), file=sys.stderr, flush=True)
             code = code or 1

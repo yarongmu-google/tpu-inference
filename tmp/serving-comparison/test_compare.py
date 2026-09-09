@@ -140,7 +140,7 @@ class ComparisonTests(unittest.TestCase):
         self.assertIn('fixture clone failure', (output / 'error.txt').read_text())
 
     def test_description_freezes_runner_and_exact_server_source(self) -> None:
-        sys.path.insert(0, str(REPO / 'workflow'))
+        sys.path.insert(0, str(REPO / 'tmp/workflow'))
         import controller
         import core
         here = self.root / 'tmp/serving-comparison'
@@ -150,9 +150,9 @@ class ComparisonTests(unittest.TestCase):
         server = self.root / 'scripts/vllm/benchmarking/bench_throughput_qwen_server.sh'
         server.parent.mkdir(parents=True)
         shutil.copyfile(src=self.source, dst=server)
-        profile = self.root / 'workflow/sweep-environment.yml'
+        profile = self.root / 'tmp/workflow/sweep-environment.yml'
         profile.parent.mkdir()
-        shutil.copyfile(src=REPO / 'workflow/sweep-environment.yml', dst=profile)
+        shutil.copyfile(src=REPO / 'tmp/workflow/sweep-environment.yml', dst=profile)
         with contextlib.redirect_stdout(io.StringIO()):
             root = controller.prepare(description_path=here / 'job.yml', name='comparison check', dry_run=True)
         campaign = core.read_document(root / 'campaign.json')

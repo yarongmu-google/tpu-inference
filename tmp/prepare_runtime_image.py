@@ -19,7 +19,7 @@ import sys
 import prepare_jobset_image as snapshot
 
 ROOT = Path(__file__).resolve().parents[1]
-CACHE = ROOT / 'workflow/local/images'
+CACHE = ROOT / 'tmp/workflow/local/images'
 IMAGE_ID = re.compile(r'sha256:[a-f0-9]{64}')
 
 

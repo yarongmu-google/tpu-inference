@@ -15,17 +15,17 @@ From the repository root on the CPU VM, with the existing Python 3.12
 `vllm12` environment active:
 
 ```bash
-bash workflow/run_sweep.sh
+bash tmp/workflow/run_sweep.sh
 ```
 
-This selects the concrete `workflow/sweep.yml` description. It snapshots the
+This selects the concrete `tmp/workflow/sweep.yml` description. It snapshots the
 three existing sweep scripts, runs their configured points sequentially in one
 TPU job, and sends client results, server logs and installed-source metadata to
 the generic output collector. The generic controller has no knowledge of the
 sweep's model, configurations or metrics. The first workload is the actual
 sweep; the example below remains an optional small storage check.
 
-The checked-in `workflow/sweep-environment.yml` supplies the earlier launcher's
+The checked-in `tmp/workflow/sweep-environment.yml` supplies the earlier launcher's
 project, registry and TPU settings. The only prompt is the run name; use
 `--name my-description` to supply it on the command line. No project, bucket,
 image-repository, digest, service-account or IAM questions are asked. Existing
@@ -38,7 +38,7 @@ The exact path and digest remain in the local resource and build records.
 CDK assigns the Kubernetes service account and mounts its normal output folder;
 the sweep does not create a bucket or change IAM. Its files live only under
 `gs://cloud-devkit/jobs/<job-id>/outputs/workflow-<run-id>/`.
-This preset is used directly; an older `workflow/local/environment.json` is not
+This preset is used directly; an older `tmp/workflow/local/environment.json` is not
 consulted or overwritten by the sweep launcher.
 
 Every new TPU job invokes the Docker builder and CPU smoke check, even when the
@@ -51,7 +51,7 @@ VM while already submitted TPU jobs continue concurrently.
 
 The helper finds editable vLLM in the active CPU-VM environment. It uses
 `INFERENCEX_REPO`, an existing `/tmp/InferenceX`, or a persistent checkout under
-`workflow/local/images/InferenceX`. That checkout is cloned once when needed;
+`tmp/workflow/local/images/InferenceX`. That checkout is cloned once when needed;
 it is not automatically pulled on later runs. Relevant tracked edits and
 untracked source files must be committed before building so they cannot be
 silently omitted. Source revisions, a build-input fingerprint and the published
@@ -116,13 +116,13 @@ specified project. Only the dedicated bucket gets an object-user grant.
 Start with the small execution/storage check:
 
 ```bash
-bash workflow/run.sh workflow/examples/experiment.yml
+bash tmp/workflow/run.sh tmp/workflow/examples/experiment.yml
 ```
 
 The shell creates a workflow-local Python environment for the pinned YAML
 parser; it does not modify your active environment. Its complete transcript,
 including setup and early validation failures, is saved under
-`workflow/local/logs/`. The runner asks for a name if the description leaves it
+`tmp/workflow/local/logs/` and compressed to `.log.gz` when the launcher exits. The runner asks for a name if the description leaves it
 empty. `--name` can supply one for noninteractive execution. That display name
 is normalized for cloud labels; a random suffix makes each job/bucket unique.
 The selected name appears in cloud metadata and the globally visible bucket
@@ -131,7 +131,7 @@ namespace, so use a name suitable for that destination.
 A local preparation pass is available without any cloud commands:
 
 ```bash
-bash workflow/run.sh workflow/examples/experiment.yml --name storage-check --dry-run
+bash tmp/workflow/run.sh tmp/workflow/examples/experiment.yml --name storage-check --dry-run
 ```
 
 It writes the frozen inputs and rendered submission proposal into the results
@@ -275,6 +275,10 @@ manifest.json           current snapshot and execution status
 ```
 
 Artifacts are copied to container-local scratch, then published periodically.
+On success or failure, the final files are packed into one verified `.tar.gz`
+before uploading. The controller downloads that archive once and verifies each
+member against the manifest before cleanup. Older per-file manifests remain
+readable, including results from jobs submitted before this change.
 The manifest references closed objects and records hashes, sizes, image digest,
 configuration identity and exit status. Repeated identical files reuse objects;
 changed or growing files produce new objects until bucket cleanup.
@@ -288,6 +292,46 @@ artifacts are collected after completion. Large console logs can still make
 these snapshots expensive. CPU-VM disconnects leave already published data in
 GCS. Full collection also attempts CDK description and console-log retrieval,
 including for jobs that never started their program.
+
+## Compressed results and the directory move
+
+The shared launcher now lives under `tmp/workflow/`. The sweep entry point is
+`bash tmp/workflow/run_sweep.sh`; the comparison command stays
+`bash tmp/serving-comparison/run.sh`.
+
+After each controller attempt, a verified `<run-id>.tar.gz` and small JSON index
+are written to the description's results root under `archives/`. For the sweep
+this is `tmp/workflow/local/results/archives/`; for the separate comparison it is
+`tmp/serving-comparison/results/archives/`. They include saved commands, errors,
+build diagnostics, source/configuration records and collected workload outputs.
+Duplicate downloaded objects and live snapshots are omitted. Failed or partial
+runs are identified by their recorded status and are still archived when no
+image builder is active. Compression errors return nonzero and retain raw data.
+
+Git exposes these archives and compressed launcher logs. Raw execution folders,
+locks, local profiles, environments and caches remain ignored and available for
+resume. The exporter verifies the archive before replacing an older export; it
+does not remove raw files. Extract a result archive to inspect it:
+
+```bash
+tar -xzf /path/to/run-id.tar.gz -C /path/to/inspection-directory
+```
+
+Wait for CPU-VM launchers using the old path to exit before pulling the move.
+Existing ignored data under the old root `workflow/local/` is preserved. To
+package that data, or refresh exports from saved runs without cloud access:
+
+```bash
+bash tmp/workflow/run.sh archive
+```
+
+This scans the old sweep location, the new location and comparison results. It
+skips active controller locks, exports into
+`tmp/workflow/local/results/archives/`, and copies old launcher logs into
+compressed logs at the new location. An optional saved campaign/job directory
+limits which runs are exported. Saved runs can also be resumed by their original
+absolute paths; they retain their frozen runtime and transport behavior.
+The YAML bootstrap may still install its dependency on first use.
 
 ## Resume, collect, and cleanup
 
@@ -306,10 +350,10 @@ paths are explicit, so concurrent campaigns cannot accidentally resume each
 other. Replace the example paths below with the path printed by the launcher:
 
 ```bash
-bash workflow/run.sh status /path/to/saved-campaign
-bash workflow/run.sh resume /path/to/saved-campaign
-bash workflow/run.sh collect /path/to/saved-job
-bash workflow/run.sh cleanup /path/to/saved-job
+bash tmp/workflow/run.sh status /path/to/saved-campaign
+bash tmp/workflow/run.sh resume /path/to/saved-campaign
+bash tmp/workflow/run.sh collect /path/to/saved-job
+bash tmp/workflow/run.sh cleanup /path/to/saved-job
 ```
 
 A resumed campaign preserves its source snapshots, profile, names, buckets and
@@ -345,7 +389,7 @@ owns that validation.
 ## Local verification
 
 ```bash
-python3 -m unittest discover -s workflow/tests -v
+python3 -m unittest discover -s tmp/workflow/tests -v
 ```
 
 Use an interpreter with the pinned YAML dependency, or the workflow-local

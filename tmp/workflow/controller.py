@@ -160,6 +160,15 @@ class Job:
                         child.wait()
                 base.with_suffix('.exit').write_text(str(code) + '\n')
         text = base.with_suffix('.stdout').read_text(errors='replace')
+        if code:
+            error_log = base.with_suffix('.stderr')
+            source = error_log if error_log.stat().st_size else base.with_suffix('.stdout')
+            with source.open('rb') as stream:
+                stream.seek(max(0, source.stat().st_size - 4096))
+                detail = stream.read().decode(errors='replace').strip()
+            print(f'[{self.state["run_id"]}] Command FAILED (exit {code}); {source}', file=sys.stderr, flush=True)
+            if detail:
+                print(detail, file=sys.stderr, flush=True)
         if check and code:
             raise RuntimeError(f'Command exit {code}; see {base}.stderr')
         return code, text
@@ -317,25 +326,46 @@ class Job:
                 if (manifest.get('format') != 'run-artifacts-v1' or manifest.get('run_id') != self.state['run_id']
                         or manifest.get('image') != self.state['image'] or manifest.get('config_sha256') != self.state['config_sha256']):
                     raise ValueError('Artifact manifest identity differs')
-                objects = destination / 'objects'
-                objects.mkdir(exist_ok=True)
-                paths = set()
-                selected = [entry for entry in manifest['files'] if not live or entry['path'] in
-                            {'diagnostics/stdout.log', 'diagnostics/stderr.log', 'diagnostics/error.txt', 'diagnostics/status.json'}]
-                for entry in selected:
-                    if not re.fullmatch('[a-f0-9]{64}', entry['sha256']) or entry['path'] in paths:
-                        raise ValueError('Invalid or repeated manifest entry')
-                    paths.add(entry['path'])
-                    target = safe_path(root=destination / 'files', relative=entry['path'])
-                    blob = objects / entry['sha256']
-                    if not blob.exists() or checksum(blob) != entry['sha256']:
-                        self.gcloud(args=['storage', 'cp', self.state['uri'] + '/objects/' + entry['sha256'], str(blob)],
+                if live and 'archive' in manifest:
+                    self.save(last_output=manifest.get('updated'), workload_state=manifest['state'])
+                    print(f'[{self.state["run_id"]}] final results compressed; waiting for CDK archival', flush=True)
+                    return False
+                if not live and 'archive' in manifest:
+                    from artifacts import verify_bundle
+                    archive = manifest['archive']
+                    digest = archive.get('sha256', '')
+                    if (not re.fullmatch('[a-f0-9]{64}', digest)
+                            or archive.get('path') != 'archives/' + digest + '.tar.gz'
+                            or type(archive.get('bytes')) is not int or archive['bytes'] <= 0):
+                        raise ValueError('Invalid compressed artifact reference')
+                    packed = destination / 'artifacts.tar.gz'
+                    if not packed.exists() or checksum(packed) != digest:
+                        self.gcloud(args=['storage', 'cp', self.state['uri'] + '/' + archive['path'], str(packed)],
                                     timeout=1800, transfer=True)
-                    if blob.stat().st_size != entry['bytes'] or checksum(blob) != entry['sha256']:
-                        raise ValueError('Downloaded artifact checksum mismatch')
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copyfile(src=blob, dst=target)
-                verify(root=destination / 'files', entries=selected)
+                    if packed.stat().st_size != archive['bytes'] or checksum(packed) != digest:
+                        raise ValueError('Downloaded archive checksum mismatch')
+                    verify_bundle(path=packed, manifest={key: value for key, value in manifest.items() if key != 'archive'},
+                                  target=destination / 'files')
+                else:
+                    objects = destination / 'objects'
+                    objects.mkdir(exist_ok=True)
+                    paths = set()
+                    selected = [entry for entry in manifest['files'] if not live or entry['path'] in
+                                {'diagnostics/stdout.log', 'diagnostics/stderr.log', 'diagnostics/error.txt', 'diagnostics/status.json'}]
+                    for entry in selected:
+                        if not re.fullmatch('[a-f0-9]{64}', entry['sha256']) or entry['path'] in paths:
+                            raise ValueError('Invalid or repeated manifest entry')
+                        paths.add(entry['path'])
+                        target = safe_path(root=destination / 'files', relative=entry['path'])
+                        blob = objects / entry['sha256']
+                        if not blob.exists() or checksum(blob) != entry['sha256']:
+                            self.gcloud(args=['storage', 'cp', self.state['uri'] + '/objects/' + entry['sha256'], str(blob)],
+                                        timeout=1800, transfer=True)
+                        if blob.stat().st_size != entry['bytes'] or checksum(blob) != entry['sha256']:
+                            raise ValueError('Downloaded artifact checksum mismatch')
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copyfile(src=blob, dst=target)
+                    verify(root=destination / 'files', entries=selected)
                 if live:
                     self.save(last_output=manifest.get('updated'), workload_state=manifest['state'])
                     age = max(0, time.time() - manifest.get('updated', time.time()))
@@ -561,7 +591,7 @@ def prepare(description_path: Path, name: str | None, dry_run: bool = False) -> 
         if root.is_relative_to(source):
             raise ValueError('Results directory must be outside all uploaded source/input directories')
     root.mkdir(parents=True, exist_ok=False)
-    payload = {key: (ROOT / key).read_text() for key in ('core.py', 'runtime.py')}
+    payload = {key: (ROOT / key).read_text() for key in ('core.py', 'runtime.py', 'artifacts.py')}
     save(path=root / 'description.json', value=data)
     shared = root / 'snapshot'
     bundles = [{'source': 'code', 'destination': data['code']['destination'],
@@ -612,6 +642,44 @@ def prepare(description_path: Path, name: str | None, dry_run: bool = False) -> 
     return root
 
 
+def job_action(job: Job, action: str, discard: bool) -> int:
+    directory = job.directory
+    try:
+        if job.state.get('dry_run') and action != 'status':
+            raise ValueError('Dry-run artifacts cannot be submitted; start a new run from the description')
+        if action == 'cleanup':
+            return job.cleanup(discard=discard)
+        if action == 'collect':
+            if job.state.get('owned_image') and job.state.get('deleted'):
+                from resources import verify_collected
+                verify_collected(job=job)
+                job.finish_cleanup()
+                return 0 if job.state.get('artifact_exit_code') == 0 else 1
+            success = job.collect()
+            if job.state.get('artifacts_verified'):
+                job.finish_cleanup()
+            return 0 if success else 1
+        return job.run()
+    except Exception as error:
+        job.save(last_error=str(error))
+        (directory / 'error.txt').write_text(traceback.format_exc())
+        print(f'[{job.state["run_id"]}] stopped: {error}', file=sys.stderr, flush=True)
+        if (action == 'run' and not STOP.is_set() and job.state.get('bucket_marked')
+                and not job.state.get('artifacts_verified') and not job.state.get('deleted')):
+            try:
+                job.collect()
+            except Exception:
+                (directory / 'collection-error.txt').write_text(traceback.format_exc())
+        if (action == 'run' and job.state.get('owned_image') and not STOP.is_set()
+                and not job.state.get('submission_started') and not job.state.get('bucket_creation_started')):
+            job.save(finished=True, exit_code=1)
+            try:
+                job.finish_cleanup()
+            except Exception as cleanup_error:
+                job.save(cleanup_error=str(cleanup_error))
+        return 1
+
+
 def locked_job(directory: Path, action: str = 'run', discard: bool = False) -> int:
     with (directory / '.lock').open('a') as lock:
         try:
@@ -620,43 +688,21 @@ def locked_job(directory: Path, action: str = 'run', discard: bool = False) -> i
             print(f'Another controller owns {directory}', file=sys.stderr)
             return 1
         job = Job(directory)
+        result = job_action(job=job, action=action, discard=discard)
+        submission = job.state.get('job_id') or ('unresolved' if job.state.get('submission_started') else 'not submitted')
+        outcome = 'FAILED' if result else 'completed'
+        print(f'[{job.state["run_id"]}] {action} {outcome} (exit {result}); '
+              f'phase={job.state["phase"]}; CDK job={submission}', flush=True)
         try:
-            if job.state.get('dry_run') and action != 'status':
-                raise ValueError('Dry-run artifacts cannot be submitted; start a new run from the description')
-            if action == 'cleanup':
-                return job.cleanup(discard=discard)
-            if action == 'collect':
-                if job.state.get('owned_image') and job.state.get('deleted'):
-                    from resources import verify_collected
-                    verify_collected(job=job)
-                    job.finish_cleanup()
-                    return 0 if job.state.get('artifact_exit_code') == 0 else 1
-                success = job.collect()
-                if job.state.get('artifacts_verified'):
-                    job.finish_cleanup()
-                return 0 if success else 1
-            return job.run()
-        except Exception as error:
-            job.save(last_error=str(error))
-            (directory / 'error.txt').write_text(traceback.format_exc())
-            print(f'[{job.state["run_id"]}] stopped: {error}', file=sys.stderr, flush=True)
-            if (action == 'run' and not STOP.is_set() and job.state.get('bucket_marked')
-                    and not job.state.get('artifacts_verified') and not job.state.get('deleted')):
-                try:
-                    job.collect()
-                except Exception:
-                    (directory / 'collection-error.txt').write_text(traceback.format_exc())
-            if (action == 'run' and job.state.get('owned_image') and not STOP.is_set()
-                    and not job.state.get('submission_started') and not job.state.get('bucket_creation_started')):
-                job.save(finished=True, exit_code=1)
-                try:
-                    job.finish_cleanup()
-                except Exception as cleanup_error:
-                    job.save(cleanup_error=str(cleanup_error))
-            return 1
-        finally:
-            print(f'Results and diagnostics: {directory}', flush=True)
-            print('Manual cleanup: bash workflow/run.sh cleanup ' + shlex.quote(str(directory)), flush=True)
+            from pack_results import export_run
+            export_run(directory=directory)
+        except Exception as archive_error:
+            (directory / 'archive-error.txt').write_text(traceback.format_exc())
+            print(f'Result compression failed: {archive_error}; raw files retained at {directory}', file=sys.stderr)
+            result = 1
+        print(f'Results and diagnostics: {directory}', flush=True)
+        print('Manual cleanup: bash tmp/workflow/run.sh cleanup ' + shlex.quote(str(directory)), flush=True)
+        return result
 
 
 def run_campaign(path: Path) -> int:
@@ -697,7 +743,7 @@ def run_campaign(path: Path) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('target', help='Description file, or resume/status/collect/cleanup')
+    parser.add_argument('target', help='Description file, or resume/status/collect/cleanup/archive')
     parser.add_argument('directory', nargs='?', type=Path)
     parser.add_argument('--name')
     parser.add_argument('--dry-run', action='store_true')
@@ -707,6 +753,11 @@ def main() -> int:
     args = parser.parse_args()
     for number in (signal.SIGINT, signal.SIGTERM):
         signal.signal(number, lambda *_: STOP.set())
+    if args.target == 'archive':
+        if args.name or args.dry_run or args.configure_profile or args.profile_source or args.discard_incomplete:
+            parser.error('archive accepts only an optional saved campaign or job directory')
+        from pack_results import archive_saved
+        return archive_saved(workflow_root=ROOT, target=args.directory.resolve() if args.directory else None)
     if args.target != 'status' and not args.dry_run:
         for executable in ('gcloud', 'cdk'):
             if shutil.which(executable) is None:
