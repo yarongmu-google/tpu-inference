@@ -8,7 +8,7 @@ import re
 import sys
 import time
 from typing import TYPE_CHECKING
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 from core import cdk_storage_uri, uses_cdk_storage, read_document, save, verify
 
@@ -52,9 +52,24 @@ def image_package(job: Job, image: str) -> str | None:
     _, text = job.command(args=['gcloud', '--project', project, 'artifacts', 'packages', 'list',
         '--location', location, '--repository', repository, '--format=json'])
     rows = json.loads(text)
-    if not isinstance(rows, list) or any(not isinstance(row.get('name'), str) or '/packages/' not in row['name'] for row in rows):
+    if not isinstance(rows, list):
         raise ValueError('Unexpected registry package listing')
-    return next((row['name'] for row in rows if unquote(row['name'].split('/packages/', 1)[1]) == package), None)
+    prefix = f'projects/{project}/locations/{location}/repositories/{repository}/packages/'
+    matches = 0
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get('name'), str) or not row['name']:
+            raise ValueError('Unexpected registry package listing')
+        name = row['name']
+        # gcloud can return short package names or full resource names.
+        if name.startswith('projects/'):
+            if not name.startswith(prefix):
+                raise ValueError('Registry package belongs to a different repository')
+            name = name[len(prefix):]
+        if unquote(name) == package:
+            matches += 1
+    if matches > 1:
+        raise ValueError('Duplicate registry package matches')
+    return prefix + quote(package, safe='') if matches else None
 
 
 def bucket_present(job: Job) -> bool:

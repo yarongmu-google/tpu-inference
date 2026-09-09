@@ -234,5 +234,49 @@ class ImageBuildTests(unittest.TestCase):
         self.assertEqual(original, prepare_runtime_image.sources(root=repo, keep=lambda p: p.endswith('.py')))
 
 
+    def test_vllm_profiles_are_excluded_from_inventory_and_snapshot(self) -> None:
+        repo = self.base / 'vllm-source'
+        repo.mkdir()
+        def git(*args: str) -> None:
+            subprocess.run(args=['git', '-C', str(repo), *args], check=True, capture_output=True)
+        git('init')
+        code = repo / 'vllm/__init__.py'
+        code.parent.mkdir()
+        code.write_text('x = 1\n')
+        (repo / 'pyproject.toml').write_text('[build-system]\n')
+        profile = repo / 'vllm-xprof/decode_only/trace.json'
+        profile.parent.mkdir(parents=True)
+        profile.write_text('{}\n')
+        git('add', '.')
+        git('-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-m', 'Initial fixture.')
+        snapshot = prepare_runtime_image.snapshot
+        original = prepare_runtime_image.sources(root=repo, keep=snapshot.vllm_file)
+        profile.write_text('{"updated": true}\n')
+        (profile.parent / 'new.xplane.pb').write_bytes(b'new profiling output')
+        actual = prepare_runtime_image.sources(root=repo, keep=snapshot.vllm_file)
+        self.assertEqual(actual, original)
+        self.assertEqual(set(actual['files']), {'vllm/__init__.py', 'pyproject.toml'})
+        target = self.base / 'vllm-snapshot'
+        snapshot.snapshot(root=repo, target=target, keep=snapshot.vllm_file)
+        self.assertFalse((target / 'vllm-xprof').exists())
+        self.assertEqual((target / 'vllm/__init__.py').read_bytes(), code.read_bytes())
+        code.write_text('x = 2\n')
+        with self.assertRaisesRegex(RuntimeError, 'Commit source changes'):
+            prepare_runtime_image.sources(root=repo, keep=snapshot.vllm_file)
+        with self.assertRaisesRegex(RuntimeError, 'Commit the source changes'):
+            snapshot.snapshot(root=repo, target=self.base / 'dirty-snapshot', keep=snapshot.vllm_file)
+        code.write_text('x = 1\n')
+        (code.parent / 'new.py').write_text('x = 3\n')
+        with self.assertRaisesRegex(RuntimeError, 'Commit source changes'):
+            prepare_runtime_image.sources(root=repo, keep=snapshot.vllm_file)
+
+    def test_source_error_precedes_environment_hashing(self) -> None:
+        with patch.object(prepare_runtime_image, 'sources', side_effect=RuntimeError('source rejected')), \
+                patch.object(prepare_runtime_image, 'tree') as tree, patch('sys.stdout', new=io.StringIO()):
+            with self.assertRaisesRegex(RuntimeError, 'source rejected'):
+                prepare_runtime_image.inventory(vllm=self.base / 'vllm', client=self.base / 'client')
+        tree.assert_not_called()
+
+
 if __name__ == '__main__':
     unittest.main()

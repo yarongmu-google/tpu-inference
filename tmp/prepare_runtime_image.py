@@ -76,13 +76,13 @@ def sources(root: Path, keep: Callable[[str], bool]) -> dict:
 
 def inventory(vllm: Path, client: Path) -> dict:
     print('Recording source and environment contents for this build...', flush=True)
-    environment = {name: tree(root=Path(sys.prefix) / name) for name in snapshot.RUNTIME_DIRECTORIES
-                   if (Path(sys.prefix) / name).exists() or (Path(sys.prefix) / name).is_symlink()}
     code = {
         'tpu_inference': sources(root=ROOT, keep=snapshot.application_file),
-        'vllm': sources(root=vllm, keep=lambda p: p.split('/', 1)[0] not in {'tmp', 'docs', 'examples', '.github', '.buildkite'}),
+        'vllm': sources(root=vllm, keep=snapshot.vllm_file),
         'InferenceX': sources(root=client, keep=lambda p: p.startswith('utils/') and p != 'utils/aiperf'),
     }
+    environment = {name: tree(root=Path(sys.prefix) / name) for name in snapshot.RUNTIME_DIRECTORIES
+                   if (Path(sys.prefix) / name).exists() or (Path(sys.prefix) / name).is_symlink()}
     native = {p.relative_to(vllm).as_posix(): file_entry(path=p, follow=True)
               for p in (vllm / 'vllm').rglob('*') if p.is_file()
               and (p.name.endswith('.so') or '.so.' in p.name or p.name == 'vllm-rs')}

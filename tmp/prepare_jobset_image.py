@@ -50,6 +50,13 @@ def application_file(path: str) -> bool:
             or ("/" not in path and path.startswith("requirements")))
 
 
+def vllm_file(path: str) -> bool:
+    # Profiling output is not a runtime build input.
+    return path.split("/", 1)[0] not in {
+        "tmp", "docs", "examples", ".github", ".buildkite", "vllm-xprof",
+    }
+
+
 def main() -> None:
     if len(sys.argv) != 5:
         raise SystemExit("Expected CONTEXT REPOSITORY INFERENCEX DIAGNOSTICS")
@@ -80,7 +87,7 @@ def main() -> None:
         root=repository, target=context / "tpu-inference", keep=application_file)
     metadata["source_revisions"]["vllm"] = snapshot(
         root=vllm, target=context / "vllm",
-        keep=lambda p: p.split("/", 1)[0] not in {"tmp", "docs", "examples", ".github", ".buildkite"})
+        keep=vllm_file)
     # The sweep uses bench_serving; the separate aiperf submodule is not needed.
     metadata["source_revisions"]["InferenceX"] = snapshot(
         root=client, target=context / "InferenceX",

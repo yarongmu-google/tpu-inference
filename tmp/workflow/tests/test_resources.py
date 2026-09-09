@@ -50,6 +50,7 @@ class ResourceTests(unittest.TestCase):
         self.fail_bucket_once = False
         self.fail_image_once = False
         self.deny_registry = False
+        self.short_package_names = False
         self.local_tags = {'runtime:' + self.job.state['run_id'], self.image + ':run', 'unrelated:keep'}
 
     def gcloud(self, *, args: list[str], **kwargs) -> tuple[int, str]:
@@ -76,6 +77,9 @@ class ResourceTests(unittest.TestCase):
             if self.deny_registry:
                 raise RuntimeError('registry access denied')
             package = self.image.split('/', 3)[3]
+            if self.short_package_names:
+                return 0, json.dumps([{'name': 'unrelated/keep'}] +
+                    ([{'name': package}] if self.image_exists else []))
             return 0, json.dumps([{'name': 'projects/fixture-project/locations/us-central1/repositories/images/packages/'
                 + quote(package, safe='')}] if self.image_exists else [])
         if args[:6] == ['gcloud', '--project', 'fixture-project', 'artifacts', 'packages', 'delete']:
@@ -298,6 +302,45 @@ class ResourceTests(unittest.TestCase):
         self.commands.clear()
         self.clean()
         self.assertEqual(self.commands, [])
+
+
+    def test_cleanup_accepts_short_package_names_and_deletes_only_owned_package(self) -> None:
+        self.short_package_names = True
+        self.clean()
+        self.assertTrue(self.job.state['resources_cleaned'])
+        deletes = [args for args in self.commands if args[:6] ==
+                   ['gcloud', '--project', 'fixture-project', 'artifacts', 'packages', 'delete']]
+        self.assertEqual(len(deletes), 1)
+        self.assertEqual(deletes[0][6],
+            'projects/fixture-project/locations/us-central1/repositories/images/packages/' +
+            quote(self.image.split('/', 3)[3], safe=''))
+        self.assertEqual(self.local_tags, {'unrelated:keep'})
+
+    def test_package_name_forms_match_exactly_in_configured_repository(self) -> None:
+        package = self.image.split('/', 3)[3]
+        prefix = 'projects/fixture-project/locations/us-central1/repositories/images/packages/'
+        for name in (package, quote(package, safe=''), prefix + package, prefix + quote(package, safe='')):
+            with self.subTest(name=name), patch.object(self.job, 'command', return_value=(0,
+                    json.dumps([{'name': package + '-other'}, {'name': name}]))):
+                self.assertEqual(resources.image_package(job=self.job, image=self.image),
+                                 prefix + quote(package, safe=''))
+
+    def test_missing_owned_package_in_short_listing_is_absent(self) -> None:
+        with patch.object(self.job, 'command', return_value=(0, json.dumps([{'name': 'unrelated/keep'}]))):
+            self.assertIsNone(resources.image_package(job=self.job, image=self.image))
+
+    def test_foreign_duplicate_and_malformed_package_listings_are_rejected(self) -> None:
+        package = self.image.split('/', 3)[3]
+        prefix = 'projects/fixture-project/locations/us-central1/repositories/images/packages/'
+        listings = [
+            [{'name': prefix.replace('fixture-project', 'another-project') + quote(package, safe='')}],
+            [{'name': package}, {'name': prefix + quote(package, safe='')}],
+            [{'name': None}], [None], {},
+        ]
+        for rows in listings:
+            with self.subTest(rows=rows), patch.object(self.job, 'command', return_value=(0, json.dumps(rows))):
+                with self.assertRaises(ValueError):
+                    resources.image_package(job=self.job, image=self.image)
 
 
 if __name__ == '__main__':
