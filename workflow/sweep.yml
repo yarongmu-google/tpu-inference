@@ -1,5 +1,5 @@
 version: 1
-profile: ./local/environment.json
+profile: ./sweep-environment.yml
 name: null
 image_build:
   cwd: ..

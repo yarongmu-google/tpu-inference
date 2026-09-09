@@ -166,6 +166,18 @@ def environment(data: dict) -> dict[str, str]:
     return result
 
 
+def uses_cdk_storage(profile: dict) -> bool:
+    return profile['storage'].get('mode') == 'cdk'
+
+
+def cdk_storage_uri(state: dict) -> str | None:
+    if not state.get('job_id'):
+        return None
+    if not re.fullmatch('j-[A-Za-z0-9-]+', state['job_id']) or not re.fullmatch(r'[a-z0-9-]+-[a-f0-9]{24}', state['run_id']):
+        raise ValueError('Invalid CDK storage identity')
+    return state['profile']['storage']['outputs_root'] + '/' + state['job_id'] + '/outputs/workflow-' + state['run_id']
+
+
 def load_description(path: Path) -> tuple[dict, dict]:
     data = read_document(path)
     keys(data, {'version', 'profile', 'name', 'description', 'code', 'inputs', 'run', 'outputs', 'execution', 'cases', 'image_build'},
@@ -178,13 +190,15 @@ def load_description(path: Path) -> tuple[dict, dict]:
     if profile['version'] != 1:
         raise ValueError('Unsupported profile version')
     cloud = profile['cloud']
-    keys(cloud, {'project', 'region', 'workload_iam_member', 'service_account'}, {'project', 'region', 'workload_iam_member', 'service_account'})
-    for key in ('project', 'region', 'service_account'):
+    required_cloud = {'project'} if uses_cdk_storage(profile) else {'project', 'region', 'workload_iam_member', 'service_account'}
+    keys(cloud, {'project', 'region', 'workload_iam_member', 'service_account'}, required_cloud)
+    for key in required_cloud - {'workload_iam_member'}:
         if not isinstance(cloud[key], str) or not re.fullmatch('[a-z][a-z0-9-]{1,62}', cloud[key]):
             raise ValueError(f'Set cloud.{key} explicitly in {profile_path}')
-    member = cloud['workload_iam_member']
-    if not isinstance(member, str) or not (member.startswith('serviceAccount:') or member.startswith('principal://iam.googleapis.com/')) or any(c.isspace() for c in member):
-        raise ValueError('Set the exact workload IAM member; broad or public principals are not accepted')
+    if not uses_cdk_storage(profile):
+        member = cloud['workload_iam_member']
+        if not isinstance(member, str) or not (member.startswith('serviceAccount:') or member.startswith('principal://iam.googleapis.com/')) or any(c.isspace() for c in member):
+            raise ValueError('Set the exact workload IAM member; broad or public principals are not accepted')
     keys(profile['runtime'], {'image', 'repository'})
     if 'image_build' in data:
         build = data['image_build']
@@ -206,9 +220,14 @@ def load_description(path: Path) -> tuple[dict, dict]:
         raise ValueError('Invalid hardware selectors')
     positive(hardware['chips_per_host'], maximum=64)
     storage = profile['storage']
-    keys(storage, {'dedicated_bucket', 'deletion', 'soft_delete_days'}, {'dedicated_bucket', 'deletion', 'soft_delete_days'})
-    if storage != {'dedicated_bucket': True, 'deletion': 'manual', 'soft_delete_days': 0}:
-        raise ValueError('This version requires dedicated, manually deleted buckets with soft delete disabled')
+    if uses_cdk_storage(profile):
+        keys(storage, {'mode', 'outputs_root'}, {'mode', 'outputs_root'})
+        if not isinstance(storage['outputs_root'], str) or not re.fullmatch(r'gs://[a-z0-9][a-z0-9.-]+/[a-zA-Z0-9/_-]+', storage['outputs_root']) or storage['outputs_root'].endswith('/'):
+            raise ValueError('storage.outputs_root must be the configured CDK jobs prefix')
+    else:
+        keys(storage, {'dedicated_bucket', 'deletion', 'soft_delete_days'}, {'dedicated_bucket', 'deletion', 'soft_delete_days'})
+        if storage != {'dedicated_bucket': True, 'deletion': 'manual', 'soft_delete_days': 0}:
+            raise ValueError('This version requires dedicated, manually deleted buckets with soft delete disabled')
     code = data['code']
     keys(code, {'directory', 'delivery', 'destination', 'include'}, {'directory', 'delivery', 'destination'})
     if code['delivery'] != 'snapshot':
@@ -221,7 +240,7 @@ def load_description(path: Path) -> tuple[dict, dict]:
     inputs = data.setdefault('inputs', {})
     if not isinstance(inputs, dict):
         raise ValueError('inputs must be a mapping')
-    destinations = [code['destination'], '/run-storage', '/run-work', '/run-bundle']
+    destinations = [code['destination'], '/run-storage', '/run-work', '/run-bundle', '/cdk-outputs']
     for key, item in inputs.items():
         if not re.fullmatch('[a-z][a-z0-9_]*', key):
             raise ValueError('Input names must be lowercase identifiers')

@@ -22,7 +22,7 @@ import time
 import traceback
 import uuid
 
-from core import checksum, identity, json_bytes, load_description, read_document, safe_path, save, slug, snapshot, verify
+from core import cdk_storage_uri, uses_cdk_storage, checksum, identity, json_bytes, load_description, read_document, safe_path, save, slug, snapshot, verify
 
 ROOT = Path(__file__).resolve().parent
 LETTER_HASH = '4093b4cb6404558219be50b15b409be1485fd7f64405eb20030c0e9b062ce31f'
@@ -42,7 +42,7 @@ def recipe(state: dict, payload: dict[str, str]) -> dict:
                  'os.execv(sys.executable,[sys.executable,"-u",str(p/"runtime.py")])')
     hardware = state['profile']['hardware']
     labels = {'run-name': state['label'], 'run-id': state['run_id']}
-    return {'apiVersion': 'jobset.x-k8s.io/v1alpha2', 'kind': 'JobSet',
+    value = {'apiVersion': 'jobset.x-k8s.io/v1alpha2', 'kind': 'JobSet',
             'metadata': {'name': state['run_id'], 'labels': labels},
             'spec': {'failurePolicy': {'maxRestarts': 0}, 'replicatedJobs': [{
                 'name': 'worker', 'replicas': 1, 'template': {'spec': {
@@ -62,9 +62,18 @@ def recipe(state: dict, payload: dict[str, str]) -> dict:
                                           'volumes': [{'name': 'run-storage', 'csi': {'driver': 'gcsfuse.csi.storage.gke.io',
                                                        'readOnly': False, 'volumeAttributes': {'bucketName': state['bucket'], 'mountOptions': 'implicit-dirs'}}},
                                                       {'name': 'shared-memory', 'emptyDir': {'medium': 'Memory'}}]}}}}}]}}
+    if uses_cdk_storage(state['profile']):
+        template = value['spec']['replicatedJobs'][0]['template']['spec']['template']
+        template['metadata'].pop('annotations')
+        pod = template['spec']
+        pod['volumes'] = [v for v in pod['volumes'] if v['name'] != 'run-storage']
+        runner = pod['containers'][0]
+        runner['volumeMounts'] = [v for v in runner['volumeMounts'] if v['name'] != 'run-storage']
+        runner['env'].append({'name': 'WORKFLOW_STORAGE_MODE', 'value': 'cdk'})
+    return value
 
 
-def validate_recipe(actual: dict, expected: dict, service_account: str) -> None:
+def validate_recipe(actual: dict, expected: dict, service_account: str | None) -> None:
     jobs = actual['spec']['replicatedJobs']
     if len(jobs) != 1 or jobs[0]['name'] != 'worker' or jobs[0]['replicas'] != 1:
         raise ValueError('Rendered job topology differs from the description')
@@ -75,11 +84,12 @@ def validate_recipe(actual: dict, expected: dict, service_account: str) -> None:
             raise ValueError(f'Rendered {key} differs')
     pod = a['template']['spec']
     epod = e['template']['spec']
-    if pod.get('serviceAccountName') != service_account or pod.get('restartPolicy') != 'Never':
+    if (service_account is not None and pod.get('serviceAccountName') != service_account) or pod.get('restartPolicy') != 'Never':
         raise ValueError('CDK assigned an unexpected service account or restart policy')
     if pod.get('nodeSelector') != epod['nodeSelector']:
         raise ValueError('Rendered hardware selectors differ')
-    if a['template']['metadata'].get('annotations', {}).get('gke-gcsfuse/volumes') != 'true':
+    cdk_storage = {'name': 'WORKFLOW_STORAGE_MODE', 'value': 'cdk'} in epod['containers'][0]['env']
+    if not cdk_storage and a['template']['metadata'].get('annotations', {}).get('gke-gcsfuse/volumes') != 'true':
         raise ValueError('Dedicated storage driver annotation was removed')
     containers = [c for c in pod['containers'] if c['name'] == 'runner']
     if len(containers) != 1:
@@ -184,6 +194,11 @@ class Job:
                 or self.state.get('job_id', row['id']) != row['id']):
             raise ValueError('Job identity does not match saved execution')
         self.save(job_id=row['id'], last_job=row)
+        if uses_cdk_storage(self.state['profile']):
+            uri = cdk_storage_uri(self.state)
+            if self.state.get('uri') not in {None, uri}:
+                raise ValueError('Saved CDK storage prefix differs')
+            self.save(uri=uri)
         return row
 
     def bucket_identity(self) -> dict:
@@ -240,7 +255,7 @@ class Job:
             raise ValueError('CDK recipe registry missing; configure CDK_SOURCE_DIR')
         relative = 'recipes/experimental/' + self.state['recipe'] + '/jobset.yml'
         line = '- ' + json.dumps({'name': self.state['recipe'], 'owner': self.state['user'],
-                                 'k8s_file': relative, 'require_gcs_mount': False})
+                                 'k8s_file': relative, 'require_gcs_mount': uses_cdk_storage(self.state['profile'])})
         with (root / '.description-workflow.lock').open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             before = registry.read_text()
@@ -273,7 +288,10 @@ class Job:
         path = self.directory / 'rendered.yml'
         path.write_text(text)
         validate_recipe(actual=read_document(path), expected=json.loads((self.directory / 'recipe.json').read_text()),
-                        service_account=self.state['profile']['cloud']['service_account'])
+                        service_account=self.state['profile']['cloud'].get('service_account'))
+        rendered = read_document(path)
+        account = rendered['spec']['replicatedJobs'][0]['template']['spec']['template']['spec'].get('serviceAccountName')
+        self.save(assigned_service_account=account)
         self.gcloud(args=['storage', 'cp', str(self.directory / 'start.json'), self.state['uri'] + '/control/start.json'])
         self.save(authorized=True)
 
@@ -339,6 +357,23 @@ class Job:
                     STOP.wait(5)
         return False
 
+    def upload_cdk_inputs(self) -> None:
+        if self.state.get('uploaded'):
+            return
+        if self.state.get('uri') != cdk_storage_uri(self.state) or not self.state.get('job_id'):
+            raise ValueError('CDK job storage has not been resolved')
+        self.phase('UPLOADING')
+        bundle = self.directory / 'input'
+        for item in read_document(bundle / 'run.json')['bundles']:
+            verify(root=bundle / item['source'], entries=item['files'])
+        if checksum(bundle / 'run.json') != self.state['config_sha256']:
+            raise ValueError('Saved configuration changed')
+        self.save(cdk_upload_started=True)
+        self.gcloud(args=['storage', 'cp', str(self.directory / 'owner.json'), self.state['uri'] + '/owner.json'])
+        self.gcloud(args=['storage', 'rsync', '--recursive', str(bundle), self.state['uri'] + '/input'],
+                    timeout=14400, transfer=True)
+        self.save(uploaded=True, bucket_marked=True)
+
     def prepare_image(self) -> None:
         if not self.state.get('owned_image'):
             return
@@ -396,23 +431,24 @@ class Job:
             if job is None:
                 raise RuntimeError('Submission outcome unresolved; not submitting again')
         else:
-            self.ensure_bucket()
-            self.phase('UPLOADING')
-            if not self.state.get('uploaded'):
-                bundle = self.directory / 'input'
-                for item in json.loads((bundle / 'run.json').read_text())['bundles']:
-                    verify(root=bundle / item['source'], entries=item['files'])
-                if checksum(bundle / 'run.json') != self.state['config_sha256']:
-                    raise ValueError('Saved configuration changed')
-                self.gcloud(args=['storage', 'rsync', '--recursive', str(bundle), self.state['uri'] + '/input'],
-                            timeout=14400, transfer=True)
-                self.save(uploaded=True)
+            if not uses_cdk_storage(self.state['profile']):
+                self.ensure_bucket()
+                self.phase('UPLOADING')
+                if not self.state.get('uploaded'):
+                    bundle = self.directory / 'input'
+                    for item in json.loads((bundle / 'run.json').read_text())['bundles']:
+                        verify(root=bundle / item['source'], entries=item['files'])
+                    if checksum(bundle / 'run.json') != self.state['config_sha256']:
+                        raise ValueError('Saved configuration changed')
+                    self.gcloud(args=['storage', 'rsync', '--recursive', str(bundle), self.state['uri'] + '/input'],
+                                timeout=14400, transfer=True)
+                    self.save(uploaded=True)
             self.register()
             self.phase('SUBMITTING')
             self.save(submission_started=True, submitted_at=time.time())
             code, _ = self.cdk(args=['job', 'create', self.state['recipe'],
                                      '--tags', self.state['label'] + ',' + self.state['run_id'],
-                                     '--mount-gcs=false', '--log-mode=log-transport',
+                                     '--mount-gcs=true' if uses_cdk_storage(self.state['profile']) else '--mount-gcs=false', '--log-mode=log-transport',
                                      '--active-deadline-seconds', str(config['timeout_seconds'] + 1800)],
                                check=False, timeout=300)
             self.save(submission_exit=code)
@@ -423,6 +459,8 @@ class Job:
                 STOP.wait(5)
             if job is None:
                 raise RuntimeError('No confirmed job ID; resume to reconcile submission')
+        if uses_cdk_storage(self.state['profile']):
+            self.upload_cdk_inputs()
         if not self.state.get('authorized'):
             self.authorize()
         terminal_since = None
@@ -471,6 +509,18 @@ class Job:
             job = self.discover()
             if job is None or job.get('job_status') not in TERMINAL or job.get('state') not in ({'Complete'} | ARCHIVE_FAILED):
                 raise ValueError('Job is active, archiving, or unresolved; cleanup is blocked')
+        if uses_cdk_storage(self.state['profile']):
+            from resources import clean_cdk_storage, verify_collected
+            if self.state.get('uri') != cdk_storage_uri(self.state):
+                raise ValueError('CDK storage ownership differs')
+            if not discard:
+                verify_collected(job=self)
+            print(f'Delete {self.state["uri"]}; keep the supplied image and local files', flush=True)
+            expected = 'DELETE ' + self.state['run_id']
+            if not sys.stdin.isatty() or input(f'Type {expected} to confirm: ') != expected:
+                raise ValueError('Deletion was not confirmed')
+            clean_cdk_storage(job=self)
+            return 0
         if not self.state.get('bucket_marked'):
             raise ValueError('Bucket ownership is unconfirmed; cleanup is blocked')
         # Check exact ownership immediately before offering deletion.
@@ -502,7 +552,7 @@ def prepare(description_path: Path, name: str | None, dry_run: bool = False) -> 
     if not name:
         if not sys.stdin.isatty():
             raise ValueError('Supply --name or name in the description for noninteractive execution')
-        name = input('Run name (used in cloud labels and bucket names): ').strip()
+        name = input('Run name (used in cloud labels and resource names): ').strip()
     label = slug(name)
     campaign_id = identity(name)
     root = Path(data['outputs']['directory']) / campaign_id
@@ -542,14 +592,15 @@ def prepare(description_path: Path, name: str | None, dry_run: bool = False) -> 
             save(path=folder / 'input/run.json', value=config)
         digest = None if 'image_build' in data else checksum(folder / 'input/run.json')
         state = {'run_id': run_id, 'name': name, 'label': label, 'case': case['name'],
-                 'bucket': run_id, 'uri': 'gs://' + run_id, 'recipe': run_id, 'user': user,
+                 'bucket': None if uses_cdk_storage(profile) else run_id,
+                 'uri': None if uses_cdk_storage(profile) else 'gs://' + run_id, 'recipe': run_id, 'user': user,
                  'image': config['image'], 'profile': profile, 'execution': data['execution'],
                  'config_sha256': digest, 'phase': 'PREPARED', 'dry_run': dry_run}
         save(path=folder / 'owner.json', value={'run_id': run_id, 'nonce': nonce, 'project': profile['cloud']['project']})
         if 'image_build' in data:
             state.update(image_build=data['image_build'],
                          owned_image=profile['runtime']['repository'].rstrip('/') + '/' + run_id)
-            save(path=folder / 'resources.json', value={'run_id': run_id, 'bucket': run_id,
+            save(path=folder / 'resources.json', value={'run_id': run_id, 'bucket': state['bucket'],
                 'image': state['owned_image'], 'local_tags': ['runtime:' + run_id, state['owned_image'] + ':run']})
         else:
             save(path=folder / 'start.json', value={'run_id': run_id, 'config_sha256': digest})

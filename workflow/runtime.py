@@ -92,7 +92,7 @@ def expand(value: str, variables: dict[str, str]) -> str:
     return re.sub(r'\$\{([A-Z_][A-Z0-9_]*)\}', replacement, value)
 
 
-def execute(bucket: Path, local: Path, expected: str, require_mount: bool = True) -> int:
+def execute(bucket: Path, local: Path, expected: str, require_mount: bool = True, mount_root: Path | None = None, input_wait_seconds: int = 0) -> int:
     local.mkdir(parents=True, exist_ok=True)
     status = {'run_id': os.environ['RUN_ID'], 'state': 'starting', 'exit_code': None, 'updated': time.time()}
     child = None
@@ -115,9 +115,19 @@ def execute(bucket: Path, local: Path, expected: str, require_mount: bool = True
     try:
         if require_mount:
             mounts = Path('/proc/self/mountinfo').read_text().splitlines()
-            if not any(line.split()[4] == str(bucket) and 'fuse' in line for line in mounts):
-                raise RuntimeError('Dedicated storage mount is missing; workload will not start')
+            if not any(line.split()[4] == str(mount_root or bucket) and 'fuse' in line for line in mounts):
+                raise RuntimeError('Storage mount is missing; workload will not start')
+        bucket.mkdir(parents=True, exist_ok=True)
         config_path = bucket / 'input/run.json'
+        if input_wait_seconds:
+            print('WAITING_FOR_INPUTS: controller is preparing this job folder', flush=True)
+            deadline = time.monotonic() + input_wait_seconds
+            while not config_path.is_file() or not (bucket / 'owner.json').is_file():
+                if interrupted.is_set():
+                    raise InterruptedError('Interrupted before input delivery')
+                if time.monotonic() >= deadline:
+                    raise TimeoutError('No job inputs; inspect upload logs and resume the controller')
+                interrupted.wait(1)
         if checksum(config_path) != expected:
             raise ValueError('Run configuration checksum mismatch')
         config = json.loads(config_path.read_text())
@@ -133,7 +143,7 @@ def execute(bucket: Path, local: Path, expected: str, require_mount: bool = True
         write_remote(path=bucket / 'control/ready.json', value=proof)
         if json.loads((bucket / 'control/ready.json').read_text()) != proof:
             raise RuntimeError('Dedicated bucket read/write check failed')
-        print('STORAGE_READY: dedicated bucket verified; waiting for launch authorization', flush=True)
+        print('STORAGE_READY: job storage verified; waiting for launch authorization', flush=True)
         deadline = time.monotonic() + 900
         while True:
             if interrupted.is_set():
@@ -232,4 +242,13 @@ def execute(bucket: Path, local: Path, expected: str, require_mount: bool = True
 
 
 if __name__ == '__main__':
+    if os.environ.get('WORKFLOW_STORAGE_MODE') == 'cdk':
+        mount = Path(os.environ['CDK_OUTPUT_DIR'])
+        if not mount.is_absolute() or '..' in mount.parts or mount == Path('/'):
+            raise ValueError('Invalid CDK output mount')
+        run_id = os.environ['RUN_ID']
+        if not re.fullmatch(r'[a-z0-9-]+-[a-f0-9]{24}', run_id):
+            raise ValueError('Invalid run ID')
+        sys.exit(execute(bucket=mount / ('workflow-' + run_id), mount_root=mount,
+            local=Path('/run-work'), expected=os.environ['RUN_CONFIG_SHA256'], input_wait_seconds=900))
     sys.exit(execute(bucket=Path('/run-storage'), local=Path('/run-work'), expected=os.environ['RUN_CONFIG_SHA256']))

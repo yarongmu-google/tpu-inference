@@ -33,6 +33,7 @@ class SweepIntegrationTests(unittest.TestCase):
             'storage': {'dedicated_bucket': True, 'deletion': 'manual', 'soft_delete_days': 0}}
         self.description = core.read_document(controller.ROOT / 'sweep.yml')
         # Existing snapshot-only checks also cover compatibility with fixed images.
+        self.description['profile'] = './local/environment.json'
         self.description.pop('image_build', None)
         self.description['execution'].pop('cleanup', None)
         self.description['code']['directory'] = '../scripts'
@@ -144,7 +145,7 @@ exit 42
         self.assertEqual(result.returncode, 42)
         args = output.read_text().splitlines()
         self.assertEqual(args[0], str(self.workflow / 'sweep.yml'))
-        self.assertEqual(args[1:3], ['--configure-profile', '--profile-source'])
+        self.assertNotIn('--configure-profile', args)
         self.assertEqual(args[-3:], ['--dry-run', '--name', 'fixture name'])
 
 

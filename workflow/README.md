@@ -2,8 +2,8 @@
 
 A description supplies code, inputs, arguments, output locations and independent
 cases. An environment profile supplies the runtime image or image registry destination,
-hardware, cloud project, storage region and workload identity. Each submitted job receives
-its own named bucket and saved execution record. No application-specific
+hardware, cloud project and storage mode. Each submitted job receives
+its own storage location and saved execution record. No application-specific
 completion rules are built into the controller.
 
 This is a separate entry point from the existing scripts. It does not alter or
@@ -25,22 +25,26 @@ the generic output collector. The generic controller has no knowledge of the
 sweep's model, configurations or metrics. The first workload is the actual
 sweep; the example below remains an optional small storage check.
 
-On first use, the same logged command creates `workflow/local/environment.json`
-interactively. It offers the image repository and assigned Kubernetes service-account name
-from the CPU VM's previous saved execution when available. Enter a registry image
-path without a tag or digest, such as
-`us-central1-docker.pkg.dev/PROJECT/REPOSITORY/runtime`. The launcher determines
-the digest automatically. Existing fixed-image profiles get a one-time prompt
-to add the repository; their cloud settings are preserved.
-The registry's project/region are suggestions that require confirmation for
-bucket storage. The workload's bucket-access IAM identity must be supplied or
-come from an existing profile; it is never guessed from the account name.
-Hardware settings are also confirmed once. A profile with the repository saved is reused without rewriting it. Then the controller asks for a run name.
+The checked-in `workflow/sweep-environment.yml` supplies the earlier launcher's
+project, registry and TPU settings. The only prompt is the run name; use
+`--name my-description` to supply it on the command line. No project, bucket,
+image-repository, digest, service-account or IAM questions are asked. Existing
+CPU-VM CDK/gcloud authentication and registry permissions are still required.
+
+The saved image prefix is
+`us-central1-docker.pkg.dev/cloud-tpu-inference-test/vllm-tpu-rdna/runtime`.
+Each run publishes `<prefix>/<run-id>:run`, then submits its immutable digest.
+The exact path and digest remain in the local resource and build records.
+CDK assigns the Kubernetes service account and mounts its normal output folder;
+the sweep does not create a bucket or change IAM. Its files live only under
+`gs://cloud-devkit/jobs/<job-id>/outputs/workflow-<run-id>/`.
+This preset is used directly; an older `workflow/local/environment.json` is not
+consulted or overwritten by the sweep launcher.
 
 Every new TPU job invokes the Docker builder and CPU smoke check, even when the
 source and environment match a previous job. The configured image repository is
 a prefix: the launcher appends the unique run ID as a separate image path. Its
-GCS bucket uses that same run ID. Independent cases each build and own their own
+CDK storage subfolder uses that same run ID. Independent cases each build and own their own
 image; no completed image is selected from a shared-image cache. Docker may reuse
 build layers, and the local image-preparation lock serializes builds on this CPU
 VM while already submitted TPU jobs continue concurrently.
@@ -63,7 +67,7 @@ the same run ID. Start a new run to rebuild.
 
 The sweep selects `execution.cleanup: after_collection`. Once the job is terminal
 and archiving has completed or failed, the controller verifies the downloaded
-final artifact bundle before deleting that run's bucket and complete registry
+final artifact bundle before deleting that run's storage subfolder and complete registry
 image package, including its tags and versions. This applies to both successful
 and failed workloads. Active jobs, unknown submissions and incomplete or damaged
 local collections retain their resources. Resume retries collection and cleanup;
@@ -93,7 +97,7 @@ printed saved path to reconnect. It does not import results or resume jobs
 created by the previous launcher. The profile helper itself runs no cloud
 commands and does not read credential files.
 
-## First run
+## Other descriptions with dedicated buckets
 
 Fill in `examples/environment.yml` once for the CPU VM and cluster. The image
 must already exist in a registry and be readable by GKE. The image needs Python
@@ -182,7 +186,7 @@ rejected. See `examples/experiment.yml` for the minimal description.
   minutes for storage setup and code/input copying. Queue/controller waiting
   and archive waiting have separate `wait_seconds` and `archive_seconds`.
 - `cases`: optional list of unique names and environment overrides. Each case is
-  one independent job and bucket; this version does not interpret a matrix.
+  one independent job and storage location; this version does not interpret a matrix.
   `max_in_flight`, up to 50, is a limit per campaign. Transfers and control
   commands also have smaller independent concurrency limits. Actual scheduling
   depends on cluster admission.
@@ -193,7 +197,7 @@ under `OUTPUT_DIR`. The wrapper captures stdout, stderr and exit status even
 when the program fails. It preserves executable file modes when copying code.
 
 A source snapshot is prepared once per campaign; local per-job copies use hard
-links to that frozen snapshot, then each dedicated bucket gets its own upload.
+links to that frozen snapshot, then each run storage location gets its own upload.
 Do not edit files inside saved execution directories. Source edits after
 preparation do not change a queued job. Hashes are checked before upload and
 again before running. No Git commit or push is performed by this workflow.
@@ -211,7 +215,30 @@ model loading and JIT compilation even when Docker reuses build layers.
 The small generic wrapper is embedded in each generated recipe. It does not
 require rebuilding the runtime image or CDK's directory-mapping feature.
 
-## Dedicated storage and CDK
+## Storage and CDK
+
+The sweep selects `storage.mode: cdk` with `storage.outputs_root` set to the
+CDK job root. In this mode the profile needs only `cloud.project`, runtime and
+hardware settings. The controller submits with CDK's output mount enabled,
+resolves the confirmed job ID, then uploads the frozen inputs into that job's
+unique workflow subfolder. The container waits for these inputs at
+`$CDK_OUTPUT_DIR/workflow-<run-id>` before checking ownership, hashes and storage
+read/write access. The controller checks the rendered image, command and
+hardware before authorizing the workload. The observed service account is
+recorded, with no manual identity configuration.
+
+After verified collection, cleanup checks the owner marker and empties only
+that run's subfolder using a scoped
+[`gcloud storage rsync`](https://docs.cloud.google.com/sdk/gcloud/reference/storage/rsync)
+from an empty local directory. Interrupted deletion can be retried. It does not
+delete the shared bucket, other runs, or CDK's own logs and metadata. The shared
+bucket's retention and soft-delete policies remain under CDK administration.
+Local tests mock cloud commands; CPU-VM access to this prefix and the live CDK
+mount still require verification on the first run.
+
+The older dedicated-bucket mode remains supported for other descriptions and
+saved runs. Its behavior is described below.
+
 
 The generated recipe uses a Cloud Storage FUSE CSI volume pointing to the
 new bucket at `/run-storage`. The default CDK output mount is disabled for this
@@ -237,7 +264,7 @@ buckets are not adopted. The saved ownership marker and labels are checked
 before reuse and cleanup. An ambiguous create outcome requires inspection;
 the controller will not guess ownership.
 
-Each bucket contains:
+Each run storage location contains:
 
 ```text
 owner.json
@@ -265,10 +292,10 @@ including for jobs that never started their program.
 ## Resume, collect, and cleanup
 
 For newly built images, `execution.cleanup: after_collection` opts each run into
-automatic image and bucket cleanup after verified collection. It overrides the
+automatic image and run-storage cleanup after verified collection. It overrides the
 profile's manual-storage default for that run. The default for other descriptions
 is `manual`. The same description can select `manual` to retain its owned image
-and bucket until explicit cleanup. Automatic cleanup requires a run-owned build.
+and storage until explicit cleanup. Automatic cleanup requires a run-owned build.
 Existing saved runs are not retroactively opted into deletion.
 
 After automatic cleanup, `resume` returns the recorded outcome and `collect`
@@ -296,7 +323,7 @@ can run simultaneously.
 The explicit `cleanup` command requires one exact job directory and typed
 `DELETE <run-id>` confirmation. It checks terminal/archive state, resource
 ownership and local artifact hashes. For an owned-image run it deletes the
-bucket, the run's complete image package, and its local Docker tags. Older
+run's storage, the run's complete image package, and its local Docker tags. Older
 and fixed-image runs keep the original bucket-only manual cleanup behavior.
 `--discard-incomplete` explicitly permits manual cleanup without a verified
 result bundle; it still checks ownership and terminal job state when submitted.

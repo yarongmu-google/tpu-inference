@@ -1,4 +1,4 @@
-"""Delete only the image and bucket recorded as belonging to one completed run."""
+"""Delete only the image and storage recorded as belonging to one completed run."""
 from __future__ import annotations
 
 import fcntl
@@ -10,7 +10,7 @@ import time
 from typing import TYPE_CHECKING
 from urllib.parse import unquote
 
-from core import read_document, save, verify
+from core import cdk_storage_uri, uses_cdk_storage, read_document, save, verify
 
 if TYPE_CHECKING:
     from controller import Job
@@ -34,9 +34,11 @@ def owned(job: Job) -> dict:
     if not re.fullmatch(r'[a-z0-9-]+-[a-f0-9]{24}', run_id):
         raise ValueError('Invalid run identity')
     image = state['profile']['runtime']['repository'].rstrip('/') + '/' + run_id
-    value = {'run_id': run_id, 'bucket': run_id, 'image': image,
+    bucket = None if uses_cdk_storage(state['profile']) else run_id
+    uri = cdk_storage_uri(state) if uses_cdk_storage(state['profile']) else 'gs://' + run_id
+    value = {'run_id': run_id, 'bucket': bucket, 'image': image,
              'local_tags': ['runtime:' + run_id, image + ':run']}
-    if (state.get('owned_image') != image or state['bucket'] != run_id or state['uri'] != 'gs://' + run_id
+    if (state.get('owned_image') != image or state['bucket'] != bucket or state['uri'] != uri
             or read_document(job.directory / 'resources.json') != value):
         raise ValueError('Resource ownership record differs; cleanup is blocked')
     if state.get('image') and not state['image'].startswith(image + '@sha256:'):
@@ -64,6 +66,26 @@ def bucket_present(job: Job) -> bool:
     return bool(rows)
 
 
+def clean_cdk_storage(job: Job) -> None:
+    if job.state.get("uri") != cdk_storage_uri(job.state):
+        raise ValueError("CDK storage ownership differs")
+    if job.state.get('cdk_upload_started'):
+        if not job.state.get('prefix_deletion_started'):
+            _, text = job.gcloud(args=['storage', 'cat', job.state['uri'] + '/owner.json'])
+            if json.loads(text) != read_document(job.directory / 'owner.json'):
+                raise ValueError('CDK job-folder owner differs')
+            job.save(prefix_deletion_started=True)
+        empty = job.directory / 'cleanup-empty'
+        empty.mkdir(exist_ok=True)
+        if empty.is_symlink() or any(empty.iterdir()):
+            raise ValueError('Cleanup source must be an empty local directory')
+        # An empty source clears exactly this prefix and can be retried when
+        # deletion already succeeded. Never delete the shared bucket itself.
+        job.gcloud(args=['storage', 'rsync', '--recursive', '--delete-unmatched-destination-objects',
+            str(empty), job.state['uri'] + '/'], timeout=1800, transfer=True)
+    job.save(deleted=True, storage_deleted_at=time.time())
+
+
 def cleanup(job: Job, discard: bool, automatic: bool) -> int:
     if job.state.get('resources_cleaned'):
         return 0
@@ -88,33 +110,35 @@ def cleanup(job: Job, discard: bool, automatic: bool) -> int:
         elif not discard and not (job.directory / 'error.txt').is_file():
             raise ValueError('Unsubmitted run has no saved failure; use explicit cleanup with --discard-incomplete')
         if not automatic:
-            print(f'Delete image {resources["image"]} and bucket {job.state["uri"]}; keep local results', flush=True)
+            print(f'Delete image {resources["image"]} and storage {job.state["uri"]}; keep local results', flush=True)
             if not sys.stdin.isatty() or input('Type DELETE ' + job.state['run_id'] + ' to confirm: ') != 'DELETE ' + job.state['run_id']:
                 raise ValueError('Deletion was not confirmed')
         job.phase('CLEANING_RESOURCES')
         job.save(resource_cleanup_started=True)
-        # Remove the bucket first so collection failures cannot strand an image-less run.
-        if not job.state.get('deleted'):
-            if job.state.get('bucket_creation_started'):
-                present = bucket_present(job=job)
-                if present:
-                    metadata = job.bucket_identity()
-                    previous = job.state.get('cleanup_bucket_created_at')
-                    if previous:
-                        if metadata.get('timeCreated') != previous:
-                            raise ValueError('Bucket was replaced after cleanup began')
-                    else:
-                        if not job.state.get('bucket_marked') or metadata.get('labels', {}).get('run_id') != job.state['run_id']:
-                            raise ValueError('Bucket ownership is unconfirmed')
-                        _, text = job.gcloud(args=['storage', 'cat', job.state['uri'] + '/owner.json'])
-                        if json.loads(text) != read_document(job.directory / 'owner.json') or not metadata.get('timeCreated'):
-                            raise ValueError('Bucket ownership marker or creation time is missing')
-                        job.save(cleanup_bucket_created_at=metadata['timeCreated'])
-                    job.save(deletion_started=True)
-                    job.gcloud(args=['storage', 'rm', '--recursive', '--quiet', job.state['uri']], timeout=1800, transfer=True)
-                    if bucket_present(job=job):
-                        raise ValueError('Bucket deletion has not completed')
-            job.save(deleted=True, bucket_deleted_at=time.time())
+        if uses_cdk_storage(job.state['profile']) and not job.state.get('deleted'):
+            clean_cdk_storage(job=job)
+        elif not uses_cdk_storage(job.state['profile']):
+            if not job.state.get('deleted'):
+                if job.state.get('bucket_creation_started'):
+                    present = bucket_present(job=job)
+                    if present:
+                        metadata = job.bucket_identity()
+                        previous = job.state.get('cleanup_bucket_created_at')
+                        if previous:
+                            if metadata.get('timeCreated') != previous:
+                                raise ValueError('Bucket was replaced after cleanup began')
+                        else:
+                            if not job.state.get('bucket_marked') or metadata.get('labels', {}).get('run_id') != job.state['run_id']:
+                                raise ValueError('Bucket ownership is unconfirmed')
+                            _, text = job.gcloud(args=['storage', 'cat', job.state['uri'] + '/owner.json'])
+                            if json.loads(text) != read_document(job.directory / 'owner.json') or not metadata.get('timeCreated'):
+                                raise ValueError('Bucket ownership marker or creation time is missing')
+                            job.save(cleanup_bucket_created_at=metadata['timeCreated'])
+                        job.save(deletion_started=True)
+                        job.gcloud(args=['storage', 'rm', '--recursive', '--quiet', job.state['uri']], timeout=1800, transfer=True)
+                        if bucket_present(job=job):
+                            raise ValueError('Bucket deletion has not completed')
+                job.save(deleted=True, bucket_deleted_at=time.time())
         if not job.state.get('image_deleted'):
             package_name = image_package(job=job, image=resources['image'])
             if package_name:
@@ -135,9 +159,9 @@ def cleanup(job: Job, discard: bool, automatic: bool) -> int:
                     job.command(args=['docker', 'image', 'rm', tag])
             job.save(local_image_tags_removed=True)
         cleaned_at = time.time()
-        save(path=job.directory / 'cleanup.json', value={**resources, 'image_digest': job.state.get('image'),
+        save(path=job.directory / 'cleanup.json', value={**resources, 'image_digest': job.state.get('image'), 'storage_uri': job.state.get('uri'),
             'cleaned_at': cleaned_at, 'exit_code': job.state.get('exit_code'),
             'artifact_exit_code': job.state.get('artifact_exit_code'), 'local_results': str(job.directory / 'collected')})
         job.save(resources_cleaned=True, cleaned_at=cleaned_at, phase='CLEANED')
-        print(f'[{job.state["run_id"]}] image and bucket cleaned; local record: {job.directory}', flush=True)
+        print(f'[{job.state["run_id"]}] image and run storage cleaned; local record: {job.directory}', flush=True)
         return 0
