@@ -43,10 +43,11 @@ installed Torch 2.10. Dependency checks, CPU imports and CLI checks run before
 publication; TPU execution and full-model compilation still need live testing.
 No CUDA toolkit is installed. Build logs capture dependency or import failures.
 
-The job requests 600 GiB of local ephemeral storage and checks checkpoint size
-plus 64 GiB free-space headroom before downloading. This requires sufficient
-node storage; the request does not create a disk. The checkpoint cache is not
-included in results. Each case starts a fresh server on the same TPUs.
+The job mounts disk-backed scratch with a 600 GiB volume size ceiling and no
+explicit disk reservation. After scheduling, it checks actual free space for
+checkpoint bytes plus 64 GiB headroom before downloading. Scratch does not
+provision a separate disk. The cache is excluded from results and removed with
+the Pod. Each case starts a fresh server on the same TPUs.
 
 A failed case saves its stderr and the next case still runs. Any failed case
 makes the aggregate job fail. Results contain per-case commands, server/client

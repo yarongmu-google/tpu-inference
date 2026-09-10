@@ -22,9 +22,10 @@ bash tmp/workflow/run.sh cleanup <saved-run-directory>
 
 A description specifies its profile, image build, code snapshot, inputs, run
 command, outputs and execution limits. The generic examples remain under
-`examples/`. `execution.scratch_gib` optionally requests and mounts local disk
-at `/run-scratch`. The recipe verifier checks that CDK preserves the resources
-and storage mounts before submission.
+`examples/`. `execution.scratch_gib` sets a disk-backed emptyDir size ceiling
+at `/run-scratch`; it does not add a container disk request or limit. The recipe
+verifier checks resource fields and storage mounts before submission. Actual
+free space is checked by the workload after placement on a node.
 
 Result archives belong to the description's output directory. `local/` contains
 ignored controller/build state and compressed launcher logs. A nonzero exit is

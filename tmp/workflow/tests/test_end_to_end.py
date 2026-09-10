@@ -217,14 +217,15 @@ class EndToEndTests(unittest.TestCase):
                 controller.validate_cdk_storage(actual=actual, state=self.job.state)
 
 
-    def test_scratch_capacity_and_mount_must_survive_rendering(self) -> None:
+    def test_scratch_volume_does_not_reserve_disk_and_survives_rendering(self) -> None:
         self.job.state['execution']['scratch_gib'] = 600
         expected = controller.recipe(state=self.job.state, payload={})
         controller.validate_recipe(actual=expected, expected=expected, service_account=None)
         pod = expected['spec']['replicatedJobs'][0]['template']['spec']['template']['spec']
-        self.assertEqual(pod['containers'][0]['resources']['requests']['ephemeral-storage'], '600Gi')
+        for quantities in pod['containers'][0]['resources'].values():
+            self.assertNotIn('ephemeral-storage', quantities)
         self.assertEqual(pod['volumes'][-1], {'name': 'run-scratch', 'emptyDir': {'sizeLimit': '600Gi'}})
-        for target in ('volume', 'mount', 'request'):
+        for target in ('volume', 'mount', 'request', 'limit'):
             actual = copy.deepcopy(expected)
             changed = actual['spec']['replicatedJobs'][0]['template']['spec']['template']['spec']
             if target == 'volume':
@@ -232,6 +233,7 @@ class EndToEndTests(unittest.TestCase):
             elif target == 'mount':
                 changed['containers'][0]['volumeMounts'].pop()
             else:
-                changed['containers'][0]['resources']['requests']['ephemeral-storage'] = '1Gi'
+                section = 'requests' if target == 'request' else 'limits'
+                changed['containers'][0]['resources'][section]['ephemeral-storage'] = '1Gi'
             with self.subTest(target=target), self.assertRaises(ValueError):
                 controller.validate_recipe(actual=actual, expected=expected, service_account=None)

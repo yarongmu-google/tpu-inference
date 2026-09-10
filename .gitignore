@@ -203,3 +203,6 @@ shellcheck*/
 csrc/moe/marlin_moe_wna16/kernel_*
 
 !/support_matrices/**
+
+# Legacy local workflow state stays on the CPU VM after the launcher move.
+/workflow/
