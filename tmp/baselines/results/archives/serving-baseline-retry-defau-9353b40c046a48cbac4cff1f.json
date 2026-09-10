@@ -1,0 +1,10 @@
+{
+  "archive": "serving-baseline-retry-defau-9353b40c046a48cbac4cff1f.tar.gz",
+  "artifact_exit_code": 1,
+  "bytes": 173209,
+  "exit_code": 1,
+  "phase": "CLEANED",
+  "resources_cleaned": true,
+  "run_id": "serving-baseline-retry-defau-9353b40c046a48cbac4cff1f",
+  "sha256": "ba7cfbecfb02560f741877233edab6afd2f8f1239924c92dc7b25bbb436e7d27"
+}
