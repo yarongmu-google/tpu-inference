@@ -1,0 +1,10 @@
+{
+  "archive": "serving-baselines-default-63caea5f9cdd4432976b85de.tar.gz",
+  "artifact_exit_code": null,
+  "bytes": 142354,
+  "exit_code": null,
+  "phase": "COLLECTING",
+  "resources_cleaned": false,
+  "run_id": "serving-baselines-default-63caea5f9cdd4432976b85de",
+  "sha256": "fddb7b37cf25fbea2515e5fb765530ae761625257abe79bdf40b84335017162f"
+}
