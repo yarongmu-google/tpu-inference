@@ -1,0 +1,12 @@
+version: 1
+cloud:
+  project: cloud-tpu-inference-test
+runtime:
+  repository: us-central1-docker.pkg.dev/cloud-tpu-inference-test/vllm-tpu-rdna/runtime
+hardware:
+  accelerator: tpu7x
+  topology: 2x2x1
+  chips_per_host: 4
+storage:
+  mode: cdk
+  outputs_root: gs://cloud-devkit/jobs

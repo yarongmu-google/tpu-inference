@@ -1,0 +1,39 @@
+version: 1
+profile: ../workflow/environment.yml
+name: null
+description: Measure the two committed serving baselines
+image_build:
+  cwd: ../..
+  argv: [python3, tmp/baselines/build_image.py]
+  timeout_seconds: 28800
+code:
+  directory: ./payload
+  delivery: snapshot
+  destination: /workspace/experiment
+  include: [runner.py, preflight.py]
+inputs:
+  server_commands:
+    source: ../../scripts/vllm/benchmarking
+    destination: /workspace/server-commands
+run:
+  cwd: /opt/tpu-inference
+  argv: [python3, -u, /workspace/experiment/runner.py]
+  env:
+    PYTHONUNBUFFERED: "1"
+    HF_HOME: /run-scratch/huggingface
+    HF_HUB_CACHE: /run-scratch/huggingface/hub
+    HF_XET_CACHE: /run-scratch/huggingface/xet
+    HF_XET_CHUNK_CACHE_SIZE_BYTES: "0"
+  verify_imports:
+    vllm: /opt/vllm
+    tpu_inference: /opt/tpu-inference
+outputs:
+  directory: ./results
+  snapshot_seconds: 30
+execution:
+  cleanup: after_collection
+  timeout_seconds: 64800
+  scratch_gib: 600
+  max_in_flight: 1
+  wait_seconds: 86400
+  archive_seconds: 1200

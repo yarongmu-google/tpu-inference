@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+local/*
+!local/logs/
+local/logs/*
+!local/logs/*.gz
+!local/results/
+local/results/*
+!local/results/archives/
+!local/results/archives/**
+examples/results/

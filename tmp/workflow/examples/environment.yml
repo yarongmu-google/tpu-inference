@@ -1,0 +1,19 @@
+version: 1
+cloud:
+  project: <project>
+  region: <region>
+  # CDK assigns this account. Copy the name from a rendered job recipe.
+  service_account: <assigned-account>
+  # Exact bucket-access identity for that account; use a serviceAccount: or
+  # principal://iam.googleapis.com/... member verified for your environment.
+  workload_iam_member: <workload-identity>
+runtime:
+  image: <registry/image@sha256:digest>
+hardware:
+  accelerator: tpu7x
+  topology: 2x2x1
+  chips_per_host: 4
+storage:
+  dedicated_bucket: true
+  deletion: manual
+  soft_delete_days: 0
