@@ -1,0 +1,16 @@
+{
+  "client_revision": "ee867231de0b268e2810a6e31751b23cf5903fc5",
+  "concurrency": 512,
+  "num_prompts": 2048,
+  "range_ratio": 0.8,
+  "seed": 0,
+  "num_warmups": 0,
+  "cases": [
+    {
+      "name": "baseline-1k-8k",
+      "config": "baseline",
+      "input_length": 1024,
+      "output_length": 8192
+    }
+  ]
+}

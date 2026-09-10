@@ -249,7 +249,7 @@ def load_description(path: Path) -> tuple[dict, dict]:
     inputs = data.setdefault('inputs', {})
     if not isinstance(inputs, dict):
         raise ValueError('inputs must be a mapping')
-    destinations = [code['destination'], '/run-storage', '/run-work', '/run-bundle', '/cdk-outputs']
+    destinations = [code['destination'], '/run-storage', '/run-work', '/run-bundle', '/cdk-outputs', '/run-scratch']
     for key, item in inputs.items():
         if not re.fullmatch('[a-z][a-z0-9_]*', key):
             raise ValueError('Input names must be lowercase identifiers')
@@ -284,7 +284,9 @@ def load_description(path: Path) -> tuple[dict, dict]:
             raise ValueError('Invalid or reserved extra-output name')
         absolute(value)
     execution = data.setdefault('execution', {})
-    keys(execution, {'timeout_seconds', 'max_in_flight', 'poll_seconds', 'archive_seconds', 'wait_seconds', 'cleanup'})
+    keys(execution, {'timeout_seconds', 'max_in_flight', 'poll_seconds', 'archive_seconds', 'wait_seconds', 'cleanup', 'scratch_gib'})
+    if 'scratch_gib' in execution:
+        positive(execution['scratch_gib'], maximum=4096)
     cleanup = execution.setdefault('cleanup', 'manual')
     if cleanup not in {'manual', 'after_collection'}:
         raise ValueError('execution.cleanup must be manual or after_collection')

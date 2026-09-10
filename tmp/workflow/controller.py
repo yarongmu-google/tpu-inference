@@ -71,6 +71,13 @@ def recipe(state: dict, payload: dict[str, str]) -> dict:
         runner = pod['containers'][0]
         runner['volumeMounts'] = [v for v in runner['volumeMounts'] if v['name'] != 'run-storage']
         runner['env'].append({'name': 'WORKFLOW_STORAGE_MODE', 'value': 'cdk'})
+    if size := state['execution'].get('scratch_gib'):
+        pod = value['spec']['replicatedJobs'][0]['template']['spec']['template']['spec']
+        runner = pod['containers'][0]
+        for quantities in runner['resources'].values():
+            quantities['ephemeral-storage'] = f'{size}Gi'
+        runner['volumeMounts'].append({'name': 'run-scratch', 'mountPath': '/run-scratch'})
+        pod['volumes'].append({'name': 'run-scratch', 'emptyDir': {'sizeLimit': f'{size}Gi'}})
     return value
 
 
@@ -114,11 +121,12 @@ def validate_recipe(actual: dict, expected: dict, service_account: str | None) -
     for item in epod['containers'][0]['env']:
         if sum(v == item for v in containers[0].get('env', [])) != 1:
             raise ValueError('Rendered execution identity differs')
-    expected_mount = epod['containers'][0]['volumeMounts'][0]
-    if sum(v == expected_mount for v in containers[0].get('volumeMounts', [])) != 1:
-        raise ValueError('Dedicated output mount missing or changed')
-    if sum(v == epod['volumes'][0] for v in pod.get('volumes', [])) != 1:
-        raise ValueError('Dedicated output bucket missing or changed')
+    for expected_mount in epod['containers'][0]['volumeMounts']:
+        if sum(v == expected_mount for v in containers[0].get('volumeMounts', [])) != 1:
+            raise ValueError('Required volume mount missing or changed')
+    for volume in epod['volumes']:
+        if sum(v == volume for v in pod.get('volumes', [])) != 1:
+            raise ValueError('Required volume or bucket missing or changed')
 
 
 def validate_cdk_storage(actual: dict, state: dict) -> None:

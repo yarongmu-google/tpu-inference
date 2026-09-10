@@ -215,3 +215,23 @@ class EndToEndTests(unittest.TestCase):
                 csi['readOnly'] = True
             with self.subTest(changed=changed), self.assertRaises(ValueError):
                 controller.validate_cdk_storage(actual=actual, state=self.job.state)
+
+
+    def test_scratch_capacity_and_mount_must_survive_rendering(self) -> None:
+        self.job.state['execution']['scratch_gib'] = 600
+        expected = controller.recipe(state=self.job.state, payload={})
+        controller.validate_recipe(actual=expected, expected=expected, service_account=None)
+        pod = expected['spec']['replicatedJobs'][0]['template']['spec']['template']['spec']
+        self.assertEqual(pod['containers'][0]['resources']['requests']['ephemeral-storage'], '600Gi')
+        self.assertEqual(pod['volumes'][-1], {'name': 'run-scratch', 'emptyDir': {'sizeLimit': '600Gi'}})
+        for target in ('volume', 'mount', 'request'):
+            actual = copy.deepcopy(expected)
+            changed = actual['spec']['replicatedJobs'][0]['template']['spec']['template']['spec']
+            if target == 'volume':
+                changed['volumes'].pop()
+            elif target == 'mount':
+                changed['containers'][0]['volumeMounts'].pop()
+            else:
+                changed['containers'][0]['resources']['requests']['ephemeral-storage'] = '1Gi'
+            with self.subTest(target=target), self.assertRaises(ValueError):
+                controller.validate_recipe(actual=actual, expected=expected, service_account=None)

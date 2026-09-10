@@ -1,4 +1,4 @@
-"""Run the same original-client workload against three frozen server commands."""
+"""Run described workloads against frozen server commands with one client checkout."""
 from __future__ import annotations
 
 import csv
@@ -33,6 +33,44 @@ def save(path: Path, value: dict | list) -> None:
     temporary = path.with_suffix('.new')
     temporary.write_text(json.dumps(value, indent=2, allow_nan=False) + '\n')
     temporary.replace(path)
+
+
+def load_plan(path: Path) -> tuple[list[dict], str]:
+    plan = json.loads(path.read_text())
+    if set(plan) != {'client_revision', 'concurrency', 'num_prompts', 'range_ratio', 'seed', 'num_warmups', 'cases'}:
+        raise ValueError('Unexpected comparison plan keys')
+    if not re.fullmatch('[a-f0-9]{40}', plan['client_revision']):
+        raise ValueError('Pin the benchmark client to a full commit')
+    for key in ('concurrency', 'num_prompts'):
+        if type(plan[key]) is not int or plan[key] <= 0:
+            raise ValueError(f'Invalid {key}')
+    if (type(plan['range_ratio']) not in (int, float) or not 0 < plan['range_ratio'] <= 1
+            or type(plan['seed']) is not int or plan['num_warmups'] != 0):
+        raise ValueError('Invalid sampling settings; this comparison uses zero warmups')
+    if not isinstance(plan['cases'], list) or not plan['cases']:
+        raise ValueError('At least one case is required')
+    cases = []
+    for case in plan['cases']:
+        if set(case) != {'name', 'config', 'input_length', 'output_length'}:
+            raise ValueError('Unexpected case keys')
+        if (not re.fullmatch('[a-z0-9]+(?:-[a-z0-9]+)*', case['name'])
+                or case['name'] in {row['name'] for row in cases} or case['config'] not in CONFIGS):
+            raise ValueError('Invalid or repeated case name/configuration')
+        if any(type(case[k]) is not int or case[k] <= 0 for k in ('input_length', 'output_length')):
+            raise ValueError('Invalid sequence length')
+        if case['input_length'] + case['output_length'] > 9216:
+            raise ValueError('Workload exceeds the frozen server context limit')
+        workload = WORKLOAD | {k: plan[k] for k in ('concurrency', 'num_prompts', 'range_ratio', 'seed', 'num_warmups')}
+        workload.update({k: case[k] for k in ('input_length', 'output_length')})
+        cases.append({'name': case['name'], 'config': case['config'], 'workload': workload})
+    return cases, plan['client_revision']
+
+
+def log_tail(path: Path, limit: int = 8192) -> None:
+    if path.is_file():
+        with path.open('rb') as stream:
+            stream.seek(max(0, path.stat().st_size - limit))
+            print(f'LOG_TAIL: {path}\n' + stream.read().decode(errors='replace'), file=sys.stderr, flush=True)
 
 
 def server_commands(source: Path) -> dict[str, list[str]]:
@@ -136,20 +174,26 @@ def wait_ready(process: subprocess.Popen, timeout: int = 5400) -> None:
     raise RuntimeError(f'Server exited during startup: {process.returncode}')
 
 
-def client_command(client: Path, output: Path) -> list[str]:
-    return [sys.executable, str(client / 'benchmark_serving.py'), '--model', MODEL,
+def client_command(client: Path, output: Path, workload: dict | None = None, tokenizer: str | None = None) -> list[str]:
+    workload = WORKLOAD if workload is None else workload
+    argv = [sys.executable, str(client / 'benchmark_serving.py'), '--model', MODEL,
         '--backend', 'vllm', '--host', '127.0.0.1', '--port', '8000', '--dataset-name', 'random',
-        '--random-input-len', '1024', '--random-output-len', '8192', '--random-range-ratio', '0.8',
-        '--random-prefix-len', '0', '--max-concurrency', '512', '--num-prompts', '2048',
-        '--request-rate', 'inf', '--seed', '0', '--num-warmups', '0', '--ignore-eos',
+        '--random-input-len', str(workload['input_length']), '--random-output-len', str(workload['output_length']),
+        '--random-range-ratio', str(workload['range_ratio']), '--random-prefix-len', '0',
+        '--max-concurrency', str(workload['concurrency']), '--num-prompts', str(workload['num_prompts']),
+        '--request-rate', 'inf', '--seed', str(workload['seed']), '--num-warmups', str(workload['num_warmups']), '--ignore-eos',
         '--percentile-metrics', 'ttft,tpot,itl,e2el', '--save-result',
         '--result-dir', str(output), '--result-filename', 'client.json']
+    if tokenizer:
+        argv += ['--tokenizer', tokenizer]
+    return argv
 
 
-def read_result(path: Path) -> dict:
+def read_result(path: Path, workload: dict | None = None) -> dict:
+    workload = WORKLOAD if workload is None else workload
     value = json.loads(path.read_text())
-    if (value.get('completed') != 2048 or value.get('num_prompts') != 2048
-            or value.get('max_concurrency') != 512 or value.get('model_id') != MODEL):
+    if (value.get('completed') != workload['num_prompts'] or value.get('num_prompts') != workload['num_prompts']
+            or value.get('max_concurrency') != workload['concurrency'] or value.get('model_id') != MODEL):
         raise ValueError('Client result is incomplete or belongs to a different workload')
     keys = ['duration', 'total_input_tokens', 'total_output_tokens', 'output_throughput',
             'total_token_throughput', 'mean_tpot_ms', 'mean_ttft_ms']
@@ -164,12 +208,17 @@ def read_result(path: Path) -> dict:
     return {key: value[key] for key in keys} | {'total_per_chip': value['total_token_throughput'] / 4}
 
 
-def compare(commands: dict[str, list[str]], client: Path, output: Path, env: dict[str, str]) -> int:
+def compare(commands: dict[str, list[str]], client: Path, output: Path, env: dict[str, str],
+            cases: list[dict] | None = None, tokenizer: str | None = None) -> int:
+    cases = cases if cases is not None else [{'name': name, 'config': name, 'workload': WORKLOAD} for name in commands]
     rows = []
-    for label, argv in commands.items():
+    for case in cases:
+        label, workload = case['name'], case['workload']
+        argv = commands[case['config']]
         folder = output / label
         folder.mkdir()
-        row = {'config': label, 'concurrency': 512, 'status': 'failed'}
+        row = {'case': label, 'config': case['config'], 'input_length': workload['input_length'],
+               'output_length': workload['output_length'], 'concurrency': workload['concurrency'], 'status': 'failed'}
         process = None
         started = time.time()
         with (folder / 'server.log').open('w') as log:
@@ -177,22 +226,24 @@ def compare(commands: dict[str, list[str]], client: Path, output: Path, env: dic
                 if healthy():
                     raise RuntimeError('Port 8000 already serves a model; refusing a contaminated comparison')
                 save(path=folder / 'commands.json', value={'server': argv,
-                    'client': client_command(client=client, output=folder), 'workload': WORKLOAD})
+                    'client': client_command(client=client, output=folder, workload=workload, tokenizer=tokenizer), 'workload': workload})
                 print(f'STARTING_SERVER: {label}\n+ {shlex.join(argv)}', flush=True)
                 log.write('+ ' + shlex.join(argv) + '\n')
                 log.flush()
                 process = subprocess.Popen(args=argv, env=env, stdout=log,
                                            stderr=subprocess.STDOUT, start_new_session=True)
                 wait_ready(process=process)
-                print(f'BENCHMARKING: {label}; 2048 requests at concurrency 512', flush=True)
-                run_command(argv=client_command(client=client, output=folder), log=folder / 'client.log',
+                print(f"BENCHMARKING: {label}; {workload['num_prompts']} requests at concurrency {workload['concurrency']}", flush=True)
+                run_command(argv=client_command(client=client, output=folder, workload=workload, tokenizer=tokenizer), log=folder / 'client.log',
                             timeout=7200, env=env)
-                row.update(read_result(path=folder / 'client.json'))
+                row.update(read_result(path=folder / 'client.json', workload=workload))
                 row['status'] = 'complete'
             except Exception:
                 detail = traceback.format_exc()
                 (folder / 'error.txt').write_text(detail)
                 print(detail, file=sys.stderr, flush=True)
+                log.flush()
+                log_tail(path=folder / 'server.log')
             finally:
                 if process is not None:
                     stop(process=process)
@@ -204,9 +255,12 @@ def compare(commands: dict[str, list[str]], client: Path, output: Path, env: dic
         if healthy():
             raise RuntimeError('Server remained alive after shutdown; refusing the next configuration')
     completed = [row for row in rows if row['status'] == 'complete']
-    if len({(row['total_input_tokens'], row['total_output_tokens']) for row in completed}) > 1:
-        raise ValueError('Completed runs processed different token counts; inspect the client logs')
-    columns = ['config', 'concurrency', 'status', 'output_throughput', 'total_token_throughput',
+    for shape in {(row['input_length'], row['output_length']) for row in completed}:
+        pairs = {(row['total_input_tokens'], row['total_output_tokens']) for row in completed
+                 if (row['input_length'], row['output_length']) == shape}
+        if len(pairs) > 1:
+            raise ValueError(f'Completed runs processed different token counts for {shape}; inspect the client logs')
+    columns = ['case', 'config', 'input_length', 'output_length', 'concurrency', 'status', 'output_throughput', 'total_token_throughput',
                'total_per_chip', 'mean_tpot_ms', 'mean_ttft_ms']
     with (output / 'summary.csv').open('w', newline='') as stream:
         writer = csv.DictWriter(f=stream, fieldnames=columns, extrasaction='ignore')
@@ -214,7 +268,7 @@ def compare(commands: dict[str, list[str]], client: Path, output: Path, env: dic
         writer.writerows(rows)
     for row in rows:
         print(json.dumps(row), flush=True)
-    return 0 if len(completed) == len(commands) else 1
+    return 0 if len(completed) == len(cases) else 1
 
 
 def main() -> int:
@@ -225,16 +279,24 @@ def main() -> int:
     try:
         source = Path(os.environ['INPUT_SERVER_COMMANDS_DIR']) / 'bench_throughput_qwen_server.sh'
         commands = server_commands(source=source)
+        cases, pinned_client = load_plan(path=Path(os.environ['COMPARISON_PLAN'])) if os.environ.get('COMPARISON_PLAN') else (None, None)
+        if cases:
+            commands = {key: argv for key, argv in commands.items() if key in {case['config'] for case in cases}}
         env = clean_environment(commands=commands)
         shutil.copyfile(src=source, dst=metadata / 'server-source.sh')
         provenance = Path('/opt/jobset/image-source.json')
         if provenance.is_file():
             shutil.copyfile(src=provenance, dst=metadata / 'image-source.json')
         client = CLIENT_DIRECTORY
-        print('CLONING_CLIENT: one fresh checkout for all three configurations', flush=True)
+        print('CLONING_CLIENT: one fresh checkout shared by all cases', flush=True)
         run_command(argv=['git', 'clone', '--depth', '1', CLIENT_URL, str(client)],
                     log=metadata / 'clone.log', timeout=300)
+        if pinned_client:
+            for args in (['fetch', '--depth', '1', 'origin', pinned_client], ['checkout', '--detach', 'FETCH_HEAD']):
+                run_command(argv=['git', '-C', str(client), *args], log=metadata / ('client-' + args[0] + '.log'), timeout=300)
         revision = subprocess.check_output(args=['git', '-C', str(client), 'rev-parse', 'HEAD'], text=True).strip()
+        if pinned_client and revision != pinned_client:
+            raise ValueError('Cloned client revision differs from the plan')
         archive = metadata / 'client-source'
         archive.mkdir()
         hashes = {}
@@ -243,8 +305,9 @@ def main() -> int:
                 shutil.copyfile(src=path, dst=archive / path.name)
                 hashes[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
         save(path=metadata / 'comparison.json', value={'client_url': CLIENT_URL,
-            'client_revision': revision, 'client_files': hashes, 'workload': WORKLOAD,
-            'expected_sampling': '[floor(0.8 * X), X]', 'server_source_sha256': hashlib.sha256(source.read_bytes()).hexdigest()})
+            'client_revision': revision, 'client_files': hashes, 'workload': WORKLOAD if cases is None else None,
+            'cases': cases, 'run_id': os.environ.get('RUN_ID'),
+            'expected_sampling': '[floor(range_ratio * X), X]', 'server_source_sha256': hashlib.sha256(source.read_bytes()).hexdigest()})
         text = (client / 'benchmark_serving.py').read_text()
         if (not re.search(r'lower\s*=\s*int\(seq_len\s*\*\s*range_ratio\)', text)
                 or not re.search(r'upper\s*=\s*seq_len\s*\n', text)):
@@ -253,15 +316,25 @@ def main() -> int:
                     log=metadata / 'client-help.log', timeout=120, env=env)
         preflight = str(Path(__file__).with_name('preflight.py'))
         print('PREFLIGHT: validating client, server arguments and TPU execution before model loading', flush=True)
-        run_command(argv=[sys.executable, preflight, 'client', *client_command(client=client, output=output)[1:]],
-                    log=metadata / 'client-preflight.log', timeout=300, env=env)
+        tokenizer = None
+        if cases:
+            print('PREPARING_CHECKPOINT: verify scratch capacity and download once before all servers', flush=True)
+            checkpoint = metadata / 'checkpoint.json'
+            run_command(argv=[sys.executable, preflight, 'checkpoint', MODEL, str(checkpoint)],
+                        log=metadata / 'checkpoint.log', timeout=7200, env=env)
+            # Keep the extracted server command unchanged, including its model reference.
+        checked = cases if cases is not None else [{'name': 'default', 'workload': WORKLOAD}]
+        for case in checked:
+            run_command(argv=[sys.executable, preflight, 'client',
+                             *client_command(client=client, output=output, workload=case['workload'], tokenizer=tokenizer)[1:]],
+                        log=metadata / (case['name'] + '-client-preflight.log'), timeout=300, env=env)
         for label, argv in commands.items():
             index = argv.index('vllm')
             run_command(argv=['env', *argv[1:index], sys.executable, preflight, 'server', *argv[index + 2:]],
                         log=metadata / (label + '-preflight.log'), timeout=180, env=env)
             run_command(argv=['env', *argv[1:index], sys.executable, preflight, 'hardware', '8'],
                         log=metadata / (label + '-hardware-preflight.log'), timeout=300, env=env)
-        return compare(commands=commands, client=client, output=output, env=env)
+        return compare(commands=commands, client=client, output=output, env=env, cases=cases, tokenizer=tokenizer)
     except Exception:
         detail = traceback.format_exc()
         (output / 'error.txt').write_text(detail)

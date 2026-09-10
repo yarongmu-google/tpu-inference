@@ -1,82 +1,71 @@
 # Serving comparison
 
-From the repository root on the CPU VM with the existing Python 3.12 `vllm12`
-environment active:
+On the CPU VM, with the existing Python 3.12 vllm12 environment active:
 
 ```bash
-bash tmp/serving-comparison/run.sh
+bash tmp/serving-comparison/run.sh --name serving_baseline
 ```
 
-Enter a descriptive run name. This uses the existing workflow environment,
-image builder, CDK submission, monitoring, collection and cleanup. It is a
-separate campaign from the running sweep. One TPU job runs baseline, 4g and 4i
-sequentially with the same image and physical TPUs. It builds one owned image.
+This job reruns only the missing Line 1 EP baseline at 1024/8192 input/output.
+It uses both repositories' `topk` sources, client concurrency 512, 2,048 requests,
+seed 0, ratio 0.8, ignore EOS, no chat template and zero extra warmups.
+Previously completed 4g and 4i results remain in the summary; they are not rerun.
+There is no automatic retry of a failed benchmark or remote job.
 
-Inside the TPU container, immediately before testing, the runner freshly clones
-`https://github.com/kimbochen/bench_serving.git`. It records the resolved commit
-and saves the client source files. All three configurations use that exact
-checkout without changing its sampler or installing dependencies. The checkout
-requires outbound GitHub access from the container. Clone and import failures
-are saved in the normal run outputs.
+The client is freshly fetched on the TPU host and checked out at the full
+commit in the plan. It is unmodified. Its ratio 0.8 samples lengths from
+`[floor(0.8 * X), X]`, unlike the repository client's `[floor(0.2 * X), X]`.
+Completed configurations for the same I/O shape must report identical token
+counts. Counts are not compared across different I/O shapes.
 
-The workload is nominal 1024 input / 8192 output, concurrency 512, 2048 measured
-requests, seed 0, random range ratio 0.8, no prefix, no chat template, ignore EOS,
-and zero extra warmup requests. These are the historical original-client
-settings; the original sampler uses `[floor(0.8 * X), X]`. This is different from
-the repository client's corrected `[floor(0.2 * X), X]` at ratio 0.8. This job
-does not run one-token-input diagnostics, so no zero-length sampler patch is
-needed. The upstream client controls its normal initial-request behavior.
+The Line 1 server retains 64 sequences and 1024 batched tokens per attention-DP
+rank (512 sequence slots across eight ranks on four physical chips). The server
+command comes from the frozen benchmarking script. Client concurrency does not
+rewrite server settings. The wrapper does not append server flags or change its literal model reference.
+The image builder checks that both source checkouts are on
+`topk` and records their exact commits.
 
-The workflow snapshots this folder's `payload/` and the repository benchmarking
-directory. Results live separately under this folder's `results/`.
-The runner extracts exactly the three named server commands from the frozen
-`scripts/vllm/benchmarking/bench_throughput_qwen_server.sh`. It replaces only the
-shell logging wrapper with managed process logging. Baseline uses 64 sequences
-and 1024 batched tokens per rank; 4g uses 64 and 128; 4i uses 104 and 128 with its
-power-of-two bucket ladder. The CLIENT concurrency remains 512 for every case;
-this is not the historical 4i C832 operating point. Existing source comments
-and unrelated server lines are not executed.
+The description requests 600 GiB of local ephemeral storage and mounts it at
+`/run-scratch`. All Hugging Face caches are there. A checkpoint preflight records
+file sizes and free space, requires checkpoint bytes plus 64 GiB headroom,
+downloads once with two workers, and verifies selected files before servers
+start. The prefetched checkpoint revision, client revision and source commits are recorded.
+The server retains Line 1's literal model name and default revision selection. The scratch directory
+is excluded from result collection and lasts for the Pod lifetime.
+The pool must have sufficient allocatable local storage; the request does not
+provision a new disk and can leave a job Pending on an undersized pool.
 
-Outputs contain each configuration's server log, client log, JSON metrics,
-exact commands and errors, plus `summary.json` and `summary.csv`. The summary
-reports output throughput, total throughput, total throughput per physical
-chip (divide by 4), mean TPOT and mean TTFT. A result is complete only if all
-2048 requests succeeded; incomplete results make the job fail. The runner
-continues to the next configuration after a case failure once its server has
-been stopped. It refuses to proceed if a server remains on the port.
-Completed cases must report the same input and output token totals.
+Client/parser/tokenizer and per-configuration TPU checks run before model
+serving. They do not establish full-model compilation or performance. Server
+startup failures print the server-log tail into the controller output. Every
+case saves commands, server/client logs, errors and JSON metrics; summary CSV
+and JSON include I/O shape, client concurrency, throughput and latency.
 
-The fresh client's commit, file hashes and source snapshot, server command
-source, image source metadata and workload settings are saved under `metadata/`.
-For provenance of published images and installed sources, the generic workflow
-also retains its per-run build records. Each configuration starts a new server;
-Docker and compilation caches may still be reused within the container.
+After completion, the controller downloads and verifies the compressed result
+bundle and deletes the run-owned image and GCS prefix. A failed aggregate job
+can contain successful benchmark cases. Missing/unverified final results retain
+resources for recovery. Ctrl-C detaches the controller and does not cancel or
+clean the remote job; resume the saved campaign to continue collection.
+Raw local resume files remain ignored. Git-visible archives are under
+`results/archives/`, and compressed launcher logs under `tmp/workflow/local/logs/`.
 
-After terminal-state collection and artifact verification, the workflow deletes
-this run's image and CDK storage subfolder. Local results and errors remain. Each controller attempt also writes a verified
-archive and JSON index under `results/archives/`; Git shows these compressed
-exports while the raw resume directories stay ignored. Launcher logs are
-compressed under `tmp/workflow/local/logs/`.
-A failed comparison can still have a verified, collected artifact bundle; its
-resources can be cleaned while its failed status and error logs are retained.
-Incomplete collection retains resources for recovery. Resume reconnects the
-saved job; it does not restart completed benchmark configurations. Start a new
-campaign to repeat the comparison.
-
-This establishes a same-client comparison between our server configurations.
-It does not establish identical sampling, software revisions or warmup settings
-to the public graph without its exact benchmark invocation.
-
-Local checks (no clone, model loading or cloud commands):
+The [results summary](summary/RESULTS.md), [analysis](summary/ANALYSIS.md), and
+[command appendix](summary/COMMANDS.md) collect the historical comparisons and
+compressed job results. Refresh the generated summary after pulling new results:
 
 ```bash
-python3 -m unittest discover -s tmp/serving-comparison -p test_compare.py -v
+python3 tmp/serving-comparison/summarize.py
 ```
 
-Use an interpreter with the workflow YAML dependency installed.
+Source commits and result-import commits are separate columns. Historical
+client logs record parsed arguments, not always the original script path; the
+appendix labels that limitation. Incomplete runs remain visible and are not
+used as completed performance controls. The generated JSON retains full hashes,
+artifact paths and per-run observations.
 
-Before starting any server, the job validates the exact client arguments and
-tokenizer access, parses each server command without loading model weights, and
-executes a small operation on all eight TPU devices. These checks and captured
-versions are saved under metadata in the final archive. They do not establish
-full-model memory fit, JIT correctness, or benchmark throughput.
+Local checks (use an interpreter with the workflow YAML dependency installed):
+
+```bash
+python3 -m unittest discover -s tmp/serving-comparison -p 'test_*.py' -v
+python3 -m unittest discover -s tmp/workflow/tests -v
+```

@@ -408,3 +408,16 @@ References:
 - https://docs.cloud.google.com/kubernetes-engine/docs/how-to/cloud-storage-fuse-csi-driver-setup
 - https://docs.cloud.google.com/storage/docs/buckets
 - https://docs.cloud.google.com/storage/docs/soft-delete
+
+
+### Optional checkpoint scratch storage
+
+Set `execution.scratch_gib` to request that many GiB of local ephemeral storage
+and mount a disk-backed emptyDir of that size at `/run-scratch`. The controller
+validates the requested capacity, mount and volume after CDK rendering. The
+path is reserved from code/input destinations. It is not included in output
+archives unless the workload explicitly copies files into its output directory.
+The scratch volume lasts for the Pod lifetime; the standard image/GCS cleanup
+does not independently delete Kubernetes Pods. Capacity must exist on an
+eligible node: this option does not provision a disk, and insufficient capacity
+can leave a job Pending. See [Kubernetes ephemeral storage](https://kubernetes.io/docs/concepts/storage/ephemeral-storage/).

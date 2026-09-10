@@ -35,6 +35,21 @@ class ComparisonTests(unittest.TestCase):
             'total_output_tokens': 15000000, 'output_throughput': 15000,
             'total_token_throughput': 16800, 'mean_tpot_ms': 50, 'mean_ttft_ms': 1000}
 
+    def test_image_build_requires_both_topk_branches(self) -> None:
+        sys.path.insert(0, str(Path(__file__).parent))
+        import prepare_image
+        with patch.object(prepare_image.subprocess, 'check_output', return_value='bench\n'), \
+                patch.object(prepare_image.prepare_runtime_image, 'main') as build:
+            with self.assertRaisesRegex(RuntimeError, 'Expected topk'):
+                prepare_image.main()
+            build.assert_not_called()
+        with patch.object(prepare_image.subprocess, 'check_output', side_effect=['topk\n', 'bench\n']), \
+                patch.object(prepare_image.importlib.util, 'find_spec', return_value=SimpleNamespace(origin='/fixture/vllm/__init__.py')), \
+                patch.object(prepare_image.prepare_runtime_image, 'main') as build:
+            with self.assertRaisesRegex(RuntimeError, 'Expected topk'):
+                prepare_image.main()
+            build.assert_not_called()
+
     def test_extracts_real_commands_without_executing_other_lines(self) -> None:
         commands = compare.server_commands(source=self.source)
         self.assertEqual(list(commands), ['baseline', '4g', '4i'])
@@ -167,7 +182,7 @@ class ComparisonTests(unittest.TestCase):
         self.assertEqual(state['execution']['cleanup'], 'after_collection')
         template = core.read_document(root / campaign['jobs'][0] / 'run-template.json')
         self.assertEqual({entry['path'] for entry in template['bundles'][0]['files']},
-                         {'compare.py', 'preflight.py'})
+                         {'compare.py', 'preflight.py', 'plan.json'})
         self.assertEqual({entry['path'] for entry in template['bundles'][1]['files']},
                          {'bench_throughput_qwen_server.sh'})
 
@@ -231,6 +246,129 @@ class ComparisonTests(unittest.TestCase):
             devices[0].platform = 'cpu'
             with self.assertRaisesRegex(RuntimeError, 'Expected 8 TPU devices'):
                 preflight.hardware(expected_devices=8)
+
+
+    def test_baseline_plan_keeps_server_capacity_separate_from_client_load(self) -> None:
+        cases, revision = compare.load_plan(path=Path(__file__).parent / 'payload/plan.json')
+        self.assertEqual(revision, 'ee867231de0b268e2810a6e31751b23cf5903fc5')
+        self.assertEqual([(c['config'], c['workload']['input_length'], c['workload']['output_length']) for c in cases],
+                         [('baseline', 1024, 8192)])
+        commands = compare.server_commands(source=self.source)
+        for case in cases:
+            self.assertIn('--max-num-seqs=64', commands[case['config']])
+            argv = compare.client_command(client=self.root, output=self.root, workload=case['workload'])
+            self.assertEqual(argv[argv.index('--max-concurrency') + 1], '512')
+            self.assertEqual(argv[argv.index('--random-input-len') + 1], str(case['workload']['input_length']))
+        self.assertIn('--max-num-batched-tokens=1024', commands['baseline'])
+        self.assertIn('--max-num-batched-tokens=128', commands['4g'])
+
+    def test_plan_rejects_repeated_names_and_oversized_workloads(self) -> None:
+        plan = json.loads((Path(__file__).parent / 'payload/plan.json').read_text())
+        path = self.root / 'plan.json'
+        plan['cases'].append(dict(plan['cases'][0]))
+        path.write_text(json.dumps(plan))
+        with self.assertRaises(ValueError):
+            compare.load_plan(path=path)
+        plan['cases'] = [plan['cases'][0] | {'input_length': 10000}]
+        path.write_text(json.dumps(plan))
+        with self.assertRaises(ValueError):
+            compare.load_plan(path=path)
+
+    def test_mixed_shapes_compare_token_counts_only_within_the_same_shape(self) -> None:
+        cases, _ = compare.load_plan(path=Path(__file__).parent / 'payload/plan.json')
+        commands = {name: [sys.executable, '-c', 'import time; time.sleep(60)'] for name in ['baseline', '4g']}
+        def client(*, argv, log, **kwargs):
+            result = self.result()
+            if argv[argv.index('--random-input-len') + 1] == '8192':
+                result.update(total_input_tokens=15000000, total_output_tokens=1800000, output_throughput=1800)
+            (log.parent / 'client.json').write_text(json.dumps(result))
+        with patch.object(compare, 'healthy', return_value=False), patch.object(compare, 'wait_ready'), \
+                patch.object(compare, 'run_command', side_effect=client), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(compare.compare(commands=commands, client=self.root, output=self.root,
+                                             env=dict(os.environ), cases=cases), 0)
+        rows = json.loads((self.root / 'summary.json').read_text())
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(all(row['status'] == 'complete' for row in rows))
+
+    def test_startup_failure_prints_actual_server_stderr(self) -> None:
+        commands = {'baseline': [sys.executable, '-c', 'import sys; print("fixture: disk full",file=sys.stderr); sys.exit(42)']}
+        def wait(*, process):
+            process.wait(timeout=10)
+            raise RuntimeError('Server exited during startup: 42')
+        errors = io.StringIO()
+        with patch.object(compare, 'healthy', return_value=False), patch.object(compare, 'wait_ready', side_effect=wait), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(errors):
+            self.assertEqual(compare.compare(commands=commands, client=self.root, output=self.root, env=dict(os.environ)), 1)
+        self.assertIn('fixture: disk full', errors.getvalue())
+
+    def test_checkpoint_checks_capacity_before_download_and_verifies_snapshot(self) -> None:
+        cache = self.root / 'cache'
+        snapshot = cache / 'snapshot'
+        snapshot.mkdir(parents=True)
+        (snapshot / 'model.safetensors').write_bytes(b'weights')
+        (snapshot / 'config.json').write_bytes(b'{}')
+        info = SimpleNamespace(sha='b' * 40, siblings=[
+            SimpleNamespace(rfilename='model.safetensors', size=7),
+            SimpleNamespace(rfilename='config.json', size=2)])
+        hub = SimpleNamespace(HfApi=lambda: SimpleNamespace(model_info=lambda **kwargs: info),
+                              snapshot_download=lambda **kwargs: str(snapshot))
+        read_text = Path.read_text
+        resolve = Path.resolve
+        def read(path, *args, **kwargs):
+            if str(path) == '/proc/self/mountinfo':
+                return '24 0 0:1 / /run-scratch rw - ext4 fixture rw\n'
+            return read_text(path, *args, **kwargs)
+        def resolved(path, *args, **kwargs):
+            return resolve(self.root) if str(path) == '/run-scratch' else resolve(path, *args, **kwargs)
+        with patch.dict(sys.modules, {'huggingface_hub': hub}), patch.dict(os.environ, {'HF_HUB_CACHE': str(cache)}), \
+                patch.object(Path, 'read_text', read), patch.object(Path, 'resolve', resolved), \
+                patch.object(preflight.shutil, 'disk_usage', return_value=SimpleNamespace(free=1)), \
+                patch.object(hub, 'snapshot_download') as download, contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(RuntimeError, 'Insufficient checkpoint'):
+                preflight.checkpoint(model='fixture', destination=self.root / 'checkpoint.json')
+            download.assert_not_called()
+        with patch.dict(sys.modules, {'huggingface_hub': hub}), patch.dict(os.environ, {'HF_HUB_CACHE': str(cache)}), \
+                patch.object(Path, 'read_text', read), patch.object(Path, 'resolve', resolved), \
+                patch.object(preflight.shutil, 'disk_usage', return_value=SimpleNamespace(free=600 * 1024**3)), \
+                patch.object(hub, 'snapshot_download', return_value=str(snapshot)) as download, \
+                contextlib.redirect_stdout(io.StringIO()):
+            preflight.checkpoint(model='fixture', destination=self.root / 'checkpoint.json')
+            self.assertEqual(download.call_args.kwargs['revision'], 'b' * 40)
+            self.assertEqual(download.call_args.kwargs['max_workers'], 2)
+            (snapshot / 'model.safetensors').write_bytes(b'bad')
+            with self.assertRaisesRegex(ValueError, 'Incomplete checkpoint'):
+                preflight.checkpoint(model='fixture', destination=self.root / 'checkpoint.json')
+
+
+    def test_planned_run_pins_client_and_prepares_one_checkpoint(self) -> None:
+        client = self.root / 'client'
+        output = self.root / 'output'
+        plan = Path(__file__).parent / 'payload/plan.json'
+        cases, revision = compare.load_plan(path=plan)
+        calls = []
+        def run(*, argv, log, **kwargs):
+            calls.append(argv)
+            if argv[:2] == ['git', 'clone']:
+                client.mkdir()
+                (client / 'benchmark_serving.py').write_text('lower = int(seq_len * range_ratio)\nupper = seq_len\n')
+            if 'checkpoint' in argv:
+                Path(argv[-1]).write_text(json.dumps({'revision': 'b' * 40, 'snapshot': '/run-scratch/hub/snapshot'}))
+            log.write_text('fixture')
+        with patch.dict(os.environ, {'OUTPUT_DIR': str(output), 'INPUT_SERVER_COMMANDS_DIR': str(self.source.parent),
+                                     'COMPARISON_PLAN': str(plan)}), patch.object(compare, 'CLIENT_DIRECTORY', client), \
+                patch.object(compare, 'run_command', side_effect=run), \
+                patch.object(compare.subprocess, 'check_output', return_value=revision + '\n'), \
+                patch.object(compare, 'compare', return_value=0) as execute, contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(compare.main(), 0)
+        self.assertEqual(sum('checkpoint' in argv for argv in calls), 1)
+        self.assertEqual(sum('client' in argv and any(v.endswith('/preflight.py') for v in argv) for argv in calls), 1)
+        self.assertEqual(execute.call_args.kwargs['cases'], cases)
+        self.assertEqual(set(execute.call_args.kwargs['commands']), {'baseline'})
+        self.assertEqual(execute.call_args.kwargs['commands']['baseline'],
+                         compare.server_commands(source=self.source)['baseline'])
+        self.assertIsNone(execute.call_args.kwargs['tokenizer'])
+        self.assertTrue(any(argv[-4:] == ['--depth', '1', 'origin', revision] for argv in calls))
 
 
 if __name__ == '__main__':
