@@ -1,0 +1,10 @@
+{
+  "archive": "serving-comp-default-b7d2d6774029493e962cfee6.tar.gz",
+  "artifact_exit_code": 1,
+  "bytes": 5546118,
+  "exit_code": 1,
+  "phase": "CLEANED",
+  "resources_cleaned": true,
+  "run_id": "serving-comp-default-b7d2d6774029493e962cfee6",
+  "sha256": "4334bf7426a442cec0c825b4f297381acfa34dd3cb2ed7ca3ef4a29d8236c6d1"
+}
