@@ -65,18 +65,19 @@ The old mount error belongs to the previous job. The new job completed both
 custom-kernel benchmarks, verified its result bundle and deleted its owned
 image and GCS prefix. Earlier failed jobs' unverified resources were retained.
 
-The next description requests 600 GiB of local ephemeral storage, mounts a
-bounded disk-backed scratch directory, puts Hugging Face caches there, checks
-checkpoint metadata plus 64 GiB free-space headroom, and downloads with two
-workers. It pins the model revision and verifies every selected file's size.
-This is a capacity/size check, not an independent cryptographic model audit.
-Scratch is excluded from result archives and lasts for the Pod lifetime.
+The follow-up baseline in result commit `27d63d78f` never started. Its 600 GiB
+container disk reservation failed scheduling with `Insufficient ephemeral-storage`;
+CDK ended it after a 15-minute pending timeout. There is no client measurement.
+The collection timeout and missing manifest followed that startup failure.
 
-An emptyDir does not create a new disk. The request requires sufficient node
-allocatable storage; the job can remain Pending if the pool cannot provide it.
-Actual pool capacity and this rendered resource request need live validation.
-The controller validates that the mount, volume and requested capacity survive
-CDK recipe rendering. See the [Kubernetes storage documentation](https://kubernetes.io/docs/concepts/storage/ephemeral-storage/).
+The revised workflow retains `/run-scratch` and its 600 GiB volume size ceiling,
+but removes the container disk request and limit. Scheduling therefore follows
+the earlier successful jobs' policy without an explicit disk reservation.
+The checkpoint preflight still checks actual free space plus 64 GiB headroom,
+downloads with two workers, and verifies selected files. Scratch is excluded
+from results and lasts for the Pod lifetime. Enough free space is still needed
+on the assigned node; the change does not create a disk or guarantee capacity.
+Existing jobs keep their submitted recipe; the change applies to new launches.
 
 Failed server startup now prints its server-log tail immediately. Each case's
 logs and results remain separate. Any failed case makes the aggregate job fail,

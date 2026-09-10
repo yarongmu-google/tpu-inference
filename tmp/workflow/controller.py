@@ -74,8 +74,6 @@ def recipe(state: dict, payload: dict[str, str]) -> dict:
     if size := state['execution'].get('scratch_gib'):
         pod = value['spec']['replicatedJobs'][0]['template']['spec']['template']['spec']
         runner = pod['containers'][0]
-        for quantities in runner['resources'].values():
-            quantities['ephemeral-storage'] = f'{size}Gi'
         runner['volumeMounts'].append({'name': 'run-scratch', 'mountPath': '/run-scratch'})
         pod['volumes'].append({'name': 'run-scratch', 'emptyDir': {'sizeLimit': f'{size}Gi'}})
     return value

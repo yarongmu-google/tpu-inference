@@ -412,12 +412,12 @@ References:
 
 ### Optional checkpoint scratch storage
 
-Set `execution.scratch_gib` to request that many GiB of local ephemeral storage
-and mount a disk-backed emptyDir of that size at `/run-scratch`. The controller
-validates the requested capacity, mount and volume after CDK rendering. The
-path is reserved from code/input destinations. It is not included in output
-archives unless the workload explicitly copies files into its output directory.
-The scratch volume lasts for the Pod lifetime; the standard image/GCS cleanup
-does not independently delete Kubernetes Pods. Capacity must exist on an
-eligible node: this option does not provision a disk, and insufficient capacity
-can leave a job Pending. See [Kubernetes ephemeral storage](https://kubernetes.io/docs/concepts/storage/ephemeral-storage/).
+Set `execution.scratch_gib` to mount a disk-backed emptyDir at `/run-scratch`
+with that size ceiling. This does not add a container `ephemeral-storage`
+request or limit, so the workflow does not reserve disk capacity at scheduling.
+The controller validates the resource fields, mount and volume after CDK
+rendering. The path is reserved from code/input destinations and excluded from
+output archives unless the workload copies files into its output directory.
+The volume lasts for the Pod lifetime and does not provision a separate disk.
+Actual free space depends on the assigned node; workloads should check it
+before large downloads. See [Kubernetes ephemeral storage](https://kubernetes.io/docs/concepts/storage/ephemeral-storage/).
