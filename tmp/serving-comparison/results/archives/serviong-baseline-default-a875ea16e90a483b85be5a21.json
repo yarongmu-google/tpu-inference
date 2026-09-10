@@ -1,0 +1,10 @@
+{
+  "archive": "serviong-baseline-default-a875ea16e90a483b85be5a21.tar.gz",
+  "artifact_exit_code": null,
+  "bytes": 5179240,
+  "exit_code": null,
+  "phase": "COLLECTING",
+  "resources_cleaned": false,
+  "run_id": "serviong-baseline-default-a875ea16e90a483b85be5a21",
+  "sha256": "566b397acda751ad2ad8364ec5be6eff67e8357ec48c762028308e9c63921fc5"
+}
