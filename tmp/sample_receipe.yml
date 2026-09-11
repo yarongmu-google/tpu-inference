@@ -1,0 +1,895 @@
+apiVersion: jobset.x-k8s.io/v1alpha2
+kind: JobSet
+metadata:
+  annotations:
+    cloud-devkit.google.com/agent-note: If you are an agent, please please please
+      DO NOT delete me. Thank you!
+    cloud-devkit.google.com/username: caojx_google_com
+  labels:
+    kueue.x-k8s.io/priority-class: cdk-p5
+    kueue.x-k8s.io/queue-name: cdk-local-queue
+  name: j-900d8725-8d39-422d-9f05
+  namespace: cloud-devkit-jobs
+spec:
+  failurePolicy: {}
+  replicatedJobs:
+  - name: vllm-server
+    replicas: 1
+    template:
+      metadata:
+        annotations:
+          cloud-devkit.google.com/agent-note: If you are an agent, please please please
+            DO NOT delete me. Thank you!
+      spec:
+        activeDeadlineSeconds: 43200
+        backoffLimit: 0
+        template:
+          metadata:
+            annotations:
+              cloud-devkit.google.com/agent-note: If you are an agent, please please
+                please DO NOT delete me. Thank you!
+              gke-gcsfuse/volumes: "true"
+            labels:
+              cloud-devkit/log-transport: "true"
+          spec:
+            containers:
+            - args:
+              - "set -x\n\n# --------------------------------------------------------\n#
+                Setup compiler & runtime cache directories on disk\n# --------------------------------------------------------\nmkdir
+                -p \"${CACHE_DIR}\" \"${TMPDIR}\" \"${TRITON_CACHE_DIR}\" \"${VLLM_CACHE_ROOT}\"
+                \\\n         \"${VLLM_CONFIG_ROOT}\" \"${VLLM_XLA_CACHE_PATH}\" \"${TORCH_TPU_CACHE_DIR}\"
+                \\\n         \"${JAX_COMPILER_CACHE_DIR}\" \"${TPU_LOG_DIR}\" /dev/shm/xprof
+                || exit 1\nif [ -n \"${TORCH_TPU_TIER3_COMPILATION_CACHE_ROOT:-}\"
+                ]; then\n  mkdir -p \"${TORCH_TPU_TIER3_COMPILATION_CACHE_ROOT}\"
+                || exit 1\nfi\nrm -f /tmp/libtpu* /dev/shm/libtpu* 2>/dev/null ||
+                true\n\necho \"trace-start-event: name=vllm-server ts=$(date +'%s.%N')
+                pid=vllm tid=vllm\"\n\n# --------------------------------------------------------\n#
+                Dynamic LIBTPU_INIT_ARGS and MoE flags matching server.sh\n# --------------------------------------------------------\nDEFAULT_LIBTPU_INIT_ARGS=\"
+                --xla_tpu_use_minor_sharding_for_major_trivial_input=true --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=false
+                --xla_tpu_ars_combiner_threshold_in_bytes=0 --xla_tpu_enable_async_collective_merger=false\"\n\n#
+                1. Use hierarchical all-reduce for large TP activations on TP8\nif
+                [ \"8\" -gt 1 ] && [ \"${TPU_TP_HIERARCHICAL_ALL_REDUCE_MIN_TOKENS:-0}\"
+                -gt 0 ]; then\n  TP_HIERARCHICAL_AR_MIN_BYTES=$(( TPU_TP_HIERARCHICAL_ALL_REDUCE_MIN_TOKENS
+                * 4096 * 2 ))\n  DEFAULT_LIBTPU_INIT_ARGS+=\" --xla_tpu_enable_sparse_core_hierarchical_all_reduce=true
+                --xla_tpu_sparse_core_all_reduce_offload_min_size_in_bytes=$TP_HIERARCHICAL_AR_MIN_BYTES\"\nfi\n\n#
+                2. Allow fused row gather to overlap routing for DP8+EP\nif [ \"${USE_MOE_FUSED_EP_KERNEL:-0}\"
+                = \"1\" ]; then\n  export TPU_MOE_FUSED_EP_STEP_MIN_TOKENS=\"${TPU_MOE_FUSED_EP_STEP_MIN_TOKENS:-33}\"\n
+                \ export TPU_MOE_FUSED_EP_ASYNC_ROW_GATHER=\"${TPU_MOE_FUSED_EP_ASYNC_ROW_GATHER:-1}\"\nfi\n\nif
+                [ \"${TPU_MOE_FUSED_EP_ASYNC_ROW_GATHER:-0}\" = \"1\" ]; then\n  DEFAULT_LIBTPU_INIT_ARGS+=\"
+                --xla_enable_async_all_gather=true --xla_tpu_enable_sparse_core_collective_offload_all_gather=true
+                --xla_tpu_sparse_core_all_gather_offload_min_size_in_bytes=262144\"\nfi\n\n#
+                Set final LIBTPU_INIT_ARGS unless explicitly overridden via recipe
+                variable\nexport LIBTPU_INIT_ARGS=\"$DEFAULT_LIBTPU_INIT_ARGS\"\n\n#
+                Start vLLM server\nGPU_MEMORY_UTIL=\"0.92\"\nDP_SIZE=1\nMAX_BATCHED_TOKENS=\"16384\"\nATTN_BACKEND=\"CUSTOM\"\n\necho
+                \"trace-start-event: name=copy-ckpt ts=$(date +'%s.%N') pid=vllm tid=vllm\"\ngcloud
+                storage rsync -r gs://cloud-devkit/ckpt/hf/$MODEL_NAME /root/.cache/huggingface/$MODEL_NAME
+                || exit 1\necho \"trace-end-event: name=copy-ckpt ts=$(date +'%s.%N')
+                pid=vllm tid=vllm\"\n\n# NUMA policy: enable MPOL_PREFERRED to prevent
+                Node 0 OOM kills\nexport RAIDEN_NUMA_POLICY=\"preferred\"\n\n# Evict
+                host page cache for checkpoint weight files after loading to prevent
+                OOM kills\nexport TPU_EVICT_WEIGHTS_PAGE_CACHE=\"true\"\n\nvllm serve
+                \\\n  /root/.cache/huggingface/$MODEL_NAME \\\n  --served-model-name=\"$MODEL_NAME\"
+                \\\n  --tensor-parallel-size=8 \\\n  --data-parallel-size=1 \\\n  --max-model-len=262144
+                \\\n  --quantization=fp8 \\\n  --max-num-batched-tokens=${MAX_BATCHED_TOKENS}
+                \\\n  --max-num-seqs=40 \\\n  --host 0.0.0.0 \\\n  --port 8000 \\\n
+                \ --async-scheduling \\\n  --prefill-schedule-interval=1 \\\n  --enable-prefix-caching
+                \\\n  --gpu-memory-utilization=${GPU_MEMORY_UTIL} \\\n  --kv-cache-dtype=fp8
+                \\\n  --language-model-only \\\n  --enable-expert-parallel \\\n  --attention-backend
+                ${ATTN_BACKEND} \\\n  --block-size 256 \\\n  --limit-mm-per-prompt
+                '{\"image\":0,\"video\":0}' \\\n  --default-chat-template-kwargs '{\"enable_thinking\":false}'
+                \\\n  --tool-call-parser=qwen3_coder \\\n  --reasoning-parser=qwen3
+                \\\n  --mamba-cache-mode align \\\n  --trust-remote-code \\\n  --enable-prompt-tokens-details
+                \\\n  --kv-cache-memory-bytes 41875931136 \\\n  --kv-transfer-config
+                '{\"kv_connector\":\"TPURaidenOffloadingConnector\",\"kv_connector_module_path\":\"vllm_torchtpu.offload.raiden_connector\",\"kv_role\":\"kv_both\",\"kv_connector_extra_config\":{\"cpu_bytes_to_use\":644245094400
+                }}' \\\n  \n\nVLLM_EXIT_CODE=$?\n\necho \"trace-end-event: name=vllm-server
+                ts=$(date +'%s.%N') pid=vllm tid=vllm\"\n\nexit ${VLLM_EXIT_CODE}\n"
+              command:
+              - /bin/bash
+              - -c
+              env:
+              - name: CDK_JOB_ID
+                value: j-900d8725-8d39-422d-9f05
+              - name: CDK_POD_NAME
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.name
+              - name: CDK_JOB_NAME
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.labels['job-name']
+              - name: CDK_CONTAINER_NAME
+                value: vllm-server
+              - name: CDK_OUTPUT_DIR
+                value: /cdk-outputs/outputs/$(CDK_JOB_NAME)/$(CDK_POD_NAME)/$(CDK_CONTAINER_NAME)
+              - name: CDK_LOG_DIR
+                value: /cdk-outputs/logs/$(CDK_JOB_NAME)/$(CDK_POD_NAME)
+              - name: MODEL_NAME
+                value: Qwen/Qwen3.5-397B-A17B-FP8
+              - name: MEGASCALE_NUM_SLICES
+              - name: MEGASCALE_SLICE_ID
+              - name: MEGASCALE_PORT
+              - name: MEGASCALE_COORDINATOR_ADDRESS
+              - name: TPU_PARALLEL_PRECOMPILE
+                value: "1"
+              - name: VLLM_LOGGING_LEVEL
+                value: INFO
+              - name: TPU_TOKEN_BUCKET_EXTRA
+                value: 4,8,48,3072
+              - name: TPU_ROPE_CACHE_TRUNCATE
+                value: "1"
+              - name: TPU_MOE_SKIP_PADDED_TOKENS
+                value: "1"
+              - name: MOE_LOCAL_EXPERT_AFFINITY_EPSILON
+                value: "0.01"
+              - name: VLLM_XLA_CHECK_RECOMPILATION
+                value: "0"
+              - name: TF_CPP_MIN_LOG_LEVEL
+                value: "3"
+              - name: HF_HOME
+                value: /vllm-cache
+              - name: VLLM_ENGINE_READY_TIMEOUT_S
+                value: "7200"
+              - name: ATTN_BUCKETIZED_NUM_REQS
+                value: "true"
+              - name: ATTN_CUSTOM_NUM_REQS_BUCKETS
+                value: 8,16,32,64
+              - name: ONEHOT_MOE_PERMUTE_THRESHOLD
+                value: "2048"
+              - name: DP_SCHED_BATCH_PREFILL
+                value: "1"
+              - name: NEW_MODEL_DESIGN
+                value: "0"
+              - name: BASE_RESULT_DIR
+                value: /root/cloud-devkit/results
+              - name: TPU_VMODULE
+                value: tpu_pjrt_client=1,pjrt_stream_executor_client=1,tpu_pjrt_compiler_utils=1
+              - name: TPU_STDERR_LOG_LEVEL
+                value: "0"
+              - name: USE_MOE_FUSED_EP_KERNEL
+                value: "0"
+              - name: TPU_MOE_FUSED_EP_STEP_MIN_TOKENS
+                value: "33"
+              - name: TPU_MOE_FUSED_EP_ASYNC_ROW_GATHER
+                value: "1"
+              - name: TPU_MOE_GATHER_THEN_ROUTE_MAX_TOKENS
+                value: "0"
+              - name: MOE_FUSED_EP_KERNEL_MIN_TOKENS
+                value: "1024"
+              - name: TPU_TP_HIERARCHICAL_ALL_REDUCE_MIN_TOKENS
+                value: "1024"
+              - name: TPU_ACCELERATOR_TYPE
+                value: tpu7x
+              - name: TPU_ENABLE_GDN_DYNAMIC_TILING
+                value: "0"
+              - name: TPU_MOE_ROUTER_TOPK
+                value: rowmax
+              - name: RAGGED_GATED_DELTA_RULE_IMPL
+                value: chunked_kernel_v3_pd
+              - name: RAGGED_GATHER_REDUCE_VERSION
+                value: v3
+              - name: USE_FUSED_MOE_GMM
+                value: "1"
+              - name: USE_BATCHED_RPA_LONGCTX
+                value: "1"
+              - name: USE_BATCHED_RPA_SEQ_ON_LANE
+                value: "0"
+              - name: TPU_RPA_FOLD_KV_HEAD_DIM
+                value: "1"
+              - name: USE_MOE_COUNTING_SORT
+                value: "1"
+              - name: TPU_EVICT_WEIGHTS_PAGE_CACHE
+                value: "true"
+              - name: MODEL_IMPL_TYPE
+                value: vllm
+              - name: TPU_PJRT_EVENT_TRACE_ENABLE
+                value: "1"
+              - name: HF_HUB_OFFLINE
+                value: "1"
+              - name: CACHE_DIR
+                value: /root/vllm-torchtpu-cache
+              - name: VLLM_CACHE_ROOT
+                value: /root/vllm-torchtpu-cache/vllm
+              - name: VLLM_CONFIG_ROOT
+                value: /root/vllm-torchtpu-cache/vllm_config
+              - name: VLLM_XLA_CACHE_PATH
+                value: /root/vllm-torchtpu-cache/vllm/xla_cache
+              - name: TRITON_CACHE_DIR
+                value: /root/vllm-torchtpu-cache/triton
+              - name: TORCH_TPU_CACHE_DIR
+                value: /root/vllm-torchtpu-cache/torch_tpu_cache
+              - name: TORCH_TPU_INTERNAL_TIER2_COMPILATION_CACHE
+                value: /root/vllm-torchtpu-cache/torch_tpu_cache
+              - name: JAX_COMPILER_CACHE_DIR
+                value: /root/vllm-torchtpu-cache/jax_cache
+              - name: JAX_COMPILATION_CACHE_DIR
+                value: /root/vllm-torchtpu-cache/jax_cache
+              - name: TMPDIR
+                value: /root/vllm-torchtpu-cache/tmp
+              - name: TPU_LOG_DIR
+                value: /root/vllm-torchtpu-cache/tpu_logs
+              - name: USE_MOE_SPARSE_CORE
+                value: "1"
+              - name: CLOUD_TPU_TASK_ID
+                value: "0"
+              - name: TPU_PREMAPPED_BUFFER_SIZE
+                value: "4294967296"
+              - name: TPU_PREMAPPED_BUFFER_TRANSFER_THRESHOLD_BYTES
+                value: "4294967296"
+              - name: TPU_PROCESS_PORT
+                value: "8471"
+              - name: TPU_WORKER_ID
+                value: "0"
+              - name: TPU_VLLM_ENABLE_UNIFIED_BLOCK_POOL
+                value: "1"
+              - name: CDK_PROFILE
+                value: cloud-tpu-inference-test
+              image: us-central1-docker.pkg.dev/cloud-tpu-inference-test/vllm-tpu-rdna/vllm-torchtpu-caojx_google_com:caojx-fix-rpa-static-constants-ebusy
+              imagePullPolicy: Always
+              name: vllm-server
+              resources:
+                limits:
+                  cpu: "200"
+                  ephemeral-storage: 100Gi
+                  google.com/tpu: "4"
+                  memory: 900Gi
+                requests:
+                  cpu: "200"
+                  ephemeral-storage: 100Gi
+                  google.com/tpu: "4"
+                  memory: 900Gi
+              volumeMounts:
+              - mountPath: /root/.cache/huggingface/
+                name: huggingface-storage
+              - mountPath: /root/.cache/huggingface/token
+                name: hf-token-volume
+                readOnly: true
+                subPath: token
+              - mountPath: /tmp
+                name: tmp-volume
+              - mountPath: /root/.cache
+                name: cache-volume
+              - mountPath: /root/.triton
+                name: triton-volume
+              - mountPath: /var/tmp
+                name: var-tmp-volume
+              - mountPath: /dev/shm
+                name: dshm
+              - mountPath: /vllm-cache
+                name: vllm-shared-cache
+                readOnly: true
+              - mountPath: /cdk-outputs
+                name: cdk-outputs
+            initContainers:
+            - args:
+              - mkdir -p /cdk-outputs/outputs/$CDK_JOB_NAME/$CDK_POD_NAME/vllm-server
+              command:
+              - /bin/sh
+              - -c
+              env:
+              - name: CDK_JOB_ID
+                value: j-900d8725-8d39-422d-9f05
+              - name: CDK_POD_NAME
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.name
+              - name: CDK_JOB_NAME
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.labels['job-name']
+              - name: CDK_PROFILE
+                value: cloud-tpu-inference-test
+              image: busybox
+              name: cdk-bootstrap
+              resources: {}
+              volumeMounts:
+              - mountPath: /cdk-outputs
+                name: cdk-outputs
+            nodeSelector:
+              cloud.google.com/gke-accelerator-count: "4"
+              cloud.google.com/gke-tpu-accelerator: tpu7x
+              cloud.google.com/gke-tpu-topology: 2x2x1
+            restartPolicy: Never
+            terminationGracePeriodSeconds: 180
+            volumes:
+            - name: hf-token-volume
+              secret:
+                defaultMode: 420
+                items:
+                - key: token
+                  path: token
+                optional: true
+                secretName: vllm-hf-token
+            - ephemeral:
+                volumeClaimTemplate:
+                  metadata: {}
+                  spec:
+                    accessModes:
+                    - ReadWriteOnce
+                    resources:
+                      requests:
+                        storage: 1Ti
+                    storageClassName: premium-rwo
+              name: huggingface-storage
+            - emptyDir:
+                medium: Memory
+              name: dshm
+            - emptyDir:
+                medium: Memory
+              name: tmp-volume
+            - emptyDir:
+                medium: Memory
+              name: cache-volume
+            - emptyDir:
+                medium: Memory
+              name: triton-volume
+            - emptyDir:
+                medium: Memory
+              name: var-tmp-volume
+            - name: vllm-shared-cache
+              persistentVolumeClaim:
+                claimName: vllm-shared-cache-rox-pvc
+                readOnly: true
+            - csi:
+                driver: gcsfuse.csi.storage.gke.io
+                volumeAttributes:
+                  bucketName: cloud-devkit
+                  mountOptions: only-dir=jobs/j-900d8725-8d39-422d-9f05
+              name: cdk-outputs
+        ttlSecondsAfterFinished: 900
+  - name: bench
+    replicas: 1
+    template:
+      metadata:
+        annotations:
+          cloud-devkit.google.com/agent-note: If you are an agent, please please please
+            DO NOT delete me. Thank you!
+      spec:
+        activeDeadlineSeconds: 43200
+        backoffLimit: 0
+        template:
+          metadata:
+            annotations:
+              cloud-devkit.google.com/agent-note: If you are an agent, please please
+                please DO NOT delete me. Thank you!
+              gke-gcsfuse/volumes: "true"
+            labels:
+              cloud-devkit/log-transport: "true"
+          spec:
+            containers:
+            - args:
+              - |
+                set -ueo pipefail
+                export VLLM_PLUGINS=""
+                export VLLM_TARGET_DEVICE="empty"
+                export JAX_PLATFORMS="cpu"
+                export TPU_PJRT_EVENT_TRACE_ENABLE="0"
+                rm -f /tmp/libtpu_lockfile* /dev/shm/libtpu_lockfile* 2>/dev/null || true
+                set -x
+
+                # The server runs in a sibling job, reachable over the JobSet
+                # headless service: <jobset>-<replicatedJob>-<job>-<pod>.<jobset>
+                VLLM_HOST="${JS_NAME}-vllm-server-0-0.${JS_NAME}"
+                VLLM_URL="http://${VLLM_HOST}:8000"
+                echo "vLLM server endpoint: ${VLLM_URL}"
+
+                # This pod does not mount the vllm-shared-cache PVC (its node
+                # affinity excludes the cpu-only pool, which is the only pool this
+                # pod can land on), so the tokenizer is fetched from HF at runtime.
+                mkdir -p "$HF_HOME"
+                unset HF_HUB_OFFLINE TRANSFORMERS_OFFLINE
+                if [ -f /root/.cache/huggingface/token ]; then
+                  export HF_TOKEN="$(cat /root/.cache/huggingface/token | tr -d '\r\n')"
+                  export HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"
+                fi
+
+                # 1. Bind path parameters to the pre-built container locations
+                export INFMAX_CONTAINER_WORKSPACE="/root/cloud-devkit/InferenceX"
+                export AIPERF_DIR="/root/cloud-devkit/InferenceX/utils/aiperf"
+
+                # Fast mode vs Canonical mode (handled automatically by benchmark_lib.sh)
+                export AIPERF_EXPERIMENTAL_FAST="0"
+                export DURATION="3600"
+                echo "Bench: Mode = CANONICAL (AIPERF_EXPERIMENTAL_FAST=0, duration=3600s, warmup=10 req/lane)"
+
+                export MODEL="Qwen/Qwen3.5-397B-A17B-FP8"
+                source "${INFMAX_CONTAINER_WORKSPACE}/benchmarks/benchmark_lib.sh"
+                export AIPERF_HF_CLI="$(which hf 2>/dev/null || echo '/usr/local/bin/hf')"
+
+                # Pre-download tokenizer and config files to avoid offline loading errors in aiperf
+                echo "Pre-downloading tokenizer for ${MODEL}..."
+                ${AIPERF_HF_CLI} download "${MODEL}" --include "tokenizer*" || true
+                ${AIPERF_HF_CLI} download "${MODEL}" config.json || true
+
+                # 2. Set outputs target directory based on CDK_OUTPUT_DIR env variable
+                PARENT_RESULT_DIR="${CDK_OUTPUT_DIR:-/tmp/bench_results}"
+                mkdir -p "${PARENT_RESULT_DIR}"
+
+                # run_agentic_replay_and_write_outputs writes its aggregate to
+                # ${AGENTIC_OUTPUT_DIR}/${RESULT_FILENAME}.json in a nested schema
+                # (request_metrics.latency.ttft.p50, ...) with latencies in seconds.
+                # Flatten it into the flat, millisecond-based keys the CDK result
+                # store charts. Falls back to aiperf's own export when aggregation
+                # failed, so a partially broken sweep still reports something.
+                cat > /tmp/agentx_metrics.py <<'PY'
+                """Flatten an AgentX aggregate JSON into flat metrics for result-updater."""
+                import json
+                import math
+                import os
+                import sys
+
+
+                def load(path):
+                    try:
+                        with open(path) as f:
+                            return json.load(f)
+                    except Exception:
+                        return {}
+
+
+                def dig(d, *keys):
+                    cur = d
+                    for k in keys:
+                        if not isinstance(cur, dict):
+                            return None
+                        cur = cur.get(k)
+                    return cur
+
+
+                def num(v):
+                    if isinstance(v, bool) or not isinstance(v, (int, float)):
+                        return None
+                    return v if math.isfinite(v) else None
+
+
+                def put(out, key, value, scale=None):
+                    v = num(value)
+                    if v is None:
+                        return
+                    out[key] = round(v * scale, 4) if scale else v
+
+
+                def resolve_aiperf(artifact_dir):
+                    """aiperf sometimes nests its export one directory deeper."""
+                    direct = os.path.join(artifact_dir, "profile_export_aiperf.json")
+                    if os.path.isfile(direct):
+                        return direct
+                    try:
+                        for child in sorted(os.listdir(artifact_dir)):
+                            nested = os.path.join(artifact_dir, child, "profile_export_aiperf.json")
+                            if os.path.isfile(nested):
+                                return nested
+                    except OSError:
+                        pass
+                    return direct
+
+
+                agg = load(sys.argv[1])
+                aiperf = load(resolve_aiperf(sys.argv[2])) if len(sys.argv) > 2 else {}
+                out = {}
+
+                # Run shape. `conc` is what the aggregate calls the sweep level; `max_concurrency`
+                # is the name `cdk dash` orders a sweep by.
+                for key in ("conc", "num_requests_total", "num_requests_successful",
+                            "kv_cache_pool_tokens", "tp", "ep"):
+                    put(out, key, agg.get(key))
+                put(out, "records_dropped_total", dig(agg, "request_accounting", "records_dropped_total"))
+                put(out, "records_error_dropped", dig(agg, "request_accounting", "records_error_dropped"))
+
+                # Latency: the aggregate stores seconds, publish milliseconds. "median" rather
+                # than "p50" so these line up with the vLLM benchmark_serving keys the other
+                # recipes publish and the dashboards already chart.
+                for src, dst in (("mean", "mean"), ("p50", "median"), ("p90", "p90"), ("p95", "p95")):
+                    for metric in ("ttft", "tpot", "itl", "e2el"):
+                        put(out, dst + "_" + metric + "_ms",
+                            dig(agg, "request_metrics", "latency", metric, src), 1000.0)
+                    # Interactivity: output tokens/s as seen by a single user (1 / ITL).
+                    put(out, dst + "_interactivity_tok_s",
+                        dig(agg, "request_metrics", "latency", "intvty", src))
+                    put(out, dst + "_qps", dig(agg, "request_metrics", "qps", src))
+
+                # Throughput. total_token_throughput and mean_ttft_ms are the two headline
+                # metrics: they are the default x/y of a cdk dash chart, so they are backfilled
+                # below if the aggregate did not carry them.
+                tput = dig(agg, "request_metrics", "throughput") or {}
+                put(out, "input_throughput", dig(tput, "input", "tokens_per_second"))
+                put(out, "output_throughput", dig(tput, "output", "tokens_per_second"))
+                put(out, "total_token_throughput", dig(tput, "total", "tokens_per_second"))
+                put(out, "benchmark_duration_s", tput.get("duration_seconds"))
+                put(out, "request_throughput", dig(agg, "request_metrics", "qps", "mean"))
+
+                # Workload shape and prefix-cache behaviour
+                put(out, "mean_input_tokens", dig(agg, "request_metrics", "tokens", "input", "mean"))
+                put(out, "mean_output_tokens", dig(agg, "request_metrics", "tokens", "output_actual", "mean"))
+                put(out, "theoretical_cache_hit_rate",
+                    dig(agg, "request_metrics", "cache", "theoretical_cache_hit_rate"))
+
+                # Actual prefix-cache behaviour, as counted by the server rather than
+                # inferred from the trace. The sweep loop scrapes vllm:*_total around
+                # each concurrency level and passes the deltas in, so a level reports
+                # its own hit rate instead of the sweep's running total. Published as
+                # a 0..1 fraction to match theoretical_cache_hit_rate.
+                def env_int(name):
+                    try:
+                        return int(os.environ.get(name, "") or 0)
+                    except ValueError:
+                        return 0
+
+                for key, env_prefix in (("prefix_cache", "PREFIX_CACHE"),
+                                        ("external_prefix_cache", "EXT_PREFIX_CACHE")):
+                    hits = env_int(env_prefix + "_HITS_DELTA")
+                    queries = env_int(env_prefix + "_QUERIES_DELTA")
+                    # queries==0 means the counter never moved (offloading disabled,
+                    # or the scrape failed); omit rather than charting a false 0%.
+                    if queries <= 0:
+                        continue
+                    put(out, key + "_hits", hits)
+                    put(out, key + "_queries", queries)
+                    put(out, key + "_hit_rate", round(hits / queries, 4))
+
+                # Backfill from aiperf's own export (already ms / tok-s) for anything the
+                # aggregation step failed to produce, so a partial sweep still reports TTFT and
+                # throughput instead of charting as a gap.
+                backfilled = []
+                for key, path in (
+                    ("mean_ttft_ms", ("time_to_first_token", "avg")),
+                    ("median_ttft_ms", ("time_to_first_token", "p50")),
+                    ("p90_ttft_ms", ("time_to_first_token", "p90")),
+                    ("p95_ttft_ms", ("time_to_first_token", "p95")),
+                    ("mean_itl_ms", ("inter_token_latency", "avg")),
+                    ("median_itl_ms", ("inter_token_latency", "p50")),
+                    ("mean_tpot_ms", ("inter_token_latency", "avg")),
+                    ("median_tpot_ms", ("inter_token_latency", "p50")),
+                    ("mean_e2el_ms", ("request_latency", "avg")),
+                    ("median_e2el_ms", ("request_latency", "p50")),
+                    ("output_throughput", ("output_token_throughput", "avg")),
+                    ("request_throughput", ("request_throughput", "avg")),
+                    ("benchmark_duration_s", ("benchmark_duration", "avg")),
+                ):
+                    if key in out:
+                        continue
+                    put(out, key, dig(aiperf, *path))
+                    if key in out:
+                        backfilled.append(key)
+
+                # aiperf reports the two token counts but no combined throughput; derive it so
+                # total_token_throughput is never the missing one.
+                if "total_token_throughput" not in out:
+                    duration = num(out.get("benchmark_duration_s"))
+                    isl = num(dig(aiperf, "input_sequence_length", "avg"))
+                    osl = num(dig(aiperf, "output_sequence_length", "avg"))
+                    requests = num(dig(aiperf, "request_count", "avg"))
+                    if duration and requests and isl is not None and osl is not None:
+                        out["total_token_throughput"] = round(requests * (isl + osl) / duration, 4)
+                        backfilled.append("total_token_throughput")
+                if backfilled:
+                    out["metrics_backfilled_from_aiperf"] = ",".join(backfilled)
+
+                # Derived: per-chip throughput, per-user output rate, and the sweep key.
+                try:
+                    chips = int(os.environ.get("TPU_CHIPS", "0") or 0)
+                except ValueError:
+                    chips = 0
+                total = num(out.get("total_token_throughput"))
+                output = num(out.get("output_throughput"))
+                if chips > 0 and (total is not None or output is not None):
+                    out["num_chips"] = chips
+                    if total is not None:
+                        out["token_throughput_per_chip"] = round(total / chips, 4)
+                    if output is not None:
+                        out["output_throughput_per_chip"] = round(output / chips, 4)
+
+                # `interactivity` is defined the way the vLLM recipes define it: 1000 / median TPOT.
+                median_tpot = num(out.get("median_tpot_ms"))
+                if median_tpot:
+                    out["interactivity"] = round(1000.0 / median_tpot, 4)
+
+                conc_env = os.environ.get("CONC", "")
+                if "conc" not in out and conc_env.isdigit():
+                    out["conc"] = int(conc_env)
+                if "conc" in out:
+                    out["max_concurrency"] = out["conc"]
+
+                json.dump(out, sys.stdout, separators=(",", ":"))
+                PY
+
+                # Sum one vllm Prometheus counter across all of its label sets (DP
+                # exposes one series per engine). Never aborts the sweep: an
+                # unreachable server or an absent metric reports 0, because a missing
+                # cache stat must not cost us the benchmark it was measured on.
+                vllm_metric() {
+                  local v
+                  v=$(curl -sf "${VLLM_URL}/metrics" 2>/dev/null | awk -v n="vllm:$1" \
+                    '{k=$1; sub(/\{.*/, "", k); if (k==n) s+=$NF} END {printf "%.0f", s+0}') || v=""
+                  case "$v" in
+                    ''|*[!0-9]*) echo 0 ;;
+                    *) echo "$v" ;;
+                  esac
+                }
+
+                publish_result() {
+                  local conc="$1" res_dir="$2" exit_code="$3"
+                  local metrics
+                  if ! command -v result-updater >/dev/null 2>&1; then
+                    echo "WARNING: result-updater not found; skipping upload for c${conc}"
+                    return 0
+                  fi
+                  metrics=$(python3 /tmp/agentx_metrics.py \
+                    "${AGENTIC_OUTPUT_DIR}/${RESULT_FILENAME}.json" \
+                    "${res_dir}/aiperf_artifacts" 2>/dev/null || echo '{}')
+                  [ -n "${metrics}" ] || metrics="{}"
+                  # Echo the two headline metrics on their own line so a sweep can be
+                  # read off `cdk job log` without unpacking the whole blob, and so a
+                  # run that failed to report them says so loudly.
+                  local headline
+                  headline=$(python3 -c 'import json,sys; m=json.loads(sys.argv[1] or "{}"); print(m.get("mean_ttft_ms"), m.get("total_token_throughput"))' "${metrics}" 2>/dev/null || echo "None None")
+                  echo "RESULT c${conc}: mean_ttft_ms=${headline%% *} total_token_throughput=${headline##* } tok/s"
+                  case "${headline}" in
+                    *None*) echo "WARNING: c${conc} is missing a headline metric (ttft/throughput above); check ${res_dir}/benchmark.log" ;;
+                  esac
+                  echo "Publishing c${conc} to CDK (exit=${exit_code}): ${metrics}"
+                  result-updater "{\"exit_code\": ${exit_code}, \"bench\": \"${BENCH_NAME}-c${conc}\", \"metrics\": ${metrics}}" \
+                    || echo "WARNING: result-updater failed for c${conc}"
+                }
+
+                # 3. Server details and health check wait block
+                export PORT=8000
+                echo "Bench: waiting for vLLM to be healthy..."
+                echo "Checking..${VLLM_URL}/health"
+                until curl -s ${VLLM_URL}/health > /dev/null; do
+                  sleep 5
+                done
+                echo "Bench: vLLM server is healthy. Starting AgentX trace replay sweep..."
+                emit_trace_event() {
+                  local action="$1" name="$2"
+                  { set +x; } 2>/dev/null
+                  echo "trace-${action}-event: name=${name} ts=$(date +%s.%N) pid=bench tid=bench"
+                  set -x
+                }
+                start_perfetto_monitor() {
+                  local conc="$1" res_dir="$2"
+                  emit_trace_event start "benchmark-agentx-c${conc}"
+                  (
+                    local log="${res_dir}/benchmark.log"
+                    for _ in {1..30}; do [ -f "$log" ] && break; sleep 1; done
+                    [ -f "$log" ] || exit 0
+                    stdbuf -oL tail -F -n +1 "$log" 2>/dev/null | while read -r line; do
+                      if [ ! -f "${res_dir}/.warmup_started" ] && [[ "$line" =~ "Phase warmup (warmup) started" ]]; then
+                        touch "${res_dir}/.warmup_started"
+                        emit_trace_event start "warmup-c${conc}"
+                      elif [ -f "${res_dir}/.warmup_started" ] && [ ! -f "${res_dir}/.warmup_ended" ] && [[ "$line" =~ "Phase warmup (warmup) complete" || "$line" =~ "Phase profiling (profiling) started" ]]; then
+                        touch "${res_dir}/.warmup_ended"
+                        emit_trace_event end "warmup-c${conc}"
+                      fi
+
+                      if [ ! -f "${res_dir}/.steady_started" ] && [[ "$line" =~ "Phase profiling (profiling) started" ]]; then
+                        touch "${res_dir}/.steady_started"
+                        emit_trace_event start "steady-eval-c${conc}"
+                      elif [ -f "${res_dir}/.steady_started" ] && [ ! -f "${res_dir}/.steady_ended" ] && [[ "$line" =~ "Phase profiling (profiling) complete" || "$line" =~ "Phase profiling (profiling) ended" ]]; then
+                        touch "${res_dir}/.steady_ended"
+                        emit_trace_event end "steady-eval-c${conc}"
+                        break
+                      fi
+                    done
+                  ) &
+                  MONITOR_PID=$!
+                }
+
+                stop_perfetto_monitor() {
+                  local conc="$1" res_dir="$2"
+                  sleep 2
+                  kill $MONITOR_PID 2>/dev/null || true
+                  if [ -f "${res_dir}/.warmup_started" ] && [ ! -f "${res_dir}/.warmup_ended" ]; then
+                    touch "${res_dir}/.warmup_ended"
+                    emit_trace_event end "warmup-c${conc}"
+                  fi
+                  if [ -f "${res_dir}/.steady_started" ] && [ ! -f "${res_dir}/.steady_ended" ]; then
+                    touch "${res_dir}/.steady_ended"
+                    emit_trace_event end "steady-eval-c${conc}"
+                  fi
+                  emit_trace_event end "benchmark-agentx-c${conc}"
+                }
+
+
+                # 4. Initialize agentic trace dataset (Weka)
+                export WEKA_LOADER_OVERRIDE=semianalysis_cc_traces_weka_062126_256k
+                resolve_trace_source 2>/dev/null || true
+
+                # 5. Execute Concurrency Sweep Loop
+                CONC_SWEEP=(40)
+
+                # The following environment variables are not required for client execution
+                # but are needed by the post-processing and results aggregation scripts:
+                export KV_OFFLOADING="none"
+                export PRECISION="fp8"
+                export FRAMEWORK="vllm"
+                export IS_MULTINODE="false"
+                export TP="8"
+                export EP_SIZE="0"
+                export AGENTIC_OUTPUT_DIR="${PARENT_RESULT_DIR}"
+
+                overall_exit=0
+
+                for i in "${!CONC_SWEEP[@]}"; do
+                  conc="${CONC_SWEEP[$i]}"
+                  echo "============================================================"
+                  echo "STARTING CONCURRENCY LEVEL: ${conc}"
+                  echo "============================================================"
+
+                  export CONC="${conc}"
+                  export RESULT_DIR="${PARENT_RESULT_DIR}/conc_${conc}"
+                  export RESULT_FILENAME="qwen3.5_397b_tpu_v7x_ix_conc_${conc}"
+
+                  mkdir -p "${RESULT_DIR}"
+
+                  # Prefix-cache counters are cumulative over the server's life, so
+                  # snapshot them here and diff after the replay to get this level's
+                  # own rate. NOTE: the window includes the replay's warmup phase,
+                  # which is cold, so the reported rate is a slight underestimate of
+                  # steady state.
+                  pc_h0=$(vllm_metric prefix_cache_hits_total)
+                  pc_q0=$(vllm_metric prefix_cache_queries_total)
+                  ext_h0=$(vllm_metric external_prefix_cache_hits_total)
+                  ext_q0=$(vllm_metric external_prefix_cache_queries_total)
+                  start_perfetto_monitor "$conc" "${RESULT_DIR}"
+
+                  # Trigger replayer execution (benchmark_lib.sh sets duration & warmup)
+                  build_replay_cmd "${RESULT_DIR}"
+                  # Ensure REPLAY_CMD points to VLLM_URL if build_replay_cmd hardcodes localhost
+                  REPLAY_CMD="${REPLAY_CMD//localhost:8000/$VLLM_HOST:8000}"
+                  REPLAY_CMD="${REPLAY_CMD//localhost:$PORT/$VLLM_HOST:$PORT}"
+                  REPLAY_CMD="${REPLAY_CMD//0.0.0.0:8000/$VLLM_HOST:8000}"
+                  REPLAY_CMD="${REPLAY_CMD//0.0.0.0:$PORT/$VLLM_HOST:$PORT}"
+                  # Don't let a failed level abort the sweep: the remaining
+                  # concurrencies still carry signal, and the failure is reported
+                  # to CDK as this level's exit_code and again as the job's.
+                  set +e
+                  run_agentic_replay_and_write_outputs "${RESULT_DIR}"
+                  bench_exit=$?
+                  set -e
+                  if [ "$bench_exit" -ne 0 ]; then
+                    echo "WARNING: sweep c${conc} exited with ${bench_exit}"
+                    overall_exit=$bench_exit
+                  fi
+
+                  # Close the prefix-cache window before profiler teardown so the
+                  # deltas cover the replay only. Read by agentx_metrics.py.
+                  export PREFIX_CACHE_HITS_DELTA=$(( $(vllm_metric prefix_cache_hits_total) - pc_h0 ))
+                  export PREFIX_CACHE_QUERIES_DELTA=$(( $(vllm_metric prefix_cache_queries_total) - pc_q0 ))
+                  export EXT_PREFIX_CACHE_HITS_DELTA=$(( $(vllm_metric external_prefix_cache_hits_total) - ext_h0 ))
+                  export EXT_PREFIX_CACHE_QUERIES_DELTA=$(( $(vllm_metric external_prefix_cache_queries_total) - ext_q0 ))
+                  echo "CACHE c${conc}: prefix_cache=${PREFIX_CACHE_HITS_DELTA}/${PREFIX_CACHE_QUERIES_DELTA} external=${EXT_PREFIX_CACHE_HITS_DELTA}/${EXT_PREFIX_CACHE_QUERIES_DELTA}"
+                  stop_perfetto_monitor "$conc" "${RESULT_DIR}"
+
+                  publish_result "$conc" "${RESULT_DIR}" "$bench_exit"
+
+                  echo "Completed concurrency level: ${conc}"
+
+                  # Apply 60-second cooldown period between sweeps (skip on final)
+                  if [ "$i" -lt $(( ${#CONC_SWEEP[@]} - 1 )) ]; then
+                    echo "Bench: Pausing 60 seconds to let engine settle..."
+                    sleep 60
+                  fi
+                done
+
+                echo "Bench: All sweeps done (overall_exit=${overall_exit})."
+                echo "trace-start-event: name=ramp-up ts=$(date +'%s.%N') pid=bench tid=bench"
+
+                echo "Waiting for background tasks to finish..."
+                wait
+
+                echo "trace-end-event: name=ramp-up ts=$(date +'%s.%N') pid=bench tid=bench"
+                exit ${overall_exit}
+              command:
+              - /bin/bash
+              - -c
+              env:
+              - name: CDK_JOB_ID
+                value: j-900d8725-8d39-422d-9f05
+              - name: CDK_POD_NAME
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.name
+              - name: CDK_JOB_NAME
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.labels['job-name']
+              - name: CDK_CONTAINER_NAME
+                value: bench
+              - name: CDK_OUTPUT_DIR
+                value: /cdk-outputs/outputs/$(CDK_JOB_NAME)/$(CDK_POD_NAME)/$(CDK_CONTAINER_NAME)
+              - name: CDK_LOG_DIR
+                value: /cdk-outputs/logs/$(CDK_JOB_NAME)/$(CDK_POD_NAME)
+              - name: JS_NAME
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.labels['jobset.sigs.k8s.io/jobset-name']
+              - name: HF_HOME
+                value: /tmp/hf_cache
+              - name: CLIENT_CONCURRENCIES
+                value: "40"
+              - name: BENCH_NAME
+                value: qwen3.5-397b-agentx-singlehost
+              - name: TPU_CHIPS
+                value: "4"
+              - name: AIPERF_EXPERIMENTAL_FAST
+                value: "0"
+              - name: DURATION
+                value: "3600"
+              - name: CDK_PROFILE
+                value: cloud-tpu-inference-test
+              image: us-central1-docker.pkg.dev/cloud-tpu-inference-test/vllm-tpu-rdna/inferencex-agentx:caojx-latest
+              imagePullPolicy: Always
+              name: bench
+              resources:
+                limits:
+                  ephemeral-storage: 64Gi
+                requests:
+                  ephemeral-storage: 64Gi
+              volumeMounts:
+              - mountPath: /root/.cache/huggingface/token
+                name: hf-token-volume
+                readOnly: true
+                subPath: token
+              - mountPath: /tmp
+                name: sidecar-tmp
+              - mountPath: /dev/shm
+                name: dshm
+              - mountPath: /cdk-outputs
+                name: cdk-outputs
+            initContainers:
+            - args:
+              - mkdir -p /cdk-outputs/outputs/$CDK_JOB_NAME/$CDK_POD_NAME/bench
+              command:
+              - /bin/sh
+              - -c
+              env:
+              - name: CDK_JOB_ID
+                value: j-900d8725-8d39-422d-9f05
+              - name: CDK_POD_NAME
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.name
+              - name: CDK_JOB_NAME
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.labels['job-name']
+              - name: CDK_PROFILE
+                value: cloud-tpu-inference-test
+              image: busybox
+              name: cdk-bootstrap
+              resources: {}
+              volumeMounts:
+              - mountPath: /cdk-outputs
+                name: cdk-outputs
+            restartPolicy: Never
+            terminationGracePeriodSeconds: 180
+            volumes:
+            - name: hf-token-volume
+              secret:
+                defaultMode: 420
+                items:
+                - key: token
+                  path: token
+                optional: true
+                secretName: vllm-hf-token
+            - emptyDir:
+                medium: Memory
+              name: dshm
+            - emptyDir:
+                medium: Memory
+              name: sidecar-tmp
+            - csi:
+                driver: gcsfuse.csi.storage.gke.io
+                volumeAttributes:
+                  bucketName: cloud-devkit
+                  mountOptions: only-dir=jobs/j-900d8725-8d39-422d-9f05
+              name: cdk-outputs
+        ttlSecondsAfterFinished: 900
+  successPolicy:
+    operator: All
+    targetReplicatedJobs:
+    - bench
+  suspend: true
+  ttlSecondsAfterFinished: 600
+status:
+  restarts: 0
