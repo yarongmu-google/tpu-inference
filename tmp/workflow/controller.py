@@ -510,10 +510,32 @@ class Job:
             self.cleanup(discard=False, automatic=True)
             self.save(cleanup_pending=False)
 
+    def finalize(self, remote: dict | None = None) -> int:
+        if self.state.get('owned_image') and self.state.get('deleted'):
+            from resources import verify_collected
+            verify_collected(job=self)
+            self.finish_cleanup()
+            code = self.state.get('exit_code')
+            return code if code is not None else int(self.state.get('artifact_exit_code') != 0)
+        remote = remote if remote is not None else self.discover()
+        if (remote is None or remote.get('job_status') not in TERMINAL
+                or remote.get('state') not in ({'Complete'} | ARCHIVE_FAILED)):
+            raise ValueError('Job is active, archiving, or unresolved; recover after it completes')
+        if self.state.get('artifacts_verified'):
+            from resources import verify_collected
+            verify_collected(job=self)
+            success = self.state.get('artifact_exit_code') == 0
+        else:
+            success = self.collect()
+        code = int(not (remote['job_status'] == 'Succeeded' and remote['state'] == 'Complete' and success))
+        self.save(finished=True, exit_code=code, phase='VERIFIED' if code == 0 else 'FAILED')
+        self.finish_cleanup()
+        return code
+
     def run(self) -> int:
         if self.state.get('finished'):
-            if not self.state.get('artifacts_verified') and self.state.get('submission_started'):
-                self.collect()
+            if self.state.get('submission_started'):
+                return self.finalize()
             self.finish_cleanup()
             return self.state['exit_code']
         self.prepare_image()
@@ -568,11 +590,7 @@ class Job:
                 if terminal_since is None:
                     terminal_since = time.monotonic()
                 if archive == 'Complete' or archive in ARCHIVE_FAILED:
-                    success = self.collect()
-                    code = 0 if status == 'Succeeded' and archive == 'Complete' and success else 1
-                    self.save(finished=True, exit_code=code, phase='VERIFIED' if code == 0 else 'FAILED')
-                    self.finish_cleanup()
-                    return code
+                    return self.finalize(remote=job)
                 if time.monotonic() - terminal_since > config['archive_seconds']:
                     raise TimeoutError('Archive wait expired; resume to continue collection')
             elif status == 'Running':
@@ -715,15 +733,7 @@ def job_action(job: Job, action: str, discard: bool) -> int:
         if action == 'cleanup':
             return job.cleanup(discard=discard)
         if action == 'collect':
-            if job.state.get('owned_image') and job.state.get('deleted'):
-                from resources import verify_collected
-                verify_collected(job=job)
-                job.finish_cleanup()
-                return 0 if job.state.get('artifact_exit_code') == 0 else 1
-            success = job.collect()
-            if job.state.get('artifacts_verified'):
-                job.finish_cleanup()
-            return 0 if success else 1
+            return job.finalize()
         return job.run()
     except Exception as error:
         job.save(last_error=str(error))
