@@ -323,19 +323,22 @@ class ComparisonTests(unittest.TestCase):
             return resolve(self.root) if str(path) == '/run-scratch' else resolve(path, *args, **kwargs)
         with patch.dict(sys.modules, {'huggingface_hub': hub}), patch.dict(os.environ, {'HF_HUB_CACHE': str(cache)}), \
                 patch.object(Path, 'read_text', read), patch.object(Path, 'resolve', resolved), \
-                patch.object(preflight.shutil, 'disk_usage', return_value=SimpleNamespace(free=1)), \
+                patch.object(preflight.shutil, 'disk_usage', return_value=SimpleNamespace(total=1024 * 1024**3, used=1024 * 1024**3 - 1, free=1)), \
                 patch.object(hub, 'snapshot_download') as download, contextlib.redirect_stdout(io.StringIO()):
             with self.assertRaisesRegex(RuntimeError, 'Insufficient checkpoint'):
                 preflight.checkpoint(model='fixture', destination=self.root / 'checkpoint.json')
             download.assert_not_called()
         with patch.dict(sys.modules, {'huggingface_hub': hub}), patch.dict(os.environ, {'HF_HUB_CACHE': str(cache)}), \
                 patch.object(Path, 'read_text', read), patch.object(Path, 'resolve', resolved), \
-                patch.object(preflight.shutil, 'disk_usage', return_value=SimpleNamespace(free=600 * 1024**3)), \
+                patch.object(preflight.shutil, 'disk_usage', return_value=SimpleNamespace(total=1024 * 1024**3, used=424 * 1024**3, free=600 * 1024**3)), \
                 patch.object(hub, 'snapshot_download', return_value=str(snapshot)) as download, \
                 contextlib.redirect_stdout(io.StringIO()):
             preflight.checkpoint(model='fixture', destination=self.root / 'checkpoint.json')
             self.assertEqual(download.call_args.kwargs['revision'], 'b' * 40)
             self.assertEqual(download.call_args.kwargs['max_workers'], 2)
+            record = json.loads((self.root / 'checkpoint.json').read_text())
+            self.assertEqual(record['disk_total_bytes'], 1024 * 1024**3)
+            self.assertEqual(record['disk_used_bytes_before'], 424 * 1024**3)
             (snapshot / 'model.safetensors').write_bytes(b'bad')
             with self.assertRaisesRegex(ValueError, 'Incomplete checkpoint'):
                 preflight.checkpoint(model='fixture', destination=self.root / 'checkpoint.json')

@@ -412,12 +412,16 @@ References:
 
 ### Optional checkpoint scratch storage
 
-Set `execution.scratch_gib` to mount a disk-backed emptyDir at `/run-scratch`
-with that size ceiling. This does not add a container `ephemeral-storage`
-request or limit, so the workflow does not reserve disk capacity at scheduling.
-The controller validates the resource fields, mount and volume after CDK
-rendering. The path is reserved from code/input destinations and excluded from
-output archives unless the workload copies files into its output directory.
-The volume lasts for the Pod lifetime and does not provision a separate disk.
-Actual free space depends on the assigned node; workloads should check it
-before large downloads. See [Kubernetes ephemeral storage](https://kubernetes.io/docs/concepts/storage/ephemeral-storage/).
+Set `execution.scratch_gib` for scratch capacity at `/run-scratch`. With
+`execution.scratch_storage_class`, the workflow provisions a generic ephemeral
+PVC using that class and `ReadWriteOnce`; without it, scratch remains an
+emptyDir with a size ceiling. Neither adds a container ephemeral-storage
+request or limit. The controller validates capacity, class, mount and cleanup
+deadlines after CDK rendering. Provisioned-scratch JobSets expire 600 seconds
+after completion; their child Jobs have a 900-second expiry. Pod deletion
+garbage-collects the owned PVC, and the storage class must use `Delete` to
+reclaim the disk. Reclamation is asynchronous and is not certified by the
+image/GCS cleanup flag. Results are published to GCS before workload exit and
+remain collectible after Pod deletion. Active jobs retain their disk. Actual
+provisioning, capacity and disk reclamation require live validation. Scratch is
+reserved from code/input destinations and excluded from result archives.

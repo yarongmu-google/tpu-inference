@@ -95,6 +95,22 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'digest'):
             core.load_description(self.base / 'experiment.json')
 
+    def test_provisioned_scratch_requires_valid_class_and_capacity(self) -> None:
+        for execution in ({'scratch_storage_class': 'premium-rwo'},
+                          {'scratch_gib': 1024, 'scratch_storage_class': ''},
+                          {'scratch_gib': 1024, 'scratch_storage_class': 1},
+                          {'scratch_gib': 1024, 'scratch_storage_class': '../disk'},
+                          {'scratch_gib': 1024, 'scratch_storage_class': 'disk..class'},
+                          {'scratch_gib': 0, 'scratch_storage_class': 'premium-rwo'}):
+            self.description['execution'] = execution
+            self.write_descriptions()
+            with self.subTest(execution=execution), self.assertRaises(ValueError):
+                core.load_description(self.base / 'experiment.json')
+        self.description['execution'] = {'scratch_gib': 1024, 'scratch_storage_class': 'premium-rwo'}
+        self.write_descriptions()
+        data, _ = core.load_description(self.base / 'experiment.json')
+        self.assertEqual(data['execution']['scratch_storage_class'], 'premium-rwo')
+
     def test_snapshot_and_input_verification(self) -> None:
         source = self.base / 'code'
         entries = core.snapshot(source=source, target=self.base / 'copy', include=['**'])

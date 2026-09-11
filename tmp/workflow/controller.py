@@ -75,7 +75,16 @@ def recipe(state: dict, payload: dict[str, str]) -> dict:
         pod = value['spec']['replicatedJobs'][0]['template']['spec']['template']['spec']
         runner = pod['containers'][0]
         runner['volumeMounts'].append({'name': 'run-scratch', 'mountPath': '/run-scratch'})
-        pod['volumes'].append({'name': 'run-scratch', 'emptyDir': {'sizeLimit': f'{size}Gi'}})
+        if storage_class := state['execution'].get('scratch_storage_class'):
+            capacity = f'{size // 1024}Ti' if size % 1024 == 0 else f'{size}Gi'
+            pod['volumes'].append({'name': 'run-scratch', 'ephemeral': {'volumeClaimTemplate': {
+                'metadata': {}, 'spec': {'accessModes': ['ReadWriteOnce'], 'storageClassName': storage_class,
+                                       'resources': {'requests': {'storage': capacity}}}}}})
+            # Expire the owned Pod/PVC after completion, including failed workloads.
+            value['spec']['ttlSecondsAfterFinished'] = 600
+            value['spec']['replicatedJobs'][0]['template']['spec']['ttlSecondsAfterFinished'] = 900
+        else:
+            pod['volumes'].append({'name': 'run-scratch', 'emptyDir': {'sizeLimit': f'{size}Gi'}})
     return value
 
 
@@ -88,6 +97,10 @@ def validate_recipe(actual: dict, expected: dict, service_account: str | None) -
     for key in ('parallelism', 'completions', 'backoffLimit'):
         if a.get(key) != e[key]:
             raise ValueError(f'Rendered {key} differs')
+    for actual_spec, expected_spec in ((actual['spec'], expected['spec']), (a, e)):
+        if ('ttlSecondsAfterFinished' in expected_spec
+                and actual_spec.get('ttlSecondsAfterFinished') != expected_spec['ttlSecondsAfterFinished']):
+            raise ValueError('Rendered scratch cleanup deadline differs')
     pod = a['template']['spec']
     epod = e['template']['spec']
     if (service_account is not None and pod.get('serviceAccountName') != service_account) or pod.get('restartPolicy') != 'Never':

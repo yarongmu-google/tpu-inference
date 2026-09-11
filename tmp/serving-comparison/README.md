@@ -25,14 +25,16 @@ rewrite server settings. The wrapper does not append server flags or change its 
 The image builder checks that both source checkouts are on
 `topk` and records their exact commits.
 
-The job mounts disk-backed scratch at `/run-scratch` with a 600 GiB volume
-size ceiling. It makes no explicit disk reservation, matching the earlier
-successful jobs' scheduling policy. All Hugging Face caches are there.
+The job provisions a private 1 TiB `premium-rwo` disk at `/run-scratch` through
+a generic ephemeral PVC. It makes no container ephemeral-storage reservation.
+All Hugging Face caches are there; no existing shared-cache claim is mounted.
 The checkpoint preflight checks actual free space for checkpoint bytes plus
 64 GiB headroom before downloading with two workers. It verifies selected files
 and records the prefetched revision. The server retains Line 1's literal model
 name and default revision selection. Scratch is excluded from results and lasts
-for the Pod lifetime. The assigned node must still have enough free disk space.
+for the Pod lifetime. JobSet/Job expiry removes the Pod and its owned PVC after
+completion; the disk is reclaimed under the storage class's `Delete` policy.
+The preflight records total, used and free disk space before downloading.
 
 Client/parser/tokenizer and per-configuration TPU checks run before model
 serving. They do not establish full-model compilation or performance. Server
