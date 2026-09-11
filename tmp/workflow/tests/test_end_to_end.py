@@ -237,3 +237,38 @@ class EndToEndTests(unittest.TestCase):
                 changed['containers'][0]['resources'][section]['ephemeral-storage'] = '1Gi'
             with self.subTest(target=target), self.assertRaises(ValueError):
                 controller.validate_recipe(actual=actual, expected=expected, service_account=None)
+
+    def test_provisioned_scratch_preserves_capacity_and_cleanup(self) -> None:
+        self.job.state['execution'].update(scratch_gib=1024, scratch_storage_class='premium-rwo')
+        expected = controller.recipe(state=self.job.state, payload={})
+        controller.validate_recipe(actual=expected, expected=expected, service_account=None)
+        job = expected['spec']['replicatedJobs'][0]['template']['spec']
+        pod = job['template']['spec']
+        claim = pod['volumes'][-1]['ephemeral']['volumeClaimTemplate']['spec']
+        self.assertEqual(claim, {'accessModes': ['ReadWriteOnce'], 'storageClassName': 'premium-rwo',
+                                'resources': {'requests': {'storage': '1Ti'}}})
+        self.assertEqual(expected['spec']['ttlSecondsAfterFinished'], 600)
+        self.assertEqual(job['ttlSecondsAfterFinished'], 900)
+        for section in pod['containers'][0]['resources'].values():
+            self.assertNotIn('ephemeral-storage', section)
+        for target in ('capacity', 'class', 'access', 'volume', 'mount', 'jobset_ttl', 'job_ttl'):
+            actual = copy.deepcopy(expected)
+            changed_job = actual['spec']['replicatedJobs'][0]['template']['spec']
+            changed_pod = changed_job['template']['spec']
+            changed_claim = changed_pod['volumes'][-1]['ephemeral']['volumeClaimTemplate']['spec']
+            if target == 'capacity':
+                changed_claim['resources']['requests']['storage'] = '100Gi'
+            elif target == 'class':
+                changed_claim['storageClassName'] = 'other'
+            elif target == 'access':
+                changed_claim['accessModes'] = ['ReadOnlyMany']
+            elif target == 'volume':
+                changed_pod['volumes'][-1] = {'name': 'run-scratch', 'emptyDir': {}}
+            elif target == 'mount':
+                changed_pod['containers'][0]['volumeMounts'][-1]['mountPath'] = '/other'
+            elif target == 'jobset_ttl':
+                actual['spec'].pop('ttlSecondsAfterFinished')
+            else:
+                changed_job.pop('ttlSecondsAfterFinished')
+            with self.subTest(target=target), self.assertRaises(ValueError):
+                controller.validate_recipe(actual=actual, expected=expected, service_account=None)

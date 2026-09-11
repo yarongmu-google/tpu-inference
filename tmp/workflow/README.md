@@ -22,10 +22,18 @@ bash tmp/workflow/run.sh cleanup <saved-run-directory>
 
 A description specifies its profile, image build, code snapshot, inputs, run
 command, outputs and execution limits. The generic examples remain under
-`examples/`. `execution.scratch_gib` sets a disk-backed emptyDir size ceiling
-at `/run-scratch`; it does not add a container disk request or limit. The recipe
-verifier checks resource fields and storage mounts before submission. Actual
-free space is checked by the workload after placement on a node.
+`examples/`. `execution.scratch_gib` sets scratch capacity at `/run-scratch`.
+With `execution.scratch_storage_class`, it provisions a generic ephemeral PVC
+using that class and `ReadWriteOnce`. Without a class, it remains an emptyDir
+size ceiling. Neither adds a container ephemeral-storage request or limit.
+The verifier checks the volume, capacity, mount and cleanup deadlines after
+CDK rendering. A provisioned-scratch JobSet expires 600 seconds after completion
+and its child Job has a 900-second expiry, matching the supplied working recipe.
+Pod deletion garbage-collects its PVC; the storage class must use `Delete` to
+reclaim the backing disk. Disk reclamation is asynchronous and is not certified
+by the image/GCS cleanup flag. Results are published to GCS before the workload
+exits and remain collectible after Pod deletion. Active jobs retain their disk.
+Actual provisioning, capacity and disk reclamation require live validation.
 
 Result archives belong to the description's output directory. `local/` contains
 ignored controller/build state and compressed launcher logs. A nonzero exit is

@@ -34,10 +34,14 @@ def checkpoint(model: str, destination: Path) -> None:
     if any(type(entry.size) is not int or entry.size <= 0 for entry in files):
         raise ValueError('Checkpoint file sizes are missing')
     needed = sum(entry.size for entry in files)
-    free = shutil.disk_usage(cache).free
+    disk = shutil.disk_usage(cache)
+    free = disk.free
+    print(f'CHECKPOINT_DISK: cache={cache}; total={disk.total / 1024**3:.1f} GiB; '
+          f'used={disk.used / 1024**3:.1f} GiB; free={disk.free / 1024**3:.1f} GiB', flush=True)
     reserve = 64 * 1024**3
     record = {'model': model, 'revision': info.sha, 'checkpoint_bytes': needed,
-              'free_bytes_before': free, 'reserve_bytes': reserve, 'cache': str(cache),
+              'free_bytes_before': free, 'disk_total_bytes': disk.total, 'disk_used_bytes_before': disk.used,
+              'reserve_bytes': reserve, 'cache': str(cache),
               'files': [{'path': entry.rfilename, 'bytes': entry.size} for entry in files]}
     destination.write_text(json.dumps(record, indent=2) + '\n')
     print(f'CHECKPOINT_CAPACITY: need {needed / 1024**3:.1f} GiB + 64 GiB headroom; free {free / 1024**3:.1f} GiB', flush=True)

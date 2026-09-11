@@ -33,7 +33,8 @@ outputs:
 execution:
   cleanup: after_collection
   timeout_seconds: 64800
-  scratch_gib: 600  # Volume size ceiling, not a scheduler disk reservation.
+  scratch_gib: 1024
+  scratch_storage_class: premium-rwo
   max_in_flight: 1
   wait_seconds: 86400
   archive_seconds: 1200

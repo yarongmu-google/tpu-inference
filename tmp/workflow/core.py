@@ -284,9 +284,15 @@ def load_description(path: Path) -> tuple[dict, dict]:
             raise ValueError('Invalid or reserved extra-output name')
         absolute(value)
     execution = data.setdefault('execution', {})
-    keys(execution, {'timeout_seconds', 'max_in_flight', 'poll_seconds', 'archive_seconds', 'wait_seconds', 'cleanup', 'scratch_gib'})
+    keys(execution, {'timeout_seconds', 'max_in_flight', 'poll_seconds', 'archive_seconds', 'wait_seconds', 'cleanup', 'scratch_gib', 'scratch_storage_class'})
     if 'scratch_gib' in execution:
         positive(execution['scratch_gib'], maximum=4096)
+    if 'scratch_storage_class' in execution:
+        storage_class = execution['scratch_storage_class']
+        if ('scratch_gib' not in execution or not isinstance(storage_class, str)
+                or len(storage_class) > 253
+                or not re.fullmatch(r'[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\.[a-z0-9](?:[-a-z0-9]*[a-z0-9])?)*', storage_class)):
+            raise ValueError('scratch_storage_class requires scratch_gib and a valid storage class name')
     cleanup = execution.setdefault('cleanup', 'manual')
     if cleanup not in {'manual', 'after_collection'}:
         raise ValueError('execution.cleanup must be manual or after_collection')
