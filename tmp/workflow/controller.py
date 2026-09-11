@@ -385,7 +385,7 @@ class Job:
                         or manifest.get('image') != self.state['image'] or manifest.get('config_sha256') != self.state['config_sha256']):
                     raise ValueError('Artifact manifest identity differs')
                 if live and 'archive' in manifest:
-                    self.save(last_output=manifest.get('updated'), workload_state=manifest['state'])
+                    self.save(last_output=manifest.get('updated'), workload_state=manifest['state'], collection_error=None)
                     print(f'[{self.state["run_id"]}] final results compressed; waiting for CDK archival', flush=True)
                     return False
                 if not live and 'archive' in manifest:
@@ -425,7 +425,7 @@ class Job:
                         shutil.copyfile(src=blob, dst=target)
                     verify(root=destination / 'files', entries=selected)
                 if live:
-                    self.save(last_output=manifest.get('updated'), workload_state=manifest['state'])
+                    self.save(last_output=manifest.get('updated'), workload_state=manifest['state'], collection_error=None)
                     age = max(0, time.time() - manifest.get('updated', time.time()))
                     print(f'[{self.state["run_id"]}] workload={manifest["state"]}; snapshot age={age:.0f}s', flush=True)
                     for filename in ('stdout.log', 'stderr.log'):
@@ -437,7 +437,7 @@ class Job:
                     return False
                 if manifest['state'] not in {'succeeded', 'failed'} or type(manifest['exit_code']) is not int:
                     raise ValueError('Final manifest not yet available')
-                self.save(artifacts_verified=True, artifact_exit_code=manifest['exit_code'])
+                self.save(artifacts_verified=True, artifact_exit_code=manifest['exit_code'], collection_error=None)
                 return manifest['exit_code'] == 0 and manifest['state'] == 'succeeded'
             except Exception as error:
                 self.save(collection_error=str(error))
@@ -760,13 +760,17 @@ def locked_job(directory: Path, action: str = 'run', discard: bool = False) -> i
               f'phase={job.state["phase"]}; CDK job={submission}', flush=True)
         try:
             from pack_results import export_run
-            export_run(directory=directory)
+            archive = export_run(directory=directory)
+            if archive is None:
+                raise RuntimeError('Result archive deferred; recover after image preparation exits')
+            print(f'Ready to commit: {archive} and {archive.with_suffix("").with_suffix(".json")}', flush=True)
         except Exception as archive_error:
             (directory / 'archive-error.txt').write_text(traceback.format_exc())
             print(f'Result compression failed: {archive_error}; raw files retained at {directory}', file=sys.stderr)
             result = 1
         print(f'Results and diagnostics: {directory}', flush=True)
-        print('Manual cleanup: bash tmp/workflow/run.sh cleanup ' + shlex.quote(str(directory)), flush=True)
+        if result:
+            print('Recover: bash tmp/workflow/run.sh collect ' + shlex.quote(str(directory)), flush=True)
         return result
 
 
@@ -806,9 +810,28 @@ def run_campaign(path: Path) -> int:
         return 130 if STOP.is_set() else int(bool(failures))
 
 
+def recover_latest(root: Path) -> int:
+    campaigns = sorted(root.glob('*/campaign.json'), key=lambda path: path.stat().st_mtime, reverse=True)
+    campaigns = [path for path in campaigns if not read_document(path).get('dry_run')]
+    if not campaigns:
+        raise ValueError(f'No saved campaign under {root}')
+    campaign = campaigns[0]
+    print(f'Recovering existing results from {campaign.parent}', flush=True)
+    failures = 0
+    for name in read_document(campaign)['jobs']:
+        directory = safe_path(root=campaign.parent, relative=name)
+        state = read_document(directory / 'state.json')
+        if not state.get('job_id') or not state.get('submission_started'):
+            print(f'{name}: no confirmed submitted job; recovery will not submit it', flush=True)
+            failures += 1
+            continue
+        failures += locked_job(directory=directory, action='collect') != 0
+    return int(bool(failures))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('target', help='Description file, or resume/status/collect/cleanup/archive')
+    parser.add_argument('target', help='Description file, or recover/resume/status/collect/cleanup/archive')
     parser.add_argument('directory', nargs='?', type=Path)
     parser.add_argument('--name')
     parser.add_argument('--dry-run', action='store_true')
@@ -827,12 +850,14 @@ def main() -> int:
         for executable in ('gcloud', 'cdk'):
             if shutil.which(executable) is None:
                 raise ValueError(f'Required CPU-VM command not found: {executable}')
-    if args.target in {'resume', 'status', 'collect', 'cleanup'}:
+    if args.target in {'recover', 'resume', 'status', 'collect', 'cleanup'}:
         if args.directory is None:
             parser.error('Saved campaign or job directory is required')
         path = args.directory.resolve()
         if args.name or args.dry_run or args.configure_profile or args.profile_source:
             parser.error('Saved runs keep their original description and name')
+        if args.target == 'recover':
+            return recover_latest(root=path)
         if args.target == 'status':
             jobs = [path / n for n in json.loads((path / 'campaign.json').read_text())['jobs']] if (path / 'campaign.json').exists() else [path]
             for directory in jobs:

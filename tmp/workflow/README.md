@@ -425,3 +425,17 @@ image/GCS cleanup flag. Results are published to GCS before workload exit and
 remain collectible after Pod deletion. Active jobs retain their disk. Actual
 provisioning, capacity and disk reclamation require live validation. Scratch is
 reserved from code/input destinations and excluded from result archives.
+
+The launcher starts a separate local session for the controller and writes its
+output directly to disk. Closing the terminal, losing SSH, or pressing Ctrl-C
+stops only the log viewer. The CPU VM must stay running. The launcher prints the
+controller PID and raw log path; completion compresses that log and prints its
+path. A CPU reboot or forced process kill requires explicit recovery.
+
+To collect the latest existing campaign after reconnecting, run the experiment's
+`run.sh --recover`. Recovery never builds an image or submits a job; it collects
+confirmed saved job IDs and refuses a run already owned by an active controller.
+An unfinished remote workload retains its cloud resources for a later recovery.
+Cleanup first creates and verifies the local result archive. If archive creation
+fails, cloud resources remain. The final report lists the archive and metadata
+ready to commit; staging and pushing remain explicit actions.
