@@ -1,0 +1,258 @@
+Diagnostic report: /home/ymu_google_com/tpu-inference/tmp/diag-oDZR2Hcw.txt
+
++ git rev-parse --show-toplevel
+/home/ymu_google_com/tpu-inference
+
++ git branch --show-current
+bench
+
++ git log -1 --format=%h\ %s
+3101275af1 Add run collection diagnostics.
+
++ git worktree list
+/home/ymu_google_com/tpu-inference       3101275af1 [bench]
+/home/ymu_google_com/tpu-inference-topk  ddc64ac9f4 [topk]
+
++ git status --short --untracked-files=all
+?? tmp/diag-oDZR2Hcw.txt
+
++ git diff --cached --stat
+
++ ls -lt tmp/baselines/results/archives
+total 320
+-rw-rw-r-- 1 ymu_google_com ymu_google_com    344 Sep 10 23:15 serving-baseline-retry-defau-9353b40c046a48cbac4cff1f.json
+-rw-rw-r-- 1 ymu_google_com ymu_google_com 173209 Sep 10 23:15 serving-baseline-retry-defau-9353b40c046a48cbac4cff1f.tar.gz
+-rw-rw-r-- 1 ymu_google_com ymu_google_com    348 Sep 10 04:42 serving-baselines-default-63caea5f9cdd4432976b85de.json
+-rw-rw-r-- 1 ymu_google_com ymu_google_com 142354 Sep 10 04:42 serving-baselines-default-63caea5f9cdd4432976b85de.tar.gz
+
++ git ls-files -- tmp/baselines/results/archives
+tmp/baselines/results/archives/serving-baseline-retry-defau-9353b40c046a48cbac4cff1f.json
+tmp/baselines/results/archives/serving-baseline-retry-defau-9353b40c046a48cbac4cff1f.tar.gz
+tmp/baselines/results/archives/serving-baselines-default-63caea5f9cdd4432976b85de.json
+tmp/baselines/results/archives/serving-baselines-default-63caea5f9cdd4432976b85de.tar.gz
+
++ ls -lt tmp/serving-comparison/results/archives
+ls: cannot access 'tmp/serving-comparison/results/archives': No such file or directory
+
++ git ls-files -- tmp/serving-comparison/results/archives
+
++ ls -lt tmp/workflow/local/logs
+total 2708
+-rw------- 1 ymu_google_com ymu_google_com 1000709 Sep 11 04:23 launch-20260911T004510Z-hsrIMaqf.log
+-rw-rw-r-- 1 ymu_google_com ymu_google_com   16521 Sep 10 23:15 launch-20260910T223559Z-KQFYQdxj.log.gz
+-rw------- 1 ymu_google_com ymu_google_com  155058 Sep 10 23:15 launch-20260910T223559Z-KQFYQdxj.log
+-rw-rw-r-- 1 ymu_google_com ymu_google_com   28074 Sep 10 04:42 launch-20260910T033940Z-sqwIIxyy.log.gz
+-rw------- 1 ymu_google_com ymu_google_com  247083 Sep 10 04:42 launch-20260910T033940Z-sqwIIxyy.log
+-rw------- 1 ymu_google_com ymu_google_com  262944 Sep 10 03:11 launch-20260910T020458Z-mFh16FFO.log
+-rw------- 1 ymu_google_com ymu_google_com  802137 Sep  9 23:46 launch-20260909T211144Z-4cbB0Jn6.log
+-rw------- 1 ymu_google_com ymu_google_com   11610 Sep  9 20:15 launch-20260909T201415Z-Xe32x8BU.log
+-rw------- 1 ymu_google_com ymu_google_com  203321 Sep  9 19:29 launch-20260909T185933Z-8iJUH9tk.log
+-rw------- 1 ymu_google_com ymu_google_com    9541 Sep  9 18:28 launch-20260909T182537Z-11sCJOzD.log
+
++ git ls-files -- tmp/workflow/local/logs
+tmp/workflow/local/logs/launch-20260910T033940Z-sqwIIxyy.log.gz
+tmp/workflow/local/logs/launch-20260910T223559Z-KQFYQdxj.log.gz
+Launcher outcomes:
+Result archive: /home/ymu_google_com/tpu-inference/tmp/baselines/results/archives/serving-baselines-default-63caea5f9cdd4432976b85de.tar.gz
+Results and diagnostics: /home/ymu_google_com/tpu-inference/tmp/baselines/results/serving-baselines-ae0cac162ff9477a9e7286b5/serving-baselines-default-63caea5f9cdd4432976b85de
+Launcher FAILED (exit 1)
+Result archive: /home/ymu_google_com/tpu-inference/tmp/baselines/results/archives/serving-baseline-retry-defau-9353b40c046a48cbac4cff1f.tar.gz
+Results and diagnostics: /home/ymu_google_com/tpu-inference/tmp/baselines/results/serving-baseline-retry-f79ff3fb2f914a2592520963/serving-baseline-retry-defau-9353b40c046a48cbac4cff1f
+Launcher FAILED (exit 1)
+
+Saved state: tmp/baselines/results/serving-baseline-disk-5d26d3c380db4d7eb22a0979/serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/state.json
+{
+  "run_id": "serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5",
+  "job_id": "j-7b92a35e-813c-4953-b540",
+  "phase": "RUNNING",
+  "exit_code": null,
+  "artifact_exit_code": null,
+  "artifacts_verified": null,
+  "deleted": null,
+  "resources_cleaned": null,
+  "uri": "gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5",
+  "collection_error": "Command exit 1; see /home/ymu_google_com/tpu-inference/tmp/baselines/results/serving-baseline-disk-5d26d3c380db4d7eb22a0979/serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/commands/00574-gcloud.stderr",
+  "last_error": null
+}
+Local collected files exist: False
+
++ gcloud --project cloud-tpu-inference-test storage ls 'gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/**'
+Exit code: 0
+stdout: gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/archives/
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/archives/ce29c4470cb600d6cbbea909b042ca3375823d5c57d4aee64a75721ac97def87.tar.gz
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/control/ready.json
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/control/start.json
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/input/code/preflight.py
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/input/code/runner.py
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/input/inputs/server_commands/README.md
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/input/inputs/server_commands/agentic_benchmark/README.md
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/input/inputs/server_commands/agentic_benchmark/benchmark_agentic.py
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/input/inputs/server_commands/backend_request_func.py
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/input/inputs/server_commands/benchmark_core.py
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/input/inputs/server_commands/benchmark_dataset.py
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/input/inputs/server_commands/benchmark_serving.py
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/input/inputs/server_commands/benchmark_utils.py
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/input/inputs/server_commands/infx_client.sh
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/input/inputs/server_commands/infx_server.sh
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/input/run.json
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/manifest.json
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/00dfc1d7ad7581bdfbbc6c5aab2911c3860c363cec1b4c00d21ed642559aec48
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/0168a8f0f14e58876f5d781d66bf54dc35b79ae43613cf07a00041ee588cc757
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/016934e65767c3edfd80eb368a952a3e872ca9a705f210994a5db8d4ae842d99
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/01bd1e5af5d6a4e842afe57a4eff51ee0ba54b3f20bce9d37aeb59cebcc72e6e
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/01c0e9e328272a7b5193c1cb5e1313eee4e29834ae437be03bbd91cf9eb360cb
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/02294a45f9c8792cb574aef31e0b9d828db8727afa91106da3ae8b3b3b3d07fb
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/0264cb573142c2e0a68c71151c0028c639cb32318b627eb7ccf94c0365705ff4
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/02ff31767955fd106946b0d15a6febd2ed504a8e3ed5e1c014723b261ccc7f4a
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/032294dafc771bd3455d03642bfb9c554c61d51e7410607140eb84306c2f78b6
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/036f91037112fb6241f780973c3b41bcf5e0b59e8d23efd362203a7cfeb078e7
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/03f4972fbdfb65dd7c0cfd5e4a947e9b24a1b0878ee14fcde15110c1ca6a560d
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/04968041561559e6e9cf9abbda3ed040b0829fe5407738b1dc110b492c0467bd
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/04a29a580854cc7b566ad6a26ddd312d6489a989c57fe1e890f35e2e44c72cf4
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/0504a6150a34258804e5f022a7697b089129f19e165eaa44a9a54444a6504712
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/05e42f9814f03f678c0844146acf461bd7d173d3de5edba3fb3077351d4474b6
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/07691b2ea8525f07d1e7cf8241bd91afc0c8028569e0476d7232a1ebefbd1020
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/07ef8179f69ee5c9f90513d2566a7e0df59d9149967f2b342b0d1607b8ffa76f
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/082788067dc679450ee6f0aedf6425b540529a713285f7ee9b183953ac54e841
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/08542fcb6dcf0f89e223bceb09974b5bce0ebf825b861fff34aaea054c7da060
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/08f1b059b899b0eb92eba64cdaa9783915d990eb5a893391bbe15fd3f51d1a21
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/0906fade987f78d0e84900ddd1ee41c50228031e1ed4b01b08c55f3c0f6a7697
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/09d51e868cab60e0acd76d32bd3d363feb71fd0a715aeda1d8f5f7be20d335c2
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/0a929ebf747593cf2b983c3754a6202702231f00ee0d990f668b8a73802dc80e
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/0b175e577564f52a33a8ee1da9d9262f627e42497769d87029eae438988fabcd
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/0b259d929fddf46789db7b415cf28e8d3536d033386bd6a8bc065b377002e5cc
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/0b527cea8fbbc06027c37b5a9c42fe1fee4dbaf134326f2ee4fc28b225fa78ae
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/0c7277524079f142f868caca0f3581ea9a4ba9108199e8b14debdda8cb2da40b
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/0cfcfd8a525a624de67ac7887aa9dc75677d546686a8310d3da0bbf99f19e888
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/0d25af2db1097e7ca312f108f63c455c90b1bd70b04f16039a37628681dda361
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/0ef6bd118a1bb4768f690dc30b81f7b32b548fa25554e8f00fdc4967003a6282
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/0f7737b190907d2180abc264fcdb6293c9309ad3d977aec3ccd01ebdc031fe68
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/106f90ea1d1ccd32ca0fca2fbc564aab6aa8fd12704669d7dc487d730000ee33
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/10bb54144b9fdce2b0cf31cbf0c15cbd7ba7c6425a4cc5f7021266d3c369ee2d
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/113a3b4ce3e29271b7458481346579481c4847d16435b4c79e1449bb286d116e
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/117bc81aab93badeab49451c68eec070b154a27bfbf2f4ee9a9aa8fbff760248
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/125052668d40fd024811a5ba67e0f029772203ea65cfa272c032a73831febfa8
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/1342b45fc834ba77f3744c15962c8b500543d148934471bef3beca00b1deffb7
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/137b089352a85866d0eafb71f7b6d1a3f90ee920ab2c3352d32677221186282f
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/13b20170d22bfe5dec5da84727495d45d2f65ac3cd56bf3123605f6b0967832a
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/13d3247c4b688278d441b8073dcd426f0cd38ff42744ee9c430df21aeb7f58ae
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/13d3a0eca6d222473f8be1fb0fdefebd7dbfbd4d6e98dbe11e572d38beae4bf7
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/147ddf86d2a1d8f287fafc22b6a7fb2b587087ba83c034cbae747c36e1e2dc61
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/150d710674cb01ba75c522e928373b9fbc7d02dcefa84272f80316adf579db58
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/157b461dbc5ebc607845c87793b370bed1434ec6e58aa4940ea5c502e8980e4f
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/159a8f15f4e1dc760982c9d0060d5babdbc8fd9b42f51b4c810a56b9ad60a81a
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/15a008c218a9a08e273f80a7be905b6bb80c2bc7d5fb0190cbc5e442073726d3
+gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/objects/16
+stderr: 
+
++ gcloud --project cloud-tpu-inference-test storage objects describe gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/manifest.json
+Exit code: 0
+stdout: bucket: cloud-devkit
+content_type: application/json
+crc32c_hash: YeEQSA==
+creation_time: 2026-09-11T04:27:08+0000
+custom_fields:
+  gcsfuse_mtime: '2026-09-11T04:27:08.248800129Z'
+etag: CJbK2/rX5ZYDEAE=
+generation: '1789100828321046'
+md5_hash: vHPXa5o495OYAn1Hty0VUg==
+metageneration: 1
+name: jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/manifest.json
+size: 6542
+storage_class: STANDARD
+storage_class_update_time: 2026-09-11T04:27:08+0000
+storage_url: gs://cloud-devkit/jobs/j-7b92a35e-813c-4953-b540/outputs/workflow-serving-baseline-disk-defaul-af421bd48e8f47a88a11c4a5/manifest.json#1789100828321046
+update_time: 2026-09-11T04:27:08+0000
+
+stderr: 
+
+Saved state: tmp/baselines/results/serving-baseline-retry-f79ff3fb2f914a2592520963/serving-baseline-retry-defau-9353b40c046a48cbac4cff1f/state.json
+{
+  "run_id": "serving-baseline-retry-defau-9353b40c046a48cbac4cff1f",
+  "job_id": "j-aed2eaab-3474-40fc-a6dc",
+  "phase": "CLEANED",
+  "exit_code": 1,
+  "artifact_exit_code": 1,
+  "artifacts_verified": true,
+  "deleted": true,
+  "resources_cleaned": true,
+  "uri": "gs://cloud-devkit/jobs/j-aed2eaab-3474-40fc-a6dc/outputs/workflow-serving-baseline-retry-defau-9353b40c046a48cbac4cff1f",
+  "collection_error": null,
+  "last_error": null
+}
+Local collected files exist: True
+
++ gcloud --project cloud-tpu-inference-test storage ls 'gs://cloud-devkit/jobs/j-aed2eaab-3474-40fc-a6dc/outputs/workflow-serving-baseline-retry-defau-9353b40c046a48cbac4cff1f/**'
+Exit code: 0
+stdout: gs://cloud-devkit/jobs/j-aed2eaab-3474-40fc-a6dc/outputs/workflow-serving-baseline-retry-defau-9353b40c046a48cbac4cff1f/archives/
+gs://cloud-devkit/jobs/j-aed2eaab-3474-40fc-a6dc/outputs/workflow-serving-baseline-retry-defau-9353b40c046a48cbac4cff1f/objects/
+
+stderr: 
+
++ gcloud --project cloud-tpu-inference-test storage objects describe gs://cloud-devkit/jobs/j-aed2eaab-3474-40fc-a6dc/outputs/workflow-serving-baseline-retry-defau-9353b40c046a48cbac4cff1f/manifest.json
+Exit code: 1
+stdout: 
+stderr: ERROR: (gcloud.storage.objects.describe) gs://cloud-devkit/jobs%2Fj-aed2eaab-3474-40fc-a6dc%2Foutputs%2Fworkflow-serving-baseline-retry-defau-9353b40c046a48cbac4cff1f%2Fmanifest.json not found: 404.
+
+Probe failed; inspect the error to distinguish missing objects from access or network failures.
+
+Saved state: tmp/baselines/results/serving-baselines-ae0cac162ff9477a9e7286b5/serving-baselines-default-63caea5f9cdd4432976b85de/state.json
+{
+  "run_id": "serving-baselines-default-63caea5f9cdd4432976b85de",
+  "job_id": "j-a9e7a0e9-322a-4721-9e7b",
+  "phase": "COLLECTING",
+  "exit_code": null,
+  "artifact_exit_code": null,
+  "artifacts_verified": false,
+  "deleted": null,
+  "resources_cleaned": null,
+  "uri": "gs://cloud-devkit/jobs/j-a9e7a0e9-322a-4721-9e7b/outputs/workflow-serving-baselines-default-63caea5f9cdd4432976b85de",
+  "collection_error": "Command exit 1; see /home/ymu_google_com/tpu-inference/tmp/baselines/results/serving-baselines-ae0cac162ff9477a9e7286b5/serving-baselines-default-63caea5f9cdd4432976b85de/commands/00188-gcloud.stderr",
+  "last_error": "Archive wait expired; resume to continue collection"
+}
+Local collected files exist: False
+
++ gcloud --project cloud-tpu-inference-test storage ls 'gs://cloud-devkit/jobs/j-a9e7a0e9-322a-4721-9e7b/outputs/workflow-serving-baselines-default-63caea5f9cdd4432976b85de/**'
+Exit code: 0
+stdout: gs://cloud-devkit/jobs/j-a9e7a0e9-322a-4721-9e7b/outputs/workflow-serving-baselines-default-63caea5f9cdd4432976b85de/control/start.json
+gs://cloud-devkit/jobs/j-a9e7a0e9-322a-4721-9e7b/outputs/workflow-serving-baselines-default-63caea5f9cdd4432976b85de/input/code/preflight.py
+gs://cloud-devkit/jobs/j-a9e7a0e9-322a-4721-9e7b/outputs/workflow-serving-baselines-default-63caea5f9cdd4432976b85de/input/code/runner.py
+gs://cloud-devkit/jobs/j-a9e7a0e9-322a-4721-9e7b/outputs/workflow-serving-baselines-default-63caea5f9cdd4432976b85de/input/inputs/server_commands/README.md
+gs://cloud-devkit/jobs/j-a9e7a0e9-322a-4721-9e7b/outputs/workflow-serving-baselines-default-63caea5f9cdd4432976b85de/input/inputs/server_commands/agentic_benchmark/README.md
+gs://cloud-devkit/jobs/j-a9e7a0e9-322a-4721-9e7b/outputs/workflow-serving-baselines-default-63caea5f9cdd4432976b85de/input/inputs/server_commands/agentic_benchmark/benchmark_agentic.py
+gs://cloud-devkit/jobs/j-a9e7a0e9-322a-4721-9e7b/outputs/workflow-serving-baselines-default-63caea5f9cdd4432976b85de/input/inputs/server_commands/backend_request_func.py
+gs://cloud-devkit/jobs/j-a9e7a0e9-322a-4721-9e7b/outputs/workflow-serving-baselines-default-63caea5f9cdd4432976b85de/input/inputs/server_commands/benchmark_core.py
+gs://cloud-devkit/jobs/j-a9e7a0e9-322a-4721-9e7b/outputs/workflow-serving-baselines-default-63caea5f9cdd4432976b85de/input/inputs/server_commands/benchmark_dataset.py
+gs://cloud-devkit/jobs/j-a9e7a0e9-322a-4721-9e7b/outputs/workflow-serving-baselines-default-63caea5f9cdd4432976b85de/input/inputs/server_commands/benchmark_serving.py
+gs://cloud-devkit/jobs/j-a9e7a0e9-322a-4721-9e7b/outputs/workflow-serving-baselines-default-63caea5f9cdd4432976b85de/input/inputs/server_commands/benchmark_utils.py
+gs://cloud-devkit/jobs/j-a9e7a0e9-322a-4721-9e7b/outputs/workflow-serving-baselines-default-63caea5f9cdd4432976b85de/input/inputs/server_commands/infx_client.sh
+gs://cloud-devkit/jobs/j-a9e7a0e9-322a-4721-9e7b/outputs/workflow-serving-baselines-default-63caea5f9cdd4432976b85de/input/inputs/server_commands/infx_server.sh
+gs://cloud-devkit/jobs/j-a9e7a0e9-322a-4721-9e7b/outputs/workflow-serving-baselines-default-63caea5f9cdd4432976b85de/input/run.json
+gs://cloud-devkit/jobs/j-a9e7a0e9-322a-4721-9e7b/outputs/workflow-serving-baselines-default-63caea5f9cdd4432976b85de/owner.json
+
+stderr: 
+
++ gcloud --project cloud-tpu-inference-test storage objects describe gs://cloud-devkit/jobs/j-a9e7a0e9-322a-4721-9e7b/outputs/workflow-serving-baselines-default-63caea5f9cdd4432976b85de/manifest.json
+Exit code: 1
+stdout: 
+stderr: ERROR: (gcloud.storage.objects.describe) gs://cloud-devkit/jobs%2Fj-a9e7a0e9-322a-4721-9e7b%2Foutputs%2Fworkflow-serving-baselines-default-63caea5f9cdd4432976b85de%2Fmanifest.json not found: 404.
+
+Probe failed; inspect the error to distinguish missing objects from access or network failures.
+
+Saved state: workflow/local/results/inf-sweep-8db2b8e6d7b34e70b04a6c7e/inf-sweep-default-e96dd75d01ad46eb84080d9b/state.json
+{
+  "run_id": "inf-sweep-default-e96dd75d01ad46eb84080d9b",
+  "job_id": null,
+  "phase": "CLEANING_RESOURCES",
+  "exit_code": 1,
+  "artifact_exit_code": null,
+  "artifacts_verified": null,
+  "deleted": true,
+  "resources_cleaned": null,
+  "uri": null,
+  "collection_error": null,
+  "last_error": "Image preparation exited 1; see /home/ymu_google_com/tpu-inference/workflow/local/results/inf-sweep-8db2b8e6d7b34e70b04a6c7e/inf-sweep-default-e96dd75d01ad46eb84080d9b/image"
+}
+Local collected files exist: False
+GCS: UNKNOWN - saved project or storage URI missing
