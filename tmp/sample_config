@@ -1,0 +1,282 @@
+id: j-900d8725-8d39-422d-9f05
+user: caojx_google_com
+hostname: caojx-vm
+recipe: agentx-397b-perf-singlehost
+cmd: cdk job create agentx-397b-perf-singlehost -t base-c40,qwen35-agentx-kv-offloading-0910-600gb-37 CLIENT_CONCURRENCIES=40 MAX_NUM_SEQS=40 MAX_NUM_BATCHED_TOKENS=16384 KV_OFFLOAD=true KV_OFFLOADING_SIZE=644245094400 KV_CACHE_MEMORY_BYTES=41875931136 TPU_RPA_FOLD_KV_HEAD_DIM=1 TPU_ENABLE_GDN_DYNAMIC_TILING=0 OFFLOAD_MODE=off SERVER_IMAGE=us-central1-docker.pkg.dev/cloud-tpu-inference-test/vllm-tpu-rdna/vllm-torchtpu-caojx_google_com:caojx-fix-rpa-static-constants-ebusy CLIENT_IMAGE=us-central1-docker.pkg.dev/cloud-tpu-inference-test/vllm-tpu-rdna/inferencex-agentx:caojx-latest ENABLE_PERFETTO=true
+tags:
+  - base-c40
+  - qwen35-agentx-kv-offloading-0910-600gb-37
+create_time: 2026-09-11T00:11:30.197Z
+complete_time: 0001-01-01T00:00:00Z
+state: Active
+job_status: Running
+jobs:
+  - name: j-900d8725-8d39-422d-9f05-bench-0
+    pods:
+      - name: j-900d8725-8d39-422d-9f05-bench-0-0-r7zs5
+        containers:
+          - name: bench
+            image: us-central1-docker.pkg.dev/cloud-tpu-inference-test/vllm-tpu-rdna/inferencex-agentx:caojx-latest
+        status: Running
+        node_name: gke-cloud-devkit-gke-high-perf-nodes--ae6ba656-552l
+        k8s_events:
+          - reason: Scheduled
+            message: Successfully assigned cloud-devkit-jobs/j-900d8725-8d39-422d-9f05-bench-0-0-r7zs5 to gke-cloud-devkit-gke-high-perf-nodes--ae6ba656-552l
+            source: default-scheduler
+            first_seen: 2026-09-11T00:12:16Z
+            last_seen: 2026-09-11T00:12:16Z
+            count: 1
+          - reason: Created
+            message: Container created
+            source: kubelet
+            first_seen: 2026-09-11T00:12:17Z
+            last_seen: 2026-09-11T00:12:17Z
+            count: 1
+          - reason: Started
+            message: Container started
+            source: kubelet
+            first_seen: 2026-09-11T00:12:17Z
+            last_seen: 2026-09-11T00:12:17Z
+            count: 1
+          - reason: Pulled
+            message: Container image "us-central1-artifactregistry.gcr.io/gke-release/gke-release/gcs-fuse-csi-driver-sidecar-mounter:v1.22.9-gke.2@sha256:462771856754b38379c9d5bb57fa42469d7966e30883e55f88d2621037b0fc6a" already present on machine and can be accessed by the pod
+            source: kubelet
+            first_seen: 2026-09-11T00:12:17Z
+            last_seen: 2026-09-11T00:12:17Z
+            count: 1
+          - reason: Pulled
+            message: 'Successfully pulled image "busybox" in 155ms (155ms including waiting). Image size: 2236931 bytes.'
+            source: kubelet
+            first_seen: 2026-09-11T00:12:18Z
+            last_seen: 2026-09-11T00:12:18Z
+            count: 1
+          - reason: Pulling
+            message: Pulling image "busybox"
+            source: kubelet
+            first_seen: 2026-09-11T00:12:18Z
+            last_seen: 2026-09-11T00:12:18Z
+            count: 1
+          - reason: Created
+            message: Container created
+            source: kubelet
+            first_seen: 2026-09-11T00:12:19Z
+            last_seen: 2026-09-11T00:12:19Z
+            count: 1
+          - reason: Started
+            message: Container started
+            source: kubelet
+            first_seen: 2026-09-11T00:12:19Z
+            last_seen: 2026-09-11T00:12:19Z
+            count: 1
+          - reason: Started
+            message: Container started
+            source: kubelet
+            first_seen: 2026-09-11T00:12:20Z
+            last_seen: 2026-09-11T00:12:20Z
+            count: 1
+          - reason: Created
+            message: Container created
+            source: kubelet
+            first_seen: 2026-09-11T00:12:20Z
+            last_seen: 2026-09-11T00:12:20Z
+            count: 1
+          - reason: Pulled
+            message: 'Successfully pulled image "us-central1-docker.pkg.dev/cloud-tpu-inference-test/vllm-tpu-rdna/inferencex-agentx:caojx-latest" in 297ms (297ms including waiting). Image size: 842441912 bytes.'
+            source: kubelet
+            first_seen: 2026-09-11T00:12:20Z
+            last_seen: 2026-09-11T00:12:20Z
+            count: 1
+          - reason: Pulling
+            message: Pulling image "us-central1-docker.pkg.dev/cloud-tpu-inference-test/vllm-tpu-rdna/inferencex-agentx:caojx-latest"
+            source: kubelet
+            first_seen: 2026-09-11T00:12:20Z
+            last_seen: 2026-09-11T00:12:20Z
+            count: 1
+        deletion_timestamp: null
+        log_archived: false
+    status: Running
+    k8s_events:
+      - reason: Suspended
+        message: Job suspended
+        source: job-controller
+        first_seen: 2026-09-11T00:12:15Z
+        last_seen: 2026-09-11T00:12:15Z
+        count: 1
+      - reason: SuccessfulCreate
+        message: 'Created pod: j-900d8725-8d39-422d-9f05-bench-0-0-r7zs5'
+        source: job-controller
+        first_seen: 2026-09-11T00:12:16Z
+        last_seen: 2026-09-11T00:12:16Z
+        count: 1
+      - reason: Resumed
+        message: Job resumed
+        source: job-controller
+        first_seen: 2026-09-11T00:12:16Z
+        last_seen: 2026-09-11T00:12:16Z
+        count: 1
+  - name: j-900d8725-8d39-422d-9f05-vllm-server-0
+    pods:
+      - name: j-900d8725-8d39-422d-9f05-vllm-server-0-0-crwjm
+        containers:
+          - name: vllm-server
+            image: us-central1-docker.pkg.dev/cloud-tpu-inference-test/vllm-tpu-rdna/vllm-torchtpu-caojx_google_com:caojx-fix-rpa-static-constants-ebusy
+        status: Running
+        node_name: gke-tpu-b484962c-xdg4
+        k8s_events:
+          - reason: FailedScheduling
+            message: '0/114 nodes are available: waiting for ephemeral volume controller to create the persistentvolumeclaim "j-900d8725-8d39-422d-9f05-vllm-server-0-0-crwjm-huggingface-storage". not found'
+            source: default-scheduler
+            first_seen: 2026-09-11T00:12:16Z
+            last_seen: 2026-09-11T00:12:16Z
+            count: 1
+          - reason: Scheduled
+            message: Successfully assigned cloud-devkit-jobs/j-900d8725-8d39-422d-9f05-vllm-server-0-0-crwjm to gke-tpu-b484962c-xdg4
+            source: default-scheduler
+            first_seen: 2026-09-11T00:12:18Z
+            last_seen: 2026-09-11T00:12:18Z
+            count: 1
+          - reason: SuccessfulAttachVolume
+            message: 'AttachVolume.Attach succeeded for volume "vllm-shared-cache-rox-pv" '
+            source: attachdetach-controller
+            first_seen: 2026-09-11T00:12:23Z
+            last_seen: 2026-09-11T00:12:23Z
+            count: 1
+          - reason: SuccessfulAttachVolume
+            message: 'AttachVolume.Attach succeeded for volume "pvc-4fdc85ea-9657-4e7c-9160-a2719828f38c" '
+            source: attachdetach-controller
+            first_seen: 2026-09-11T00:12:27Z
+            last_seen: 2026-09-11T00:12:27Z
+            count: 1
+          - reason: Started
+            message: Container started
+            source: kubelet
+            first_seen: 2026-09-11T00:12:34Z
+            last_seen: 2026-09-11T00:12:34Z
+            count: 1
+          - reason: Created
+            message: Container created
+            source: kubelet
+            first_seen: 2026-09-11T00:12:34Z
+            last_seen: 2026-09-11T00:12:34Z
+            count: 1
+          - reason: Pulled
+            message: Container image "us-central1-artifactregistry.gcr.io/gke-release/gke-release/gcs-fuse-csi-driver-sidecar-mounter:v1.22.9-gke.2@sha256:462771856754b38379c9d5bb57fa42469d7966e30883e55f88d2621037b0fc6a" already present on machine and can be accessed by the pod
+            source: kubelet
+            first_seen: 2026-09-11T00:12:34Z
+            last_seen: 2026-09-11T00:12:34Z
+            count: 1
+          - reason: Pulled
+            message: 'Successfully pulled image "busybox" in 136ms (136ms including waiting). Image size: 2236931 bytes.'
+            source: kubelet
+            first_seen: 2026-09-11T00:12:35Z
+            last_seen: 2026-09-11T00:12:35Z
+            count: 1
+          - reason: Pulling
+            message: Pulling image "busybox"
+            source: kubelet
+            first_seen: 2026-09-11T00:12:35Z
+            last_seen: 2026-09-11T00:12:35Z
+            count: 1
+          - reason: Started
+            message: Container started
+            source: kubelet
+            first_seen: 2026-09-11T00:12:36Z
+            last_seen: 2026-09-11T00:12:36Z
+            count: 1
+          - reason: Created
+            message: Container created
+            source: kubelet
+            first_seen: 2026-09-11T00:12:36Z
+            last_seen: 2026-09-11T00:12:36Z
+            count: 1
+          - reason: Pulled
+            message: 'Successfully pulled image "us-central1-docker.pkg.dev/cloud-tpu-inference-test/vllm-tpu-rdna/vllm-torchtpu-caojx_google_com:caojx-fix-rpa-static-constants-ebusy" in 281ms (281ms including waiting). Image size: 2148108406 bytes.'
+            source: kubelet
+            first_seen: 2026-09-11T00:12:37Z
+            last_seen: 2026-09-11T00:12:37Z
+            count: 1
+          - reason: Created
+            message: Container created
+            source: kubelet
+            first_seen: 2026-09-11T00:12:37Z
+            last_seen: 2026-09-11T00:12:37Z
+            count: 1
+          - reason: Pulling
+            message: Pulling image "us-central1-docker.pkg.dev/cloud-tpu-inference-test/vllm-tpu-rdna/vllm-torchtpu-caojx_google_com:caojx-fix-rpa-static-constants-ebusy"
+            source: kubelet
+            first_seen: 2026-09-11T00:12:37Z
+            last_seen: 2026-09-11T00:12:37Z
+            count: 1
+          - reason: Started
+            message: Container started
+            source: kubelet
+            first_seen: 2026-09-11T00:12:37Z
+            last_seen: 2026-09-11T00:12:37Z
+            count: 1
+        deletion_timestamp: null
+        log_archived: false
+    status: Running
+    k8s_events:
+      - reason: Suspended
+        message: Job suspended
+        source: job-controller
+        first_seen: 2026-09-11T00:12:15Z
+        last_seen: 2026-09-11T00:12:15Z
+        count: 1
+      - reason: SuccessfulCreate
+        message: 'Created pod: j-900d8725-8d39-422d-9f05-vllm-server-0-0-crwjm'
+        source: job-controller
+        first_seen: 2026-09-11T00:12:16Z
+        last_seen: 2026-09-11T00:12:16Z
+        count: 1
+      - reason: Resumed
+        message: Job resumed
+        source: job-controller
+        first_seen: 2026-09-11T00:12:16Z
+        last_seen: 2026-09-11T00:12:16Z
+        count: 1
+log_mode: log-transport
+pf_event_number: 0
+cdk_version: 3535aa9
+cdk_built_time: "2026-09-10T23:05:41Z"
+gcs_mount: true
+k8s_events:
+  - reason: CreatedWorkload
+    message: 'Created Workload: cloud-devkit-jobs/jobset-j-900d8725-8d39-422d-9f05-a455d'
+    source: ""
+    first_seen: 0001-01-01T00:00:00Z
+    last_seen: 0001-01-01T00:00:00Z
+    count: 0
+  - reason: Started
+    message: Admitted by clusterQueue cdk-cluster-queue
+    source: ""
+    first_seen: 0001-01-01T00:00:00Z
+    last_seen: 0001-01-01T00:00:00Z
+    count: 0
+  - reason: SuspendedJobs
+    message: jobset is suspended
+    source: jobset
+    first_seen: 2026-09-11T00:12:15Z
+    last_seen: 2026-09-11T00:12:15Z
+    count: 1
+  - reason: ResumeJobs
+    message: jobset is resumed
+    source: jobset
+    first_seen: 2026-09-11T00:12:16Z
+    last_seen: 2026-09-11T00:12:16Z
+    count: 1
+cdk_events:
+  - timestamp: 2026-09-11T00:11:30.163Z
+    message: Job created by caojx_google_com from caojx-vm
+  - timestamp: 2026-09-11T00:12:15.682Z
+    message: 'Submitted at priority cdk-p3: Weighted Min-Max share s=0.16 (cumulative chips: 56/356, user weight: 1.0)'
+  - timestamp: 2026-09-11T00:12:15.682Z
+    message: K8s job submitted.
+  - timestamp: 2026-09-11T00:12:17.237Z
+    message: 'Job state transition: Init -> Active'
+  - timestamp: 2026-09-11T00:12:45.033Z
+    message: Job status changed from Pending to Running
+log_archived_pods: {}
+priority_class: cdk-p3
+recipe_checksum: sha256:1327b963653e26cf3d903a25a5ef2aa7e4f0a45b057ac187d0180d6112b74b26
+pending_timeout_seconds: 900
