@@ -144,6 +144,7 @@ class ArchiveTests(unittest.TestCase):
         workflow = self.root / 'workflow'
         workflow.mkdir()
         shutil.copyfile(src=controller.ROOT / 'run.sh', dst=workflow / 'run.sh')
+        shutil.copyfile(src=controller.ROOT / 'launcher.py', dst=workflow / 'launcher.py')
         (workflow / 'bootstrap.py').write_text('print("early setup failure"); raise SystemExit(42)\n')
         result = subprocess.run(args=['bash', str(workflow / 'run.sh')], capture_output=True, text=True)
         self.assertEqual(result.returncode, 42)

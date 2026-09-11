@@ -10,7 +10,7 @@ import time
 from typing import TYPE_CHECKING
 from urllib.parse import quote, unquote
 
-from core import cdk_storage_uri, uses_cdk_storage, read_document, save, verify
+from core import checksum, cdk_storage_uri, uses_cdk_storage, read_document, save, verify
 
 if TYPE_CHECKING:
     from controller import Job
@@ -107,6 +107,14 @@ def cleanup(job: Job, discard: bool, automatic: bool) -> int:
     resources = owned(job=job)
     if automatic and (discard or job.state['execution'].get('cleanup') != 'after_collection'):
         raise ValueError('Automatic cleanup was not selected by this run description')
+    if not discard:
+        if job.state.get('submission_started'):
+            verify_collected(job=job)
+        from pack_results import export_run
+        archive = export_run(directory=job.directory)
+        if archive is None:
+            raise BlockingIOError('Result archive is not ready; cloud resources retained')
+        job.save(recovery_archive=str(archive), recovery_archive_sha256=checksum(archive))
     image_dir = job.directory / 'image'
     image_dir.mkdir(exist_ok=True)
     with (image_dir / '.lock').open('a') as lock:
