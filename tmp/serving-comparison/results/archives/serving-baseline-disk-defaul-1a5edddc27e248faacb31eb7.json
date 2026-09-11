@@ -1,0 +1,10 @@
+{
+  "archive": "serving-baseline-disk-defaul-1a5edddc27e248faacb31eb7.tar.gz",
+  "artifact_exit_code": null,
+  "bytes": 82683,
+  "exit_code": 1,
+  "phase": "CLEANED",
+  "resources_cleaned": true,
+  "run_id": "serving-baseline-disk-defaul-1a5edddc27e248faacb31eb7",
+  "sha256": "5c65839a7eaa8835e13b1f3a7ef464c318dc0521a001d456c0a49abf2a63feaf"
+}
