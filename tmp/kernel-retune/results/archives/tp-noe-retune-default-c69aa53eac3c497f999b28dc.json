@@ -1,0 +1,10 @@
+{
+  "archive": "tp-noe-retune-default-c69aa53eac3c497f999b28dc.tar.gz",
+  "artifact_exit_code": 1,
+  "bytes": 5222446,
+  "exit_code": 1,
+  "phase": "CLEANED",
+  "resources_cleaned": true,
+  "run_id": "tp-noe-retune-default-c69aa53eac3c497f999b28dc",
+  "sha256": "c82407206c3fd5a68044f44b03c84054c8c29d8d559e41776e2d38b4e6602c5c"
+}
