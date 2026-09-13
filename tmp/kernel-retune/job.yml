@@ -1,0 +1,32 @@
+version: 1
+profile: ../workflow/sweep-environment.yml
+name: null
+description: Validate and retune token-tiled tensor-parallel MoE
+image_build:
+  cwd: ../..
+  argv: [python, tmp/serving-comparison/prepare_image.py]
+  timeout_seconds: 28800
+code:
+  directory: ./payload
+  delivery: snapshot
+  destination: /workspace/kernel-retune
+  include: [tune.py, worker.py, plan.json]
+inputs: {}
+run:
+  cwd: /opt/tpu-inference
+  argv: [python3, -u, /workspace/kernel-retune/tune.py, --plan, /workspace/kernel-retune/plan.json]
+  env:
+    PYTHONUNBUFFERED: "1"
+    JAX_PLATFORMS: tpu
+  verify_imports:
+    vllm: /opt/vllm
+    tpu_inference: /opt/tpu-inference
+outputs:
+  directory: ./results
+  snapshot_seconds: 30
+execution:
+  cleanup: after_collection
+  timeout_seconds: 28800
+  max_in_flight: 1
+  wait_seconds: 86400
+  archive_seconds: 1200

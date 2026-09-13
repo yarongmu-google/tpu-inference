@@ -1,0 +1,15 @@
+{
+  "devices": 8,
+  "hidden": 4096,
+  "experts": 512,
+  "intermediate": 1024,
+  "top_k": 10,
+  "tokens": [512, 1024, 2048, 8192],
+  "token_tiles": [256, 512, 1024],
+  "bf16_rows": [16, 32],
+  "seed": 17,
+  "warmup": 5,
+  "iterations": 30,
+  "reference_samples": 32,
+  "candidate_timeout_seconds": 900
+}

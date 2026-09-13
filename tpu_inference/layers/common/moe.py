@@ -22,8 +22,8 @@ from vllm.model_executor.layers.fused_moe import RoutedExperts
 
 from tpu_inference import envs
 from tpu_inference.kernels.fused_moe.v1.kernel import fused_ep_moe
-from tpu_inference.kernels.fused_moe.v2.decode_kernel import \
-    fused_moe_decode_tp_serving
+from tpu_inference.kernels.fused_moe.v2.tiled_tp import \
+    fused_moe_tp_tiled_serving
 from tpu_inference.layers.common.fused_moe_gmm import fused_moe_func
 from tpu_inference.layers.common.sharding import ShardingAxisName
 from tpu_inference.logger import init_logger
@@ -74,16 +74,11 @@ class MoEBackend(Enum):
         return {cls.FUSED_MOE, cls.GMM_EP, cls.GMM_TP}
 
 
-# batches above this stay on the GMM path (the decode kernel keeps the
-# whole token batch VMEM-resident)
-_TP_DECODE_MAX_TOKENS = 1024
-
-
 def _tp_decode_kernel_axis(*, mesh, x, gating_output, weights, activation,
                            scoring_fn):
     """The single mesh axis carrying BOTH the token shards and the weight
     shards (TP-MoE under data-parallel attention), or None when this call
-    cannot use the TP decode kernel and must stay on the GMM path.
+    cannot use tiled TP MoE and must stay on the GMM path.
 
     Dtype contract: bf16 weights take NO scales; e4m3 weights REQUIRE
     both per-channel scale tensors in the GMM_TP serving shape with
@@ -105,19 +100,23 @@ def _tp_decode_kernel_axis(*, mesh, x, gating_output, weights, activation,
         if w13s is None or w2s is None:
             return None
         # per-channel contract: [E, in_blocks=1, 1, out_channels]
-        if (w13s.ndim != 4 or w13s.shape[1] != 1
-                or w13s.shape[-1] != weights.w13_weight.shape[-1]):
+        if w13s.shape != (weights.w13_weight.shape[0], 1, 1,
+                          weights.w13_weight.shape[-1]):
             return None
-        if (w2s.ndim != 4 or w2s.shape[1] != 1
-                or w2s.shape[-1] != weights.w2_weight.shape[-1]):
+        if w2s.shape != (weights.w2_weight.shape[0], 1, 1,
+                         weights.w2_weight.shape[-1]):
             return None
-    elif w13s is not None or w2s is not None:
+    elif (weights.w13_weight.dtype != jnp.bfloat16
+          or weights.w2_weight.dtype != jnp.bfloat16
+          or w13s is not None or w2s is not None):
         return None
-    if x.ndim != 2 or weights.w13_weight.ndim != 3:
+    if (x.ndim != 2 or x.dtype != jnp.bfloat16
+            or weights.w13_weight.ndim != 3 or weights.w2_weight.ndim != 3):
         return None
     t, d = x.shape
     e, dw, _ = weights.w13_weight.shape
-    if dw != d:  # padded hidden size - the kernel has no trim path
+    if (dw != d or weights.w2_weight.shape[0] != e
+            or weights.w2_weight.shape[-1] != d):
         return None
     if gating_output.shape != (t, e) or e % 4:
         return None
@@ -132,7 +131,13 @@ def _tp_decode_kernel_axis(*, mesh, x, gating_output, weights, activation,
     if (ax not in _names(ShardingAxisName.ATTN_DATA)
             or ax not in _names(ShardingAxisName.MLP_TENSOR)):
         return None
-    if t % mesh.shape[ax] or t > _TP_DECODE_MAX_TOKENS:
+    width = mesh.shape[ax]
+    if t < 1 or t % width:
+        return None
+    inter2 = weights.w13_weight.shape[-1]
+    inter = weights.w2_weight.shape[1]
+    if (d % 128 or inter2 % (2 * width * 128)
+            or inter % (width * 128) or inter > inter2 // 2):
         return None
     return ax
 
@@ -218,32 +223,30 @@ def moe_apply(
                 tp_decode_axis = None
                 if (envs.USE_MOE_TP_DECODE_KERNEL
                         and moe_backend == MoEBackend.GMM_TP):
-                    # DECODE-shaped steps only (the token count is
-                    # static per compiled step shape): prefill and
-                    # mixed batches pad tokens up to
-                    # max-num-batched-tokens, where the decode
-                    # kernel's capacity dispatch would DROP rows and
-                    # its VMEM scratch outgrows the budget - those
-                    # step shapes take the stock GMM path below.
-                    if x.shape[0] <= envs.MOE_TP_DECODE_MAX_TOKENS:
+                    # This implementation returns reduced, scattered rows and
+                    # implements exact softmax top-k only. Preserve the general
+                    # path for callers requiring different semantics.
+                    modifiers = any(extra_backend_kwargs.get(name) is not None
+                                    for name in ("hash_based_topk_indices",
+                                                 "e_score_correction_bias",
+                                                 "num_valid_tokens"))
+                    if (scatter_results and not defer_all_reduce and not modifiers
+                            and not envs.MOE_APPROX_TOPK
+                            and not envs.FORCE_MOE_RANDOM_ROUTING):
                         tp_decode_axis = _tp_decode_kernel_axis(
                             mesh=mesh, x=x, gating_output=gating_output,
                             weights=weights, activation=activation,
                             scoring_fn=layer.scoring_func)
-                    else:
+                    if tp_decode_axis is None:
                         logger.warning_once(
-                            "[MoE]: TP decode kernel NOT engaged at "
-                            "token padding %d (> MOE_TP_DECODE_MAX_"
-                            "TOKENS=%d): prefill/mixed-shaped step, "
-                            "stock GMM path", x.shape[0],
-                            envs.MOE_TP_DECODE_MAX_TOKENS)
+                            "[MoE]: tiled TP kernel unsupported for this "
+                            "layer/dispatch contract; using stock GMM")
                 if tp_decode_axis is not None:
-                    # NB: capacity-based dispatch - rows routed beyond
-                    # `capacity` per expert are DROPPED. Acceptable for
-                    # performance evaluation, not for accuracy runs.
                     logger.warning_once(
-                        "[MoE]: using the TP decode kernel "
-                        "(capacity-based dispatch)")
+                        "[MoE]: using tiled TP MoE (no capacity drops, "
+                        "FP8 GMM1 rows=64, BF16 rows=32). "
+                        "MOE_TP_DECODE_MAX_TOKENS does not limit this path; "
+                        "the scheduler token budget still applies.")
                     # Input contract log: any dtype/shape here that the
                     # kernel must transform (reshape/transpose/cast of a
                     # weight) would run INSIDE the serving jit - i.e.
@@ -271,14 +274,7 @@ def moe_apply(
                         None if weights.w2_weight_scale is None
                         else weights.w2_weight_scale.shape,
                         act_scale, tp_decode_axis)
-                    t, _ = x.shape
-                    e = weights.w13_weight.shape[0]
-                    # 2x the average expert load, rounded up to 8 rows
-                    # (the serving entry re-rounds to 32 on the fp8
-                    # path - the e4m3 row granule)
-                    cap = min(t, max(16, -(-2 * t * layer.top_k //
-                                           (e * 8)) * 8))
-                    output = fused_moe_decode_tp_serving(
+                    output = fused_moe_tp_tiled_serving(
                         hidden_states=x,
                         gating_output=gating_output,
                         w1=weights.w13_weight,
@@ -290,7 +286,6 @@ def moe_apply(
                         axis_name=tp_decode_axis,
                         top_k=layer.top_k,
                         renormalize_topk_logits=layer.renormalize,
-                        capacity=cap,
                     )
                     return output
 

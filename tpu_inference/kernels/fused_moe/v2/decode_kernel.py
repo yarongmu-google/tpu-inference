@@ -1500,7 +1500,8 @@ def fused_moe_decode_tp_serving(
     # min(t, ...) can hand a sub-granule capacity at tiny decode
     # buckets, leaving every expert block's rows sublane-misaligned.
     # Rounding up only ever reduces capacity drops.
-    capacity = -(-capacity // 32) * 32 if fp8 else -(-capacity // 16) * 16
+    alignment = 32 if fp8 else 16
+    capacity = ((capacity + alignment - 1) // alignment) * alignment
 
     # Kernel blocks default to the BENCH TUNER'S WINNERS at the
     # 512-token design point (fp8: 750.8 us wall vs ~880 at the old

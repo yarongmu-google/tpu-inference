@@ -274,9 +274,9 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Use custom expert-parallel kernel for MoE (Mixture of Experts)
     "USE_MOE_EP_KERNEL":
     env_bool("USE_MOE_EP_KERNEL", default=False),
-    # Use the tensor-parallel decode kernel for MoE on decode-sized
-    # batches (tokens stay VMEM-resident); falls back to the GMM path
-    # for larger batches or unsupported configs
+    # Use tiled tensor-parallel MoE with runtime expert counts. The legacy
+    # flag name is retained; token count alone no longer triggers fallback.
+    # Unsupported layer or dispatch contracts retain the general GMM path.
     "USE_MOE_TP_DECODE_KERNEL":
     env_bool("USE_MOE_TP_DECODE_KERNEL", default=False),
     # TP decode kernel fp8 activation-scale mode: "token" (per-token
@@ -290,14 +290,9 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # knobs. Invalid values fail loudly at kernel trace time.
     "MOE_TP_DECODE_ACT_SCALE":
     lambda: os.getenv("MOE_TP_DECODE_ACT_SCALE", "token"),
-    # Largest per-step token count the TP decode kernel engages on;
-    # bigger (prefill/mixed) batches take the stock GMM path. The
-    # kernel is a DECODE kernel: capacity-based dispatch DROPS overflow
-    # rows (an accuracy hazard at prefill token counts) and its VMEM
-    # scratch scales with the token padding (the 1024-token MNB shape
-    # blew the 64 MiB budget at the tuned be=8/bg=2). Set to the
-    # serving max-num-seqs; raising it past 512 requires re-checking
-    # the kernel's VMEM estimate at the implied capacity.
+    # Legacy whole-batch decode setting, retained for old launch scripts.
+    # The tiled TP serving implementation ignores this threshold: runtime
+    # expert tiles bound VMEM independently of the scheduler token budget.
     "MOE_TP_DECODE_MAX_TOKENS":
     lambda: int(os.getenv("MOE_TP_DECODE_MAX_TOKENS", "512")),
     # Enable megablocks for JAX sparse matmul for MoE (Mixture of Experts)

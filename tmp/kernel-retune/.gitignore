@@ -1,0 +1,5 @@
+results/*
+!results/archives/
+!results/archives/**
+__pycache__/
+payload/__pycache__/
