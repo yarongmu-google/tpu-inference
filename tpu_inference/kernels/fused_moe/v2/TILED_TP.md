@@ -27,6 +27,62 @@ Pallas call and supplied through scalar prefetch. It covers the whole input
 bucket, preserving the existing tensor-scale meaning across token tiles.
 Per-token scaling is computed inside the kernel.
 
+## Tensor layout audit
+
+The orientations below are source-level contracts. Physical HBM/VMEM tiling,
+VREG layouts/counts, packing, replicated broadcasts, spills and matrix-boundary
+relayouts remain unverified until the installed TPU backend compiles the kernel.
+CPU interpretation and IR export do not supply that evidence.
+
+`P` is the TP width, `L` the local token tile, `T=P*L`, `k` the selected
+expert count, `D` the hidden width, `I` the local expert intermediate width,
+and `C1/C2` the two compute row tiles. FP8 storage means e4m3 throughout.
+
+| Tensor or expression | Shape / dtype | Producer, consumer and lifetime |
+| --- | --- | --- |
+| Input tokens, local copy, quantization work | `[L,D]` BF16 / FP32 | HBM-to-VMEM DMA, then row scaling; once per token tile. Feature-minor. |
+| Input logits, routing scores and expert iota | `[L,E]` input; `[E,L]` FP32 / int32 | One input transpose; top-k compares and expert-axis reductions with tokens on lanes. |
+| Top-k maxima, IDs, softmax intermediates | `[1,L]`, `[k,L]` FP32 / int32 | Retain reduced dimensions, concatenate along k, normalize along k. No `[L,k]` round trip. |
+| Tail row iota / validity | `[k,L]` int32 / Boolean | Generated directly in the final orientation, only when padding exists. Both select consumers are 32-bit. |
+| Quantized all-gather tokens | `[T,D]` FP8 or BF16 | Local row slices, remote DMA, gather matmul; retained for the token tile. |
+| Per-token amax / inverse | `[L,1]` FP32 | Reduction and immediate feature broadcast, once per tile. Inspect replicated layout; no persistent token-column table. |
+| Metadata transport | `[P,k,L]` IDs/gates; `[P,1,L]` scales | Full rank slabs for DMA, including L below 128. No remote sub-lane slice into `[k,T]`. |
+| Canonical metadata | `[k,T]` IDs/gates; `[1,T]` scales | Concatenate rank slabs along token lanes once per tile. Inspect narrow-L concatenation and transport padding. |
+| Membership, gates, prefix, slots | `[k,T]` Boolean; `[1,T]` int32 / FP32 | Expert comparisons, reductions and prefix sums. Retained as lane-major scratch for row-loop access. |
+| Expert count | `[1,128]` int32 VMEM-to-SMEM; scalar | Reduction, DMA handoff, runtime loop bound. Replication is deliberate. |
+| Gather iota / mask / one-hot | `[C1,T]` int32 / Boolean / FP32 | Direct 2-D iota; both mask selects produce FP32, followed by operand conversion. Verify backend does not introduce incompatible predicate layouts. |
+| Gathered tokens and scales | `[C1,D]` operand dtype; `[C1,1]` FP32 | Gather matmul and scale reduction feed GMM1. Scale column is a short-lived feature broadcast. |
+| Expert weights and scales | `[D,2I]`, `[I,D]` FP8 or BF16; `[1,2I]`, `[1,D]` FP32 | Per-expert HBM-to-VMEM DMA, reused across row loops. No runtime weight-layout conversion. |
+| GMM1, activation, GMM2 staging | `[C1,2I]` FP32, `[C1,I]` BF16, `[C2,D]` BF16 | Feature-minor matrix chain; GMM2 staging supports chunked output consumption. |
+| Combine metadata slices and operator | `[1,ct]`, `[C2,ct]` | Aligned lane slices, direct 2-D iota, FP32 gate selection then BF16 conversion. No per-row-loop `[T,1]` metadata transposes. |
+| Combine contraction and accumulator | `[C2,ct]` with `[C2,cd]` -> `[ct,cd]` FP32 | Contract dimension zero of both operands. This implies a transposed LHS; its backend conversion is not assumed free. Read/update only one accumulator block. |
+| Output staging and partials | `[T,D]` BF16; rank-major HBM rows | Convert the accumulator once per token tile, DMA rank slices, then reduce-scatter and trim. |
+| Tensor amax prefetch, indices, semaphores | Scalar prefetch / scalar / DMA arrays | Control data. The wrapper's scalar reshape is outside vector routing. |
+
+Scale-wrapper singleton reshapes preserve the existing serving contract;
+verify surrounding HLO for any materialized copies. For every row broadcast,
+inspect the actual inferred replication rather than pricing from shape alone.
+The remaining `.T` operations in the kernel are the input-logit boundary
+and the local quantization-scale boundary, each once per token tile.
+
+Large logical vectors still require backend scrutiny. At the default FP8
+shape (L=128, T=1024, D=4096, I=128, C1=64, C2=32), representing the entire
+FP32 quantization work, gathered-token result and GMM2 result with `(8,128)`
+tilings would take 512, 256 and 128 VREGs respectively. These are representation
+counts, not measured simultaneous liveness: the backend must schedule/chunk
+or spill those values. The new `[128,128]` FP32 accumulator update represents
+16 VREGs; that alone does not prove the complete live set fits. Full expert
+weight operands likewise depend on backend staging. Inspect these operations
+before claiming register fit or a speedup; this patch does not retile all GMMs.
+
+The optional `combine_token_rows` and `combine_hidden_cols` controls default
+to 128. Both are positive multiples of 128; the effective hidden chunk must
+divide D. Token tiles divisible by the requested token chunk use a runtime
+chunk loop; other token tiles use one whole-token-tile update to avoid
+unaligned lane slices. These are initial settings, not measured optima.
+The new BF16 GMM2 staging and three lane-major metadata scratch rows stay
+in VMEM; include their lifetimes and compiler temporaries in the memory audit.
+
 ## Occupancy and row tiles
 
 There is no heuristic per-expert capacity. Within a token tile, the exact

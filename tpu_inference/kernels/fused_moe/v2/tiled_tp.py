@@ -21,7 +21,7 @@ def _align_up(value: int, alignment: int) -> int:
 
 def _routing(logits: jax.Array, *, top_k: int,
              renormalize: bool) -> tuple[jax.Array, jax.Array]:
-    """Max-mask top-k, preserving the highest-expert-id tie break."""
+    """Return [k, local_tokens] gates/ids; highest-expert-id tie break."""
     scores = logits.astype(jnp.float32).T
     if not renormalize:
         scores = jax.nn.softmax(scores, axis=0)
@@ -31,14 +31,14 @@ def _routing(logits: jax.Array, *, top_k: int,
         value = jnp.max(scores, axis=0, keepdims=True)
         index = jnp.max(jnp.where(scores == value, expert_ids, 0),
                         axis=0, keepdims=True)
-        values.append(value[0])
-        indices.append(index[0])
+        values.append(value)
+        indices.append(index)
         if k + 1 != top_k:
             scores = jnp.where(expert_ids == index, -jnp.inf, scores)
-    gates = jnp.stack(values, axis=1)
+    gates = jnp.concatenate(values, axis=0)
     if renormalize:
-        gates = jax.nn.softmax(gates, axis=1)
-    return gates, jnp.stack(indices, axis=1)
+        gates = jax.nn.softmax(gates, axis=0)
+    return gates, jnp.concatenate(indices, axis=0)
 
 
 def _slots(mask: jax.Array) -> jax.Array:
@@ -56,11 +56,13 @@ def _slots(mask: jax.Array) -> jax.Array:
 def _kernel(tensor_amax, x_hbm, logits_hbm, w1_hbm, w2_hbm,
             s1_hbm, s2_hbm, out_hbm, x_local, logits_local,
             tokens, ids, gates, scales, ids_kt, gates_kt, scales_row,
-            acc, output_tile, w1, w2, s1, s2, act,
+            acc, output_tile, w1, w2, s1, s2, act, down,
+            slot_row, live_row, weight_row,
             count_vmem, count_smem, local_sems, send_sems, recv_sems, *,
             axis_name: str, mesh_axis_names: tuple[str, ...], width: int,
             real_local_tokens: int, top_k: int, renormalize: bool,
-            act_scale: str, fp8: bool, bf16_rows: int):
+            act_scale: str, fp8: bool, bf16_rows: int,
+            combine_token_rows: int, combine_hidden_cols: int):
     tile, expert = pl.program_id(0), pl.program_id(1)
     local_rows, hidden = x_local.shape
     first_rows = 2 * bf16_rows if fp8 else bf16_rows
@@ -97,10 +99,14 @@ def _kernel(tensor_amax, x_hbm, logits_hbm, w1_hbm, w2_hbm,
             copy.wait()
         local_gates, local_ids = _routing(
             logits_local[...], top_k=top_k, renormalize=renormalize)
-        valid = (tile * local_rows + jnp.arange(local_rows)) < real_local_tokens
-        ids[pl.ds(row0, local_rows), :] = jnp.where(valid[:, None], local_ids, -1)
-        gates[pl.ds(row0, local_rows), :] = jnp.where(
-            valid[:, None], local_gates, 0.)
+        if real_local_tokens % local_rows:
+            rows = lax.broadcasted_iota(jnp.int32, local_ids.shape, 1)
+            valid = (tile * local_rows + rows) < real_local_tokens
+            local_ids = jnp.where(valid, local_ids, -1)
+            local_gates = jnp.where(valid, local_gates, 0.)
+        # Rank is a leading DMA dimension; no narrow minor-axis remote slices.
+        ids[rank, :, :] = local_ids
+        gates[rank, :, :] = local_gates
         xf = x_local[...].astype(jnp.float32)
         if fp8:
             if act_scale == "tensor":
@@ -110,32 +116,35 @@ def _kernel(tensor_amax, x_hbm, logits_hbm, w1_hbm, w2_hbm,
             inv = jnp.where(amax > 0, 448. / amax, 0.)
             tokens[pl.ds(row0, local_rows), :] = jnp.clip(
                 xf * inv, -448., 448.).astype(jnp.float8_e4m3fn)
-            scales[pl.ds(row0, local_rows), :] = amax / 448.
+            scales[rank, :, :] = (amax / 448.).T
         else:
             tokens[pl.ds(row0, local_rows), :] = x_local[...]
-            scales[pl.ds(row0, local_rows), :] = jnp.ones(
-                (local_rows, 1), jnp.float32)
+            scales[rank, :, :] = jnp.ones((1, local_rows), jnp.float32)
         if width > 1:
-            buffers = (tokens, ids, gates, scales)
+            shards = (tokens.at[pl.ds(row0, local_rows), :],
+                      ids.at[rank], gates.at[rank], scales.at[rank])
             for peer in range(width):
                 @pl.when(peer != rank)
                 def send(peer=peer):
-                    for index, buf in enumerate(buffers):
+                    for index, shard in enumerate(shards):
                         pltpu.make_async_remote_copy(
-                            src_ref=buf.at[pl.ds(row0, local_rows), :],
-                            dst_ref=buf.at[pl.ds(row0, local_rows), :],
+                            src_ref=shard, dst_ref=shard,
                             send_sem=send_sems.at[index],
                             recv_sem=recv_sems.at[index], device_id=peer_id(peer),
                             device_id_type=pl.DeviceIdType.MESH).start()
             # DMA waits consume byte credits. These dummy slices describe
             # the aggregate traffic, not the addresses that were transferred.
-            for index, buf in enumerate(buffers):
-                received = buf.at[pl.ds(0, (width - 1) * local_rows), :]
+            traffic = (tokens.at[pl.ds(0, (width - 1) * local_rows), :],
+                       ids.at[pl.ds(0, width - 1)],
+                       gates.at[pl.ds(0, width - 1)],
+                       scales.at[pl.ds(0, width - 1)])
+            for index, received in enumerate(traffic):
                 for sem in (recv_sems.at[index], send_sems.at[index]):
                     pltpu.make_async_copy(received, received, sem).wait()
-        ids_kt[...] = ids[...].T
-        gates_kt[...] = gates[...].T
-        scales_row[...] = scales[...].T
+        # Assemble the lane axis once per tile, retaining [k, tokens].
+        ids_kt[...] = jnp.concatenate([ids[peer, :, :] for peer in range(width)], axis=1)
+        gates_kt[...] = jnp.concatenate([gates[peer, :, :] for peer in range(width)], axis=1)
+        scales_row[...] = jnp.concatenate([scales[peer, :, :] for peer in range(width)], axis=1)
 
     hit = ids_kt[...] == expert
     mask = jnp.max(hit.astype(jnp.int32), axis=0, keepdims=True)
@@ -159,16 +168,23 @@ def _kernel(tensor_amax, x_hbm, logits_hbm, w1_hbm, w2_hbm,
         for copy in copies:
             copy.start()
         slot = _slots(mask)
+        slot_row[...] = slot
+        live_row[...] = mask
+        weight_row[...] = gate_row
         for copy in copies:
             copy.wait()
 
         def row_step(block, unused):
             first = block * first_rows
-            row_ids = first + jnp.arange(first_rows, dtype=jnp.int32)[:, None]
+            row_ids = first + lax.broadcasted_iota(
+                jnp.int32, (first_rows, tokens.shape[0]), 0)
             selected = (slot == row_ids) & (mask != 0)
+            # Both selects consume f32; convert values, not a shared Boolean
+            # predicate, to the narrower gather operand dtype.
+            onehot = jnp.where(selected, jnp.float32(1), jnp.float32(0))
             operand_dtype = jnp.float8_e4m3fn if fp8 else jnp.bfloat16
             with jax.named_scope("moe_gather"):
-                gathered = jnp.dot(selected.astype(operand_dtype), tokens[...],
+                gathered = jnp.dot(onehot.astype(operand_dtype), tokens[...],
                                    preferred_element_type=jnp.float32).astype(operand_dtype)
             with jax.named_scope("moe_gmm1"):
                 gate_up = jnp.dot(gathered, w1[...],
@@ -189,16 +205,37 @@ def _kernel(tensor_amax, x_hbm, logits_hbm, w1_hbm, w2_hbm,
                                      w2[...], preferred_element_type=jnp.float32)
                     if fp8:
                         result = result * s2[...]
-                    result = result.astype(jnp.bfloat16)
-                # Weighted scatter-add by a one-hot matmul; all contributions
-                # stay in this token tile's VMEM accumulator across experts.
-                rows = first + part * bf16_rows + jnp.arange(bf16_rows)
-                combine = jnp.where((slot.T == rows[None, :]) & (mask.T != 0),
-                                    gate_row.T, 0.).astype(jnp.bfloat16)
-                with jax.named_scope("moe_combine"):
-                    acc[...] += jnp.dot(combine, result,
-                                        preferred_element_type=jnp.float32)
-                return unused
+                    down[...] = result.astype(jnp.bfloat16)
+                # Construct [rows, tokens] weights, never [tokens, 1] masks.
+                # Contract rows directly. The implicit LHS transpose is a
+                # matrix-boundary cost to inspect on the installed backend.
+                total_rows = tokens.shape[0]
+                ct = (min(total_rows, combine_token_rows)
+                      if total_rows % combine_token_rows == 0 else total_rows)
+                cd = min(hidden, combine_hidden_cols)
+
+                def token_step(token_block, unused):
+                    ts = pl.ds(token_block * ct, ct)
+                    rows = first + part * bf16_rows + lax.broadcasted_iota(
+                        jnp.int32, (bf16_rows, ct), 0)
+                    chosen = ((slot_row[:, ts] == rows) & (live_row[:, ts] != 0))
+                    combine = jnp.where(chosen, weight_row[:, ts], 0.).astype(jnp.bfloat16)
+
+                    def hidden_step(hidden_block, unused):
+                        ds = pl.ds(hidden_block * cd, cd)
+                        with jax.named_scope("moe_combine"):
+                            update = lax.dot_general(
+                                combine, down[:, ds],
+                                dimension_numbers=(((0,), (0,)), ((), ())),
+                                preferred_element_type=jnp.float32)
+                            acc[ts, ds] += update
+                        return unused
+
+                    return lax.fori_loop(0, hidden // cd, hidden_step, unused)
+
+                if total_rows == ct:
+                    return token_step(0, unused)
+                return lax.fori_loop(0, total_rows // ct, token_step, unused)
 
             lax.fori_loop(0, (live + bf16_rows - 1) // bf16_rows,
                           down_step, unused)
@@ -225,7 +262,8 @@ def _local_moe(x: jax.Array, gating: jax.Array, w1: jax.Array,
                w2: jax.Array, s1: jax.Array, s2: jax.Array, *,
                axis_name: str, mesh_axis_names: tuple[str, ...], width: int,
                top_k: int, renormalize: bool, act_scale: str,
-               token_tile_size: int, bf16_rows: int, interpret: bool) -> jax.Array:
+               token_tile_size: int, bf16_rows: int, combine_token_rows: int,
+               combine_hidden_cols: int, interpret: bool) -> jax.Array:
     fp8 = w1.dtype == jnp.float8_e4m3fn
     alignment = 32 if fp8 else 16
     real_local_tokens, hidden = x.shape
@@ -249,9 +287,9 @@ def _local_moe(x: jax.Array, gating: jax.Array, w1: jax.Array,
             pltpu.VMEM((local_rows, hidden), x.dtype),
             pltpu.VMEM((local_rows, w1.shape[0]), gating.dtype),
             pltpu.VMEM((total_rows, hidden), w1.dtype),
-            pltpu.VMEM((total_rows, top_k), jnp.int32),
-            pltpu.VMEM((total_rows, top_k), jnp.float32),
-            pltpu.VMEM((total_rows, 1), jnp.float32),
+            pltpu.VMEM((width, top_k, local_rows), jnp.int32),
+            pltpu.VMEM((width, top_k, local_rows), jnp.float32),
+            pltpu.VMEM((width, 1, local_rows), jnp.float32),
             pltpu.VMEM((top_k, total_rows), jnp.int32),
             pltpu.VMEM((top_k, total_rows), jnp.float32),
             pltpu.VMEM((1, total_rows), jnp.float32),
@@ -262,6 +300,10 @@ def _local_moe(x: jax.Array, gating: jax.Array, w1: jax.Array,
             pltpu.VMEM((1, inter2), jnp.float32),
             pltpu.VMEM((1, hidden), jnp.float32),
             pltpu.VMEM((first_rows, inter), jnp.bfloat16),
+            pltpu.VMEM((bf16_rows, hidden), jnp.bfloat16),
+            pltpu.VMEM((1, total_rows), jnp.int32),
+            pltpu.VMEM((1, total_rows), jnp.int32),
+            pltpu.VMEM((1, total_rows), jnp.float32),
             pltpu.VMEM((1, 128), jnp.int32),
             pltpu.SMEM((1, 128), jnp.int32),
             pltpu.SemaphoreType.DMA((4,)),
@@ -273,7 +315,9 @@ def _local_moe(x: jax.Array, gating: jax.Array, w1: jax.Array,
                           mesh_axis_names=mesh_axis_names, width=width,
                           real_local_tokens=real_local_tokens, top_k=top_k,
                           renormalize=renormalize, act_scale=act_scale,
-                          fp8=fp8, bf16_rows=bf16_rows),
+                          fp8=fp8, bf16_rows=bf16_rows,
+                          combine_token_rows=combine_token_rows,
+                          combine_hidden_cols=combine_hidden_cols),
         grid_spec=grid,
         out_shape=jax.ShapeDtypeStruct((width * padded_local, hidden), jnp.bfloat16),
         compiler_params=pltpu.CompilerParams(
@@ -293,7 +337,8 @@ def fused_moe_tp_tiled_serving(
     w2_scale: jax.Array | None = None, *, mesh: Mesh, axis_name: str,
     top_k: int, renormalize_topk_logits: bool,
     act_scale: str = "token", token_tile_size: int = 1024,
-    bf16_rows: int = 32, interpret: bool = False,
+    bf16_rows: int = 32, combine_token_rows: int = 128,
+    combine_hidden_cols: int = 128, interpret: bool = False,
 ) -> jax.Array:
     """TP expert weights, DP token rows; accepts the existing serving layout.
 
@@ -318,6 +363,11 @@ def fused_moe_tp_tiled_serving(
         raise ValueError("token_tile_size must align to mesh width times DMA row alignment")
     if bf16_rows < 16 or bf16_rows % 16:
         raise ValueError("bf16_rows must be a positive multiple of 16")
+    if combine_token_rows < 128 or combine_token_rows % 128:
+        raise ValueError("combine_token_rows must be a positive multiple of 128")
+    if (combine_hidden_cols < 128 or combine_hidden_cols % 128
+            or d % min(d, combine_hidden_cols)):
+        raise ValueError("combine_hidden_cols must align to 128 and divide hidden")
     if t < 1 or t % width or gating_output.shape != (t, e) or dw != d:
         raise ValueError("token, router, weight or mesh shapes do not match")
     if any(mesh.shape[a] > 1 for a in mesh.axis_names if a != axis_name):
@@ -343,7 +393,8 @@ def fused_moe_tp_tiled_serving(
     fn = functools.partial(
         _local_moe, axis_name=axis_name, mesh_axis_names=tuple(mesh.axis_names),
         width=width, top_k=top_k, token_tile_size=token_tile_size,
-        bf16_rows=bf16_rows,
+        bf16_rows=bf16_rows, combine_token_rows=combine_token_rows,
+        combine_hidden_cols=combine_hidden_cols,
         renormalize=renormalize_topk_logits, act_scale=act_scale,
         interpret=interpret)
     return jax.shard_map(

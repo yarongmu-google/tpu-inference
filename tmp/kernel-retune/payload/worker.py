@@ -12,6 +12,8 @@ import statistics
 import time
 import traceback
 
+import diagnostics
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -144,9 +146,22 @@ def run_candidate(config: dict, output: Path, *, interpret: bool = False) -> dic
         token_tile_size=config['token_tile_size'], bf16_rows=config['bf16_rows'], interpret=interpret))
     print('COMPILE: tiled TP serving entry', flush=True)
     start = time.monotonic()
-    executable = candidate.lower(*inputs).compile()
+    dump_root = output / 'compiler-dumps'
+    before = diagnostics.snapshot(root=dump_root)
+    # Parent can recover this window even if the compiler aborts the process.
+    save(path=output / 'compile-window.json', value={'before': before})
+    try:
+        executable = candidate.lower(*inputs).compile()
+    finally:
+        try:
+            files = diagnostics.freeze_compile(root=dump_root, before=before)
+            save(path=output / 'compile-window.json', value={'before': before, 'files': files})
+        except Exception:
+            # Preserve the original compiler exception and leave raw dumps for
+            # the parent if attribution/freezing itself fails.
+            (output / 'compiler-freeze-error.txt').write_text(traceback.format_exc())
     compile_seconds = time.monotonic() - start
-    # Preserve backend diagnostics without keeping raw multi-file compiler dumps.
+    # Parent retains raw Mosaic/JF dumps separately, including compile failures.
     if not interpret:
         with gzip.open(output / 'compiled-hlo.txt.gz', 'wt') as stream:
             stream.write(executable.as_text())

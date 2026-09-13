@@ -10,7 +10,7 @@ code:
   directory: ./payload
   delivery: snapshot
   destination: /workspace/kernel-retune
-  include: [tune.py, worker.py, plan.json]
+  include: [tune.py, worker.py, diagnostics.py, plan.json]
 inputs: {}
 run:
   cwd: /opt/tpu-inference

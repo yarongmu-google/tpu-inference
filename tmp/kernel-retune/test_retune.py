@@ -10,6 +10,7 @@ import tempfile
 import unittest
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE / 'payload'))
 spec = importlib.util.spec_from_file_location('retune', HERE / 'payload/tune.py')
 tune = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tune)

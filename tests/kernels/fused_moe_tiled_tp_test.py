@@ -85,14 +85,14 @@ def test_routing_ties_and_normalization():
     for renormalize in (False, True):
         gates, ids = kernel._routing(jnp.zeros((3, 8)), top_k=2,
                                      renormalize=renormalize)
-        np.testing.assert_array_equal(ids, [[7, 6]] * 3)
+        np.testing.assert_array_equal(ids, [[7] * 3, [6] * 3])
         np.testing.assert_allclose(gates, .5 if renormalize else .125)
 
 
 @pytest.mark.parametrize("fp8", [False, True])
 @pytest.mark.parametrize("act_scale", ["token", "tensor"])
 @pytest.mark.parametrize("width", [2, 8])
-@pytest.mark.parametrize("local_tokens", [8, 145])
+@pytest.mark.parametrize("local_tokens", [8, 64, 145])
 def test_tp_serving_does_not_retrace_for_routing(fp8, act_scale, width, local_tokens):
     if jax.device_count() < width:
         pytest.skip('requires enough CPU devices or TPUs for the requested mesh')
@@ -132,15 +132,16 @@ def test_tp_serving_does_not_retrace_for_routing(fp8, act_scale, width, local_to
             a = packed_w1[:, :, rank * 256:(rank + 1) * 256]
             b = w2[:, rank * 128:(rank + 1) * 128, :]
             s1 = None if scale1 is None else scale1[:, :, rank * 256:(rank + 1) * 256]
-            reference += _reference(x, a, b, gates, ids, s1, scale2, fp8=fp8, act_scale=act_scale)
+            reference += _reference(x, a, b, gates.T, ids.T, s1, scale2, fp8=fp8, act_scale=act_scale)
         np.testing.assert_allclose(np.asarray(result, np.float32),
                                    np.asarray(reference, np.float32), rtol=.04, atol=.01)
     assert len(traces) == 1
 
 
 @pytest.mark.parametrize('fp8', [False, True])
-@pytest.mark.parametrize('tokens', [16, 1024, 8192])
-def test_serving_lowers_for_tpu(fp8, tokens):
+@pytest.mark.parametrize('tokens', [16, 512, 1024, 8192])
+@pytest.mark.parametrize('bf16_rows', [16, 32])
+def test_serving_lowers_for_tpu(fp8, tokens, bf16_rows):
     from jax import export
     from jax._src import mesh as mesh_lib
     width, hidden, experts, intermediate, topk = 8, 4096, 512, 1024, 10
@@ -157,7 +158,7 @@ def test_serving_lowers_for_tpu(fp8, tokens):
                    jax.ShapeDtypeStruct((experts, 1, 1, hidden), jnp.float32)]
     fn = functools.partial(kernel.fused_moe_tp_tiled_serving,
                            mesh=mesh, axis_name='x', top_k=topk,
-                           renormalize_topk_logits=True)
+                           renormalize_topk_logits=True, bf16_rows=bf16_rows)
     with mesh_lib.use_abstract_mesh(mesh):
         compiled = export.export(jax.jit(fn), platforms=['tpu'])(*shapes)
     assert compiled.mlir_module_serialized
@@ -208,3 +209,36 @@ def test_serving_dispatch_uses_tiling_above_legacy_gate(tokens, modifier):
     assert len(selected) == 1
     assert selected[0][0] == ('gmm' if modifier else 'tiled')
     assert selected[0][1]['hidden_states'].shape[0] == tokens
+
+
+@pytest.mark.parametrize('fp8', [False, True])
+def test_combine_chunks_preserve_outputs(fp8):
+    # Exercise both accumulator axes and a final tile with one live token.
+    t, d, e, inter = 257, 256, 4, 128
+    rng = np.random.default_rng(23)
+    x = jnp.asarray(rng.normal(size=(t, d)), jnp.bfloat16)
+    w1 = jnp.asarray(rng.normal(size=(e, d, 2 * inter)) * .02, jnp.bfloat16)
+    w2 = jnp.asarray(rng.normal(size=(e, inter, d)) * .02, jnp.bfloat16)
+    if fp8:
+        w1, s1 = _quantize(w1)
+        w2, s2 = _quantize(w2)
+    else:
+        s1 = s2 = None
+    logits = jnp.asarray(rng.normal(size=(t, e)), jnp.float32)
+    gates, ids = kernel._routing(logits, top_k=2, renormalize=True)
+    expected = _reference(x, w1, w2, gates.T, ids.T, s1, s2, fp8=fp8)
+    mesh = Mesh(np.array(jax.devices()[:1]), ('x',))
+    baseline = None
+    for ct, cd in ((128, 128), (128, 256), (256, 128), (256, 256)):
+        actual = kernel.fused_moe_tp_tiled_serving(
+            x, logits, w1, w2,
+            None if s1 is None else s1[:, None],
+            None if s2 is None else s2[:, None], mesh=mesh, axis_name='x',
+            top_k=2, renormalize_topk_logits=True, token_tile_size=256,
+            combine_token_rows=ct, combine_hidden_cols=cd, interpret=True)
+        actual = np.asarray(actual, np.float32)
+        np.testing.assert_allclose(actual, np.asarray(expected, np.float32),
+                                   rtol=.04, atol=.01)
+        if baseline is not None:
+            np.testing.assert_array_equal(actual, baseline)
+        baseline = actual

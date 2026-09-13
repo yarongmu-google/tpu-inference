@@ -56,6 +56,36 @@ winners provisional. It does not report device-only kernel time or tokens/s.
 No serving defaults are changed automatically. Device profiling and a repeat
 measurement of finalists should precede adopting close timing differences.
 
+## Compiler dumps
+
+Before the matrix, an isolated FP8 Pallas matmul compiles on the actual TPU
+backend with both `--xla_mosaic_dump_to` and `--xla_jf_dump_to` in
+`LIBTPU_INIT_ARGS`. These are ordinary double-hyphen flag names. Only an
+explicit unknown-JF-flag error triggers one retry with Mosaic alone. Other
+errors, timeouts, or absence of a final Mosaic LLO stop the run before tuning.
+The probe records flag acceptance separately from whether JF emitted files.
+
+Each worker receives fresh dump directories before importing JAX. A recorded
+compile window separates candidate dumps from input-generation/reference
+compilations. Candidate files are moved into a separate subdirectory before
+reference compilation can overwrite reusable dump filenames. After worker exit, including failure or timeout, the parent saves:
+
+- `dump-flags.json` and `compile-window.json` for provenance and attribution.
+- `compiler-dumps.tar.gz`, containing all raw Mosaic and JF output. Every
+  archived file is hash-verified before removing its raw counterpart.
+- `compiler-summary.json`, with file inventory, candidate final LLOs, JF
+  availability and per-file static LLO-name occurrence counts.
+- `compiler-findings.txt`, with file/line excerpts for relayout/shuffle text,
+  narrow vector types and spill/reload text. Full dumps remain in the archive.
+
+Treat findings as review leads: expected broadcasts and matrix-boundary
+conversions also match. Static counts are not executed instruction counts.
+Mosaic post-finalize LLO alone does not establish register allocation, spill
+absence or scheduled issue order. JF's output format and allocation evidence
+must be inspected after the run; no matching keywords does not prove no spills.
+If packing/analysis fails, an error file and raw dumps remain collectible.
+The existing final result archive and cleanup flow includes these files.
+
 ## Outputs and recovery
 
 The live workload produces:
@@ -63,7 +93,7 @@ The live workload produces:
 - `SUMMARY.md`, `results.json`, `winners.json`, and the frozen plan/matrix.
 - Per candidate: exact command/config, phase logs, source revisions/hash,
   package versions, correctness results, raw timing samples and exit status.
-- Compile diagnostics when compilation succeeds; traceback/logs on failure.
+- Compiled HLO/memory on success; raw Mosaic/JF dumps and diagnostics even on failure.
 
 The shared controller packages these with build/submission diagnostics under
 `tmp/kernel-retune/results/archives/`. Raw workflow state remains ignored;
@@ -83,7 +113,7 @@ retains its resources for recovery. Start another named run for a fresh tune.
 For local plan, subprocess failure/timeout and wrapper checks:
 
 ```bash
-python3 -m unittest discover -s tmp/kernel-retune -p test_retune.py -v
+python3 -m unittest discover -s tmp/kernel-retune -p 'test_*.py' -v
 ```
 
 These tests require no cloud access. Actual TPU backend compilation,

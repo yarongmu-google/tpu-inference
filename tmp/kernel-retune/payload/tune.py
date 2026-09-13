@@ -11,6 +11,9 @@ import signal
 import subprocess
 import sys
 import time
+import traceback
+
+import diagnostics
 
 
 def save(path: Path, value: object) -> None:
@@ -85,8 +88,15 @@ def summarize(output: Path, records: list[dict]) -> None:
     (output / 'SUMMARY.md').write_text('\n'.join(lines) + '\n')
 
 
-def run_one(config: dict, directory: Path, *, worker: Path) -> dict:
+def run_one(config: dict, directory: Path, *, worker: Path,
+            dump_jf: bool | None = None) -> dict:
     directory.mkdir(parents=True)
+    env = (diagnostics.environment(root=directory / 'compiler-dumps', jf=dump_jf)
+           if dump_jf is not None else None)
+    if env is not None:
+        save(path=directory / 'dump-flags.json', value={
+            'mosaic': str((directory / 'compiler-dumps/mosaic').resolve()),
+            'jf': str((directory / 'compiler-dumps/jf').resolve()) if dump_jf else None})
     save(path=directory / 'config.json', value=config)
     command = [sys.executable, '-u', str(worker), '--config', str(directory / 'config.json'),
                '--output', str(directory)]
@@ -97,7 +107,8 @@ def run_one(config: dict, directory: Path, *, worker: Path) -> dict:
     log_offset = 0
     with (directory / 'worker.log').open('w') as log:
         process = subprocess.Popen(args=command, stdout=log, stderr=subprocess.STDOUT,
-                                   start_new_session=True)
+                                   start_new_session=True, env=env,
+                                   preexec_fn=diagnostics.disable_core_dumps)
         try:
             while process.poll() is None:
                 elapsed = time.monotonic() - started
@@ -123,6 +134,12 @@ def run_one(config: dict, directory: Path, *, worker: Path) -> dict:
                 except subprocess.TimeoutExpired:
                     os.killpg(process.pid, signal.SIGKILL)
                     process.wait()
+            if dump_jf is not None:
+                try:
+                    diagnostics.collect(directory=directory)
+                except Exception:
+                    (directory / 'compiler-diagnostics-error.txt').write_text(traceback.format_exc())
+                    print(f'COMPILER_DUMPS_ERROR: {directory}; raw dumps retained', flush=True)
     record = {'config': config, 'returncode': process.returncode,
               'elapsed_seconds': time.monotonic() - started,
               'log': f'{directory.name}/worker.log',
@@ -164,12 +181,14 @@ def main() -> int:
     save(path=output / 'plan.json', value=plan)
     save(path=output / 'matrix.json', value=matrix)
     print(f'RETUNE: {len(matrix)} candidates; output={output}', flush=True)
+    print('DUMP_PREFLIGHT: testing Mosaic and JF flags on the TPU backend', flush=True)
+    dump_jf = diagnostics.probe(output=output / 'dump-preflight')
     records = []
     for index, config in enumerate(matrix, start=1):
         name = f"t{config['tokens']}-tile{config['token_tile_size']}-r{config['bf16_rows']}"
         print(f'[{index}/{len(matrix)}] START {name}', flush=True)
         record = run_one(config=config, directory=output / name,
-                         worker=Path(__file__).with_name('worker.py'))
+                         worker=Path(__file__).with_name('worker.py'), dump_jf=dump_jf)
         records.append(record)
         summarize(output=output, records=records)
     return 0 if all(record['status'] == 'ok' for record in records) else 1
