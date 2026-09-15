@@ -389,7 +389,7 @@ class Engine:
         timings, captures = self.timed_profiles(context=context, config=config, directory=directory)
         record = {'kind': 'xla_baseline', 'status': 'ok', 'config': config,
                   'compile_seconds': context['compile_seconds'], 'validation_calls': calls,
-                  'log': f'{directory.name}/worker.log', 'timings': timings,
+                  'timings': timings,
                   'metric': 'synchronized_call_wall_us_including_collectives', **timings['uniform']}
         def persist():
             chunks = save_arrays(directory=directory, arrays=expected.result())
@@ -438,7 +438,6 @@ class Engine:
         return {**checked, **candidate['timings']['uniform'], 'timings': candidate['timings'],
                 'compile_seconds': candidate['compile_seconds'], 'validation_calls': candidate['calls'],
                 'baseline_artifact': candidate['baseline']['directory'].name,
-                'xla_baseline': candidate['baseline']['record'],
                 'metric': 'synchronized_call_wall_us_including_collectives',
                 'status': 'ok' if accuracy and paired and profile_ok else 'failed',
                 'checks': {'xla_accuracy': accuracy, 'paired_accuracy': paired, 'profile': profile_ok}}

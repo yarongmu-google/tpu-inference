@@ -64,43 +64,11 @@ def candidates(plan: dict) -> list[dict]:
     return result
 
 
-def summarize(output: Path, records: list[dict], baselines: list[dict] | None = None) -> None:
-    winners = {}
-    for record in records:
-        if record['status'] != 'ok' or record['config']['variant'] != 'occupied':
-            continue
-        key = str(record['config']['tokens'])
-        if key not in winners or record['median_us'] < winners[key]['median_us']:
-            winners[key] = record
-    save(path=output / 'results.json', value=records)
-    save(path=output / 'winners.json', value={'metric': 'synchronized_call_wall_us_including_collectives',
-         'provisional': True, 'winners': winners})
-    lines = ['# Occupancy kernel comparison', '',
-        'FP8 E4M3 weights, FP8 GMM1 activations, BF16 GMM2 activations. Full outputs checked against TPU XLA.',
-        'Every executable uses the same warmups and synchronized samples. Failed accuracy retains timings and cannot win.',
-        'Device TC times use the historical trace extraction; they exclude barrier/trailing-copy edges. SC coverage is saved separately.',
-        'Each old/new pair shares inputs and block settings. The original kernel comes from 729a68e09f.', '',
-        '| Case | Status | Uniform wall median us | Sparse wall median us | TC device median us | Uniform relative L2 | Sparse relative L2 | Old/new max abs |',
-        '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |']
-    def number(value):
-        return '-' if value is None else f'{value:.3f}'
-    for record in records:
-        correctness = record.get('correctness', {})
-        profiles = record.get('profiles', {})
-        paired = record.get('paired_correctness', {})
-        deltas = [r['max_abs_error'] for r in paired.values() if 'max_abs_error' in r]
-        lines.append(f"| {case_name(config=record['config'])} | {record['status']} | "
-            f"{number(record.get('median_us'))} | {number(record.get('timings', {}).get('sparse', {}).get('median_us'))} | "
-            f"{number(profiles.get('uniform', {}).get('tc_median_us'))} | "
-            f"{number(correctness.get('uniform', {}).get('relative_l2_error'))} | {number(correctness.get('sparse', {}).get('relative_l2_error'))} | "
-            f"{number(max(deltas) if deltas else None)} |")
-    if baselines is not None:
-        save(path=output / 'baselines.json', value=baselines)
-        lines += ['', '## Untuned XLA references', '', '| Tokens | Uniform median us | Sparse median us |', '| --- | ---: | ---: |']
-        for record in baselines:
-            lines.append(f"| {record['config']['tokens']} | {number(record.get('median_us'))} | "
-                         f"{number(record.get('timings', {}).get('sparse', {}).get('median_us'))} |")
-    (output / 'SUMMARY.md').write_text('\n'.join(lines) + '\n')
+def summarize(output: Path, records: list[dict], baselines: list[dict] | None = None,
+              *, complete: bool = False) -> None:
+    from reporting import render
+    render(output=output, records=records, baselines=baselines,
+           name=os.environ.get('RUN_NAME', 'Kernel occupancy'), complete=complete)
 
 
 def main() -> int:

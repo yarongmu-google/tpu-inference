@@ -15,6 +15,7 @@ import traceback
 
 import diagnostics
 from tune import KNOBS, candidates, case_name, save, summarize
+from reporting import failure_reasons
 
 
 def ready(directory: Path) -> None:
@@ -38,10 +39,19 @@ def schedule(matrix: list[dict], output: Path, engine, *, max_pending: int = 2) 
         if saved.exists() and 'timings' not in value:
             timings = json.loads(saved.read_text())
             value = {**value, 'timings': timings, **timings.get('uniform', {})}
-        result = {**value, 'config': config, 'log': f'{directory.name}/worker.log'}
-        save(path=directory / 'result.json', value=result)
+        result = {**value, 'config': config}
+        error = directory / 'error.txt'
+        if error.exists():
+            result['error'] = error.read_text(errors='replace')
+        reasons = failure_reasons(record=result)
+        if reasons:
+            result['reason'] = reasons[0].splitlines()[0]
+            if not error.exists():
+                error.write_text('\n\n'.join(reasons) + '\n')
         save(path=directory / 'outcome.json', value=result)
-        (directory / 'worker.log').write_text(json.dumps(result, indent=2) + '\n')
+        print(f'CASE_RESULT: {directory.name}: {result["status"]}', flush=True)
+        if reasons:
+            print(result['reason'], flush=True)
         ready(directory=directory)
         return result
 
@@ -104,8 +114,7 @@ def schedule(matrix: list[dict], output: Path, engine, *, max_pending: int = 2) 
                 failure.set_exception(RuntimeError('Baseline failed; no automatic retry'))
                 (directory / 'error.txt').write_text(traceback.format_exc())
                 baselines[tokens] = {'directory': directory, 'expected': failure, 'persisted': failure,
-                                    'record': {'config': baseline_config, 'status': 'failed',
-                                               'log': f'{directory.name}/worker.log'}}
+                                    'record': {'config': baseline_config, 'status': 'failed'}}
             for inputs in work.glob('inputs-*'):
                 if not (inputs / '.ready.json').exists():
                     ready(directory=inputs)
@@ -224,11 +233,10 @@ def launch(plan_path: Path, output: Path) -> int:
                      'reason': 'Session ended before completion; no automatic retry',
                      'timings': timings, **timings.get('uniform', {})})
         recovered = [json.loads((work / case_name(config=c) / 'outcome.json').read_text()) for c in matrix]
-        for item in recovered:
-            item.setdefault('log', case_name(config=item['config']) + '/worker.log')
         summarize(output=output, records=recovered,
                   baselines=json.loads((output / 'baselines.json').read_text())
-                            if (output / 'baselines.json').exists() else [])
+                            if (output / 'baselines.json').exists() else [],
+                  complete=all(r['status'] in {'ok', 'failed'} for r in recovered))
         for directory in work.iterdir():
             if directory.is_dir() and directory not in submitted:
                 artifacts.submit(directory=directory)

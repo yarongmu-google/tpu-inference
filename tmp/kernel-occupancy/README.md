@@ -17,6 +17,36 @@ bash tmp/kernel-occupancy/run.sh --name check --dry-run
 bash tmp/kernel-occupancy/run.sh --recover
 ```
 
+At completion the controller prints the comparison and writes these small files:
+
+```text
+reports/<your-run-name>/
+  SUMMARY.md       # Best configurations, matched old/new times, failure reasons
+  best.json        # Selected settings for each routing mode and timing metric
+  results.json     # One measurement record per original/modified candidate
+  baselines.json   # Shared XLA reference measurements
+  run.json         # Source/environment and saved collection/cleanup state
+  failures/        # Detailed errors for failed cases
+```
+
+For a run already completed with an older script, collect the existing local
+results without submitting another TPU job:
+
+```bash
+python3 tmp/kernel-occupancy/collect.py
+```
+
+This selects the latest saved run and prints the report plus its exact git add
+command. No campaign or run IDs need to be entered. The collector reads fixed
+saved paths, deduplicates candidate records, recovers missing reports from
+selected compressed parts or the matching final archive, and preserves original
+evidence. The --results and --output options override local directories.
+
+Raw results are ignored by default; reports are Git-visible. This does not
+unstage or untrack results already added to Git. Keep raw evidence locally for
+compiler/profiler investigation. A missing result is reported as missing, with
+available run errors, rather than silently treated as success.
+
 The logged controller survives terminal detachment. Ctrl-C detaches its viewer;
 it does not cancel the TPU job. Collection and candidate compaction continue
 in that background controller. Recovery uses the generic finalization path.
@@ -72,14 +102,15 @@ Accuracy compares all output elements with TPU XLA using rtol=0.04/atol=0.01,
 reports nonfinite values, and also compares each modified result against its
 matched original (including a bitwise-equality flag). Outputs are retained in
 16 MiB row chunks, so later debugging does not require a new TPU execution.
-Failed accuracy retains warmed timings and prevents selection as a winner.
+Failed accuracy retains warmed timings and prevents selection for that routing mode.
 Compile failures retain their errors and the session tries the next candidate.
 
 Three additional dispatches per routing case are captured with the historical
 profiler settings. The report keeps synchronized wall latency separate from
 TensorCore device latency and SparseCore coverage. The reused TC extractor
 excludes barrier/trailing-copy edges; it is not complete end-to-end device time.
-Missing/failed trace extraction is explicit and prevents winner selection.
+Missing/failed trace extraction is explicit and prevents device-time selection;
+accuracy-qualified wall-time results remain eligible.
 Samples are flushed before profiling, so a profiler crash still retains timing.
 
 ## Pipeline and artifacts
@@ -106,7 +137,7 @@ readable metadata under summary/. It removes duplicate unpacked bulk only after
 verification, retaining the compressed parts. This compaction happens inside
 the persistent collector, including after the terminal detaches.
 
-Results live under results/candidates/<run-id>/<case>/:
+Internal evidence remains under results/candidates/<run-id>/<case>/:
 
 - candidate.json: checksummed inventory and the case's full outcome metadata.
 - summary/: small outcome, accuracy, timing, profile and provenance reports.
@@ -114,7 +145,9 @@ Results live under results/candidates/<run-id>/<case>/:
 
 The final diagnostics archive lives under results/archives/ and contains the
 aggregate SUMMARY.md/results.json plus run logs, without embedding another copy
-of all the candidate parts. Keep both the archive and candidate directories.
+of all the candidate parts. These internal paths support recovery; use reports/
+for routine review and Git commits. Keep the archive and candidate directories
+locally when retaining compiler/profile evidence.
 For a fragmented file, extract the chunks listed in summary/file-fragments.json,
 concatenate them in listed order, and verify the recorded full-file checksum.
 
@@ -132,6 +165,7 @@ and baseline/input reuse. CPU interpreter tests execute the actual original
 and modified kernels with two virtual devices; they are not TPU measurements.
 
 ```bash
+python3 -m unittest discover -s tmp/kernel-occupancy -p test_reporting.py
 python3 -m unittest discover -s tmp/kernel-occupancy -p test_job.py
 python3 -m unittest discover -s tmp/kernel-occupancy -p test_session.py
 KERNEL_SOURCE_ROOT="$PWD" XLA_FLAGS=--xla_force_host_platform_device_count=2 \

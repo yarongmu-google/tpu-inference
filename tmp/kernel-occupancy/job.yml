@@ -10,7 +10,7 @@ code:
   directory: ./payload
   delivery: snapshot
   destination: /workspace/kernel-occupancy
-  include: [tune.py, session.py, worker.py, diagnostics.py, pipeline.py, profile_tools.py, control_kernel.py, plan.json]
+  include: [tune.py, session.py, worker.py, diagnostics.py, pipeline.py, profile_tools.py, control_kernel.py, plan.json, reporting.py, collector.py]
 inputs: {}
 run:
   cwd: /opt/tpu-inference
@@ -25,6 +25,7 @@ outputs:
   directory: ./results
   snapshot_seconds: 30
   delivery: incremental
+  report: collector.py
 execution:
   cleanup: after_collection
   timeout_seconds: 28800

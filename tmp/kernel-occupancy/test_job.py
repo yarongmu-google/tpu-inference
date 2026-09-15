@@ -36,7 +36,7 @@ class JobTests(unittest.TestCase):
             tune.summarize(root,[{'config':config,'status':'failed','median_us':12.5,
                 'correctness':{'uniform':{'relative_l2_error':.01}}}])
             self.assertIn('12.500',(root/'SUMMARY.md').read_text())
-            self.assertEqual(json.loads((root/'winners.json').read_text())['winners'],{})
+            self.assertEqual(json.loads((root/'best.json').read_text())['winners'],{})
 
     def test_large_file_background_pack_and_verified_compaction(self):
         with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ,{'WORKFLOW_RUNTIME_DIR':str(HERE.parent/'workflow')}):

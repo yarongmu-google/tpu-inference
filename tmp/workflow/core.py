@@ -273,12 +273,18 @@ def load_description(path: Path) -> tuple[dict, dict]:
         if not re.fullmatch(r'[a-zA-Z_][a-zA-Z0-9_.]*', key):
             raise ValueError('Invalid module name')
         absolute(value)
-    keys(data['outputs'], {'directory', 'snapshot_seconds', 'extra', 'delivery'}, {'directory'})
+    keys(data['outputs'], {'directory', 'snapshot_seconds', 'extra', 'delivery', 'report'}, {'directory'})
     data['outputs']['directory'] = str((path.parent / data['outputs']['directory']).resolve())
     data['outputs']['snapshot_seconds'] = positive(data['outputs'].get('snapshot_seconds', 30), maximum=3600)
     delivery = data['outputs'].setdefault('delivery', 'final')
     if delivery not in {'final', 'incremental'}:
         raise ValueError('outputs.delivery must be final or incremental')
+    report = data['outputs'].get('report')
+    if report is not None:
+        if not isinstance(report, str) or not re.fullmatch(r'[A-Za-z0-9_-]+\.py', report):
+            raise ValueError('outputs.report must name a Python file in the code snapshot')
+        if not (Path(data['code']['directory']) / report).is_file():
+            raise ValueError('Report script is missing from code.directory')
     extra = data['outputs'].setdefault('extra', {})
     if not isinstance(extra, dict):
         raise ValueError('outputs.extra must be a mapping')

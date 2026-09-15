@@ -476,3 +476,15 @@ readable JSON/Markdown/log/text files under `summary/`, and removes the duplicat
 unpacked bulk. Compressed parts remain available for selected extraction.
 This runs inside background collection, including after terminal detachment.
 The default retains `files/` for workloads that require unpacked artifacts.
+
+### Local result report
+
+A description may set `outputs.report: collector.py`. The named Python file
+must be included in the code snapshot. After a job finishes, the persistent
+controller invokes that frozen script with `--run <saved-job-directory>` and
+`--output <reports-directory-next-to-results>`, including for failed jobs. Its
+stdout is printed and command diagnostics are retained; report failures are
+explicit and make the controller return a failure status. This hook survives
+viewer detachment and uses the submitted code snapshot when local branches
+change. The script defines the workload-specific report contents. Existing
+saved jobs without this setting retain their prior behavior.

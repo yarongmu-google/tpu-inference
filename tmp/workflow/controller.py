@@ -729,6 +729,8 @@ def prepare(description_path: Path, name: str | None, dry_run: bool = False) -> 
         shutil.copytree(src=shared, dst=folder / 'input', copy_function=os.link)
         nonce = uuid.uuid4().hex
         run = {**data['run'], 'env': {**data['run']['env'], **case['env']}}
+        if data['outputs'].get('report') and not (folder / 'input/code' / data['outputs']['report']).is_file():
+            raise ValueError('outputs.report must be included in the code snapshot')
         config = {'format': 'run-description-v1', 'run_id': run_id, 'name': name, 'nonce': nonce,
                   'image': None if 'image_build' in data else profile['runtime']['image'], 'run': run,
                   'inputs': {key: {'destination': item['destination']} for key, item in data['inputs'].items()},
@@ -744,7 +746,8 @@ def prepare(description_path: Path, name: str | None, dry_run: bool = False) -> 
                  'uri': None if uses_cdk_storage(profile) else 'gs://' + run_id, 'recipe': run_id, 'user': user,
                  'image': config['image'], 'profile': profile, 'execution': data['execution'],
                  'config_sha256': digest, 'phase': 'PREPARED', 'dry_run': dry_run,
-                 'artifact_delivery': data['outputs']['delivery']}
+                 'artifact_delivery': data['outputs']['delivery'],
+                 'report_script': data['outputs'].get('report')}
         save(path=folder / 'owner.json', value={'run_id': run_id, 'nonce': nonce, 'project': profile['cloud']['project']})
         if 'image_build' in data:
             state.update(image_build=data['image_build'],
@@ -809,14 +812,34 @@ def locked_job(directory: Path, action: str = 'run', discard: bool = False) -> i
             archive = export_run(directory=directory)
             if archive is None:
                 raise RuntimeError('Result archive deferred; recover after image preparation exits')
-            print(f'Ready to commit: {archive} and {archive.with_suffix("").with_suffix(".json")}', flush=True)
+            if not job.state.get('report_script'):
+                print(f'Ready to commit: {archive} and {archive.with_suffix("").with_suffix(".json")}', flush=True)
         except Exception as archive_error:
             (directory / 'archive-error.txt').write_text(traceback.format_exc())
             print(f'Result compression failed: {archive_error}; raw files retained at {directory}', file=sys.stderr)
             result = 1
-        print(f'Results and diagnostics: {directory}', flush=True)
+        if not job.state.get('report_script'):
+            print(f'Results and diagnostics: {directory}', flush=True)
         if result:
-            print('Recover: bash tmp/workflow/run.sh collect ' + shlex.quote(str(directory)), flush=True)
+            recovery = ('recover ' + shlex.quote(str(directory.parents[1])) if job.state.get('report_script')
+                        else 'collect ' + shlex.quote(str(directory)))
+            print('Recover: bash tmp/workflow/run.sh ' + recovery, flush=True)
+        if job.state.get('report_script'):
+            try:
+                script = safe_path(root=directory / 'input/code', relative=job.state['report_script'])
+                code, report = job.command(args=[sys.executable, str(script), '--run', str(directory),
+                    '--output', str(directory.parents[1].parent / 'reports')], timeout=1800, check=False)
+                print(report, flush=True)
+                if code:
+                    result = 1
+                    job.save(report_error='Local report command failed; see command diagnostics')
+                else:
+                    job.save(report_error=None)
+            except Exception:
+                detail = traceback.format_exc()
+                (directory / 'report-error.txt').write_text(detail)
+                print('REPORT_FAILED: ' + detail, flush=True)
+                result = 1
         return result
 
 
