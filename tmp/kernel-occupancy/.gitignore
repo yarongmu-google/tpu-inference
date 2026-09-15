@@ -1,0 +1,11 @@
+results/*
+!results/archives/
+!results/archives/**
+__pycache__/
+payload/__pycache__/
+
+!results/candidates/
+!results/candidates/**
+results/candidates/**/files/
+results/candidates/**/.processing/
+

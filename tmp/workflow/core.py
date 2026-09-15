@@ -273,9 +273,12 @@ def load_description(path: Path) -> tuple[dict, dict]:
         if not re.fullmatch(r'[a-zA-Z_][a-zA-Z0-9_.]*', key):
             raise ValueError('Invalid module name')
         absolute(value)
-    keys(data['outputs'], {'directory', 'snapshot_seconds', 'extra'}, {'directory'})
+    keys(data['outputs'], {'directory', 'snapshot_seconds', 'extra', 'delivery'}, {'directory'})
     data['outputs']['directory'] = str((path.parent / data['outputs']['directory']).resolve())
     data['outputs']['snapshot_seconds'] = positive(data['outputs'].get('snapshot_seconds', 30), maximum=3600)
+    delivery = data['outputs'].setdefault('delivery', 'final')
+    if delivery not in {'final', 'incremental'}:
+        raise ValueError('outputs.delivery must be final or incremental')
     extra = data['outputs'].setdefault('extra', {})
     if not isinstance(extra, dict):
         raise ValueError('outputs.extra must be a mapping')
@@ -313,3 +316,20 @@ def load_description(path: Path) -> tuple[dict, dict]:
         seen.add(case['name'])
         case['env'] = environment(case.get('env', {}))
     return data, profile
+
+
+def link_or_copy(source: Path, destination: Path) -> None:
+    """Share immutable bytes on one filesystem; copy across filesystem boundaries."""
+    import errno
+    import os
+    import shutil
+    if destination.exists():
+        if os.path.samefile(source, destination):
+            return
+        destination.unlink()
+    try:
+        destination.hardlink_to(source)
+    except OSError as error:
+        if error.errno not in (errno.EXDEV, errno.EPERM, errno.EACCES, errno.ENOTSUP):
+            raise
+        shutil.copyfile(src=source, dst=destination)

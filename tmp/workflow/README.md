@@ -439,3 +439,40 @@ An unfinished remote workload retains its cloud resources for a later recovery.
 Cleanup first creates and verifies the local result archive. If archive creation
 fails, cloud resources remain. The final report lists the archive and metadata
 ready to commit; staging and pushing remain explicit actions.
+
+## Incremental candidate artifacts
+
+Set `outputs.delivery: incremental` to publish completed artifact directories
+while a job continues running. The default `final` mode is unchanged. This
+mode caches uploaded files by local identity/size/timestamps and omits hidden
+work directories during live snapshots. Workloads must keep unfinished files
+under hidden directories and atomically expose immutable results when ready.
+
+The shared runtime provides `WORKFLOW_RUNTIME_DIR`; its `streams.seal` helper
+writes `candidate-artifacts-v1` directories under
+`OUTPUT_DIR/candidates/<candidate>/`. It uses bounded gzip level-1 parts and a
+manifest of per-file/per-part hashes. The workload is responsible for freezing
+its files and scheduling packaging outside its compute loop.
+
+The controller collects all published entries in incremental mode, including
+large parts, and verifies/unpacks candidate directories on the CPU VM at
+`<outputs.directory>/candidates/<run-id>/<candidate>/`. It prints
+`CANDIDATE_AVAILABLE` after atomic publication of the verified local directory.
+Receipt metadata avoids downloading unchanged files on every live poll; final
+collection still verifies the complete manifest before cleanup. A missing or
+corrupt final part prevents verification and remote cleanup.
+
+Final incremental publication reuses content-addressed objects instead of
+compressing them into another archive. A workload can retain an
+`OUTPUT_DIR/.incomplete-artifacts` marker until every candidate is sealed; if
+it remains at exit, final publication includes hidden private work for recovery.
+Candidate manifests and compressed parts are portable. Repositories should
+ignore locally unpacked `files/` and `.processing/` directories while keeping
+the verified manifests/parts visible if they are to be committed.
+
+A workload may set `metadata.compact_after_receive: true` when sealing a
+candidate. The CPU collector verifies every part and member, retains small
+readable JSON/Markdown/log/text files under `summary/`, and removes the duplicate
+unpacked bulk. Compressed parts remain available for selected extraction.
+This runs inside background collection, including after terminal detachment.
+The default retains `files/` for workloads that require unpacked artifacts.

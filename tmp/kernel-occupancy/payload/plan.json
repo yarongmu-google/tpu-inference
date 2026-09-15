@@ -1,0 +1,55 @@
+{
+  "devices": 8,
+  "hidden": 4096,
+  "experts": 512,
+  "intermediate": 1024,
+  "top_k": 10,
+  "tokens": [
+    512
+  ],
+  "seed": 17,
+  "warmup": 5,
+  "iterations": 30,
+  "profile_iterations": 3,
+  "reference_samples": 32,
+  "candidate_timeout_seconds": 900,
+  "center": {
+    "be": 8,
+    "bg": 2,
+    "capacity": 32,
+    "bd1c": 256,
+    "bd2c": 128,
+    "bcT": 0
+  },
+  "sweep": {
+    "be": [
+      2,
+      4,
+      8
+    ],
+    "bg": [
+      1,
+      2,
+      4
+    ],
+    "capacity": [
+      32,
+      64
+    ],
+    "bd1c": [
+      128,
+      256,
+      512
+    ],
+    "bd2c": [
+      128,
+      256,
+      512
+    ],
+    "bcT": [
+      0,
+      128,
+      256
+    ]
+  }
+}

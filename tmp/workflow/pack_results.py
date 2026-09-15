@@ -24,11 +24,18 @@ def export_run(directory: Path, destination: Path | None = None) -> Path | None:
         destination = destination or directory.parent.parent / 'archives'
         archive = destination / (state['run_id'] + '.tar.gz')
         files = {}
+        separate = []
         for path in directory.rglob('*'):
             relative = path.relative_to(directory)
             if (relative.parts[0] in {'live', 'cleanup-empty'} or path.name == '.lock'
                     or relative.parts[:2] == ('collected', 'objects')
                     or (state.get('artifacts_verified') and relative.as_posix() == 'collected/artifacts.tar.gz')):
+                continue
+            if (state.get('artifact_delivery') == 'incremental'
+                    and relative.parts[:4] == ('collected', 'files', 'artifacts', 'output')
+                    and len(relative.parts) == 7 and relative.parts[4] == 'candidates'
+                    and path.name.startswith('part-') and path.name.endswith('.tar.gz')):
+                separate.append({'path': relative.as_posix(), 'bytes': path.stat().st_size})
                 continue
             if path.is_symlink():
                 raise ValueError(f'Cannot archive a symlink: {path}')
@@ -38,6 +45,12 @@ def export_run(directory: Path, destination: Path | None = None) -> Path | None:
             path = directory.parent / name
             if path.is_file():
                 files['campaign/' + name] = path
+        if separate:
+            index = directory / 'separate-artifacts.json'
+            save(path=index, value={'format': 'separate-artifacts-v1', 'parts': separate,
+                'note': 'Candidate bundles are stored separately; this archive contains diagnostics and manifests. '
+                        'Use the candidates/<run_id>/ directories for the compressed parts and verified files.'})
+            files['run/separate-artifacts.json'] = index
         print(f'COMPRESSING_LOCAL_RESULTS: {directory}', flush=True)
         make_bundle(destination=archive, files=files, metadata={'format': 'run-export-v1',
             'run_id': state['run_id'], 'phase': state['phase'], 'exit_code': state.get('exit_code'),

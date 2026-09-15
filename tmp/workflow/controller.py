@@ -361,7 +361,8 @@ class Job:
         self.save(authorized=True)
 
     def collect(self, live: bool = False) -> bool:
-        destination = self.directory / ('live' if live else 'collected')
+        incremental = self.state.get('artifact_delivery') == 'incremental'
+        destination = self.directory / ('live' if live and not incremental else 'collected')
         destination.mkdir(exist_ok=True)
         if not live:
             self.save(artifacts_verified=False)
@@ -408,7 +409,9 @@ class Job:
                     objects = destination / 'objects'
                     objects.mkdir(exist_ok=True)
                     paths = set()
-                    selected = [entry for entry in manifest['files'] if not live or entry['path'] in
+                    receipt_path = destination / 'live-receipts.json'
+                    receipts = read_document(receipt_path) if receipt_path.exists() else {}
+                    selected = [entry for entry in manifest['files'] if not live or incremental or entry['path'] in
                                 {'diagnostics/stdout.log', 'diagnostics/stderr.log', 'diagnostics/error.txt', 'diagnostics/status.json'}]
                     for entry in selected:
                         if not re.fullmatch('[a-f0-9]{64}', entry['sha256']) or entry['path'] in paths:
@@ -416,14 +419,46 @@ class Job:
                         paths.add(entry['path'])
                         target = safe_path(root=destination / 'files', relative=entry['path'])
                         blob = objects / entry['sha256']
-                        if not blob.exists() or checksum(blob) != entry['sha256']:
-                            self.gcloud(args=['storage', 'cp', self.state['uri'] + '/objects/' + entry['sha256'], str(blob)],
+                        fingerprint = None
+                        if target.is_file():
+                            stat = target.stat()
+                            fingerprint = [entry['sha256'], stat.st_ino, stat.st_size,
+                                           stat.st_mtime_ns, stat.st_ctime_ns]
+                        if incremental and receipts.get(entry['path']) == fingerprint and fingerprint:
+                            continue
+                        valid_blob = (blob.is_file() and blob.stat().st_size == entry['bytes']
+                                      and checksum(blob) == entry['sha256'])
+                        if not valid_blob:
+                            partial = blob.with_suffix('.new')
+                            self.gcloud(args=['storage', 'cp', self.state['uri'] + '/objects/' + entry['sha256'], str(partial)],
                                         timeout=1800, transfer=True)
-                        if blob.stat().st_size != entry['bytes'] or checksum(blob) != entry['sha256']:
-                            raise ValueError('Downloaded artifact checksum mismatch')
+                            if partial.stat().st_size != entry['bytes'] or checksum(partial) != entry['sha256']:
+                                raise ValueError('Downloaded artifact checksum mismatch')
+                            partial.replace(blob)
                         target.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copyfile(src=blob, dst=target)
-                    verify(root=destination / 'files', entries=selected)
+                        from core import link_or_copy
+                        link_or_copy(source=blob, destination=target)
+                        stat = target.stat()
+                        receipts[entry['path']] = [entry['sha256'], stat.st_ino, stat.st_size,
+                                                  stat.st_mtime_ns, stat.st_ctime_ns]
+                    if not live or not incremental:
+                        verify(root=destination / 'files', entries=selected)
+                    if incremental:
+                        save(path=receipt_path, value=receipts)
+                        from streams import materialize
+                        candidates = destination / 'files/artifacts/output/candidates'
+                        for candidate in sorted(candidates.glob('*/candidate.json')):
+                            # A live snapshot may arrive before every part is downloaded.
+                            ready = json.loads(candidate.read_text())
+                            expected_paths = {f'artifacts/output/candidates/{candidate.parent.name}/' + part['name']
+                                              for part in ready['parts']}
+                            if not expected_paths <= paths:
+                                if live:
+                                    continue
+                                raise ValueError('Final manifest omits a candidate part')
+                            target = self.directory.parents[1] / 'candidates' / self.state['run_id'] / candidate.parent.name
+                            if materialize(source=candidate.parent, destination=target):
+                                print(f'CANDIDATE_AVAILABLE: {target} (verified parts; readable files under summary/ or files/)', flush=True)
                 if live:
                     self.save(last_output=manifest.get('updated'), workload_state=manifest['state'], collection_error=None)
                     age = max(0, time.time() - manifest.get('updated', time.time()))
@@ -674,7 +709,7 @@ def prepare(description_path: Path, name: str | None, dry_run: bool = False) -> 
         if root.is_relative_to(source):
             raise ValueError('Results directory must be outside all uploaded source/input directories')
     root.mkdir(parents=True, exist_ok=False)
-    payload = {key: (ROOT / key).read_text() for key in ('core.py', 'runtime.py', 'artifacts.py')}
+    payload = {key: (ROOT / key).read_text() for key in ('core.py', 'runtime.py', 'artifacts.py', 'streams.py')}
     save(path=root / 'description.json', value=data)
     shared = root / 'snapshot'
     bundles = [{'source': 'code', 'destination': data['code']['destination'],
@@ -697,7 +732,7 @@ def prepare(description_path: Path, name: str | None, dry_run: bool = False) -> 
         config = {'format': 'run-description-v1', 'run_id': run_id, 'name': name, 'nonce': nonce,
                   'image': None if 'image_build' in data else profile['runtime']['image'], 'run': run,
                   'inputs': {key: {'destination': item['destination']} for key, item in data['inputs'].items()},
-                  'outputs': {key: data['outputs'][key] for key in ('extra', 'snapshot_seconds')},
+                  'outputs': {key: data['outputs'][key] for key in ('extra', 'snapshot_seconds', 'delivery')},
                   'bundles': bundles, 'runtime_sha256': hashlib.sha256(json_bytes(payload)).hexdigest(), 'timeout_seconds': data['execution']['timeout_seconds']}
         save(path=folder / 'run-template.json', value=config)
         save(path=folder / 'runtime-payload.json', value=payload)
@@ -708,7 +743,8 @@ def prepare(description_path: Path, name: str | None, dry_run: bool = False) -> 
                  'bucket': None if uses_cdk_storage(profile) else run_id,
                  'uri': None if uses_cdk_storage(profile) else 'gs://' + run_id, 'recipe': run_id, 'user': user,
                  'image': config['image'], 'profile': profile, 'execution': data['execution'],
-                 'config_sha256': digest, 'phase': 'PREPARED', 'dry_run': dry_run}
+                 'config_sha256': digest, 'phase': 'PREPARED', 'dry_run': dry_run,
+                 'artifact_delivery': data['outputs']['delivery']}
         save(path=folder / 'owner.json', value={'run_id': run_id, 'nonce': nonce, 'project': profile['cloud']['project']})
         if 'image_build' in data:
             state.update(image_build=data['image_build'],

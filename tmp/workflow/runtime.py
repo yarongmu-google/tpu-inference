@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 from pathlib import Path
@@ -25,7 +26,8 @@ def write_remote(path: Path, value: dict) -> None:
         stream.write(json_bytes(value))
 
 
-def publish(local: Path, bucket: Path, status: dict, extras: dict[str, str]) -> None:
+def publish(local: Path, bucket: Path, status: dict, extras: dict[str, str],
+            cache: dict | None = None, include_private: bool = False) -> None:
     entries = []
     roots = {'diagnostics': local, **{f'artifacts/{key}': Path(value) for key, value in extras.items()}}
     object_root = bucket / 'objects'
@@ -35,7 +37,13 @@ def publish(local: Path, bucket: Path, status: dict, extras: dict[str, str]) -> 
             continue
         if root.is_symlink() or not root.is_dir():
             raise ValueError(f'Output is not a regular directory: {root}')
-        for path in sorted(root.rglob('*')):
+        paths = []
+        for folder, directories, filenames in os.walk(root):
+            if cache is not None and not include_private:
+                directories[:] = [name for name in directories if not name.startswith('.')]
+                filenames = [name for name in filenames if not name.startswith('.')]
+            paths.extend(Path(folder) / name for name in directories + filenames)
+        for path in sorted(paths):
             if path.is_symlink():
                 raise ValueError(f'Output symlink is not collected: {path}')
             if not path.is_file():
@@ -44,6 +52,12 @@ def publish(local: Path, bucket: Path, status: dict, extras: dict[str, str]) -> 
             if root == local and path.is_relative_to(local / 'artifacts'):
                 continue
             safe_path(root=root, relative=relative)
+            key = prefix + '/' + relative
+            stat = path.stat()
+            fingerprint = (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+            if cache is not None and cache.get(key, {}).get('fingerprint') == fingerprint:
+                entries.append(cache[key]['entry'])
+                continue
             # Freeze exactly the observed prefix of growing logs.
             with tempfile.TemporaryFile() as frozen:
                 remaining = path.stat().st_size
@@ -63,7 +77,10 @@ def publish(local: Path, bucket: Path, status: dict, extras: dict[str, str]) -> 
                     frozen.seek(0)
                     with destination.open('wb') as output:
                         shutil.copyfileobj(fsrc=frozen, fdst=output)
-                entries.append({'path': prefix + '/' + relative, 'sha256': digest, 'bytes': length})
+                entry = {'path': key, 'sha256': digest, 'bytes': length}
+                entries.append(entry)
+                if cache is not None:
+                    cache[key] = {'fingerprint': fingerprint, 'entry': entry}
     write_remote(path=bucket / 'manifest.json', value={'format': 'run-artifacts-v1', **status, 'files': entries})
 
 
@@ -145,6 +162,9 @@ def execute(bucket: Path, local: Path, expected: str, require_mount: bool = True
     extras = {}
     code = 1
     threads = []
+    publish_cache = None
+    publisher = ThreadPoolExecutor(max_workers=1, thread_name_prefix="artifact-publisher")
+    publication = None
     try:
         if require_mount:
             mounts = Path('/proc/self/mountinfo').read_text().splitlines()
@@ -171,6 +191,8 @@ def execute(bucket: Path, local: Path, expected: str, require_mount: bool = True
         if config['run_id'] != status['run_id']:
             raise ValueError('Wrong run identity')
         status.update(image=config['image'], config_sha256=expected)
+        if config['outputs'].get('delivery') == 'incremental':
+            publish_cache = {}
         owner = json.loads((bucket / 'owner.json').read_text())
         if owner['run_id'] != config['run_id'] or owner['nonce'] != config['nonce']:
             raise ValueError('Wrong bucket ownership marker')
@@ -193,7 +215,8 @@ def execute(bucket: Path, local: Path, expected: str, require_mount: bool = True
             interrupted.wait(2)
         materialize(bundle=bucket / 'input', items=config['bundles'])
         env = {**os.environ, **config['run']['env'], 'RUN_NAME': config['name'],
-               'RUN_ID': config['run_id'], 'OUTPUT_DIR': str(local / 'artifacts')}
+               'RUN_ID': config['run_id'], 'OUTPUT_DIR': str(local / 'artifacts'),
+               'WORKFLOW_RUNTIME_DIR': str(Path(__file__).resolve().parent)}
         env.update({f'INPUT_{key.upper()}_DIR': item['destination'] for key, item in config['inputs'].items()})
         Path(env['OUTPUT_DIR']).mkdir()
         extras = {'output': env['OUTPUT_DIR'], **config['outputs']['extra']}
@@ -240,12 +263,15 @@ def execute(bucket: Path, local: Path, expected: str, require_mount: bool = True
                 stopped_at = now
             if stopped_at is not None and now - stopped_at >= 20:
                 os.killpg(child.pid, signal.SIGKILL)
-            if now >= next_publish:
+            if now >= next_publish and (publication is None or publication.done()):
+                if publication is not None:
+                    try:
+                        publication.result()
+                    except Exception as error:
+                        print(f'Artifact snapshot failed: {error}', file=sys.stderr, flush=True)
                 status['updated'] = time.time()
-                try:
-                    publish(local=local, bucket=bucket, status=status, extras=extras)
-                except Exception as error:
-                    print(f'Artifact snapshot failed: {error}', file=sys.stderr, flush=True)
+                publication = publisher.submit(publish, local=local, bucket=bucket,
+                    status=dict(status), extras=extras, cache=publish_cache)
                 next_publish = now + config['outputs']['snapshot_seconds']
             time.sleep(0.2)
         code = child.wait()
@@ -267,16 +293,33 @@ def execute(bucket: Path, local: Path, expected: str, require_mount: bool = True
         if child is not None:
             child.stdout.close()
             child.stderr.close()
+        # Preserve ordering: no running snapshot may overwrite the final manifest.
+        print('FINAL_UPLOAD_WAIT: retaining pod until artifacts reach durable storage', flush=True)
+        transfer_started = time.monotonic()
+        publisher.shutdown(wait=True)
+        if publication is not None:
+            try:
+                publication.result()
+            except Exception as error:
+                print(f'Artifact snapshot failed: {error}', file=sys.stderr, flush=True)
         status.update(state='succeeded' if code == 0 else 'failed', exit_code=code, updated=time.time())
         write_remote(path=local / 'status.json', value=status)
         try:
             if storage_ready:
-                publish_final(local=local, bucket=bucket, status=status, extras=extras)
+                if publish_cache is None:
+                    publish_final(local=local, bucket=bucket, status=status, extras=extras)
+                else:
+                    # A packaging failure exposes private work at final collection for recovery.
+                    fallback = (local / 'artifacts/.incomplete-artifacts').exists()
+                    publish(local=local, bucket=bucket, status=status, extras=extras,
+                            cache=publish_cache, include_private=fallback)
+                    print('RESULTS_PUBLISHED: incremental artifacts complete', flush=True)
             else:
                 print('Storage unavailable; startup diagnostics remain in the container log', file=sys.stderr, flush=True)
         except Exception:
             print('Final artifact publication failed:\n' + traceback.format_exc(), file=sys.stderr, flush=True)
             code = code or 1
+    print(f'FINAL_UPLOAD_FINISHED: {time.monotonic() - transfer_started:.1f}s', flush=True)
     for number, handler in previous_signals.items():
         signal.signal(number, handler)
     return code
