@@ -1,0 +1,6 @@
+{
+  "complete": false,
+  "winners": {},
+  "wall_metric": "warmed synchronized call including collectives",
+  "device_metric": "TC dispatch excluding barrier/trailing-copy edges"
+}

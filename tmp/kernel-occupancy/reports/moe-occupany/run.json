@@ -1,0 +1,26 @@
+{
+  "name": "moe-occupany",
+  "run_id": "moe-occupany-default-e13883daa6bc4d52964604b7",
+  "expected_candidates": 0,
+  "collected_candidates": 0,
+  "complete": false,
+  "provenance": {},
+  "collection": {
+    "job_id": null,
+    "artifacts_verified": null,
+    "resources_cleaned": true,
+    "collection_error": null,
+    "cleanup_error": null,
+    "phase": "CLEANED"
+  },
+  "warnings": [
+    "Full artifact collection is unverified in saved state; original data is retained."
+  ],
+  "errors": [
+    "Traceback (most recent call last):\n  File \"/home/ymu_google_com/tpu-inference-topk/tmp/workflow/controller.py\", line 773, in job_action\n    return job.run()\n           ^^^^^^^^^\n  File \"/home/ymu_google_com/tpu-inference-topk/tmp/workflow/controller.py\", line 597, in run\n    self.register()\n  File \"/home/ymu_google_com/tpu-inference-topk/tmp/workflow/controller.py\", line 327, in register\n    _, text = self.cdk(args=['recipe', 'list', '-o', 'json'])\n              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/ymu_google_com/tpu-inference-topk/tmp/workflow/controller.py\", line 239, in cdk\n    raise ValueError('CDK instructions changed; review the saved command output')\nValueError: CDK instructions changed; review the saved command output\n",
+    "last_error: CDK instructions changed; review the saved command output",
+    "No candidate outcomes were collected. This is a diagnostic report, not a successful tuning result."
+  ],
+  "reference_file": null,
+  "source": "/home/ymu_google_com/tpu-inference-topk/tmp/kernel-occupancy/results/moe-occupany-782f608279d24d1997237791/moe-occupany-default-e13883daa6bc4d52964604b7"
+}
